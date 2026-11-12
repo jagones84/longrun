@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # battery_tmp.sh — the fix in flight. Overwritten every round; tests/battery.sh is the gate.
-# 2026-11-13 RSI-V: a repeated verify must beat a fair coin at `promotion_alpha`; the
-# bound is stamped on the archived proposal, single-run cases are named, never faked.
-# v788/v789 are the case-table gate it extends, v598 the streak/threshold release,
-# v205 the sealed held-out gate, v790/v823/v416 the promotion lifecycle.
+# 2026-11-13 HD-3: a zero-tool reply that CLAIMS a change earns one round (the action
+# gate). v969 is the new pin; v868 is the gate-kind registry it joins; v764 is the
+# evidence gate it complements; v869/v750/v731/v776 are the read-back/gate neighbours;
+# v354 pins the README badge bumped by the new test.
 set -u
 cd /home/jagones/Repositories/longrun || exit 1
-LONGRUN_BATTERY_TESTS="v965_promotion_bound v788_evolve_case_gate v789_evolve_gate_measures v598_thresholded_release v205_heldout_gate v790_evolve_retire_and_failures v823_skill_supersede v416_autoskill_created" \
+LONGRUN_BATTERY_TESTS="v969_action_claim_gate v868_one_kind_per_gate v764_answer_discipline v869_gate_dedupe v750_verify_gate v731_deliverable_readback v776_readback_turn_attribution v354_ui_links_pins" \
   bash tests/battery.sh

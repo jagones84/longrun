@@ -4320,6 +4320,57 @@ def _evidence_gate_text():
             "Do not guess a number you have not seen.")
 
 
+#: A reply that CLAIMS a change already happened ("I've updated…", "I created…",
+#: "I ran…"). First person + past tense only: a FUTURE-tense promise is the intent
+#: gate's job (`_narrates_intent`), and a bare past-tense sentence is prose the answer
+#: owns. Deliberately narrow, like `_needs_evidence`.
+_ACTION_CLAIM = re.compile(
+    r"\bi(?:'ve| have| had)?\s+(?:updated|written|wrote|created|edited|added|removed|"
+    r"deleted|fixed|changed|renamed|moved|copied|installed|executed|ran|generated|"
+    r"saved|built|applied|committed|pushed|modified|patched|replaced|configured|"
+    r"restarted|wired|registered)\b", re.I)
+
+
+def _claims_action(answer):
+    """True when the reply ASSERTS a change this turn should have made (never raises).
+
+    The complement of `_needs_evidence`: that one fires on a QUESTION closed with no
+    tool, this one on a DONE-claim closed with no tool. Source: `S-2026-11-13-023`,
+    the dispatch-record paper — a run whose structured-output constraint silently
+    disabled tool use answered anyway, with fabricated source text, and every
+    value-based check called it a success; only the per-tool record exposed it.
+
+    Narrow by construction: the gate that calls this never fires when the turn ran ANY
+    tool (it is guarded by `not _total_work_steps`), so the only thing it can catch is
+    a claim with no tool record behind it at all. Like `_narrates_intent` it reads the
+    TAIL, because the model keeps talking past the sentence that makes the claim.
+    """
+    try:
+        text = str(answer or "").strip()
+        if not text:
+            return False
+        return bool(_ACTION_CLAIM.search(text[-400:]))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _action_gate_text():
+    """The one round a zero-tool answer that CLAIMS a change earns.
+
+    Asks for a DECISION, never for a narration — the lesson the evidence gate already
+    paid for (`agent.py:4304-L4309`, the "say so in one line" regression): a
+    provenance sentence is not the work.
+    """
+    return ("ACTION GATE — your reply says a change was made, but this turn ran NO "
+            "tool, so the harness holds no record of it. Decide ONCE:\n"
+            "  * it still has to happen → do it NOW with the tool that performs it "
+            "(`fs.write` / `fs.edit` / `shell.exec`), then report what the tool "
+            "returned;\n"
+            "  * it happened in an EARLIER turn, or was never made → say exactly that, "
+            "in one line.\n"
+            "Never report a change this turn did not make.")
+
+
 #: A reply that ENDS on what it is about to do. The tail is what matters: a long,
 #: correct analysis can contain "I need to" in the middle and still finish on the
 #: value; only the last sentence decides.
@@ -5320,6 +5371,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     _selfcheck_left = _SELFCHECK_MAX
     _failed_checked = False   # one failed-call verdict per turn (never a loop)
     _evidence_used = False    # one evidence-gate round per turn (never a loop)
+    _action_used = False      # one action-gate round per turn (never a loop)
     _intent_used = False      # one closing-check round when the reply ends on a plan
     # v859: the close is graded against the operator's request THREAD (the original
     # ask plus the follow-ups), never only the current sentence, and once per turn
@@ -6117,6 +6169,14 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 msgs.append({"role": "assistant", "content": answer})
                 _inject(_evidence_gate_text(), "evidence-gate")
                 continue
+            if (not _action_used and not _total_work_steps
+                    and _claims_action(answer) and not _is_aborted(sess["id"])):
+                # A finished reply that CLAIMS a change with zero tool calls in the
+                # turn: the harness holds no record of it (S-2026-11-13-023).
+                _action_used = True
+                msgs.append({"role": "assistant", "content": answer})
+                _inject(_action_gate_text(), "action-gate")
+                continue
             _drv, _effort = _review_for_effort(sess, message, _deliv_since, _deliv_state,
                                                _effort)
             if _drv:
@@ -6199,6 +6259,14 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                     _evidence_used = True
                     msgs.append({"role": "assistant", "content": answer})
                     _inject(_evidence_gate_text(), "evidence-gate")
+                    continue
+                if (not _action_used and not _total_work_steps
+                        and _claims_action(answer) and not _is_aborted(sess["id"])):
+                    # Same rule as the finish path: a done-claim with zero tool
+                    # calls behind it is a change the harness never saw.
+                    _action_used = True
+                    msgs.append({"role": "assistant", "content": answer})
+                    _inject(_action_gate_text(), "action-gate")
                     continue
                 if (not _request_verified and _total_work_steps
                         and not _is_aborted(sess["id"])):
@@ -6459,6 +6527,13 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 _evidence_used = True
                 msgs.append({"role": "assistant", "content": answer})
                 _inject(_evidence_gate_text(), "evidence-gate")
+                continue
+            if (not _action_used and not _total_work_steps
+                    and _claims_action(answer) and not _is_aborted(sess["id"])):
+                # A prose done-claim, with zero tool calls behind it.
+                _action_used = True
+                msgs.append({"role": "assistant", "content": answer})
+                _inject(_action_gate_text(), "action-gate")
                 continue
             if (_last_failed_err and not _last_tool_ok and not _failed_checked
                     and _selfcheck_left > 0 and not _is_aborted(sess["id"])):

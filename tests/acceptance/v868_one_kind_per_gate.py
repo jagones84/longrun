@@ -48,6 +48,7 @@ OWN = {
     "failed-call": "_inject(_failed_call_check_prompt(_last_failed_err), \"failed-call\")",
     "intent-gate": "_inject(_intent_gate_text(), \"intent-gate\")",
     "evidence-gate": "_inject(_evidence_gate_text(), \"evidence-gate\")",
+    "action-gate": "_inject(_action_gate_text(), \"action-gate\")",
     "citation-check": "_inject(_cite, \"citation-check\")",
     "verify-gate": "_inject(_verify_gate_text(), \"verify-gate\")",
     "forced-close-verify": "_inject(_forced_close_verify_text(_request_thread_text), "
