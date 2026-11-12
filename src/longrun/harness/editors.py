@@ -257,13 +257,20 @@ def propose(scope, record, contrast=None, library_rows=(), model=None, call=None
                           limit=limit)
     messages = [{"role": "user", "content": prompt}]
     used = model
+    usage = {}
     if call is None:
         from longrun.core import server
         answer, _think, used = server.stream_with_fallback(
             messages, model, "harness-editor", lambda *_a: None, timeout=240,
-            max_tokens=4000)
+            max_tokens=4000, usage=usage)
     else:
-        answer, _think, used = call(messages)
+        got = call(messages)
+        answer, _think, used = got[0], got[1], got[2]
+        # A test may return the provider usage as a fourth element; production
+        # reads it from the router through `usage=` above. One shape, no second
+        # counter (RSI-U: the cycle's bill is measured, not estimated).
+        if len(got) > 3 and isinstance(got[3], dict):
+            usage = dict(got[3])
     rows = _parse(answer)
     if rows is None:
         # Distinguish "the provider answered nothing" from "the model wrote prose":
@@ -273,7 +280,7 @@ def propose(scope, record, contrast=None, library_rows=(), model=None, call=None
                else 'the editor answered without a "candidates" array')
         return {"scope": scope, "proposals": [], "candidates": [],
                 "rejected": [{"name": "(editor)", "reason": "%s (model %s)" % (why, used)}],
-                "model": used, "domain": domain}
+                "model": used, "domain": domain, "usage": usage}
     ids, rejected, accepted = [], [], []
     for index, candidate in enumerate(rows):
         if len(accepted) >= limit:
@@ -295,4 +302,4 @@ def propose(scope, record, contrast=None, library_rows=(), model=None, call=None
                          "content": str(candidate["content"]).strip(), "why": why,
                          "scope": scope})
     return {"scope": scope, "proposals": ids, "candidates": accepted,
-            "rejected": rejected, "model": used, "domain": domain}
+            "rejected": rejected, "model": used, "domain": domain, "usage": usage}

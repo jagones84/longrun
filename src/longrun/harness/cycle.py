@@ -130,6 +130,51 @@ def status():
     }
 
 
+def _tax_empty():
+    """The cycle's bill: what the improvement process itself spent (RSI-U)."""
+    return {"propose": {"prompt_tokens": 0, "completion_tokens": 0, "calls": 0},
+            "probe": {"tokens": 0, "runs": 0, "measured": False},
+            "total_tokens": 0}
+
+
+def _tax_total(tax):
+    tax["total_tokens"] = (int(tax["propose"]["prompt_tokens"])
+                           + int(tax["propose"]["completion_tokens"])
+                           + int(tax["probe"]["tokens"]))
+    return tax
+
+
+def _tax_propose_add(tax, usage):
+    """Add ONE editor call's provider usage to the propose stage.
+
+    `usage` is the router's own dict (`prompt_tokens`/`completion_tokens`); an
+    empty dict means the provider reported nothing and the call is NOT counted,
+    so the bill never invents a number.
+    """
+    if not isinstance(usage, dict) or not usage:
+        return
+    stage = tax["propose"]
+    stage["prompt_tokens"] += int(usage.get("prompt_tokens") or 0)
+    stage["completion_tokens"] += int(usage.get("completion_tokens") or 0)
+    stage["calls"] += 1
+    _tax_total(tax)
+
+
+def _tax_probe_add(tax, record):
+    """Add ONE probe run's spend, read from the record's own `budget.tokens`.
+
+    The container gateway does not aggregate usage, so a run whose record carries
+    no number is left uncounted and `measured` stays False for that stage — the
+    report says "not measured" instead of a zero that looks free.
+    """
+    tokens = ((record or {}).get("budget") or {}).get("tokens")
+    if isinstance(tokens, (int, float)):
+        tax["probe"]["tokens"] += int(tokens)
+        tax["probe"]["runs"] += 1
+        tax["probe"]["measured"] = True
+        _tax_total(tax)
+
+
 def run(session_id=None, domain="general", dry_run=True, model=None, call=None,
         runner=None, c=None):
     """Run one cycle and return its report.
@@ -167,6 +212,7 @@ def run(session_id=None, domain="general", dry_run=True, model=None, call=None,
         "library_hits": [h.get("id") for h in hits],
         "proposals": [], "probe": None, "decision": "", "adopted": None,
         "refusals": [],
+        "tax": _tax_empty(),
     }
     if dry_run:
         report["reason"] = "dry run: no editor calls or probes; production isolation is unavailable"
@@ -195,6 +241,7 @@ def run(session_id=None, domain="general", dry_run=True, model=None, call=None,
                           reason="%s editor failed: %s" % (scope, type(exc).__name__))
             return _save(report)
         candidates += got.get("candidates") or []
+        _tax_propose_add(report["tax"], got.get("usage"))
         names = [c.get("name") for c in candidates]
         report["proposals"] += got.get("proposals") or []
         report["refusals"] += got.get("rejected") or []
@@ -218,6 +265,12 @@ def run(session_id=None, domain="general", dry_run=True, model=None, call=None,
     try:
         group = probe_mod.trials(base, candidates, runner=runner, c=c)
         reference = group.get("reference") or base
+        # The session's own record is not cycle spend: only a reference the probe
+        # EXECUTED (a fresh record, not the object handed in) is billed.
+        if reference is not base:
+            _tax_probe_add(report["tax"], reference)
+        for _row in group.get("trials") or []:
+            _tax_probe_add(report["tax"], _row.get("record"))
         report["reference"] = {"run_id": reference.get("run_id"),
                                "steps": len(reference.get("steps") or []),
                                "model": reference.get("model") or "",
@@ -267,6 +320,7 @@ def run(session_id=None, domain="general", dry_run=True, model=None, call=None,
                 if row.get("probe_id"):
                     scratch_ids.append(row["probe_id"])
                 report["successor"] = row
+                _tax_probe_add(report["tax"], row.get("record"))
                 contrast = row.get("contrast") or {}
                 applied_names = list((row.get("staged") or {}).keys())
                 applied = [s for s in supported if s["name"] in applied_names] or supported
@@ -296,7 +350,11 @@ def run(session_id=None, domain="general", dry_run=True, model=None, call=None,
         improve.ledger_add("harness_cycle", domain=domain, session=session_id,
                            status=report["status"],
                            adopted=(report["adopted"] or {}).get("id") if report["adopted"] else "",
-                           probe=(report["probe"] or {}).get("probe_id") or "")
+                           probe=(report["probe"] or {}).get("probe_id") or "",
+                           tax_total=report["tax"]["total_tokens"],
+                           tax_propose=report["tax"]["propose"]["prompt_tokens"],
+                           tax_probe=report["tax"]["probe"]["tokens"],
+                           tax_probe_measured=report["tax"]["probe"]["measured"])
     except Exception:  # noqa: BLE001 — an audit line must never break a cycle
         pass
     return _save(report)
