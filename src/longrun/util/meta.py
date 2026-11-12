@@ -265,6 +265,53 @@ def pareto_frontier(results):
     return non_dominated
 
 
+def _load_history(limit=500):
+    """Rebuild the in-memory history from the reports already on disk (RSI-H-3).
+
+    The `meta-report-*.json` files stay the source of truth: this is only the
+    cache the module keeps in memory, rebuilt once at import so a restart does
+    not forget evaluations that were already paid for. Reports are read
+    newest-first until `limit` results are collected, then re-ordered
+    chronologically; the cut is the same 500 rows `meta_run` keeps. A file that
+    is missing, unreadable, not JSON or without a `results` list is skipped.
+    """
+    try:
+        names = [n for n in os.listdir(DATA_DIR)
+                 if n.startswith("meta-report-") and n.endswith(".json")]
+    except OSError:
+        return [], []
+
+    def _stamp(name):
+        try:
+            return int(name[len("meta-report-"):-len(".json")])
+        except ValueError:
+            return -1
+
+    chunks = []
+    collected = 0
+    for name in sorted(names, key=_stamp, reverse=True):
+        if collected >= limit:
+            break
+        try:
+            with open(os.path.join(DATA_DIR, name), encoding="utf-8") as f:
+                doc = json.load(f)
+        except (OSError, ValueError):
+            continue
+        rows = doc.get("results") if isinstance(doc, dict) else None
+        if not isinstance(rows, list):
+            continue
+        rows = [r for r in rows if isinstance(r, dict)
+                and "quality" in r and "cost_tokens" in r]
+        if not rows:
+            continue
+        chunk = rows[-(limit - collected):]
+        chunks.append(chunk)
+        collected += len(chunk)
+
+    history = [r for chunk in reversed(chunks) for r in chunk]
+    return history, pareto_frontier(history)
+
+
 # --------------------------------------------------------- meta run loop ---
 
 def meta_run(candidates=None, eval_task_id=None):
@@ -354,3 +401,11 @@ def propose_best():
         best = max(_frontier, key=lambda r: (r["quality"], -r["cost_tokens"]))
         return {"best": best, "frontier_size": len(_frontier),
                 "recommendation": "Try candidate config from the Pareto frontier"}
+
+
+# RSI-H-3: rebuild the cache once, at import. The reports on disk are the source
+# of truth; a broken one must never block the import (or the whole API).
+try:
+    _history, _frontier = _load_history()
+except Exception:  # noqa: BLE001 — a broken cache must never block the import
+    _history, _frontier = [], []
