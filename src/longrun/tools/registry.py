@@ -333,14 +333,26 @@ _LEGACY_SCHEMAS = {
     },
     "skills": {
         "description": ("Agent skills registry: list available skills (from the "
-                        "skills/ tree, search by keyword, or read a full SKILL.md "
-                        "to follow its instructions/entrypoint."),
+                        "skills/ tree, search by keyword, read a full SKILL.md "
+                        "to follow its instructions/entrypoint, audit the library, "
+                        "or retire the machine-created skills that were never "
+                        "opened — moved to skills/_retired/, never deleted, dry "
+                        "run unless confirm=true."),
         "type": "object",
         "properties": {
-            "action": {"type": "string", "enum": ["list", "search", "read"], "default": "list"},
+            "action": {"type": "string",
+                       "enum": ["list", "search", "read", "audit", "retire"],
+                       "default": "list"},
             "name": {"type": "string", "description": "skill name (for action=read)"},
             "query": {"type": "string", "description": "keywords to find matching skills (action=search)"},
             "limit": {"type": "integer", "default": 10, "description": "max skills to return (action=search)"},
+            "confirm": {"type": "boolean", "default": False,
+                        "description": ("action=retire: actually move the never-opened "
+                                        "skills to skills/_retired/ (default: dry run, "
+                                        "lists only)")},
+            "days": {"type": "integer",
+                     "description": ("action=retire: age threshold in days (default: "
+                                     "selfevolve.retire_days, 14)")},
         },
     },
     "index": {

@@ -417,6 +417,69 @@ def retire_unused(days=14, path=None, repo_root=None, dry_run=False,
     return {"ok": True, "eligible": len(victims), "removed": removed}
 
 
+def retire_unused_skills(days=None, skills_dir=None, category=None, dry_run=True,
+                         now=None, discovery=None, retire=None):
+    """Retire the machine-created skills that were NEVER OPENED after `days`.
+
+    `skills.discovery()["never_opened"]` is the read-only fact (the shared
+    attribution ledger says which skills were opened); this is the ACTION the
+    learning loop was missing. Nothing is deleted: a candidate goes through
+    `_retire_skill`, i.e. the folder is moved under
+    `skills/_retired/<category>/<name>-<stamp>/` and one append-only line in
+    `skills/_retired/ledger.jsonl` records who moved it, when, why and at which
+    content digest — a manual restore is always possible. "Never opened" is the
+    ONLY criterion: a skill that was ever opened, that lives in another
+    category, or that is younger than the bar is never touched.
+
+    `dry_run=True` (the default) reports the candidates and moves nothing.
+    `discovery` / `retire` / `now` are injectable so a test needs no ledger.
+    """
+    from longrun.memory import skills as skills_mod
+    c = cfg()
+    category = str(category or c.get("category") or "created")
+    try:
+        days = int(c.get("retire_days") if days is None else days)
+    except (TypeError, ValueError):
+        days = int(STAGE2_DEFAULTS["retire_days"])
+    days = max(0, days)
+    cutoff = float(now if now is not None else time.time()) - days * 86400
+    root = skills_dir or skills_mod.SKILLS_DIR
+    discovery_fn = discovery or skills_mod.discovery
+    retire_fn = retire or _retire_skill
+    try:
+        never = set((discovery_fn() or {}).get("never_opened") or [])
+    except Exception as e:  # noqa: BLE001 — a broken ledger must not crash the loop
+        return {"ok": False, "error": str(e)}
+    candidates = []
+    for s in skills_mod.list_skills(reload=True):
+        name = str(s.get("name") or "")
+        if not name or name not in never or s.get("category") != category:
+            continue
+        try:
+            mtime = os.stat(s["abspath"]).st_mtime
+        except (OSError, KeyError, TypeError):
+            continue
+        if mtime <= cutoff:
+            candidates.append(s)
+    removed = []
+    if not dry_run:
+        for s in candidates:
+            try:
+                res = retire_fn(os.path.dirname(s["abspath"]), root, category,
+                                s["name"], by="selfevolve.retire_unused_skills",
+                                reason="never opened in %d days" % days) or {}
+            except Exception as e:  # noqa: BLE001 — one stuck skill must not stop the rest
+                res = {"ok": False, "error": str(e)}
+            row = {"name": s["name"], "ok": bool(res.get("ok"))}
+            row["retired_to" if res.get("ok") else "error"] = (
+                res.get("retired_to") if res.get("ok")
+                else (res.get("error") or "unknown error"))
+            removed.append(row)
+    return {"ok": True, "eligible": len(candidates), "days": days,
+            "category": category, "dry_run": bool(dry_run),
+            "candidates": [s["name"] for s in candidates], "removed": removed}
+
+
 def _error_class(text):
     """Normalize an error line into a stable CLASS (paths and numbers abstract).
 
@@ -487,6 +550,9 @@ STAGE2_DEFAULTS = {
     # clearly-labelled box, so the built-in library (skills/core) and the user's
     # own categories stay untouched and auditable.
     "category": "created",  # skills/<category>/<name> during promotion
+    # RSI-G-3: retire a machine-created skill never opened for this many days —
+    # the same bar as a forged tool nobody called (`retire_unused`).
+    "retire_days": 14,
     "verify_timeout": 60,   # timeout of the check in the sandbox
     # F5 (Maka thresholded release): the promotion bar. A proposal is released
     # only after this many CONSECUTIVE green verifies (patience — no release

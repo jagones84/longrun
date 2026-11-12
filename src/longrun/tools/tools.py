@@ -1388,7 +1388,7 @@ def _web(args, run_id):
 
 
 def _skills(args, run_id):
-    """Skills registry: list, SEARCH, or read one SKILL.md."""
+    """Skills registry: list, SEARCH, read, audit or retire a SKILL.md."""
     from longrun.memory import skills as skills_mod
     action = str(args.get("action", "list"))
     if action == "read":
@@ -1443,6 +1443,39 @@ def _skills(args, run_id):
             lines.append("  no description: %s" % ", ".join(rep["missing_description"][:8]))
         return {"ok": True, "exit_code": 0, "stdout": "\n".join(lines), "stderr": "",
                 "count": rep["count"], "report": rep, "backend": "host", "sandboxed": False}
+    if action == "retire":
+        # RSI-G-3: the learning loop installed skills but never retired one.
+        # A machine-created skill that was NEVER OPENED and is older than the
+        # bar is moved aside (skills/_retired/ + ledger), never deleted; the
+        # default is a dry run, so a model cannot remove a skill by accident.
+        from longrun.util import selfevolve
+        days = args.get("days")
+        if days is not None:
+            try:
+                days = int(days)
+            except (TypeError, ValueError):
+                return {"ok": False, "error": "days must be an integer",
+                        "exit_code": 1, "stdout": "", "stderr": "",
+                        "backend": "host", "sandboxed": False}
+        rep = selfevolve.retire_unused_skills(
+            days=days, dry_run=not bool(args.get("confirm")))
+        if not rep.get("ok"):
+            return {"ok": False, "error": rep.get("error") or "retire failed",
+                    "exit_code": 1, "stdout": "", "stderr": "",
+                    "backend": "host", "sandboxed": False}
+        names = rep.get("candidates") or []
+        head = ("%d %s skill(s) never opened for %d+ days%s"
+                % (len(names), rep.get("category"), rep.get("days"),
+                   " (dry run — pass confirm=true to retire them)"
+                   if rep.get("dry_run") else ""))
+        lines = [head] + ["  %s" % n for n in names] if names else [head + ": none"]
+        for r in rep.get("removed") or []:
+            lines.append("  retired %s -> %s" % (r["name"], r.get("retired_to"))
+                         if r.get("ok") else
+                         "  FAILED %s :: %s" % (r["name"], r.get("error")))
+        return {"ok": True, "exit_code": 0, "stdout": "\n".join(lines), "stderr": "",
+                "dry_run": bool(rep.get("dry_run")), "candidates": names,
+                "removed": rep.get("removed") or [], "backend": "host", "sandboxed": False}
     skills = skills_mod.list_skills()
     lines = []
     cats = {}
