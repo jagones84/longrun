@@ -11,6 +11,7 @@ sandbox verification cycle, next step).
 PURE module: no dependency on the server, unit-testable.
 """
 import json
+import math
 import os
 import re
 import time
@@ -492,6 +493,12 @@ STAGE2_DEFAULTS = {
     # on a single lucky green). 1 preserves the historical single-green
     # behavior; raise it to harden a flaky check.py.
     "min_green_streak": 1,
+    # RSI-V (TRUST, 2611.10787): the bar a repeated verify must clear. When a
+    # case ran `repeats` times, its pass count must beat a fair coin at this
+    # one-sided alpha before the artifact may be promoted — the accepted-set
+    # error is bounded by cases x alpha. Cases verified ONCE carry no bound and
+    # are named as such; the bound is never invented.
+    "promotion_alpha": 0.05,
     # EV-13: evolve's CODE arm. A green pattern already becomes a skill (the
     # declarative procedure); with this on it is ALSO forged into a Matrix tool
     # (`learned_<slug>.run`) that replays the sequence, proven by its own
@@ -748,6 +755,62 @@ def evaluate_cases(proposal_dir, cases, runner=None, c=None, repeats=1):
             passes += 1 if green else 0
         out[cid] = {"passes": passes, "runs": repeats}
     return out
+
+
+def _binomial_tail(passes, runs):
+    """P(X >= passes | runs fair coin) — one-sided exact test, stdlib only.
+
+    Under H0 the case passes half the time; a small tail means the observed
+    passes are evidence of a real pass, not a lucky run. No SciPy: the counts
+    are small (a handful of repeats per case).
+    """
+    try:
+        passes, runs = int(passes), int(runs)
+    except (TypeError, ValueError):
+        return 1.0
+    if runs <= 0:
+        return 1.0
+    passes = max(0, min(passes, runs))
+    return sum(math.comb(runs, k) for k in range(passes, runs + 1)) / float(2 ** runs)
+
+
+def _promotion_bound(cases, counts, c):
+    """How likely is a flaky pass to be released? (RSI-V, TRUST 2611.10787)
+
+    The gate in `promote` is a set of deterministic booleans, so a case that
+    passes 2 of 3 runs promotes exactly like one that passes 3 of 3. Where
+    `verify` ran repeats, each case now carries an exact one-sided binomial
+    p-value against "passes half the time" and must clear `promotion_alpha`; the
+    family-wise bound on accepting a case that is truly not better is
+    `cases x alpha` (Bonferroni). A case verified ONCE has no bound to compute —
+    it is listed under `single_run` and the verdict says so instead of faking a
+    number.
+    """
+    alpha = 0.05
+    try:
+        alpha = float((c or {}).get("promotion_alpha") or 0.05)
+    except (TypeError, ValueError):
+        alpha = 0.05
+    rows, failed, single = {}, [], []
+    for name in sorted(cases or {}):
+        got = (counts or {}).get(name) or {}
+        try:
+            runs, passes = int(got.get("runs") or 0), int(got.get("passes") or 0)
+        except (TypeError, ValueError):
+            runs, passes = 0, 0
+        if runs < 2:
+            single.append(name)
+            continue
+        p = _binomial_tail(passes, runs)
+        ok = bool(cases.get(name)) and p <= alpha
+        rows[name] = {"passes": passes, "runs": runs, "p": round(p, 6), "ok": ok}
+        if not ok:
+            failed.append(name)
+    verdict = "refused" if failed else ("bounded" if rows else "single-run")
+    return {"verdict": verdict, "alpha": alpha,
+            "family_alpha": round(len(rows) * alpha, 4),
+            "cases": rows, "failed": failed, "single_run": single,
+            "basis": "exact binomial, one-sided, H0 p<=0.5"}
 
 
 def _skill_cost(proposal_dir):
@@ -1059,6 +1122,19 @@ def promote(proposal_dir, skills_dir=None, c=None, human=False, purpose="",
                          "while LONGRUN_EVOLVE_CASES=1" % len(_cases)}
     else:
         evidence = "single-case" if len(_cases) < 2 else "cases-no-baseline"
+    # EVIDENCE GATE (RSI-V, TRUST 2611.10787): the case table above is a set of
+    # booleans, so a case that passes 2 of 3 repeats promotes exactly like 3 of 3.
+    # Where `verify` ran repeats, each case must beat a fair coin at
+    # `promotion_alpha`; a case verified once is named `single_run` and carries no
+    # bound rather than a fabricated one. The greedy gate the paper measured
+    # accepted an inferior update in 45.59% of rounds — this is the quantity that
+    # number is about.
+    _bound = _promotion_bound(_cases, _verify.get("case_runs") or {}, c)
+    if _bound["verdict"] == "refused":
+        return {"ok": False, "bound": _bound,
+                "error": "evidence gate: %s did not clear alpha=%.3f over its "
+                         "repeats — verify again with more repeats before promoting"
+                         % (", ".join(_bound["failed"]), _bound["alpha"])}
     name = prop.get("name") or os.path.basename(proposal_dir)
     # The skills root is a PATH, not a constant: a test (or a different install)
     # points it elsewhere with LONGRUN_SKILLS_DIR instead of writing into the
@@ -1196,6 +1272,7 @@ def promote(proposal_dir, skills_dir=None, c=None, human=False, purpose="",
         shutil.rmtree(_stage, ignore_errors=True)
     prop["status"] = "archived"
     prop["evidence"] = evidence
+    prop["promotion_bound"] = _bound
     prop["cost_tokens"] = _cost
     # DR-M: which bar judged the cost, and which bars an operator release skipped.
     prop["cost_basis"] = _cost_basis
