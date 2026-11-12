@@ -12,7 +12,9 @@ Contract:
   B) an empty (or non-report) directory → `total_evaluated: 0`, `frontier: None`,
      no exception at import;
   C) a corrupt report is SKIPPED, the valid one next to it is loaded;
-  D) the reload keeps the same 500-row cut as `meta_run`, the newest rows.
+  D) the reload keeps the same 500-row cut as `meta_run`, the newest rows;
+  E) the FRONTIER is the one the newest report stamped — the state the live
+     process held — never a recomputation over older runs.
 
 Deterministic: temp dirs, no server, no model, no network. Each case runs in its
 own interpreter because the load happens once, at `longrun.util.meta` import —
@@ -64,6 +66,14 @@ def _fixtures(case, meta_dir):
             rows = [_result("f%d-%d" % (stamp // 1000, i), 0.1 + i / 10000.0, i)
                     for i in range(300)]
             _write(os.path.join(meta_dir, "meta-report-%d.json" % stamp), {"results": rows})
+    elif case == "e":
+        # The older round found a candidate that dominates everything, but the
+        # LIVE process had already replaced its frontier with the newer round's.
+        _write(os.path.join(meta_dir, "meta-report-1000.json"),
+               {"results": [_result("C", 0.95, 900)]})
+        _write(os.path.join(meta_dir, "meta-report-2000.json"),
+               {"results": [_result("A", 0.9, 1000), _result("B", 0.4, 5000)],
+                "frontier": [_result("A", 0.9, 1000)]})
 
 
 def child(case, root):
@@ -115,6 +125,13 @@ def child(case, root):
               M._history[-1]["label"])
         check("D3 the oldest rows are the ones dropped",
               all(r["label"] != "f1-0" for r in M._history))
+    elif case == "e":
+        check("E1 both reports are still in the history", st["total_evaluated"] == 3,
+              st["total_evaluated"])
+        check("E2 the frontier is the one the newest report stamped", labels == ["A"],
+              labels)
+        check("E3 an older, dominating candidate does not rewrite the live frontier",
+              "C" not in labels, labels)
 
     print("---")
     ok = sum(results)
@@ -128,7 +145,7 @@ def parent():
     tmp = tempfile.mkdtemp(prefix="v967_")
     failed = []
     try:
-        for case in ("a", "b", "c", "d"):
+        for case in ("a", "b", "c", "d", "e"):
             root = os.path.join(tmp, case)
             os.makedirs(root, exist_ok=True)
             env = dict(os.environ)
@@ -143,7 +160,7 @@ def parent():
                 failed.append(case)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
-    print("\nv967: %s" % ("4/4 cases PASS" if not failed else "FAILED cases: %s" % failed))
+    print("\nv967: %s" % ("5/5 cases PASS" if not failed else "FAILED cases: %s" % failed))
     return 0 if not failed else 1
 
 

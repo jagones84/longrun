@@ -274,6 +274,13 @@ def _load_history(limit=500):
     newest-first until `limit` results are collected, then re-ordered
     chronologically; the cut is the same 500 rows `meta_run` keeps. A file that
     is missing, unreadable, not JSON or without a `results` list is skipped.
+
+    The FRONTIER is restored from the newest valid report that CARRIES one
+    (`meta_run` stamps it), because that is literally what the process held
+    before the restart; only a report without a usable frontier falls back to
+    `pareto_frontier` over the reloaded history. Recomputing over the whole
+    history instead would change what `status()` and `propose_best()` answer
+    the moment the service restarts — a second meaning for one field.
     """
     try:
         names = [n for n in os.listdir(DATA_DIR)
@@ -289,6 +296,8 @@ def _load_history(limit=500):
 
     chunks = []
     collected = 0
+    restored = None
+    seen = False
     for name in sorted(names, key=_stamp, reverse=True):
         if collected >= limit:
             break
@@ -297,7 +306,18 @@ def _load_history(limit=500):
                 doc = json.load(f)
         except (OSError, ValueError):
             continue
-        rows = doc.get("results") if isinstance(doc, dict) else None
+        if not isinstance(doc, dict):
+            continue
+        if not seen:
+            # Only the NEWEST valid report describes the live state; an older
+            # frontier would resurrect a set the process had already replaced.
+            seen = True
+            front = doc.get("frontier")
+            if isinstance(front, list):
+                front = [r for r in front if isinstance(r, dict)
+                         and "quality" in r and "cost_tokens" in r]
+                restored = front or None
+        rows = doc.get("results")
         if not isinstance(rows, list):
             continue
         rows = [r for r in rows if isinstance(r, dict)
@@ -309,7 +329,7 @@ def _load_history(limit=500):
         collected += len(chunk)
 
     history = [r for chunk in reversed(chunks) for r in chunk]
-    return history, pareto_frontier(history)
+    return history, (restored if restored is not None else pareto_frontier(history))
 
 
 # --------------------------------------------------------- meta run loop ---
