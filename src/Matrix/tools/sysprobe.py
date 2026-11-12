@@ -34,10 +34,10 @@ TOOL_SCHEMA = {
 
 TOOL_SCHEMAS = {
     "sysprobe.snapshot": dict(TOOL_SCHEMA),
-    "sysprobe.cpu": {"description": "[MATRIX experimental] Host CPU load & cores via /proc.", "type": "object", "properties": {}, "required": [], "approval": "auto"},
-    "sysprobe.mem": {"description": "[MATRIX experimental] Host RAM & swap usage via /proc/meminfo.", "type": "object", "properties": {}, "required": [], "approval": "auto"},
+    "sysprobe.cpu": {"description": "[MATRIX experimental] Host CPU load & cores via /proc.", "type": "object", "properties": {"sample_secs": {"type": "number", "default": 0, "description": "If > 0 (max 5), wait this many seconds and also report the loadavg read afterwards."}}, "required": [], "approval": "auto"},
+    "sysprobe.mem": {"description": "[MATRIX experimental] Host RAM & swap usage via /proc/meminfo (figures in GB).", "type": "object", "properties": {}, "required": [], "approval": "auto"},
     "sysprobe.disk": {"description": "[MATRIX experimental] Filesystem capacity & free space.", "type": "object", "properties": {"path": {"type": "string", "description": "Filesystem path to measure (default: cwd)."}}, "required": [], "approval": "auto"},
-    "sysprobe.runtime": {"description": "[MATRIX experimental] Python/OS runtime snapshot.", "type": "object", "properties": {}, "required": [], "approval": "auto"},
+    "sysprobe.runtime": {"description": "[MATRIX experimental] Python/OS runtime snapshot.", "type": "object", "properties": {"detail": {"type": "boolean", "default": False, "description": "When true, add sys.version and platform details."}}, "required": [], "approval": "auto"},
 }
 
 _SECTIONS = ("all", "cpu", "mem", "disk", "runtime")
@@ -132,12 +132,21 @@ def execute(args, run_id=None, subtool=None):
     try:
         if section in ("all", "cpu"):
             out["cpu"] = _cpu()
+            if section == "cpu" and args.get("sample_secs"):
+                import time as _t
+                _secs = max(0.1, min(float(args["sample_secs"]), 5.0))
+                _t.sleep(_secs)
+                out["cpu"]["loadavg_after_wait"] = _cpu()["loadavg_1_5_15"]
+                out["cpu"]["sample_secs"] = _secs
         if section in ("all", "mem"):
             out["mem"] = _mem()
         if section in ("all", "disk"):
             out["disk"] = _disk(args.get("path"))
         if section in ("all", "runtime"):
             out["runtime"] = _runtime()
+            if section == "runtime" and args.get("detail"):
+                out["runtime"]["sys_version"] = sys.version
+                out["runtime"]["platform"] = platform.platform()
     except Exception as e:
         return {"ok": False, "error": "%s: %s" % (type(e).__name__, e), "section": section}
     return out

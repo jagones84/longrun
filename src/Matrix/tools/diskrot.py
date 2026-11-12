@@ -31,7 +31,11 @@ TOOL_SCHEMAS = {
     "diskrot.scan": dict(TOOL_SCHEMA),
     "diskrot.summary": {
         **TOOL_SCHEMA,
-        "description": "[MATRIX experimental] Read-only disk rot summary by category (never deletes).",
+        "description": "[MATRIX experimental] Read-only disk rot summary: aggregate bytes per category, entries below min_bytes are hidden (scan lists them all).",
+        "properties": {
+            **TOOL_SCHEMA["properties"],
+            "min_bytes": {"type": "integer", "default": 0, "description": "Hide categories smaller than this many bytes (summary only)."},
+        },
     },
 }
 
@@ -144,6 +148,13 @@ def execute(args, run_id=None):
         c["entries"] += 1
         total += f["bytes"]
     cats = sorted(by_cat.items(), key=lambda kv: kv[1]["bytes"], reverse=True)
+    _sub = str(args.get("action") or "")
+    if _sub == "summary":
+        try:
+            min_bytes = max(0, int(args.get("min_bytes") or 0))
+        except (TypeError, ValueError) as e:
+            return {"ok": False, "error": "bad min_bytes: %s" % e}
+        cats = [(k, v) for k, v in cats if v["bytes"] >= min_bytes]
     biggest = sorted(found, key=lambda f: f["bytes"], reverse=True)[:top]
     return {
         "ok": True,
