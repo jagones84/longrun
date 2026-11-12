@@ -3576,9 +3576,18 @@ def _shape_notes(tool: str, args: Any) -> list[tuple[str, str]]:
     props = _schema_props(tool)
     if not isinstance(args, dict) or not props:
         return []
+    # A canonical `<namespace>.<subtool>` call has the action INJECTED by the
+    # dispatcher (`args.setdefault("action", injected_action)`), and the derived
+    # per-subtool schema does not redeclare it — so it is not a key the model
+    # sent and not one that was ignored. Warning about it told every action tool
+    # call a lie on success ("unknown argument 'action' … ignored"); the warning
+    # stays for keys the model really made up.
+    subtool = "." in str(tool or "")
     notes = []
     for key, value in args.items():
         if str(key).startswith("_") or str(key) in HARNESS_ARG_KEYS:
+            continue
+        if subtool and str(key) == "action":
             continue
         spec = props.get(key)
         if spec is None:
