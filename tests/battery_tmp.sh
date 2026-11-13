@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # battery_tmp.sh — the fix in flight. Overwritten every round; tests/battery.sh is the gate.
-# 2026-11-13 AA: a harness version is published only if it still matches the reviewed one
-# (selfevolve verify stamps a digest; promote refuses a mismatch). v971 is the new pin; the
-# other names all exercise the verify->promote path that must stay green; v354 pins the
-# README badge bumped by the new test.
+# 2026-11-14 v972: the machine-written memory kinds bound themselves (a near-duplicate
+# supersedes the stored copy; the excess above `memory_max_records` is superseded, lowest
+# value first). The other names are the dependency oracle for that edit: the tombstone /
+# supersession / dedupe / recall paths the write path now calls, the health report it
+# extended, the config owner the budget comes from, and v354 which pins the README badge.
 set -u
 cd /home/jagones/Repositories/longrun || exit 1
-LONGRUN_BATTERY_TESTS="v971_verify_promote_consistency v965_promotion_bound v789_evolve_gate_measures v788_evolve_case_gate v717_archived_skill_text v598_thresholded_release v416_autoskill_created v280_bestofn_selfevolve v354_ui_links_pins" \
+LONGRUN_BATTERY_TESTS="v972_memory_hygiene v204_memory_governance v628_memory_supersession v853_prompt_memory_dedupe_budget v819_memory_kinds v876_memory_weak_matches v830_health v827_context_limits_config v354_ui_links_pins" \
   bash tests/battery.sh

@@ -156,6 +156,13 @@ def store(kind, content, **meta):
         _writes_since_index += 1
         if _writes_since_index >= _REBUILD_INTERVAL:
             _rebuild_index()
+    # v972 (admission has a retirement): a kind the HARNESS writes bounds itself.
+    # A near-duplicate supersedes the copy already stored, and the excess above
+    # `memory_max_records` is superseded, lowest value first. Append-only: the
+    # history stays on disk, only recall changes. Outside the lock, because the
+    # pass re-reads the file and writes its own tombstones.
+    if kind in AUTO_KINDS:
+        _bound_auto(kind, rec)
     return rec
 
 
@@ -584,7 +591,20 @@ def _norm(content):
     return re.sub(r"\W+", " ", str(content).lower()).strip()
 
 
-def dedupe(records, threshold=0.85, limit=None):
+#: v972: the near-duplicate bar, ONE value for every consumer (the write-time
+#: supersede and `dedupe`'s default). It was already the recall default; naming it
+#: keeps a second copy of the number out of the store's write path.
+SIMILARITY_THRESHOLD = 0.85
+
+
+def _overlap(a_tokens, b_tokens):
+    """Containment overlap of two token sets (0.0 when either is empty)."""
+    if not a_tokens or not b_tokens:
+        return 0.0
+    return len(a_tokens & b_tokens) / max(1, min(len(a_tokens), len(b_tokens)))
+
+
+def dedupe(records, threshold=SIMILARITY_THRESHOLD, limit=None):
     """Drop near-duplicate records by token-overlap (Jaccard-like).
 
     `limit` bounds the walk: the scan stops as soon as `limit` survivors are
@@ -613,8 +633,7 @@ def dedupe(records, threshold=0.85, limit=None):
         for st in seen_tokens:
             if not st:
                 continue
-            inter = len(rt & st)
-            if inter / max(1, min(len(rt), len(st))) >= threshold:
+            if _overlap(rt, st) >= threshold:
                 dup = True
                 break
         if not dup:
@@ -855,6 +874,7 @@ def health():
     return {"total": len(recs), "stores": len(stores), "expired": expired,
             "invalidated": invalidated, "superseded": superseded,
             "no_source": no_source,
+            "bounded": bounded_usage(),
             "invalid_targets": sorted(bad)[:20]}
 
 
@@ -862,6 +882,125 @@ def health():
 # as opposed to `memory.store` which is deliberate provenance-tagged knowledge.
 AUTO_KINDS = frozenset(("agent.note", "tool.result", "plan.update",
                         "task.done", "chat.summary"))
+
+
+# ---------------------------------------------------- v972: bounded admission --
+# Measured 2026-11-14: `agent_notes.md` held 684 records / 213 KB and NOTHING in
+# the tree ever retired one — the loop admitted and never retired, and the recall
+# cost of that file is what once froze the WebUI (`dedupe`'s own docstring). Every
+# primitive already existed (`supersede`, `effective_score`, the 0.85 overlap test,
+# `AUTO_KINDS`) with no caller and no budget; this block is that caller and that
+# budget, and nothing else. The rule it enforces is the project's own: supersede,
+# never duplicate — and never delete.
+
+def hygiene_budget(kind):
+    """The record budget for `kind`, or None when the kind is not bounded.
+
+    Only `AUTO_KINDS` are bounded: the HARNESS wrote them, so the harness may
+    retire the excess. `memory.store`, `user.preference` and `question.open` are
+    the operator's own and are never auto-retired. The number comes from the
+    config owner (`limits:` -> `memory_max_records`), never from a literal here.
+    """
+    if kind not in AUTO_KINDS:
+        return None
+    try:
+        return int(ctx_limits.limit("memory_max_records"))
+    except Exception:  # noqa: BLE001 — an unreadable budget means "not bounded"
+        return None
+
+
+def superseded_count(kind):
+    """How many records of `kind` are currently tombstoned (hidden from recall)."""
+    try:
+        bad = invalid_targets()
+        return sum(1 for r in _parse_md_file(_path(kind))
+                   if str(r.get("mid") or "") in bad)
+    except OSError:
+        return 0
+
+
+def bounded_usage():
+    """`{kind: {records, budget, excess}}` for every bounded kind (the health report)."""
+    out = {}
+    for kind in sorted(AUTO_KINDS):
+        b = hygiene_budget(kind)
+        if b is None:
+            continue
+        try:
+            bad = invalid_targets()
+            recs = [r for r in _parse_md_file(_path(kind))
+                    if is_valid(r, invalid=bad)]
+        except OSError:
+            recs = []
+        out[kind] = {"records": len(recs), "budget": int(b),
+                     "excess": max(0, len(recs) - int(b))}
+    return out
+
+
+def hygiene(kind, budget=None, dry_run=True, now=None):
+    """Retire the lowest-value excess of ONE machine-written kind (v972).
+
+    Superseded, never deleted: the excess becomes tombstoned records in
+    `memory_invalidations.md` with reason `hygiene: over budget N`, so the history
+    is kept and only recall changes. The order is `effective_score` (the existing
+    score x time-decay), oldest first as the tie-break — so a high-scoring old
+    lesson outlives a low-scoring new one. A kind with no budget is not touched
+    and says so; nothing here raises into its caller.
+    """
+    b = budget if budget is not None else hygiene_budget(kind)
+    if b is None:
+        return {"ok": False, "kind": kind, "dry_run": bool(dry_run),
+                "error": "no budget declared for this kind"}
+    try:
+        bad = invalid_targets()
+        p = _path(kind)
+        # A kind never written yet is NORMAL (a fresh install), not an error.
+        recs = ([r for r in _parse_md_file(p) if is_valid(r, invalid=bad)]
+                if os.path.isfile(p) else [])
+        excess = max(0, len(recs) - int(b))
+        row = {"ok": True, "kind": kind, "budget": int(b), "records": len(recs),
+               "excess": excess, "retired": [], "dry_run": bool(dry_run)}
+        if excess and not dry_run:
+            # ONE clock for the whole comparison: `effective_score` defaults to
+            # `time.time()` per call, and a per-element clock made the order (and
+            # so WHICH record is retired) depend on microsecond noise.
+            clock = now if now is not None else time.time()
+            worst = sorted(recs, key=lambda r: (effective_score(r, now=clock),
+                                                float(r.get("ts") or 0)))[:excess]
+            for r in worst:
+                mid = str(r.get("mid") or "")
+                if mid:
+                    supersede(mid, reason="hygiene: over budget %d" % int(b))
+                    row["retired"].append(mid)
+        return row
+    except Exception as exc:  # noqa: BLE001 — housekeeping must never break a write
+        return {"ok": False, "kind": kind, "dry_run": bool(dry_run),
+                "error": str(exc)}
+
+
+def _bound_auto(kind, rec):
+    """Post-append housekeeping for one AUTO kind: dedupe the write, hold the budget.
+
+    Returns the hygiene row (empty dict when it failed). Never raises into
+    `store()`: a housekeeping failure must not lose the record that was written.
+    """
+    try:
+        bad = invalid_targets()
+        new = set(filter(None, _norm(rec.get("content", "")).split()))
+        if new:
+            for other in _parse_md_file(_path(kind)):
+                if str(other.get("mid") or "") == str(rec.get("mid") or ""):
+                    continue
+                if not is_valid(other, invalid=bad):
+                    continue
+                old = set(filter(None, _norm(other.get("content", "")).split()))
+                if _overlap(new, old) >= SIMILARITY_THRESHOLD:
+                    # The rule, not an optimisation: one fact, one live record.
+                    supersede(other.get("mid"), by=rec.get("mid"),
+                              reason="dedupe: superseded by %s" % rec.get("mid"))
+        return hygiene(kind, dry_run=False)
+    except Exception:  # noqa: BLE001 — see the docstring
+        return {}
 
 
 def provenance(limit=3000):

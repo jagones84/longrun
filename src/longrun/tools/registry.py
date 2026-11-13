@@ -575,6 +575,9 @@ _LEGACY_SCHEMAS = {
                         "case-insensitive LITERAL substring; nothing else is "
                         "touched); "
                         "action=purge drops invalidated/expired records; "
+                        "action=hygiene enforces the per-kind record budget on the "
+                        "kinds the harness writes itself (the excess is superseded, "
+                        "lowest value first — a dry run unless confirm=true); "
                         "action=health reports counts. action=core reads / set_core "
                         "rewrites / clear_core clears the always-visible CORE block. Relevant memories are "
                         "also auto-injected each turn, so store what's worth keeping."),
@@ -583,7 +586,7 @@ _LEGACY_SCHEMAS = {
             "action": {"type": "string",
                        "enum": ["store", "recall", "recent", "core", "set_core",
                                 "clear_core", "invalidate", "supersede", "restore",
-                                "forget", "purge", "health"],
+                                "forget", "purge", "health", "hygiene"],
                        "default": "recall",
                        "description": "what to do (default: recall = search)"},
             "content": {"type": "string", "description": "text to save (action=store)"},
@@ -598,6 +601,8 @@ _LEGACY_SCHEMAS = {
                               "description": "id of the REPLACING record (action=supersede)"},
             "reason": {"type": "string", "description": "why it's retired (action=invalidate)"},
             "include_invalid": {"type": "boolean", "description": "also return expired/invalidated (action=recall)"},
+            "confirm": {"type": "boolean", "default": False,
+                        "description": "action=hygiene: actually retire the excess (default false = dry run)"},
             "semantic": {"type": "boolean", "default": False,
                          "description": "use semantic embedding search (action=recall; default false uses keyword search)"},
         },

@@ -148,6 +148,7 @@ LIMITS_DEFAULTS = {
     "thread_line_max": 240,
     "thread_groups_max": 2000,
     "memory_core_max": 4000,
+    "memory_max_records": 300,
     # --- editing (`tools/tools.py`) ---
     "fs_edit_max_edits": 50,
     "fs_edit_stale_guard": True,
@@ -190,6 +191,7 @@ LIMITS_ENV = {
     "thread_digest_max": "LONGRUN_THREAD_DIGEST",
     "thread_groups_max": "LONGRUN_THREAD_GROUPS",
     "memory_core_max": "LONGRUN_CORE_MAX",
+    "memory_max_records": "LONGRUN_MEMORY_MAX_RECORDS",
     "skill_max_zip_bytes": "LONGRUN_SKILL_MAX_ZIP",
     "skill_max_unzip_bytes": "LONGRUN_SKILL_MAX_UNZIP",
     "skill_max_files": "LONGRUN_SKILL_MAX_FILES",

@@ -1884,6 +1884,29 @@ def _memory(args, run_id):
         mem.restore(target, reason=reason)
         return {"ok": True, "count": 1, "stdout": "restored %s" % target,
                 "backend": "host", "sandboxed": False}
+    if action in ("hygiene", "bound"):
+        # v972: admission has a retirement. The kinds the HARNESS writes bound
+        # themselves on every store (`memory_max_records`); this action is the
+        # operator's handle on the same pass — to see it, or to clean a store that
+        # grew before the bound existed. Dry run unless confirm=true.
+        dry = not bool(args.get("confirm"))
+        want = str(args.get("kind") or "").strip()
+        kinds = [want] if want else sorted(mem.AUTO_KINDS)
+        rows = [mem.hygiene(k, dry_run=dry) for k in kinds]
+        retired = sum(len(r.get("retired") or []) for r in rows)
+        lines = []
+        for r in rows:
+            if r.get("ok"):
+                lines.append("%s: %d live, budget %s, %d over"
+                             % (r["kind"], r["records"], r["budget"],
+                                r.get("excess") or 0))
+            else:
+                lines.append("%s: %s" % (r.get("kind"), r.get("error")))
+        head = ("hygiene (dry run — pass confirm=true to retire)"
+                if dry else "hygiene")
+        return {"ok": True, "count": retired, "dry_run": dry, "runs": rows,
+                "stdout": head + "\n" + "\n".join(lines),
+                "backend": "host", "sandboxed": False}
     if action in ("health", "audit"):
         h = mem.health()
         return {"ok": True, "count": h["total"], "report": h,

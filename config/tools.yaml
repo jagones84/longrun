@@ -194,6 +194,10 @@ limits:
   thread_line_max: 240            # chars of one line inside a digest
   thread_groups_max: 2000         # thread groups kept
   memory_core_max: 4000           # chars of the CORE memory block
+  memory_max_records: 300         # live records kept per HARNESS-written memory
+                                  # kind (agent.note, tool.result, ...); the
+                                  # excess is superseded (hidden, never deleted).
+                                  # A user-authored memory is never auto-retired.
   # --- editing ----------------------------------------------------------------
   fs_edit_max_edits: 50           # rows one fs.edit batch may carry
   fs_edit_stale_guard: true       # refuse an edit on a file changed since fs.read
