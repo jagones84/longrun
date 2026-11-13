@@ -53,12 +53,15 @@ def note(text, score=1.0, kind=DERIVED):
 
 
 def live(kind=DERIVED):
-    return [r for r in memory._parse_md_file(memory._path(kind))
-            if memory.is_valid(r)]
+    p = memory._path(kind)
+    if not os.path.exists(p):
+        return []
+    return [r for r in memory._parse_md_file(p) if memory.is_valid(r)]
 
 
 def raw_count(kind=DERIVED):
-    return len(memory._parse_md_file(memory._path(kind)))
+    p = memory._path(kind)
+    return len(memory._parse_md_file(p)) if os.path.exists(p) else 0
 
 
 def reset(kind=DERIVED):
@@ -150,6 +153,33 @@ if os.path.exists(fresh):
 rep = memory.hygiene("plan.update", dry_run=True)
 ok("J1 an absent store reports zero records, not an error",
    rep.get("ok") is True and rep.get("records") == 0 and not rep.get("error"), rep)
+
+# --- K) an UNDECLARED kind cannot pile up duplicates (v973) -------------------
+# The real `other.md` held 180 identical `kind: test` records — one per battery
+# run — because the fallback store had no dedupe and no bound at all.
+reset()
+for i in range(6):
+    memory.store("test", "v507 identical test fact", origin="test")
+recs = [r for r in memory._parse_md_file(memory._path("other"))]
+live_test = [r for r in recs if r.get("kind") == "test" and memory.is_valid(r)]
+ok("K1 six identical writes of an undeclared kind leave ONE live record",
+   len(live_test) == 1 and len(recs) == 6, (len(live_test), len(recs)))
+ok("K2 nothing was deleted (append-only)",
+   len(recs) == 6, len(recs))
+ok("K3 an undeclared kind is never auto-RETIRED (no budget declared)",
+   memory.hygiene_budget("test") is None, memory.hygiene_budget("test"))
+
+# --- L) the operator's own kinds are never touched (v973) --------------------
+reset(USER_KIND)
+memory.store(USER_KIND, "I prefer short answers")
+memory.store(USER_KIND, "I prefer short answers")
+recs = memory._parse_md_file(memory._path(USER_KIND))
+live_user = [r for r in recs if memory.is_valid(r)]
+ok("L1 a near-duplicate USER memory is never auto-superseded",
+   len(live_user) == 2, len(live_user))
+ok("L2 nothing was superseded on a user kind",
+   memory.superseded_count("memory.store") == 0,
+   memory.superseded_count("memory.store"))
 
 good = [n for n, c, _ in CHECK if c]
 print("\n%d/%d checks passed" % (len(good), len(CHECK)))

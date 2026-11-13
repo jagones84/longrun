@@ -5,6 +5,17 @@ import sys
 import tempfile
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# v973: this test WRITES to the memory store (`tools.execute("memory.store", ...)`
+# below), so it must not touch the operator's live data home. It did: the real
+# `data/memory/other.md` held **180 `kind: test` records** — one per battery run
+# since v507 shipped, which is exactly the "hundreds of unuseful memories" the
+# operator reported. Isolate BEFORE importing anything from `longrun`.
+_TMP = tempfile.mkdtemp(prefix="sf-v507-")
+os.environ["LONGRUN_DATA_DIR"] = os.path.join(_TMP, "data")
+os.environ["LONGRUN_CONFIG_DIR"] = os.path.join(_TMP, "config")
+os.environ["LONGRUN_SESSIONS_DIR"] = os.path.join(_TMP, "data", "sessions")
+
 sys.path.insert(0, os.path.join(REPO, "src"))
 
 from longrun.core import matrix  # noqa: E402

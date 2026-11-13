@@ -161,7 +161,14 @@ def store(kind, content, **meta):
     # `memory_max_records` is superseded, lowest value first. Append-only: the
     # history stays on disk, only recall changes. Outside the lock, because the
     # pass re-reads the file and writes its own tombstones.
-    if kind in AUTO_KINDS:
+    # v973: the near-duplicate half applies to EVERY kind the operator does not
+    # own, including an undeclared one (which lands in `other.md`). Measured: the
+    # real `other.md` held 180 identical `kind: test` records, one per battery run,
+    # because the fallback store had no dedupe at all. Collapsing a duplicate loses
+    # nothing — the newer record supersedes the older WITH a pointer. The BUDGET
+    # half still applies only where a budget is declared (`AUTO_KINDS`), so an
+    # unknown kind is never silently retired.
+    if kind not in USER_KINDS:
         _bound_auto(kind, rec)
     return rec
 
@@ -884,6 +891,13 @@ AUTO_KINDS = frozenset(("agent.note", "tool.result", "plan.update",
                         "task.done", "chat.summary"))
 
 
+#: v973: kinds the OPERATOR owns. These are never auto-retired AND never
+#: auto-superseded: collapsing `user.preference` or an explicit `memory.store`
+#: would silently drop something a human wrote on purpose.
+USER_KINDS = frozenset(("memory.store", "user.preference", "question.open",
+                        "memory.invalidate", "memory.restore"))
+
+
 # ---------------------------------------------------- v972: bounded admission --
 # Measured 2026-11-14: `agent_notes.md` held 684 records / 213 KB and NOTHING in
 # the tree ever retired one — the loop admitted and never retired, and the recall
@@ -998,6 +1012,8 @@ def _bound_auto(kind, rec):
                     # The rule, not an optimisation: one fact, one live record.
                     supersede(other.get("mid"), by=rec.get("mid"),
                               reason="dedupe: superseded by %s" % rec.get("mid"))
+        if hygiene_budget(kind) is None:
+            return {"ok": True, "kind": kind, "deduped_only": True}
         return hygiene(kind, dry_run=False)
     except Exception:  # noqa: BLE001 — see the docstring
         return {}
