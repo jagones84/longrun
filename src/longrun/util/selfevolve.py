@@ -925,6 +925,38 @@ def _installed_cost_baseline(category="created", skills_dir=None):
     return costs[len(costs) // 2], len(costs)
 
 
+def _artifact_digest(proposal_dir):
+    """sha256 over the bytes a promotion would publish.
+
+    `verify` stamps this into the evidence; `promote` recomputes it before
+    installing. If the two differ, the draft was EDITED after the check that
+    certified it, so the green runs belong to bytes nobody reviewed (AReaL-RSI,
+    version-consistent publication). `proposal.json` is excluded because verify
+    and promote both rewrite it (it is metadata, not artifact); every other file
+    that ships — SKILL.md, runner.py, check.py, skill.json — is covered, keyed by
+    sorted relative path so two identical trees hash the same. `""` when the
+    folder cannot be walked.
+    """
+    import hashlib
+    h = hashlib.sha256()
+    try:
+        for base, dirs, files in os.walk(str(proposal_dir or "")):
+            dirs[:] = sorted(d for d in dirs if d != "__pycache__")
+            for fn in sorted(files):
+                if fn == "proposal.json" or fn.endswith((".log", ".pyc")):
+                    continue
+                rel = os.path.relpath(os.path.join(base, fn), proposal_dir)
+                try:
+                    with open(os.path.join(base, fn), "rb") as f:
+                        data = f.read()
+                except OSError:
+                    continue
+                h.update(rel.encode("utf-8") + b"\0" + data + b"\0")
+    except OSError:
+        return ""
+    return h.hexdigest()
+
+
 def verify(proposal_dir, runner=None, c=None, cases=None, baseline=None,
            repeats=None):
     """Run the proposal's check(s) and update proposal.json (verified/rejected).
@@ -957,6 +989,9 @@ def verify(proposal_dir, runner=None, c=None, cases=None, baseline=None,
               "cases": case_map, "case_runs": counts,
               "baseline": {str(k): bool(v) for k, v in (baseline or {}).items()},
               "cost_tokens": _skill_cost(proposal_dir),
+              # AA: the bytes this verdict is ABOUT. Stamped so `promote` can
+              # refuse to publish a draft that changed after the check ran.
+              "artifact_sha256": _artifact_digest(proposal_dir),
               "duration_ms": int((time.time() - t0) * 1000),
               "output": str(out)[-1200:]}
     prop["status"] = "verified" if green else "rejected"
@@ -1172,6 +1207,22 @@ def promote(proposal_dir, skills_dir=None, c=None, human=False, purpose="",
     _verify = prop.get("verify") if isinstance(prop.get("verify"), dict) else {}
     _cases = _verify.get("cases") if isinstance(_verify.get("cases"), dict) else {}
     _base = _verify.get("baseline") if isinstance(_verify.get("baseline"), dict) else {}
+    # CONSISTENCY GATE (AReaL-RSI eq.11 — version-consistent publication): every
+    # gate below reads the STORED numbers, not the current files, so a draft
+    # EDITED between `verify` and this promote would publish an artifact whose
+    # green runs describe a version that no longer exists. `verify` stamped the
+    # digest of the bytes it ran; recompute it here and refuse on a mismatch. A
+    # legacy proposal that never stamped one (predates the gate) passes, exactly
+    # as the case gate treats a missing baseline.
+    _stamp = _verify.get("artifact_sha256")
+    if _stamp:
+        _now = _artifact_digest(proposal_dir)
+        if _now != str(_stamp):
+            return {"ok": False, "verified_sha256": _stamp, "current_sha256": _now,
+                    "error": "consistency gate: the artifact changed after it was "
+                             "verified (%s -> %s) — the evidence describes the earlier "
+                             "bytes; run verify again before promoting"
+                             % (str(_stamp)[:12], str(_now)[:12])}
     if _base:
         _regressed = sorted(k for k, ok in _base.items() if ok and not _cases.get(k))
         if _regressed:
