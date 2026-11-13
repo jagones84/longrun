@@ -175,7 +175,9 @@ trees.
 in `src/`: router retries/backoff/timeouts, answer and compaction budgets, the repeat
 guard, HTTP body/feed/stream, event retention, thread digests, the CORE memory cap,
 the per-kind memory record budget (`memory_max_records`, v972 — the kinds the harness
-writes bound themselves on every store, and `v827`'s rule applies to it too),
+writes bound themselves on every store, and `v827`'s rule applies to it too), the offload
+budget (`offload_keep_files` / `offload_keep_days`, v973 — one file per oversized tool
+observation, bounded by its own writer and swept once per boot),
 skill archive caps, graph orphan age, job retries, team slots, the held-out gate, TLS
 and the edit-tool bounds (`fs_edit_max_edits`, `fs_edit_stale_guard`). Same resolver,
 same precedence, same restart contract; `v827` pins completeness, loader whitelist,

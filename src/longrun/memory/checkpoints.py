@@ -61,6 +61,50 @@ def _snapshot_path(cp_id):
     return os.path.join(CKPT_DIR, "cp_%s.json" % cp_id)
 
 
+def _unlink_payload(cp_id):
+    """Remove a checkpoint's payload file(s). Returns 1 when one existed (v973).
+
+    A payload with no manifest is UNREACHABLE — nothing can restore it — so
+    removing it loses nothing. That is the whole safety argument for the two
+    callers below.
+    """
+    if not cp_id:
+        return 0
+    n = 0
+    for suffix in ("", ".tmp"):
+        try:
+            os.remove(_snapshot_path(cp_id) + suffix)
+            n += 1
+        except OSError:
+            pass
+    return 1 if n else 0
+
+
+def _orphan_payloads(known_ids):
+    """Ids of `cp_*.json` payloads that no manifest in the index references (v973).
+
+    Measured 2026-11-14: `data/checkpoints` held 533 MB of payloads against a
+    100-entry index. The cap in `create()` truncated the INDEX and left every
+    dropped payload on disk, and `prune()` could not see them either — its
+    victims come from the index, so an orphan was invisible to both. This is
+    what finds them.
+    """
+    out = []
+    try:
+        names = os.listdir(CKPT_DIR)
+    except OSError:
+        return out
+    for n in names:
+        if n == "index.json" or not n.startswith("cp_") or not n.endswith(".json"):
+            continue
+        cid = n[len("cp_"):-len(".json")]
+        if cid.endswith(".tmp"):
+            cid = cid[:-len(".tmp")]
+        if cid and cid not in known_ids:
+            out.append(cid)
+    return out
+
+
 # ------------------------------------------------------- session task graph ----
 # JAG-431: the REAL, live todo list is the per-SESSION task graph
 # (`data/graphs/<sid>.json`, `longrun.plan.taskgraph`) — NOT the legacy global
@@ -182,6 +226,11 @@ def create(label=None, session_id=None, idempotency_key=None, by="api"):
         write_json(_snapshot_path(cp_id), payload)
         entries = _load_index()
         entries.insert(0, manifest)
+        # v973: the cap must take the PAYLOAD with the entry it drops. Capping the
+        # index alone left every dropped payload on disk forever (533 MB measured
+        # against a 100-entry index, 2026-11-14).
+        for stale in entries[MAX_CHECKPOINTS:]:
+            _unlink_payload(stale.get("id"))
         _save_index(entries[:MAX_CHECKPOINTS])
         _publish("checkpoint.created", id=cp_id, label=manifest["label"],
                  session=session_id, by=by)
@@ -309,29 +358,28 @@ def delete(cp_id):
 
 
 def prune(keep=MAX_CHECKPOINTS):
-    """Drop the OLDEST checkpoints beyond `keep` and unlink their payloads
-    (JAG-318). The index is already capped on create, so this compacts any
-    pre-existing overflow and is safe to call repeatedly."""
+    """Compact the store: drop the oldest beyond `keep`, then every ORPHAN payload.
+
+    JAG-318 covered the first half. v973 adds the second: a `cp_*.json` with no
+    manifest is unreachable, and the payloads dropped before v973 were exactly
+    that — invisible to the index-driven `create()` cap AND to `prune()` itself.
+    Safe to call repeatedly; returns the payload count removed and the orphan
+    count it found.
+    """
     keep = max(1, int(keep))
     with _lock:
         entries = _load_index()
-        if len(entries) <= keep:
-            return {"ok": True, "removed": 0}
         victims = entries[keep:]
-        _save_index(entries[:keep])
+        kept = entries[:keep]
+        _save_index(kept)
         removed = 0
         for m in victims:
-            cid = m.get("id")
-            if not cid:
-                continue
-            for suffix in ("", ".tmp"):
-                try:
-                    os.remove(_snapshot_path(cid) + suffix)
-                except OSError:
-                    pass
-            removed += 1
-    _publish("checkpoint.pruned", removed=removed)
-    return {"ok": True, "removed": removed}
+            removed += _unlink_payload(m.get("id"))
+        orphans = _orphan_payloads({str(m.get("id") or "") for m in kept})
+        for cid in orphans:
+            removed += _unlink_payload(cid)
+    _publish("checkpoint.pruned", removed=removed, orphans=len(orphans))
+    return {"ok": True, "removed": removed, "orphans": len(orphans)}
 
 
 def purge_session(session_id):

@@ -198,6 +198,8 @@ limits:
                                   # kind (agent.note, tool.result, ...); the
                                   # excess is superseded (hidden, never deleted).
                                   # A user-authored memory is never auto-retired.
+  offload_keep_files: 200         # oversized observations kept per session
+  offload_keep_days: 30.0         # ... and dropped once older than this
   # --- editing ----------------------------------------------------------------
   fs_edit_max_edits: 50           # rows one fs.edit batch may carry
   fs_edit_stale_guard: true       # refuse an edit on a file changed since fs.read

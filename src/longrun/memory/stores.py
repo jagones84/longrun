@@ -151,6 +151,110 @@ def _prune_trash():
         pass
 
 
+# ------------------------------------------------------------ v973: offload ---
+# `data/offload/<session>/NNN_<tool>.txt` holds every oversized tool observation
+# verbatim, so the model can read it back instead of losing the tail to a
+# truncation. Nothing ever removed one: measured 2026-11-14 — 158 session
+# folders, 32 MB, the oldest 13 days old. The bound is the same shape as
+# `_prune_trash` above, and the safety argument is the same: the file is a
+# preview the model already consumed, and the observation itself still travels in
+# the session transcript and the run record.
+OFFLOAD_DIR = os.path.join(DATA_DIR, "offload")
+
+
+def _offload_keep_files():
+    try:
+        from longrun.model import context_limits
+        return max(0, int(context_limits.limit("offload_keep_files")))
+    except Exception:  # noqa: BLE001 — an unreadable budget means "no cap"
+        return None
+
+
+def _offload_keep_secs():
+    try:
+        from longrun.model import context_limits
+        return max(0.0, float(context_limits.limitf("offload_keep_days")) * 86400.0)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def prune_offload(session_id=None, keep_files=None, keep_days=None):
+    """Bound data/offload/: newest `offload_keep_files` per session, and nothing
+    older than `offload_keep_days` (v973). Returns `{ok, removed, bytes, kept}`.
+
+    `session_id` limits the walk to one session (the writer's cheap, exact call);
+    with no argument it sweeps every session (the delete-time and manual call).
+    """
+    kf = keep_files if keep_files is not None else _offload_keep_files()
+    kd = (keep_days * 86400.0) if keep_days is not None else _offload_keep_secs()
+    roots = ([os.path.join(OFFLOAD_DIR, session_id)] if session_id
+             else [os.path.join(OFFLOAD_DIR, d)
+                   for d in (os.listdir(OFFLOAD_DIR)
+                             if os.path.isdir(OFFLOAD_DIR) else [])])
+    now = time.time()
+    removed = 0
+    freed = 0
+    for root in roots:
+        try:
+            names = [n for n in os.listdir(root)
+                     if os.path.isfile(os.path.join(root, n))]
+        except OSError:
+            continue
+        rows = []
+        for n in names:
+            p = os.path.join(root, n)
+            try:
+                rows.append((os.path.getmtime(p), p))
+            except OSError:
+                continue
+        rows.sort(reverse=True)                     # newest first
+        for i, (mt, p) in enumerate(rows):
+            over = (kf is not None and i >= kf)
+            stale = (kd is not None and (now - mt) > kd)
+            if not (over or stale):
+                continue
+            try:
+                size = os.path.getsize(p)
+                os.unlink(p)
+                removed += 1
+                freed += size
+            except OSError:
+                pass
+        # A session folder that no longer holds a file is not kept as an empty shell.
+        try:
+            if not os.listdir(root):
+                os.rmdir(root)
+        except OSError:
+            pass
+    return {"ok": True, "removed": removed, "bytes": freed,
+            "kept_files": kf, "kept_days": kd}
+
+
+def purge_offload(session_id):
+    """Remove one session's offloaded observations entirely (v973).
+
+    Same rule as `checkpoints.purge_session`: deleting a session must not leave
+    its offload folder behind for a later read to find.
+    """
+    if not session_id:
+        return 0
+    root = os.path.join(OFFLOAD_DIR, session_id)
+    removed = 0
+    try:
+        for n in os.listdir(root):
+            p = os.path.join(root, n)
+            try:
+                if os.path.isfile(p):
+                    os.remove(p)
+                    removed += 1
+            except OSError:
+                pass
+        os.rmdir(root)
+    except OSError:
+        pass
+    return removed
+
+
 def _save_lock(sid):
     """The per-session write lock (v947).
 
@@ -309,6 +413,10 @@ def _purge_session_artifacts(sid):
     try:
         from longrun.memory import checkpoints
         checkpoints.purge_session(sid)          # JAG-413: drop session checkpoints
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        purge_offload(sid)                      # v973: and its offloaded observations
     except Exception:  # noqa: BLE001
         pass
     try:

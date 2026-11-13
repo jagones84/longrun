@@ -1570,6 +1570,16 @@ def _offload_observation(sess, tool, text):
             fh.write(clean)
     except Exception:  # noqa: BLE001 — offload must never kill the turn
         return fallback
+    # v973: the offload dir is a store, so its WRITER bounds it — the same rule as
+    # every other store in this harness. Measured 2026-11-14: 158 session folders,
+    # 32 MB and nothing had ever removed a file. Exact and cheap: it lists this
+    # session's own folder, and only unlinks what is over `offload_keep_files` or
+    # older than `offload_keep_days`.
+    try:
+        from longrun.memory import stores as _stores
+        _stores.prune_offload(session_id=sess["id"])
+    except Exception:  # noqa: BLE001 — a sweep must never kill the turn
+        pass
     lines = clean.count("\n") + 1
     head = clean[:_OFFLOAD_HEAD]
     ref = (

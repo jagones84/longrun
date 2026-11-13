@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # battery_tmp.sh — the fix in flight. Overwritten every round; tests/battery.sh is the gate.
-# 2026-11-14 v972: the machine-written memory kinds bound themselves (a near-duplicate
-# supersedes the stored copy; the excess above `memory_max_records` is superseded, lowest
-# value first). The other names are the dependency oracle for that edit: the tombstone /
-# supersession / dedupe / recall paths the write path now calls, the health report it
-# extended, the config owner the budget comes from, and v354 which pins the README badge.
+# 2026-11-14 v973: the two file stores the harness writes got a bound AND a caller —
+# `data/checkpoints` (the index cap now takes the payload with the entry; `prune()` also
+# removes unreachable ORPHAN payloads, 533 MB measured) and `data/offload` (one file per
+# oversized observation, 158 folders / 32 MB, never pruned). The other names are the
+# dependency oracle: the checkpoint lifecycle, the session-delete cascade that now also
+# purges the offload folder, the config owner, the v972 memory bound, and the badge pin.
 set -u
 cd /home/jagones/Repositories/longrun || exit 1
-LONGRUN_BATTERY_TESTS="v972_memory_hygiene v204_memory_governance v628_memory_supersession v853_prompt_memory_dedupe_budget v819_memory_kinds v876_memory_weak_matches v830_health v827_context_limits_config v354_ui_links_pins" \
+LONGRUN_BATTERY_TESTS="v973_store_bounds v972_memory_hygiene v318_ckpt_approvals_delete v424_checkpoint_route v499_matrix_checkpoints_and_git v177_session_delete_cascade v314_cascade_delete v315_session_delete_final v827_context_limits_config v354_ui_links_pins" \
   bash tests/battery.sh

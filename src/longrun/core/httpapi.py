@@ -3517,6 +3517,23 @@ def main():
     except Exception:  # noqa: BLE001 — the sweep is best-effort
         pass
     try:
+        from longrun.memory import checkpoints as _ckpt_boot
+        # v973: the same rule for checkpoints. The index cap used to drop the entry
+        # and KEEP the payload, so an older install carries unreachable `cp_*.json`
+        # on disk (533 MB measured 2026-11-14). A payload with no manifest cannot be
+        # restored by anything, so unlinking it loses nothing.
+        _ckpt_boot.prune()
+    except Exception:  # noqa: BLE001 — compaction is best-effort
+        pass
+    try:
+        from longrun.memory import stores as _stores_boot
+        # v973: `data/offload/` holds one file per oversized tool observation and had
+        # no bound at all (158 folders / 32 MB, 2026-11-14). Sweep once per boot; the
+        # writer keeps the active session bounded between boots.
+        _stores_boot.prune_offload()
+    except Exception:  # noqa: BLE001 — the sweep is best-effort
+        pass
+    try:
         from longrun.orchestrate import routines
         routines.start_scheduler()  # JAG-287 D: agents wake on a cadence
     except Exception:  # noqa: BLE001 — the heartbeat scheduler is optional
