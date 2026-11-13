@@ -757,7 +757,11 @@ def evolve_once(note="", allow_code=None):
     for cand in selfevolve.mine(selfevolve.history(), c):
         if installed >= pcap:
             break
-        rep = selfevolve.pipeline(cand["pattern"], out, cand["support"], c=c)
+        # `promote_per_run: 0` means "keep mining, install nothing" — the same
+        # reading `forge_per_run: 0` has for the code arm, so the pass still
+        # drafts and verifies instead of silently doing nothing at all.
+        rep = selfevolve.pipeline(cand["pattern"], out, cand["support"], c=c,
+                                  promote_if_green=pcap > 0)
         arc = rep.get("archived")
         if isinstance(arc, dict) and arc.get("ok"):
             installed += 1
