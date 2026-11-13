@@ -1689,6 +1689,47 @@ def tool_names():
                   | set(_promoted_tools()) | set(_matrix_tools()) | set(_external_tools()))
 
 
+def orphan_policies():
+    """Policy entries that name NO tool provider — the config's own dead weight.
+
+    A `<client>__<tool>` key in `config/tools.yaml` or the overlay is a POLICY for
+    an external MCP tool. When that client is absent (never configured, renamed,
+    or an older spelling of a client that still exists) NOTHING errors:
+    `catalog()` silently skips the row, `tool_names()` keeps returning the name,
+    and the entry sits in the operator's config looking like a live capability.
+
+    Measured 2026-11-14: `python_sandbox__run_python_code` was enabled with an
+    auto-approve policy while a Global rule told EVERY session to call it, and the
+    real tool path answered `unknown tool`; 26 `PMCP__gateway.*` entries duplicated
+    the live lowercase ones; `sequential-thinking__sequentialthinking` was enabled
+    with no such client. All three were invisible — this is the report that makes
+    them visible instead of leaving "the module imports fine" as the only signal.
+
+    Returns `{name: reason}`; a plain namespace key (no `__`) is policy
+    INHERITANCE, not a tool, and is never reported.
+    """
+    try:
+        cfg = set((load_config().get("tools") or {}))
+        provided = (set(TOOL_SCHEMAS) | set(_promoted_tools()) | set(_matrix_tools())
+                    | set(_external_tools()))
+    except Exception:  # noqa: BLE001 — a report must never break the registry
+        return {}
+    lower = {}
+    for n in provided:
+        lower.setdefault(str(n).lower(), str(n))
+    out = {}
+    for name in sorted(cfg):
+        if "__" not in name or name in provided:
+            continue
+        twin = lower.get(name.lower())
+        if twin:
+            out[name] = "duplicate spelling of the live tool %r" % twin
+        else:
+            out[name] = ("no provider registers this name (MCP client %r is not "
+                         "connected)" % name.split("__", 1)[0])
+    return out
+
+
 def _access_class(name):
     """The gate's own access class for a gated built-in tool (`architect.access_class`).
 

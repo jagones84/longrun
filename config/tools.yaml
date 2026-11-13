@@ -728,6 +728,13 @@ tools:
   # JAG-125: Python snippet runner (MCP client `python_sandbox`). Pyodide/WASM:
   # no host filesystem, no shell, no network — safe to auto-approve so the model
   # can actually compute/execute snippets instead of hunting the pmcp catalog.
+  #
+  # v974: that client needs `deno` on the host. Where deno is absent the client
+  # cannot start, the tool resolves to nothing, and this entry becomes a POLICY
+  # WITH NO PROVIDER — silent before v974, and a Global rule told every session to
+  # call it. `self.info` -> `namespaces.orphans` now names it instead of dropping
+  # the row (registry.orphan_policies). The entry stays so the client is one
+  # `clients` block away once deno is installed.
   python_sandbox__run_python_code:
     enabled: true
     approval: auto

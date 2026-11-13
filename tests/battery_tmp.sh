@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # battery_tmp.sh — the fix in flight. Overwritten every round; tests/battery.sh is the gate.
-# 2026-11-14 v973: the two file stores the harness writes got a bound AND a caller —
-# `data/checkpoints` (the index cap now takes the payload with the entry; `prune()` also
-# removes unreachable ORPHAN payloads, 533 MB measured) and `data/offload` (one file per
-# oversized observation, 158 folders / 32 MB, never pruned). The other names are the
-# dependency oracle: the checkpoint lifecycle, the session-delete cascade that now also
-# purges the offload folder, the config owner, the v972 memory bound, and the badge pin.
+# 2026-11-14 v974: a tool POLICY that names no provider is reported, never silently dropped.
+# `catalog()` skips a row it cannot resolve, so the live config held 28 dead capabilities —
+# 26 `PMCP__gateway.*` duplicate spellings, `python_sandbox__run_python_code` (named by a
+# Global rule that every session loads) and `sequential-thinking__sequentialthinking` — with
+# no signal at all. `registry.orphan_policies()` + `diag.namespaces()["orphans"]` is the
+# report; the 27 overlay keys are removed. The other names are the dependency oracle:
+# the registry/self.info surfaces that must keep working, the config owner and the badge pin.
 set -u
 cd /home/jagones/Repositories/longrun || exit 1
-LONGRUN_BATTERY_TESTS="v973_store_bounds v972_memory_hygiene v507_namespaced_subtools v204_memory_governance v628_memory_supersession v876_memory_weak_matches v830_health v318_ckpt_approvals_delete v424_checkpoint_route v177_session_delete_cascade v314_cascade_delete v315_session_delete_final v827_context_limits_config v354_ui_links_pins" \
+LONGRUN_BATTERY_TESTS="v974_tool_policy_orphans v718_self_info_identity v414_self_diag v510_tool_discovery v198_skills_tools_awareness v855_registry_config_parse_memo v973_store_bounds v972_memory_hygiene v827_context_limits_config v354_ui_links_pins" \
   bash tests/battery.sh

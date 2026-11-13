@@ -618,11 +618,20 @@ def namespaces(allow=None) -> dict:
             # not in `enabled`, failing v718 A7.
             row["admitted"] += 1
     admitted = sorted(n for n, r in rows.items() if r["admitted"])
+    # v974: a policy entry that names NO provider is neither enabled nor disabled —
+    # it is not a tool at all. `catalog()` drops it silently, so without this the
+    # operator's config can hold dead capabilities (a rule that tells the model to
+    # call a tool that answers `unknown tool`) and the report still reads clean.
+    try:
+        orphans = registry.orphan_policies()
+    except Exception:  # noqa: BLE001
+        orphans = {}
     return {"ok": True,
             "enabled": sorted(n for n, r in rows.items() if r["enabled"]),
             "disabled": sorted(n for n, r in rows.items() if not r["enabled"]),
             "admitted": admitted,
             "count": len(rows),
+            "orphans": orphans,
             "namespaces": {n: rows[n] for n in sorted(rows)}}
 
 
