@@ -48,6 +48,7 @@ SPLIT = "test"
 ROWS_API = "https://datasets-server.huggingface.co/rows"
 CACHE = Path(".agent/BENCHMARKS/cache/swebench_verified.json")
 RUNS = Path(".agent/BENCHMARKS/runs")
+REFERENCE = Path(".agent/BENCHMARKS/references/swebench_verified_counts.json")
 PAGE = 100
 #: A screen may look at this many PASS_TO_PASS ids (a subset: the full list can hold
 #: hundreds of node ids and the screen must stay a preflight, not a full suite run).
@@ -353,6 +354,104 @@ def ledger_usage(res):
     }
 
 
+def screen_verdict(iid, runs=None):
+    """The newest `--verify` verdict written for one instance, or None.
+
+    The screen is the first link of the reference chain: a number from an instance
+    whose GOLD patch fails its own tests means nothing. Measured 2026-11-12:
+    `pylint-dev__pylint-7080` looked ideal (1 of 14 published submissions resolve it)
+    and cost $0.059 for a 0/40 that described the host venv, not the harness.
+    """
+    root = Path(runs) if runs is not None else RUNS
+    best = None
+    for p in root.glob("*_swe_%s/verify.json" % iid):
+        try:
+            d = json.loads(p.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001 — a corrupt verdict is not a verdict
+            continue
+        if d.get("instance") != iid:
+            continue
+        if best is None or p.stat().st_mtime > best[0]:
+            best = (p.stat().st_mtime, d)
+    return best[1] if best else None
+
+
+def run_gate(iid, runs=None):
+    """(ok, message): may an arm spend a model call on this instance?
+
+    Refuses when nothing was screened, and when the screen says NOT GRADABLE.
+    """
+    v = screen_verdict(iid, runs)
+    if v is None:
+        return False, ("refusing --run: no screen verdict for %s — run "
+                       "`--verify %s` first (the gold patch must pass its own tests)"
+                       % (iid, iid))
+    if not v.get("gradable"):
+        g = v.get("gold") or {}
+        return False, ("refusing --run: %s is NOT GRADABLE (gold f2p %s/%s, p2p %s/%s) — "
+                       "any number from it describes the environment, not the harness"
+                       % (iid, g.get("f2p_pass"), g.get("f2p_total"),
+                          g.get("p2p_pass"), g.get("p2p_total")))
+    return True, "screen %s: GRADABLE" % iid
+
+
+def arm_prompt(repo_dir, py, problem):
+    """The arm's instruction, with the interpreter the GRADER uses.
+
+    A self-check run under a different python is not evidence: measured 2026-11-12,
+    the arm's shell used `/usr/bin/python3` 3.12 while grading ran `venv-3.10`, so a
+    green import proved nothing about the graded tree.
+    """
+    interp = ("The project's own tests run with `%s` — use that interpreter for "
+              "every check you run, because a different python sees a different "
+              "environment.\n\n" % py) if py else ""
+    return ("You are working in the git repository `%s`.\n\n%s%s\n\n"
+            "Fix the problem above by editing the repository. Do not edit or "
+            "delete test files. When you are done, stop; the harness grades the "
+            "working tree." % (repo_dir, interp, problem))
+
+
+def reference_for(iid, path=None):
+    """The published reference for one instance: how many official submissions resolve it.
+
+    Read from `.agent/BENCHMARKS/references/swebench_verified_counts.json` (offline,
+    extracted from `SWE-bench/experiments` on 2026-11-12). A number without it is a
+    trend, not a result — the operator's rule, and the reason this file exists.
+    """
+    p = Path(path) if path is not None else REFERENCE
+    try:
+        d = json.loads(p.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 — a missing reference is not a crash
+        return None
+    k = (d.get("counts") or {}).get(iid)
+    n = (d.get("_meta") or {}).get("submissions")
+    if k is None or not n:
+        return None
+    return {"resolved": int(k), "of": int(n)}
+
+
+def report_line(res, screen=None):
+    """One operator-facing line: verdict, published reference, session to open.
+
+    `screen` is the instance's `--verify` verdict when the caller has it: a run on a
+    NOT GRADABLE instance is printed as VOID, never as FAIL — its failure describes
+    the environment, not the harness (measured 2026-11-12, `pylint-7080`).
+    """
+    if screen is not None and not screen.get("gradable"):
+        g = screen.get("gold") or {}
+        return ("VOID %s — instance NOT GRADABLE (gold f2p %s/%s, p2p %s/%s): the run "
+                "describes the environment, not the harness — session `%s`"
+                % (res.get("instance"), g.get("f2p_pass"), g.get("f2p_total"),
+                   g.get("p2p_pass"), g.get("p2p_total"), res.get("session") or "?"))
+    ref = res.get("reference") or {}
+    band = ("reference: %d/%d published submissions resolve it"
+            % (ref["resolved"], ref["of"])) if ref.get("of") else \
+           "reference: none published for this instance (trend only)"
+    return "%s %s — %s — session `%s`" % (
+        "PASS" if res.get("strict") else "FAIL",
+        res.get("instance"), band, res.get("session") or "?")
+
+
 def run_arm(row, out, arm, model, timeout):
     """One agent turn on the staged repo, then the official grading on its diff."""
     iid = row["instance_id"]
@@ -361,10 +460,7 @@ def run_arm(row, out, arm, model, timeout):
     py = prepare_venv(repo_dir, log, _python_candidates(row))
     before = subprocess.run(["git", "status", "--porcelain"], cwd=str(repo_dir),
                             capture_output=True, text=True).stdout
-    prompt = ("You are working in the git repository `%s`.\n\n%s\n\n"
-              "Fix the problem above by editing the repository. Do not edit or "
-              "delete test files. When you are done, stop; the harness grades the "
-              "working tree." % (repo_dir, row.get("problem_statement")))
+    prompt = arm_prompt(repo_dir, py, row.get("problem_statement"))
     t0 = time.time()
     # v842: the sample must leave a pointer to its own record, or a stored run can
     # only be read as one aggregate number. `session` is the ledger id (longrun) /
@@ -427,11 +523,13 @@ def run_arm(row, out, arm, model, timeout):
               "p2p_total": len(p2p_res), "diff_bytes": len(diff),
               "duration_s": round(time.time() - t0, 1), "usage": usage,
               "session": sid,
+              "reference": reference_for(iid),
               "git_dirty_before": bool(before.strip())}
     (out / "result.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
     print(json.dumps({k: result[k] for k in ("instance", "arm", "strict",
                                              "f2p_pass", "f2p_total", "p2p_pass",
                                              "p2p_total", "diff_bytes")}, indent=2))
+    print(report_line(result))
     return 0 if strict else 1
 
 
@@ -444,12 +542,26 @@ def main(argv=None):
     ap.add_argument("--verify", default="", metavar="INSTANCE",
                     help="screen one instance: gold patch passes, no patch fails")
     ap.add_argument("--run", default="", metavar="INSTANCE")
+    ap.add_argument("--report", default="", metavar="RUN_DIR",
+                    help="reprint a stored run: verdict, published reference, session")
     ap.add_argument("--arm", default="longrun")
     ap.add_argument("--model", default="openrouter:z-ai/glm-5.3-flash")
     ap.add_argument("--timeout", type=float, default=1800.0)
     ap.add_argument("--refresh", action="store_true", help="re-download the dataset")
     args = ap.parse_args(argv)
 
+    if args.report:
+        p = Path(args.report)
+        rj = p if p.name == "result.json" else p / "result.json"
+        try:
+            res = json.loads(rj.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001 — a missing record is a message, not a crash
+            print("no result.json in %s" % args.report)
+            return 2
+        if not res.get("reference"):
+            res["reference"] = reference_for(res.get("instance") or "")
+        print(report_line(res, screen_verdict(res.get("instance") or "")))
+        return 0
     if args.list:
         list_rows(fetch_rows(force=args.refresh), args.list)
         return 0
@@ -472,6 +584,11 @@ def main(argv=None):
         if refused:
             print(refused)
             return 2
+        ok, why = run_gate(args.run)
+        if not ok:
+            print(why)
+            return 2
+        print(why)
         row = instance(fetch_rows(force=args.refresh), args.run)
         return run_arm(row, _fresh_dir(args.run), args.arm, args.model, args.timeout)
     ap.print_help()
