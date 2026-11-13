@@ -744,9 +744,23 @@ def evolve_once(note="", allow_code=None):
     c = selfevolve.cfg()
     out = DRAFT_DIR
     reports = []
+    # The INSTALL bound (v976): `forge_per_run` has bounded the code arm since
+    # EV-13, but the skill arm grew one installed skill per green pattern, so a
+    # single pass could fill `skills/created/` to its 25-skill cap (91 candidates
+    # measured live 2026-11-14). One pass now installs at most `promote_per_run`;
+    # the remaining candidates stay verified drafts for the next pass.
+    try:
+        pcap = max(0, int(c.get("promote_per_run") or 0))
+    except (TypeError, ValueError):
+        pcap = 1
+    installed = 0
     for cand in selfevolve.mine(selfevolve.history(), c):
+        if installed >= pcap:
+            break
         rep = selfevolve.pipeline(cand["pattern"], out, cand["support"], c=c)
         arc = rep.get("archived")
+        if isinstance(arc, dict) and arc.get("ok"):
+            installed += 1
         rel = arc.get("rel") or arc.get("path") if isinstance(arc, dict) else (
             arc if isinstance(arc, str) else "")
         reports.append({"pattern": cand["pattern"],

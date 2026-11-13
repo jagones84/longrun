@@ -349,10 +349,28 @@ owners:
 | harness candidate (`skill` kind) | Harness² cycle editor | `harness/editors.propose` → `probe.stage` | material tested by a matched run |
 | verified | `improve{verify}` / `decide` | `selfevolve.ensure_check` + `verify` | the sandbox check went green |
 | proposal (`scope=skill`, bound to a draft OR to tested bytes) | mined draft or matched experiment | `improve.propose` | ONE decision object |
-| installed skill | approval | `selfevolve.promote` (draft) / `skills.install_skill_file` (harness bytes) | never clobbers an existing skill |
+| installed skill | approval, or `evolve` when `approvals.kinds.skills=auto` **and** the sealed held-out suite is installed | `selfevolve.promote` (draft) / `skills.install_skill_file` (harness bytes) | never clobbers an existing skill — it supersedes it (retire + swap); one ledger `promote` row per install |
 | forged Matrix tool (`learned_<slug>.run`) | `improve{forge}` on a draft, `improve{evolve}` (human-approved), or the background pass when `approvals.kinds.matrix=auto` | `selfevolve.forge_target` (the naming) → `selfevolve.forge_bundle` (validation + the exact bytes) → `selfevolve.forge_matrix` → `matrix.scaffold` → `matrix.run_test` → `matrix.verify_target` | executable, but only after its own generated test and the sha-bound contract gate pass; removed when they do not. `evolve` asks `forge_target` first, so a pattern forged in an earlier pass is `skipped`, never a clobber refusal |
 | learned Matrix bundle (proposal) | background `evolve` when the `matrix` policy is not `auto` | `improve.propose(scope="matrix", artifacts=[…sha256])` → `improve.decide` → `matrix.apply_learning` | the same bytes `forge_bundle` would write, held pending until the operator approves; approving writes + hot-loads, denying writes nothing |
 | Matrix artifact | approval | `core.matrix.apply_learning` | outside Nucleus, hash-bound |
+
+**The sealed judge is an install step, not a built-in** (2026-11-14). `promote`
+refuses every candidate until `data/heldout/manifest.json` exists, so on a fresh
+install the skill half of the loop can mine and verify but never close (measured
+here: 123 drafts, 0 installed). `heldout.install()` is the admin step that writes
+`suite/check_all.py` + a frozen `allowed_tools.json` into the data home and pins
+them; it is **not** an agent action (same contract as `pin()`), because the agent
+must not author the judge that certifies it. The judge reads only the candidate
+and its own allow-list — no repo import, no network, no model — and it can red: an
+undispatchable tool, a single repeated tool, a missing `SKILL.md`, one over the
+prompt-cost ceiling, or an approval-bypass instruction is refused by name.
+
+**One evolve pass installs at most `selfevolve.promote_per_run` skills** (default
+1), the same bound the code arm has had since EV-13 (`forge_per_run`). Without it
+a pass over the recorded history would promote every green candidate at once — 91
+on this install — and fill `skills/created/` to its 25-skill cap in one go. The
+same pass also writes one `promote` (or `retire`) row in the improvement ledger,
+so "what did the machine change on its own?" is answerable after the fact.
 
 
 ### Enabling matched whole runs (opt-in, off by default)
@@ -404,7 +422,8 @@ Re-rankers are ordinary entries in `config/providers.yaml` flagged `rerank: true
 each recording its owner) · `runs/` (traces + token/cost) · `edits/` (diff journal) ·
 `memory/` · `checkpoints/` · `offload/` (oversized observations spilled to files) ·
 `attachments/` + `sandbox/` (per-session folders) · `trash/` (retired files and folders,
-recoverable) ·
+recoverable) · `heldout/` (the sealed promotion judge + its hash manifest, never
+inside a workspace) ·
 `codebase/` (per-workspace FTS+vector index) · `knowledge/` + `embedding/` (global
 notebook index + its cost log) · `costs/` (per-session model-call ledger) · `prices.json` ·
 `tls/` (auto self-signed cert for HTTPS) · `agents.json` · `teams.json` · `jobs.json` ·

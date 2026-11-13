@@ -105,8 +105,13 @@ def slug(pattern):
     return (s or "skill")[:64]
 
 
-def draft(pattern, support, out_dir, note=""):
+def draft(pattern, support, out_dir, note="", purpose=""):
     """Write a skill DRAFT (proposal.json + SKILL.md). Executes nothing.
+
+    `purpose` is optional and empty by default: a mined pattern carries none, and
+    `promote` refuses an automatic install without one (the purpose gate). A
+    caller that already knows what the sequence is for states it here, and the
+    draft then records it.
 
     Returns the path of the proposal folder, or None if the write fails.
     """
@@ -118,6 +123,7 @@ def draft(pattern, support, out_dir, note=""):
                     "pattern": list(pattern), "length": len(pattern),
                     "support": int(support), "created": round(time.time(), 3),
                     "note": note,
+                    "purpose": str(purpose or ""),
                     # JAG-426: provenance — a machine-mined proposal is 'auto', so
                     # promote() can enforce the skills/created/ box on it only.
                     "origin": "auto",
@@ -475,6 +481,19 @@ def retire_unused_skills(days=None, skills_dir=None, category=None, dry_run=True
                 res.get("retired_to") if res.get("ok")
                 else (res.get("error") or "unknown error"))
             removed.append(row)
+            # The same changelog hole as `promote` (measured 2026-11-14): the
+            # skills library has its own `_retired/ledger.jsonl`, but the operator's
+            # improvement ledger — the one place that answers "what did the machine
+            # change on its own?" — showed nothing when the loop retired a skill.
+            if res.get("ok"):
+                try:
+                    from longrun.util import improve as _imp
+                    _imp.ledger_add("retire", origin="selfevolve", artifact_kind="skill",
+                                    name=s["name"], category=category,
+                                    path=res.get("retired_to"),
+                                    reason=("never opened in %d days" % days))
+                except Exception:  # noqa: BLE001 — the audit must never break the loop
+                    pass
     return {"ok": True, "eligible": len(candidates), "days": days,
             "category": category, "dry_run": bool(dry_run),
             "candidates": [s["name"] for s in candidates], "removed": removed}
@@ -572,6 +591,14 @@ STAGE2_DEFAULTS = {
     # Bounded per run so one evolve pass cannot flood src/Matrix.
     "forge_on_evolve": True,
     "forge_per_run": 1,
+    # THE INSTALL BOUND (measured 2026-11-14). `evolve` runs over EVERY mined
+    # pattern, and `pipeline` promotes each green one: on this install that is 91
+    # candidates, so the first pass with a working sealed suite would have filled
+    # `skills/created/` to its 25-skill cap in one go. The code arm has been
+    # bounded per pass since EV-13 (`forge_per_run`); the skill arm had no bound
+    # at all. Same shape, same reason: one pass installs at most N verified
+    # skills, the rest stay drafts and are mined again next pass.
+    "promote_per_run": 1,
     # EV-22: the ABSTRACTION step. A green sequence is not automatically a
     # capability: before it is forged, ONE single-shot model call decides whether
     # the repeat MEANS something and names it (arXiv 2606.02994 ARISE — recurring
@@ -1329,7 +1356,9 @@ def promote(proposal_dir, skills_dir=None, c=None, human=False, purpose="",
             # (the automatic path fails the same way). Say that instead of
             # leaving the operator with a dead accept button.
             hint = (" — the sealed judge suite is not installed (data/heldout/manifest.json); "
-                    "pin it before promoting a skill") if why == "no_manifest" else ""
+                    "run the admin step once: "
+                    "python3 -c \"from longrun.plan import heldout; print(heldout.install())\""
+                    ) if why == "no_manifest" else ""
             return {"ok": False, "gate": g,
                     "error": "held-out gate not green (%s)%s" % (why, hint)}
     superseded = None
@@ -1426,6 +1455,21 @@ def promote(proposal_dir, skills_dir=None, c=None, human=False, purpose="",
            "cost_tokens": _cost, "cost_basis": _cost_basis, "attribution": attr}
     if superseded:
         out["superseded"] = superseded
+    # THE CHANGELOG HOLE (measured 2026-11-14): `improve.decide` recorded the
+    # operator's DECISION in the improvement ledger, but the install itself — the
+    # bytes that landed in skills/<category>/<name>/ — was recorded nowhere, so the
+    # automatic path (evolve → pipeline → promote) could change the skill set with
+    # no audit line at all. One row per install, whichever path produced it; the
+    # `decide` row stays the decision, this one is the artifact.
+    try:
+        from longrun.util import improve as _imp
+        _imp.ledger_add("promote", origin=("operator" if human else str(prop.get("origin") or "auto")),
+                        artifact_kind="skill", name=name, path=prop["archived_to"],
+                        evidence=evidence, cost_tokens=_cost,
+                        superseded=(superseded or {}).get("retired_to") or "",
+                        reason=_rel_reason[:300])
+    except Exception:  # noqa: BLE001 — the audit must never break a release
+        pass
     return out
 
 
@@ -1897,11 +1941,17 @@ def forge_from_draft(proposal_dir, name="", description=""):
 
 
 def pipeline(pattern, out_dir, support=0, runner=None, promote_if_green=True,
-             skills_dir=None, c=None):
+             skills_dir=None, c=None, purpose=""):
     """Full stage 2 cycle: draft -> synth -> verify -> (promote if green AND
-    the green streak reaches the bar)."""
+    the green streak reaches the bar).
+
+    `purpose` is the one sentence that turns material into a skill; an empty one
+    means the automatic cycle stops at a VERIFIED DRAFT (the purpose gate in
+    `promote` refuses the install), which is the designed behaviour: a mined
+    sequence is evidence of a repeat, not a statement of what it is for.
+    """
     c = c or cfg()
-    d = draft(pattern, support, out_dir)
+    d = draft(pattern, support, out_dir, purpose=purpose)
     if not d:
         return {"ok": False, "error": "draft failed"}
     s = synth(pattern, out_dir, c)
@@ -1910,7 +1960,7 @@ def pipeline(pattern, out_dir, support=0, runner=None, promote_if_green=True,
     report = verify(d, runner=runner, c=c)
     arch = None
     if report.get("green") and promote_if_green:
-        arch = promote(d, skills_dir=skills_dir, c=c)
+        arch = promote(d, skills_dir=skills_dir, c=c, purpose=purpose)
     return {"ok": bool(report.get("green")), "dir": d, "verify": report,
             "archived": arch}
 

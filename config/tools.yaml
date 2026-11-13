@@ -354,6 +354,11 @@ selfevolve:
   # `forge_per_run` bounds one evolve pass so it cannot flood src/Matrix.
   forge_on_evolve: true
   forge_per_run: 1
+  # 2026-11-14: the same bound for the SKILL arm. `pipeline` promotes every green
+  # pattern, and the live store held 91 candidates — without this an evolve pass
+  # would fill skills/created/ to its 25-skill cap in one go. One install per
+  # pass; the rest stay verified drafts for the next one.
+  promote_per_run: 1
   # --- evolution gate (2026-11-04) -------------------------------------------
   # verify_repeats: each case is executed N times; a case passes on a strict
   # majority. 1 = today's behaviour. ParetoSaddler (2611.02079) needs 3.
