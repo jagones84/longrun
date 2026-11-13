@@ -403,6 +403,8 @@ Re-rankers are ordinary entries in `config/providers.yaml` flagged `rerank: true
 `sessions/` (transcripts) · `graphs/` (task graphs — one per session AND one per run,
 each recording its owner) · `runs/` (traces + token/cost) · `edits/` (diff journal) ·
 `memory/` · `checkpoints/` · `offload/` (oversized observations spilled to files) ·
+`attachments/` + `sandbox/` (per-session folders) · `trash/` (retired files and folders,
+recoverable) ·
 `codebase/` (per-workspace FTS+vector index) · `knowledge/` + `embedding/` (global
 notebook index + its cost log) · `costs/` (per-session model-call ledger) · `prices.json` ·
 `tls/` (auto self-signed cert for HTTPS) · `agents.json` · `teams.json` · `jobs.json` ·
@@ -415,14 +417,17 @@ Lifecycle and retention — every store has an owner and an end:
 
 | Object | Ends by | What is kept |
 |---|---|---|
-| Session | `DELETE /api/sessions/<id>` → tombstone + cascade of every per-session file | files move to `trash/` (recoverable) |
+| Session | `DELETE /api/sessions/<id>` → tombstone + cascade of every per-session file **and folder** (`attachments/<sid>`, `sandbox/<sid>`) | files move to `trash/` (recoverable) |
+| Session folder | its session's delete, or the startup sweep `sweep_session_folders` for a folder with no live owner (v973, `graph_orphan_days` grace) | moved to `trash/` (recoverable) |
 | Run | finish / abort | its metrics live and die with the session |
 | Graph | the owner's delete, or the startup orphan sweep | owner-less graphs older than 14 days move to `trash/` |
 | Goal | delete (the record is removed, so a stale client cannot resume it) | per session |
 | Job / subjob | manual `job rm` | `jobs.json` has NO automatic retention |
 | Approval | decided, or expired by `approvals.timeout_secs` | newest `approvals.max_records` DECIDED rows; a PENDING request is never evicted (`v909`) |
-| Checkpoint | manual delete / prune | 100 snapshots + 30 turn anchors per session |
-| Memory record | invalidate / supersede / expire → tombstone (last entry wins), restore | `purge_invalidated` removes the dead ones |
+| Checkpoint | manual delete / prune | 100 snapshots + 30 turn anchors per session, and the dropped index entry takes its payload (`v973`) |
+| Offload file | `prune_offload` on write + once per boot | newest `offload_keep_files` (200) per session, nothing older than `offload_keep_days` (30) |
+| Memory record | invalidate / supersede / expire → tombstone (last entry wins), restore; a harness-written kind also bounds itself on every store | `purge_invalidated` removes the dead ones; a harness-written kind keeps `memory_max_records` (300) live, lowest value first (`v972`) |
+| Trash | `_prune_trash` | newest 200 entries + 30 days; sheds files **and folders** (`v973`) |
 | Event | `prune_events` | newest 200 000 rows, every 15 minutes |
 
 ## Safety model
