@@ -160,6 +160,70 @@ src = open(os.path.join(REPO, "src", "longrun", "core", "httpapi.py"),
 ok("K1 the startup sequence compacts checkpoints and sweeps offload",
    "_ckpt_boot.prune()" in src and "_stores_boot.prune_offload()" in src)
 
+# --- M) the delete cascade takes the two per-session FOLDERS (v973) -----------
+# `data/attachments` (67 MB) and `data/sandbox` (69 MB) are keyed by session id and
+# a delete never removed them — the same leak JAG-179 closed for the per-session FILES.
+from longrun.memory import stores as _st  # noqa: E402
+
+for sub in ("attachments", "sandbox"):
+    d = os.path.join(TMP, "data", sub, "sess-A")
+    os.makedirs(d, exist_ok=True)
+    with open(os.path.join(d, "payload.bin"), "w", encoding="utf-8") as fh:
+        fh.write("x")
+    # a SIBLING whose id shares the prefix must survive (no glob)
+    sib = os.path.join(TMP, "data", sub, "sess-AB")
+    os.makedirs(sib, exist_ok=True)
+removed = _st._purge_session_artifacts("sess-A")
+ok("M1 both folders are gone from the session's own tree",
+   not os.path.exists(os.path.join(TMP, "data", "attachments", "sess-A"))
+   and not os.path.exists(os.path.join(TMP, "data", "sandbox", "sess-A")), removed)
+ok("M2 a prefix-sharing sibling session is untouched",
+   os.path.isdir(os.path.join(TMP, "data", "attachments", "sess-AB"))
+   and os.path.isdir(os.path.join(TMP, "data", "sandbox", "sess-AB")))
+ok("M3 the delete is recoverable — the folders moved to trash, not unlinked",
+   any("sess-A" in str(x) for x in removed), removed)
+
+# --- N) trash now caps DIRECTORIES too (v973) --------------------------------
+from longrun.memory import stores as _s2  # noqa: E402
+_s2.TRASH_DIR = os.path.join(TMP, "trash")
+os.makedirs(_s2.TRASH_DIR, exist_ok=True)
+_s2._TRASH_KEEP = 1
+_s2._TRASH_KEEP_SECS = 0
+old_dir = os.path.join(_s2.TRASH_DIR, "an-old-folder")
+os.makedirs(old_dir, exist_ok=True)
+with open(os.path.join(old_dir, "f"), "w", encoding="utf-8") as fh:
+    fh.write("x")
+os.utime(old_dir, (time.time() - 90000, time.time() - 90000))
+new_file = os.path.join(_s2.TRASH_DIR, "a-new-file")
+with open(new_file, "w", encoding="utf-8") as fh:
+    fh.write("x")
+_s2._prune_trash()
+ok("N1 an over-cap trash DIRECTORY is removed, the newest entry stays",
+   not os.path.exists(old_dir) and os.path.exists(new_file))
+
+# --- O) a gone session's folders are swept, a live one's are kept (v973) ------
+# Measured: 151 of 160 `sandbox` folders and 5 of 13 `attachments` folders had no
+# live session — the unreachable-artifact rule already used for graphs (v812).
+# The battery points `LONGRUN_SESSIONS_DIR` at its own temp dir, so the "live"
+# marker is written where the MODULE reads it (`_st.SESSIONS_DIR`), not where the
+# data home happens to be.
+_sessions = _st.SESSIONS_DIR
+os.makedirs(_sessions, exist_ok=True)
+open(os.path.join(_sessions, "live-1.json"), "w", encoding="utf-8").write("{}")
+for sub in ("attachments", "sandbox"):
+    for name in ("live-1", "gone-1"):
+        d = os.path.join(TMP, "data", sub, name)
+        os.makedirs(d, exist_ok=True)
+        os.utime(d, (time.time() - 40 * 86400, time.time() - 40 * 86400))
+rep = _st.sweep_session_folders(days=14)
+ok("O1 the gone session's folders are swept and reported",
+   sorted(rep.get("removed")) == ["attachments/gone-1", "sandbox/gone-1"], rep)
+ok("O2 the LIVE session's folders are kept",
+   all(os.path.isdir(os.path.join(TMP, "data", s, "live-1"))
+       for s in ("attachments", "sandbox")))
+ok("O3 a dry run reports without moving",
+   _st.sweep_session_folders(days=14, dry_run=True).get("removed") == [], "dry run")
+
 good = [n for n, c, _ in CHECK if c]
 print("\n%d/%d checks passed" % (len(good), len(CHECK)))
 sys.exit(0 if len(good) == len(CHECK) else 1)

@@ -7,6 +7,7 @@ loop calls. Extracted from ``server.py`` (JAG-376). Stdlib + sibling modules onl
 import json
 import os
 import re
+import shutil
 import threading
 import time
 import uuid
@@ -138,15 +139,25 @@ def _trash_move(path):
 
 
 def _prune_trash():
-    """Cap data/trash/: keep the newest `_TRASH_KEEP`, drop the rest after 30 days."""
+    """Cap data/trash/: keep the newest `_TRASH_KEEP`, drop the rest after 30 days.
+
+    v973: entries may be FILES or DIRECTORIES (a whole session sub-folder is moved
+    here as one entry), so the removal has to match the kind.
+    """
     try:
-        files = [os.path.join(TRASH_DIR, f) for f in os.listdir(TRASH_DIR)]
-        files = [f for f in files if os.path.isfile(f)]
-        files.sort(key=os.path.getmtime, reverse=True)
+        paths = [os.path.join(TRASH_DIR, f) for f in os.listdir(TRASH_DIR)]
+        paths.sort(key=os.path.getmtime, reverse=True)
         now = time.time()
-        for f in files[_TRASH_KEEP:]:
-            if now - os.path.getmtime(f) > _TRASH_KEEP_SECS:
-                os.unlink(f)
+        for p in paths[_TRASH_KEEP:]:
+            try:
+                if now - os.path.getmtime(p) <= _TRASH_KEEP_SECS:
+                    continue
+                if os.path.isdir(p):
+                    shutil.rmtree(p, ignore_errors=True)
+                else:
+                    os.unlink(p)
+            except OSError:
+                pass
     except OSError:
         pass
 
@@ -228,6 +239,58 @@ def prune_offload(session_id=None, keep_files=None, keep_days=None):
             pass
     return {"ok": True, "removed": removed, "bytes": freed,
             "kept_files": kf, "kept_days": kd}
+
+
+#: v973: the two per-session FOLDER stores. Both are keyed by session id, both are
+#: written on demand, and neither was swept when its session went away.
+SESSION_FOLDER_STORES = ("attachments", "sandbox")
+
+
+def sweep_session_folders(days=None, dry_run=False):
+    """Move a GONE session's `attachments`/`sandbox` folder to trash (v973).
+
+    The same rule as `taskgraph.sweep_orphans` (v812): an artifact whose owner no
+    longer exists is unreachable and must not pile up in the data home. Measured
+    2026-11-14 — **151 of 160 `sandbox` folders and 5 of 13 `attachments` folders
+    belonged to sessions that no longer existed**.
+
+    The grace window is the SAME `graph_orphan_days` the graph sweep uses: one
+    number for one rule (an owner-less artifact), so a session that is momentarily
+    missing is never swept. Recovery is the ordinary one — the folder moves into
+    `data/trash/`, it is not unlinked.
+    """
+    try:
+        from longrun.model import context_limits
+        grace = float(days if days is not None
+                      else context_limits.limit("graph_orphan_days")) * 86400.0
+    except Exception:  # noqa: BLE001 — no readable grace means "do not sweep"
+        return {"ok": False, "error": "no grace window"}
+    try:
+        live = {n[:-5] for n in os.listdir(SESSIONS_DIR) if n.endswith(".json")}
+    except OSError:
+        return {"ok": False, "error": "no sessions dir"}
+    now = time.time()
+    removed = []
+    for sub in SESSION_FOLDER_STORES:
+        root = os.path.join(DATA_DIR, sub)
+        try:
+            names = os.listdir(root)
+        except OSError:
+            continue
+        for n in names:
+            if n in live:
+                continue                     # the owner is still here — keep it
+            d = os.path.join(root, n)
+            try:
+                if not os.path.isdir(d) or (now - os.path.getmtime(d)) <= grace:
+                    continue
+                if dry_run:
+                    removed.append(os.path.join(sub, n))
+                elif _trash_move(d):
+                    removed.append(os.path.join(sub, n))
+            except OSError:
+                pass
+    return {"ok": True, "removed": removed, "dry_run": bool(dry_run)}
 
 
 def purge_offload(session_id):
@@ -452,6 +515,18 @@ def _purge_session_artifacts(sid):
                 continue
             if _trash_move(f):          # JAG-455: recoverable, not unlinked
                 removed.append(os.path.basename(f))
+    # v973: the two per-session FOLDERS the cascade never touched. Measured
+    # 2026-11-14: `data/attachments` 67 MB and `data/sandbox` 69 MB, both keyed by
+    # session id and neither removed by a delete — the same leak JAG-179 closed for
+    # the per-session FILES. Moved to trash (recoverable), exact path only: no glob,
+    # so two sessions sharing a prefix can never take each other's folder.
+    for _sub in ("attachments", "sandbox"):
+        _d = os.path.join(DATA_DIR, _sub, sid)
+        try:
+            if os.path.isdir(_d) and _trash_move(_d):
+                removed.append(os.path.join(_sub, sid))
+        except Exception:  # noqa: BLE001
+            pass
     _prune_trash()
     return removed
 

@@ -3534,6 +3534,15 @@ def main():
     except Exception:  # noqa: BLE001 — the sweep is best-effort
         pass
     try:
+        from longrun.memory import stores as _folders_boot
+        # v973: the per-session FOLDER stores whose owner is gone. Measured
+        # 2026-11-14: 151 of 160 `sandbox` folders and 5 of 13 `attachments` folders
+        # had no live session — the same unreachable-artifact rule as `sweep_orphans`
+        # above, with the same grace window, moved to the recoverable trash.
+        _folders_boot.sweep_session_folders()
+    except Exception:  # noqa: BLE001 — the sweep is best-effort
+        pass
+    try:
         from longrun.orchestrate import routines
         routines.start_scheduler()  # JAG-287 D: agents wake on a cadence
     except Exception:  # noqa: BLE001 — the heartbeat scheduler is optional

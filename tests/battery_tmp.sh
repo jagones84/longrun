@@ -8,5 +8,5 @@
 # purges the offload folder, the config owner, the v972 memory bound, and the badge pin.
 set -u
 cd /home/jagones/Repositories/longrun || exit 1
-LONGRUN_BATTERY_TESTS="v973_store_bounds v972_memory_hygiene v507_namespaced_subtools v204_memory_governance v628_memory_supersession v876_memory_weak_matches v830_health v318_ckpt_approvals_delete v424_checkpoint_route v177_session_delete_cascade v827_context_limits_config v354_ui_links_pins" \
+LONGRUN_BATTERY_TESTS="v973_store_bounds v972_memory_hygiene v507_namespaced_subtools v204_memory_governance v628_memory_supersession v876_memory_weak_matches v830_health v318_ckpt_approvals_delete v424_checkpoint_route v177_session_delete_cascade v314_cascade_delete v315_session_delete_final v827_context_limits_config v354_ui_links_pins" \
   bash tests/battery.sh
