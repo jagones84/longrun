@@ -2505,7 +2505,9 @@ def classify(tool, args, workspace=None, hist=None, allow=None, scope_name=None)
     # explicit opt-out) already returned above, so here mode != full. Neither the
     # per-tool `approval: auto` nor the old `outside_workspace` toggle can defeat
     # it: they used to let `shell.approval: auto` run `cd /fuori && rm -rf x`
-    # silently. Covers fs.* / diff, git, and shell (cwd, `cd`/`-C`, path args).
+    # silently. Covers fs.* / diff, git, shell (cwd, `cd`/`-C`, path args) and the
+    # auto-approved readers that name their target with another key (grep.search
+    # `path`, glob.list `root` — see `touches_outside`).
     if workspace:
         _out = touches_outside(tool, args, workspace)
         if _out:
