@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""v500 — Matrix fail-open hooks: dynamic tools hotload, broken module isolation, prompt hook, shadow WebUI, and warm restart ticket."""
+"""v500 — Matrix fail-open hooks: dynamic tools hotload, broken module isolation, prompt hook, shadow WebUI, and the harness restart ticket."""
+import json
 import os
 import sys
 import tempfile
@@ -22,7 +23,7 @@ with tempfile.TemporaryDirectory() as tmp:
     os.environ["LONGRUN_MATRIX_DOT"] = os.path.join(tmp, ".Matrix")
     os.environ["LONGRUN_DATA_DIR"] = os.path.join(tmp, "data")
     try:
-        from longrun.core import matrix
+        from longrun.core import matrix, restart
         from longrun.model import prompt
         from longrun.memory import skills
         from longrun.tools import matrix_guard, registry, tools
@@ -111,14 +112,65 @@ with tempfile.TemporaryDirectory() as tmp:
         check("F shadow WebUI serves when valid and automatically falls back to Nucleus when corrupted",
               init.get("ok") is True and path_valid == init["path"] and path_fallback == nuc_html)
 
-        sched = matrix.schedule_restart(session_id="sess_test_1", reason="loaded new core hook",
-                                        repo_root=tmp, dry_run=True)
-        ticket = matrix.consume_resume_ticket(tmp)
-        check("G schedule_restart writes durable resume ticket consumed on startup",
+        sched = restart.schedule_restart(session_id="sess_test_1", reason="loaded new core hook",
+                                         dry_run=True)
+        ticket = restart.consume_resume_ticket()
+        check("G harness.restart writes durable resume ticket consumed on startup",
               sched.get("ok") is True
               and isinstance(ticket, dict)
               and ticket.get("session_id") == "sess_test_1"
               and ticket.get("reason") == "loaded new core hook")
+        # 2026-11-15: a rehearsal must not arm a continuation for the NEXT boot.
+        restart.schedule_restart(session_id="sess_test_1", reason="rehearsal", dry_run=True)
+        resumed = restart.resume_after_restart(spawn_turn=False)
+        check("G2 a dry-run restart ticket never resumes a session on the next boot",
+              resumed.get("resumed") is False
+              and restart.consume_resume_ticket() is None)
+
+        # G3/G4: ONE resume owner. A turn that left an inflight record is
+        # continued by inflight.recover; the ticket path only spawns its own
+        # turn when there is no record to recover.
+        from longrun.core import inflight
+        from longrun.memory import stores
+        _sid = "sess_resume_1"
+        stores.save_session({"id": _sid, "title": _sid, "created": 0.0,
+                             "messages": [{"role": "user", "content": "work"}],
+                             "interrupted": {"ts": 1.0}})
+        inflight.begin(_sid, object())
+        with open(restart._ticket_path(), "w", encoding="utf-8") as f:
+            json.dump({"session_id": _sid, "reason": "evolution", "ts": 0}, f)
+        r3 = restart.resume_after_restart(spawn_turn=False)
+        _msgs = (stores.load_session(_sid) or {}).get("messages") or []
+        check("G3 an inflight record keeps the standard `[Harness restart]` resume (no second turn)",
+              r3.get("deferred") == "inflight" and len(_msgs) == 1)
+        inflight.end(_sid)
+        with open(restart._ticket_path(), "w", encoding="utf-8") as f:
+            json.dump({"session_id": _sid, "reason": "evolution", "ts": 0}, f)
+        r4 = restart.resume_after_restart(spawn_turn=False)
+        _msgs = (stores.load_session(_sid) or {}).get("messages") or []
+        check("G4 a caller with no inflight record still gets the fallback continuation",
+              r4.get("resumed") is True and r4.get("deferred") is None
+              and any("[Harness restart]" in str(m.get("content")) for m in _msgs))
+
+        # H: `restart` is a HARNESS tool now, and the old spelling still routes.
+        matrix_enum = (registry.TOOL_SCHEMAS.get("matrix") or {}).get("properties", {}) \
+            .get("action", {}).get("enum", [])
+        old_ok = (registry.canonical_name("matrix.restart", {}) == "harness.restart"
+                  and registry.canonical_name("matrix", {"action": "restart"}) == "harness.restart")
+        spec = registry.tool_spec("harness.restart") or {}
+        check("H1 restart is harness.restart, matrix lost it, and the old spelling aliases",
+              "harness.restart" in registry.TOOL_SCHEMAS
+              and "matrix.restart" not in registry.TOOL_SCHEMAS
+              and "restart" not in matrix_enum
+              and old_ok)
+        check("H2 the harness.restart policy row exists (enabled + auto), not the disabled default",
+              spec.get("enabled") is True and spec.get("approval") == "auto")
+        out_new = tools.execute("harness.restart", {"session": "sess_test_1", "dry_run": True})
+        out_old = tools.execute("matrix.restart", {"session": "sess_test_1", "dry_run": True})
+        check("H3 both spellings dispatch to harness.restart and write the ticket",
+              out_new.get("ok") is True and out_new.get("tool") == "harness.restart"
+              and out_old.get("ok") is True and out_old.get("tool") == "harness.restart")
+        restart.consume_resume_ticket()
     finally:
         os.environ.pop("LONGRUN_MATRIX_SRC", None)
         os.environ.pop("LONGRUN_MATRIX_DOT", None)

@@ -1626,6 +1626,22 @@ def _self(args, run_id):
     except Exception:  # noqa: BLE001
         ident["trust"] = None
     info["identity"] = ident
+    if full:
+        # 2026-11-15: "which model am I?" had no answer in any self surface
+        # (`self.diagnose` reports the GLOBAL chat default). ONE derivation
+        # (`routing.runtime_facts`), same facts the prompt's runtime line uses.
+        try:
+            from longrun.model import routing as _routing
+            info["llm"] = _routing.runtime_facts(sid)
+            # The model that ACTUALLY answered the last turn (a per-call fallback
+            # can differ from the pin). Run ledger, not the router: no probe.
+            from longrun.model import runmetrics as _rm
+            _last = _rm.get(sid) or {}
+            if isinstance(info["llm"], dict) and _last:
+                info["llm"]["last_run_model"] = _last.get("model")
+                info["llm"]["last_run_outcome"] = _last.get("outcome")
+        except Exception:  # noqa: BLE001 — self-knowledge must never break the tool
+            info["llm"] = None
     try:
         from longrun.tools import diag as _diag
         _scope = ident.get("scope")
@@ -3131,6 +3147,24 @@ def _knowledge(args, run_id):
             "count": len(res.get("results", [])), "scope": scope}
 
 
+def _harness(args, run_id):
+    """Harness lifecycle actions (`harness.restart`).
+
+    2026-11-15: `restart` moved here from the Matrix suite. It kills the whole
+    process, so it is a harness action, not a Matrix artifact operation.
+    """
+    from longrun.core import restart
+    action = str((args or {}).get("action") or "restart").strip().lower()
+    if action == "restart":
+        sid = str((args or {}).get("session") or run_id or "").strip()
+        return restart.schedule_restart(
+            session_id=sid,
+            reason=(args or {}).get("reason") or "",
+            dry_run=bool((args or {}).get("dry_run", False)),
+        )
+    return {"ok": False, "error": "unknown harness action %r" % action}
+
+
 def _matrix(args, run_id):
     """Execute Matrix self-evolution suite actions."""
     from longrun.core import matrix
@@ -3192,12 +3226,10 @@ def _matrix(args, run_id):
     if action == "webui_reset":
         return matrix.webui_reset()
     if action == "restart":
-        sid = str(args.get("session") or run_id or "").strip()
-        return matrix.schedule_restart(
-            session_id=sid,
-            reason=args.get("reason") or "",
-            dry_run=bool(args.get("dry_run", False)),
-        )
+        # Deprecated shim: `matrix.restart` canonicalises to `harness.restart`
+        # before dispatch, so this branch only runs when canonicalisation was
+        # skipped. The mechanics live in `longrun.core.restart`.
+        return _harness(args, run_id)
     return {"ok": False, "error": "unknown matrix action %r" % action}
 
 
@@ -3367,7 +3399,7 @@ _DISPATCH = {"shell": _shell_hinted, "shell.exec": _shell_hinted,
              "python": _python, "python.run": _python,
              "process": _process,
              "glob": _glob, "glob.list": _glob,
-             "matrix": _matrix}
+             "matrix": _matrix, "harness": _harness}
 
 
 def normalize_args(tool: str, args: Any) -> Any:

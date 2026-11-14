@@ -765,14 +765,14 @@ _LEGACY_SCHEMAS = {
                         "Actions: status | seams | scaffold | remove | hotload | "
                         "enable/disable | checkpoint_save/checkpoint_rollback (slot 1..3) | "
                         "git_commit/git_log/git_diff/git_reset (separate matrix git repo) | "
-                        "test/clean_trash (matrix trash dir) | webui_init/webui_reset | restart."),
+                        "test/clean_trash (matrix trash dir) | webui_init/webui_reset."),
         "type": "object",
         "properties": {
             "action": {"type": "string",
                        "enum": ["status", "seams", "scaffold", "remove", "hotload", "enable", "disable",
                                 "checkpoint_save", "checkpoint_rollback",
                                 "git_commit", "git_log", "git_diff", "git_reset",
-                                "test", "clean_trash", "webui_init", "webui_reset", "restart",
+                                "test", "clean_trash", "webui_init", "webui_reset",
                                 "verify_target", "promote_to_nucleus", "load_module"],
                        "default": "status"},
             "description": {"type": "string", "description": "for matrix.scaffold: one sentence stating exactly what the artifact does"},
@@ -794,10 +794,28 @@ _LEGACY_SCHEMAS = {
                       "description": "maximum commits to return (action=git_log)"},
             "keep_recent": {"type": "integer", "default": 0,
                             "description": "keep only the N most recent artifacts (0 = keep all)"},
-            "session": {"type": "string", "description": "session id to resume after warm restart"},
-            "reason": {"type": "string", "description": "reason for warm restart"},
+        },
+        "required": [],
+        "subject": "action",
+    },
+    # 2026-11-15: `restart` is a HARNESS lifecycle action, not a Matrix artifact
+    # operation — it kills every running turn in every session. It lived in
+    # `matrix` only because Matrix built it first for its evolution loop, so the
+    # Tools panel showed the whole suite description on a plain process restart.
+    "harness": {
+        "description": ("Harness lifecycle: restart the Longrun process and continue the "
+                        "calling session. The service manager restarts the unit; boot then "
+                        "resumes the interrupted turn. Every running turn in every session "
+                        "dies with the process, so use it only for a change that hotload "
+                        "cannot apply (promoted Nucleus code)."),
+        "type": "object",
+        "properties": {
+            "action": {"type": "string", "enum": ["restart"], "default": "restart"},
+            "session": {"type": "string",
+                        "description": "session id to continue after the restart (default: the calling turn's session)"},
+            "reason": {"type": "string", "description": "why the restart is needed"},
             "dry_run": {"type": "boolean", "default": False,
-                        "description": "report what would change without changing anything"},
+                        "description": "return the ticket a real restart would write and do not exit"},
         },
         "required": [],
         "subject": "action",
@@ -838,6 +856,7 @@ LEGACY_DEFAULT_SUBTOOL = {
     "diff": "diff.files",
     "process": "process.list",
     "matrix": "matrix.status",
+    "harness": "harness.restart",
     "human": "human.ask",
 }
 
@@ -921,10 +940,12 @@ _SUBTOOL_FIELDS = {
         "git_diff": ["rev"], "git_reset": ["rev"],
         "test": ["script", "code", "target", "install_deps", "timeout_secs"],
         "clean_trash": ["keep_recent"], "webui_init": [], "webui_reset": [],
-        "restart": ["session", "reason", "dry_run"],
         "verify_target": ["kind", "name"],
         "promote_to_nucleus": ["kind", "name"],
         "load_module": ["name"],
+    },
+    "harness": {
+        "restart": ["session", "reason", "dry_run"],
     },
 }
 
@@ -1175,6 +1196,18 @@ _SUBTOOL_GUIDANCE = {
         "Promote a verified Matrix artifact into protected Nucleus code. Requires "
         "the configured dangerous-write gate and successful verification."
     ),
+    # 2026-11-15: this row had no guidance, so the UI showed the whole Matrix
+    # suite description (scaffold/remove/git/...) on a plain harness restart.
+    "harness.restart": (
+        "Restart the Longrun harness itself — not a Matrix-only operation and not "
+        "the same as `systemctl restart`: it writes a durable resume ticket for "
+        "`session` (default: the calling turn's session), exits, and the service "
+        "manager (`Restart=always`) brings the process back; boot then resumes the "
+        "interrupted turn. Every RUNNING turn in every session dies with the "
+        "process, so use it only for a change hotload cannot apply (promoted "
+        "Nucleus code). `dry_run=true` returns the ticket a real restart would "
+        "write and leaves no pending resume behind."
+    ),
 }
 
 
@@ -1296,6 +1329,18 @@ _ACTION_ALIASES = {
     },
 }
 
+# 2026-11-15: `restart` moved from the Matrix suite to the harness namespace.
+# A stored call, a prompt or an operator habit still says `matrix.restart`, so
+# the OLD spelling resolves to the NEW tool before the dotted-name early return,
+# and before `_missing_required` / `classify` judge it. Both spellings therefore
+# share one schema, one policy row and one recorded tool name.
+_TOOL_ALIASES = {
+    "matrix.restart": "harness.restart",
+}
+_ACTION_ALIAS_TOOLS = {
+    ("matrix", "restart"): "harness.restart",
+}
+
 
 def canonical_name(name, args=None):
     """Canonicalise a LEGACY call onto its `<namespace>.<subtool>` tool name.
@@ -1309,6 +1354,8 @@ def canonical_name(name, args=None):
     external MCP ``client__tool`` names and Matrix names are never touched.
     """
     n = str(name or "").strip()
+    if n in _TOOL_ALIASES:
+        return _TOOL_ALIASES[n]
     if not n or "." in n or "__" in n:
         return name
     act = ""
@@ -1323,6 +1370,8 @@ def canonical_name(name, args=None):
         act = str(args.get("action") or "").strip().lower()
     if act:
         act = _ACTION_ALIASES.get(n, {}).get(act, act)
+        if (n, act) in _ACTION_ALIAS_TOOLS:
+            return _ACTION_ALIAS_TOOLS[(n, act)]
     if act and ("%s.%s" % (n, act)) in _CANONICAL_SCHEMAS:
         return "%s.%s" % (n, act)
     if not act:

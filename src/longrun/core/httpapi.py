@@ -524,7 +524,16 @@ def chat_stream_gen(sess, message, model, mark=None, autonomous=False, jid=None,
             # v0.5.1 warm-up: resolve the target alias and, if it is cold, emit
             # `model.loading` and load it *before* the first token instead of
             # letting the client stall silently on the router's autoload.
-            target = model or routing.pick("chat") or default_model()
+            # 2026-11-15: the session's pinned model is the model of its turn —
+            # `prepare_session_for_turn` above already budgets for it. The chat
+            # route used to ignore the pin unless the CLIENT sent the model, so a
+            # headless/API caller (forge, a curl) silently answered with the chat
+            # role's default while the UI, the prompt and the run ledger all said
+            # something else (`routing.turn_model` is the documented one source).
+            _pin = (sess or {}).get("model")
+            target = (model or
+                      (_pin if _pin and not routing.is_dynamic_ref(_pin) else None) or
+                      routing.pick("chat") or default_model())
             trace = RunTrace("chat", goal=message[:120], model=target, session=sess["id"])
             trace.span("chat.stream", session=sess["id"])
             q.put("event: chat.run\ndata: %s\n\n" % json.dumps(
@@ -842,7 +851,7 @@ def _tool_context():
         return ""
 
 
-def _system_prompt(sess, tool_ctx=None, sections=None):
+def _system_prompt(sess, tool_ctx=None, sections=None, model=None):
     """Single source of truth for the chat system prompt (JAG-70).
 
     JAG-128A: now delegates to the section registry (prompt.render_sections). It remains
@@ -864,7 +873,7 @@ def _system_prompt(sess, tool_ctx=None, sections=None):
     except Exception:  # noqa: BLE001
         ws = None
     try:
-        return prompt_mod.render_sections(sess, ws=ws, tool_ctx=tool_ctx)
+        return prompt_mod.render_sections(sess, ws=ws, tool_ctx=tool_ctx, model=model)
     except Exception:  # noqa: BLE001 — the prompt must never break the chat
         return system_prompt()
 
@@ -3496,8 +3505,9 @@ def main():
     reconcile_agent_models()       # JAG-309: agent model == its session's model
     reconcile_orphan_turns()       # JAG-262: close turns killed by a hard restart
     try:
-        from longrun.core import matrix as _mtx_boot
-        _mtx_boot.resume_after_restart()
+        # 2026-11-15: the harness restart owns its ticket; Matrix no longer does.
+        from longrun.core import restart as _restart_boot
+        _restart_boot.resume_after_restart()
     except Exception:  # noqa: BLE001
         pass
     # 2026-11-10: a turn that was RUNNING when the process went away is resumed —

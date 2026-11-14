@@ -202,6 +202,37 @@ check("C5 the turn closed on the real answer",
       _last.get("role") == "assistant" and (FINAL[:20] in (_last.get("content") or "")),
       (_last.get("content") or "")[:80])
 
+# the turn's own metrics must report the LOOP iterations: `_kg_rounds` read 0 on
+# every turn that finished inside its first tool budget (114 of 149 measured).
+from longrun.model import runmetrics as _rm  # noqa: E402
+check("C5b run.metrics reports the real loop iterations, not keepgoing rounds",
+      int((_rm.get("v1005-sess") or {}).get("iterations") or 0) >= 4,
+      (_rm.get("v1005-sess") or {}).get("iterations"))
+
+# a model that goes blank must NOT close a turn that still has work: the forced
+# close forbids tools, which is exactly what the work needs (2026-11-14 reply:
+# "the restart message forced a plain-text answer … tool calls were off the table")
+_SID = "v1005-open-plan"
+_write(_SID + ".json", {"key": _SID, "run_id": _SID, "session_id": _SID,
+                        "plan": 1, "plan_base": 1, "updated": 1.0,
+                        "nodes": [{"id": "n1", "plan": 1, "status": "todo",
+                                   "label": "read the router"}]})
+_SCRIPT2 = ["", "", "", CALL, FINAL]
+ev2 = run_turn(_SID, lambda n: _SCRIPT2[min(n, len(_SCRIPT2) - 1)])
+errs2 = [d for k, d in ev2 if k == "chat.error"]
+parks = [d for k, d in ev2
+         if k == "harness.inject" and d.get("inject_kind") == "continue"
+         and "replies were empty" in (d.get("text") or "")]
+check("C6 a 3rd empty does NOT close a turn that still has open steps", not errs2, errs2[:1])
+check("C7 it parks with a CONTINUE naming the work, bounded to <= 2", 1 <= len(parks) <= 2,
+      len(parks))
+_sess2 = server.load_session(_SID) or {}
+_last2 = (_sess2.get("messages") or [{}])[-1]
+check("C8 the turn then works and answers",
+      [k for k, _d in ev2].count("tool.call") >= 1
+      and (FINAL[:20] in (_last2.get("content") or "")),
+      (_last2.get("content") or "")[:80])
+
 print("---")
 passed = sum(results)
 print("%d/%d PASS" % (passed, len(results)))

@@ -33,6 +33,8 @@ from longrun.tools import diag  # noqa: E402
 from longrun.tools import registry  # noqa: E402
 from longrun.agent import agents  # noqa: E402
 from longrun.agent import subagent  # noqa: E402
+from longrun.core import server  # noqa: E402
+from longrun.model import prompt as prompt_mod  # noqa: E402
 
 results = []
 
@@ -99,6 +101,34 @@ r4 = T._self({"action": "info"}, None)
 check("D1 no session still answers", bool(r4.get("ok")) and "identity" in r4, r4)
 check("D2 the A53 fields are the documented ones",
       set(("identity", "namespaces")) <= set(T._self({}, "x").keys()))
+
+# -------------------------------- E: which MODEL am I ----------------------
+# 2026-11-15 (live A61, "ok am i speaking now with local?"): the agent could only
+# describe the router URL — no surface carried the session's own model, and the
+# prompt asserted a local llama.cpp router even for a cloud session.
+REF = "openrouter:z-ai/glm-5.3-flash"
+server.save_session({"id": "sess-model-1", "title": "model", "created": 0.0,
+                     "messages": [], "model": REF})
+r5 = T._self({"action": "info"}, "sess-model-1")
+llm = r5.get("llm") or {}
+check("E1 self.info names the session's own model", llm.get("model") == REF, llm)
+check("E2 it names the provider and says local or remote",
+      llm.get("provider") == "openrouter" and llm.get("local") is False, llm)
+sec = (prompt_mod.section_texts({"id": "sess-model-1", "model": REF})
+       .get("runtime-model") or "")
+check("E3 the system prompt carries a runtime-model section with that ref",
+      REF in sec and "Runtime (model and provider)" in sec, sec)
+r6 = T._self({"action": "info"}, None)
+check("E4 no session answers with the resolved harness default, not a blank",
+      bool((r6.get("llm") or {}).get("model")), r6.get("llm"))
+# The model that ANSWERED can differ from the pin (per-call fallback): the run
+# ledger already records it, so expose it instead of leaving the agent to guess.
+from longrun.model import runmetrics  # noqa: E402
+runmetrics.start("sess-model-1", "openrouter:z-ai/glm-5.3-flash")
+runmetrics.finish("sess-model-1", outcome="done", model="deepseek:fallback-model")
+llm2 = (T._self({"action": "info"}, "sess-model-1").get("llm") or {})
+check("E5 self.info reports the model that actually answered the last run",
+      llm2.get("last_run_model") == "deepseek:fallback-model", llm2)
 
 print("---")
 passed = sum(results)

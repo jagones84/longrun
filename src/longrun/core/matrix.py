@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Matrix self-evolution engine — checkpoints, local Git, dynamic tools, prompt hooks & warm restart.
+"""Matrix self-evolution engine — checkpoints, local Git, dynamic tools and prompt hooks.
 
 Implements the mutable Matrix half of the Nucleus/Matrix architecture:
   - 3 atomic checkpoint slots (`slot_1`, `slot_2`, `slot_3`) in `.Matrix/checkpoints/`
@@ -8,7 +8,9 @@ Implements the mutable Matrix half of the Nucleus/Matrix architecture:
   - Fail-open dynamic tool discovery from `src/Matrix/tools/<name>.py`
   - Hardcoded Matrix system prompt instructions + `.Matrix/rules/*.md` addenda hook
   - Optional shadow WebUI (`src/Matrix/webui/index.html`) with automatic fallback to Nucleus
-  - Session-preserving warm restart ticket (`.Matrix/resume_ticket.json`)
+
+The harness restart (ticket + session continuation) lives in `core/restart.py`:
+it is a harness lifecycle action, not a Matrix artifact operation (2026-11-15).
 """
 import glob
 import hashlib
@@ -100,7 +102,9 @@ MATRIX_SYSTEM_PROMPT = (
     "Uninstall completely and live with `matrix.remove` (`kind`, `name`): it deletes the file, "
     "bytecode, imported module, discovery cache, policy overlay entries and verification record, "
     "then hot-reloads. "
-    "Use `matrix.checkpoint_save` (slots 1..3), `matrix.git_commit` (max 20), `matrix.hotload`, `matrix.enable`/`matrix.disable`."
+    "Use `matrix.checkpoint_save` (slots 1..3), `matrix.git_commit` (max 20), `matrix.hotload`, `matrix.enable`/`matrix.disable`. "
+    "When a change cannot be hotloaded (promoted Nucleus code), restart the HARNESS with "
+    "`harness.restart` — it continues this session; `restart` is not a Matrix action."
 ) % (len(HOOK_SUBPACKAGES), ", ".join("`%s`" % _s for _s in HOOK_SUBPACKAGES))
 
 
@@ -1302,87 +1306,29 @@ def handle_ext_http(handler, method, path, qs=None, body=None, repo_root=None):
     return True
 
 
-def _resume_ticket_path(repo_root=None):
-    _root, _msrc, mdot = _roots(repo_root)
-    os.makedirs(mdot, exist_ok=True)
-    return os.path.join(mdot, "resume_ticket.json")
-
-
 def schedule_restart(session_id=None, reason="", repo_root=None, dry_run=False):
-    """Write a durable session continuation ticket and optionally trigger a graceful restart."""
-    matrix_guard.ensure_layout(repo_root)
-    ticket = {
-        "session_id": str(session_id or "").strip(),
-        "reason": str(reason or "Matrix evolution restart").strip()[:300],
-        "ts": round(time.time(), 3),
-    }
-    write_json(_resume_ticket_path(repo_root), ticket)
-    _ledger("matrix.restart_scheduled", session=ticket["session_id"], reason=ticket["reason"])
-    if not dry_run:
-        def _delayed_restart():
-            time.sleep(0.6)
-            os._exit(0)
-        threading.Thread(target=_delayed_restart, daemon=True).start()
-    return {"ok": True, "ticket": ticket, "dry_run": bool(dry_run)}
+    """DEPRECATED shim — the harness restart lives in `longrun.core.restart`.
+
+    2026-11-15: `restart` is a harness lifecycle action, not a Matrix artifact
+    operation, and the tool is now `harness.restart`. Kept for one release so an
+    old caller (or a stored call) still works; the ticket path moved to the data
+    dir, so this shim forwards instead of writing the old `.Matrix` file.
+    """
+    from longrun.core import restart as _restart
+    return _restart.schedule_restart(session_id=session_id, reason=reason,
+                                     dry_run=dry_run)
 
 
 def consume_resume_ticket(repo_root=None):
-    """Read and atomically delete `.Matrix/resume_ticket.json` if present."""
-    p = _resume_ticket_path(repo_root)
-    if not os.path.isfile(p):
-        return None
-    data = read_json(p, None)
-    try:
-        os.remove(p)
-    except OSError:
-        pass
-    return data if isinstance(data, dict) else None
+    """DEPRECATED shim — see `longrun.core.restart.consume_resume_ticket`."""
+    from longrun.core import restart as _restart
+    return _restart.consume_resume_ticket()
 
 
 def resume_after_restart(repo_root=None, spawn_turn=True):
-    """Called on server startup after `reconcile_orphan_turns`: resumes the interrupted session."""
-    ticket = consume_resume_ticket(repo_root)
-    if not ticket or not ticket.get("session_id"):
-        return {"resumed": False}
-    sid = ticket["session_id"]
-    reason = ticket.get("reason") or "Matrix self-evolution update"
-    try:
-        from longrun.memory import stores
-        sess = stores.load_session(sid)
-        if sess is not None:
-            msgs = sess.get("messages") or []
-            if msgs and (msgs[-1].get("meta") or {}).get("error_detail") == "interrupted-by-restart":
-                msgs.pop()
-            stores.append_message(
-                sess,
-                "assistant",
-                "[Matrix Warm Restart] Service restarted cleanly (%s). Continuing session." % reason,
-                meta={"matrix_resumed": True, "reason": reason},
-            )
-            cont_msg = (
-                "[Harness Matrix Continuation] Warm restart complete (%s). "
-                "Verify your Matrix changes and continue the active run." % reason
-            )
-            if spawn_turn:
-                stores.append_message(
-                    sess,
-                    "user",
-                    cont_msg,
-                    meta={"matrix_continuation": True, "reason": reason},
-                )
-                def _run_cont():
-                    try:
-                        from longrun.agent import agent as _ag
-                        s2 = stores.load_session(sid)
-                        if s2 is not None:
-                            _ag.chat_once(s2, cont_msg, model=s2.get("model"), autonomous=True)
-                    except Exception:  # noqa: BLE001
-                        pass
-                threading.Thread(target=_run_cont, daemon=True).start()
-            return {"resumed": True, "session_id": sid, "reason": reason}
-    except Exception:  # noqa: BLE001
-        pass
-    return {"resumed": False, "session_id": sid}
+    """DEPRECATED shim — see `longrun.core.restart.resume_after_restart`."""
+    from longrun.core import restart as _restart
+    return _restart.resume_after_restart(spawn_turn=spawn_turn)
 
 
 def status(repo_root=None):

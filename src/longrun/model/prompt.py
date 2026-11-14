@@ -44,6 +44,10 @@ SECTIONS = [
     {"id": "honesty-policy", "order": 46, "kind": "static"},
     {"id": "verify-policy", "order": 47, "kind": "static"},
     {"id": "self-summary",  "order": 50, "kind": "dynamic"},
+    # 2026-11-15: the session's OWN model was nowhere in the prompt, so an agent
+    # asked "am I speaking with the local model?" could only describe the router
+    # URL. Stable per model, so it does not invalidate the prefix cache per turn.
+    {"id": "runtime-model", "order": 51, "kind": "dynamic"},
     {"id": "agent-role",    "order": 52, "kind": "dynamic"},
     {"id": "architect", "order": 53, "kind": "dynamic"},
     {"id": "delegation",    "order": 54, "kind": "dynamic"},
@@ -71,8 +75,10 @@ CAPABILITY_RULE = (
     "When the user asks about YOUR OWN capabilities \u2014 which tools you have, "
     "whether a tool exists, where your rules or memory live, what you can do \u2014 "
     "answer FROM YOUR PROMPT: the `Tool registry` block above, `self.info` (the tool `self`), or "
-    "`skills.list` (skills{action:'list'}). NEVER run `shell.exec`/`git.run` (ls, find, git status) to answer a "
-    "question about yourself: that inspects the machine, not you."
+    "`skills.list` (skills{action:'list'}). When asked which MODEL or provider you are, or whether "
+    "you run locally, answer from the `Runtime` section or `self.info.llm` (the model that answered "
+    "the last turn is `self.info.llm.last_run_model`). NEVER run `shell.exec`/`git.run` (ls, find, "
+    "git status) to answer a question about yourself: that inspects the machine, not you."
 )
 
 
@@ -142,12 +148,16 @@ def _static_text(sid):
     return getattr(server, _STATIC_ATTRS.get(sid, ""), "") or ""
 
 
-def section_texts(sess=None, ws=None, tool_ctx=None):
+def section_texts(sess=None, ws=None, tool_ctx=None, model=None):
     """Per-section rendered text {id: text} (JAG-272: context accounting).
 
     Same assembly as `render_sections` but keyed by section id, so the Context
     panel can attribute REAL tokens to each part of the system prompt (the sum of
     the buckets then equals the measured context total).
+
+    `model` (2026-11-15) is the model THIS turn resolved — an explicit request
+    model can differ from the session pin, and the `runtime-model` section must
+    name the one that answers.
     """
     g = _addenda(GLOBAL_DDIR)
     p = _addenda(project_ddir(ws)) if ws else {}
@@ -156,6 +166,8 @@ def section_texts(sess=None, ws=None, tool_ctx=None):
         sid = sec["id"]
         if sec["kind"] == "static":
             base = _static_text(sid)
+        elif sid == "runtime-model":
+            base = runtime_model_text(sess, model)
         else:
             base = _PROVIDERS.get(sid, lambda *a: "")(sess, ws, tool_ctx)
         parts = [x.strip() for x in (base or "", g.get(sid, ""), p.get(sid, ""))
@@ -179,9 +191,9 @@ def join_sections(texts):
     return "\n\n".join(parts_out)
 
 
-def render_sections(sess=None, ws=None, tool_ctx=None):
+def render_sections(sess=None, ws=None, tool_ctx=None, model=None):
     """Assemble the final prompt: for each section, default + global + project."""
-    return join_sections(section_texts(sess, ws, tool_ctx))
+    return join_sections(section_texts(sess, ws, tool_ctx, model=model))
 
 
 def _provider_self_summary(sess, ws, ctx):
@@ -190,6 +202,39 @@ def _provider_self_summary(sess, ws, ctx):
         return server.self_summary()
     except Exception:  # noqa: BLE001
         return ""
+
+
+def runtime_model_text(sess=None, model=None):
+    """The `runtime-model` section: the model and provider THIS session answers on.
+
+    ONE derivation (`routing.runtime_facts` → `providers.describe`), also used by
+    `self.info.llm`. `sess` may be a session dict, a session id, or None; an
+    explicit `model` (the agent loop already resolved one) wins.
+    """
+    try:
+        from longrun.model import routing
+        facts = routing.runtime_facts(sess, model)
+    except Exception:  # noqa: BLE001 — the prompt must never break the chat
+        return ""
+    ref = facts.get("model")
+    if not ref:
+        return ""
+    if facts.get("local") is True:
+        where = "a LOCAL llama.cpp router at %s" % (
+            facts.get("base_url") or facts.get("router") or "the router")
+    elif facts.get("provider"):
+        where = "the REMOTE provider `%s`" % facts.get("provider")
+    else:
+        where = ("the local router's alias list (no providers.yaml entry for "
+                 "this ref)")
+    return (
+        "## Runtime (model and provider)\n"
+        "This session answers on `%s`, served by %s. When asked which model or "
+        "provider you are, or whether you run locally, answer from this line or "
+        "`self.info.llm`; never guess from the machine the harness runs on. A "
+        "per-call fallback can answer instead: the model that answered is "
+        "recorded in the run events (`model.fallback`)." % (ref, where)
+    )
 
 
 def _provider_role(sess, ws, ctx):

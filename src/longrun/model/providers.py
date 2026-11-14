@@ -475,6 +475,31 @@ def endpoint(ref):
     return base + "/chat/completions", headers(p), mid
 
 
+def describe(ref):
+    """Facts about the model a turn runs on: provider, kind, local flag, URL.
+
+    Added 2026-11-15: an agent could not answer "am I running locally?" — the
+    prompt only carried a static "behind a llama.cpp router" sentence and no
+    surface exposed the session's own model. ONE derivation, used by the prompt
+    (`prompt.runtime_model_text`) and by `self.info.llm`.
+
+    `resolved: False` means the ref is NOT in providers.yaml: a bare id in that
+    shape is resolved by the local router's alias list at call time.
+    Never raises.
+    """
+    ref = str(ref or "").strip()
+    hit = resolve(ref) if ref else None
+    if not hit:
+        return {"model": ref or None, "provider": None, "model_id": ref or None,
+                "kind": None, "local": None, "base_url": None,
+                "resolved": False}
+    p, mid = hit
+    return {"model": ref, "provider": p.get("id"), "model_id": mid,
+            "kind": p.get("kind"), "local": bool(p.get("local")),
+            "base_url": (p.get("base_url") or "").rstrip("/"),
+            "resolved": True}
+
+
 def is_rerank_model(entry):
     """A model entry flagged `rerank: true` is a CROSS-ENCODER, not a chat target.
 

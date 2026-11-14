@@ -50,11 +50,11 @@ def _reset():
         pass
 
 
-def _sess(interrupted=True, matrix=False):
+def _sess(interrupted=True, resumed_key=None):
     msgs = [{"role": "user", "content": "do the thing"}]
-    if matrix:
+    if resumed_key:
         msgs.append({"role": "user", "content": "continue",
-                     "meta": {"matrix_continuation": True}})
+                     "meta": {resumed_key: True}})
     s = {"messages": msgs}
     if interrupted:
         s["interrupted"] = {"effect": "unknown_effect", "executed": 1}
@@ -121,15 +121,19 @@ check("E2 the record is cleared anyway", I.snapshot() == {})
 _reset()
 I.begin("s-done", object())
 I.begin("s-gone", object())
+I.begin("s-restart", object())
 I.begin("s-matrix", object())
 rep, calls = _run({"s-done": _sess(interrupted=False),
-                   "s-matrix": _sess(matrix=True)})
+                   "s-restart": _sess(resumed_key="restart_continuation"),
+                   "s-matrix": _sess(resumed_key="matrix_continuation")})
 check("F1 a finished turn is not resumed",
       {"session": "s-done", "why": "no interrupted turn"} in rep["skipped"], rep)
 check("F2 a deleted session is skipped",
       {"session": "s-gone", "why": "session no longer exists"} in rep["skipped"], rep)
-check("F3 a Matrix continuation already in the tail is skipped",
-      {"session": "s-matrix", "why": "already resumed by Matrix"} in rep["skipped"], rep)
+check("F3 a restart continuation already in the tail is skipped",
+      {"session": "s-restart", "why": "already resumed by the harness restart"} in rep["skipped"], rep)
+check("F3b the legacy Matrix continuation meta is still honoured",
+      {"session": "s-matrix", "why": "already resumed by the harness restart"} in rep["skipped"], rep)
 
 # --- G) the cap ------------------------------------------------------------
 _reset()

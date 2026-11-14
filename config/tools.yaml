@@ -657,6 +657,13 @@ tools:
     enabled: true
     approval: auto
 
+  # 2026-11-15: restarting the Longrun process is a HARNESS action (it ends every
+  # running turn), not a Matrix artifact operation. The row is mandatory: a
+  # namespace with no row is DISABLED by default (registry.tool_spec).
+  harness:
+    enabled: true
+    approval: auto
+
   # Destructive Matrix actions override the namespace's automatic policy in
   # normal mode; global approvals.mode=full remains the operator's opt-out.
   matrix.git_reset:

@@ -302,9 +302,40 @@ All notable changes to Longrun are documented here. The format follows
   "byte-identical repeat", re-sending the request that had just produced nothing. One address per
   graph now (`load()` normalises in memory, `save()` keys off it, a boot heal groups files by
   `(session_id, run_id)`, keeps the newer copy and moves the duplicate to the recoverable trash), the
-  empty cap counts CONSECUTIVE replies, and `retry` is never deduplicated. Locked by `v1005` (13/13,
-  red at HEAD without the fix: 10/13 and the exact `empty message three times` error) and `v958`
-  (16/16, B7b pins the graph address through the rename).
+  empty cap counts CONSECUTIVE replies, `retry` is never deduplicated, and an open plan earns up to two
+  `CONTINUE` rounds with a fresh tool budget before a turn may close text-only (the agent's own report:
+  *"the restart message forced a plain-text answer … tool calls were off the table"*). Locked by
+  `v1005` (18/18, red at HEAD without the fix: 10/13 and the exact `empty message three times` error)
+  and `v958` (16/16, B7b pins the graph address through the rename).
+- **`run.metrics` reports the turn's real loop iterations (`v1005` C5b).** It published `_kg_rounds` —
+  the keepgoing continuation counter — so every turn that finished inside its first tool budget said
+  `iterations: 0` (114 of 149 measured turns, including the 2026-11-14 incident). It now publishes the
+  loop's own `iters`, so the run ledger can be read again.
+- **`restart` is a `harness` tool, not a Matrix action, and a `dry_run` rehearsal arms nothing (`v500` G2–H, `v938` F3b).**
+  The Tools & approvals row had no `_SUBTOOL_GUIDANCE` entry, so it displayed the whole Matrix suite
+  description (scaffold → remove → git → checkpoints) on what is really a harness warm restart, and
+  `schedule_restart(dry_run=True)` wrote the durable resume ticket anyway: the NEXT boot, for any
+  unrelated reason, consumed it and spawned a continuation turn. The tool is now `harness.restart`
+  (`config/tools.yaml` gains the mandatory `harness` row — a namespace with no row is disabled); the
+  old `matrix.restart` spelling resolves through `_TOOL_ALIASES`/`_ACTION_ALIAS_TOOLS` before
+  validation and the gate, so stored calls keep working. The mechanics moved to `core/restart.py`,
+  the ticket lives in the data dir, and resume has ONE owner: when the asking turn has an inflight
+  record, boot lets `inflight.recover` send the standard `[Harness restart]` continuation; the ticket
+  path only spawns its own turn when there is no record. A rehearsal ticket is marked `dry_run` and
+  ignored by `resume_after_restart`.
+- **An agent can name its own model, and a chat turn honours the session pin (`v718` E).**
+  Live 2026-11-14: asked *"ok am i speaking now with local?"*, A61 could only answer with the router
+  URL — nothing in its context carried the model it was actually running on. Three causes: the
+  identity block claimed the turn ran *"locally on a DGX Spark … behind a llama.cpp router"* even when
+  the session was pinned to a cloud model; `self.info` reported the router endpoint and config paths
+  but never the session's model (`self.diagnose` reports the GLOBAL chat default instead); and
+  `chat_stream_gen` ignored `sess["model"]` unless the CLIENT sent it, so a headless/API turn answered
+  with the chat role's default while the UI, the prompt and the run ledger said something else. One
+  derivation now feeds both surfaces — `providers.describe` (provider, kind, local flag, base URL,
+  resolved) behind `routing.runtime_facts` — the system prompt gains a `runtime-model` section that
+  names the session's model and provider, `self.info.llm` carries the same facts, and the chat route
+  falls back to the session pin before the role default. Stable per model, so the prefix cache is not
+  invalidated per turn. Pinned by `v718` (23/23).
 - **A truncated subagent is a FAILURE, and the plan shows a run's real ending (`v924`/`v925`).**
   A child stopped at its step budget still ended `status: done`, so the Session-Job scheduler marked
   the subjob `done` and handed the sentinel text to every dependent as input — a dependent then worked

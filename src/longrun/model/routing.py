@@ -277,6 +277,50 @@ def turn_model(sess=None, model=None):
         return None
 
 
+def runtime_facts(sess=None, model=None):
+    """Who answers THIS turn: the model ref, provider, local flag and endpoint.
+
+    ONE derivation behind the prompt's runtime line and `self.info.llm`: an agent
+    that cannot name its own model invents one (measured live 2026-11-14: asked
+    "am I speaking with the local model?", the agent could only describe the
+    router URL). Never raises, and never probes the router: the resolution is
+    explicit model → session pin → configured default, all config-only, because
+    this runs on every prompt render.
+    """
+    from longrun.model import providers
+    ref, source = None, None
+    if model:
+        ref, source = model, "explicit"
+    else:
+        pin = None
+        if isinstance(sess, dict):
+            pin = sess.get("model")
+        elif isinstance(sess, str) and sess:
+            try:
+                pin = (_srv().load_session(sess) or {}).get("model")
+            except Exception:  # noqa: BLE001 — a missing store must not break self-knowledge
+                pin = None
+        if pin and not is_dynamic_ref(pin):
+            ref, source = pin, "session"
+    if not ref:
+        try:
+            ref, source = providers.default_ref(), "default"
+        except Exception:  # noqa: BLE001
+            ref, source = None, None
+    try:
+        fact = providers.describe(ref)
+    except Exception:  # noqa: BLE001 — self-knowledge must never break a turn
+        fact = {"model": ref, "provider": None, "model_id": ref,
+                "kind": None, "local": None, "base_url": None, "resolved": False}
+    fact["source"] = source
+    try:
+        from longrun.model import rllm as _rllm
+        fact["router"] = _rllm.ROUTER_BASE
+    except Exception:  # noqa: BLE001
+        fact["router"] = None
+    return fact
+
+
 def model_chain(role):
     """Literal model refs for a role, primary first: [explicit model] + fallbacks.
 

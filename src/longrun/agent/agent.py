@@ -53,10 +53,12 @@ from longrun.util.tracing import RunTrace, _REAL_CACHED_TOKENS, _REAL_PROMPT_TOK
 # ------------------------------------------------------------- agent core ----
 
 SYSTEM_PROMPT = (
-    "You are Longrun, the reasoning core of a frontier-style agent harness "
-    "running locally on a DGX Spark (GB10, ARM64, unified memory) behind a "
-    "llama.cpp router. Be direct, concrete and useful. When asked to plan or "
-    "act, produce compact, actionable output.\n"
+    "You are Longrun, the reasoning core of a frontier-style agent harness. The "
+    "harness runs on a DGX Spark (GB10, ARM64, unified memory) and reaches "
+    "models through a local llama.cpp router or a remote provider; the Runtime "
+    "section names the model and provider THIS session answers on. Be direct, "
+    "concrete and useful. When asked to plan or act, produce compact, "
+    "actionable output.\n"
     # Measured 2026-11-01 (GAIA): the model answered \"…are: X (2005), Y (2009) and
     # Z (2009).\" to a \"how many\" question. The reasoning was right and the answer
     # was unusable — a value wrapped in a sentence is not the value. The shape of
@@ -3536,7 +3538,7 @@ def assemble_turn(sess, message, tool_ctx=None, model=None, autonomous=False):
     """
     if tool_ctx is None:
         tool_ctx = server._tool_context()
-    sys = server._system_prompt(sess, tool_ctx)
+    sys = server._system_prompt(sess, tool_ctx, model=model)
     eff_message = _apply_skill_slash(message)
     if autonomous:
         eff_message = (
@@ -5440,6 +5442,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     _review_known = ""
     _goal_close_used = False  # JAG-504: one goal-closure round per /goal turn
     _empty_streak = 0         # bounded retries for an EMPTY model message (max 2)
+    _empty_parks = 0          # bounded CONTINUE rounds when the model keeps going blank
     _think_action_used = False  # one round when the action hides in the reasoning
     _timeout_retried = False   # one retry when the MODEL CALL itself times out
     # HA-6 (lot H): the third correction on the SAME point becomes advice — one
@@ -5642,6 +5645,24 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                         "Continue: emit the next tool call, or write the answer as "
                         "plain text.", "retry")
                 continue
+            _empty_streak = 0
+            # 2026-11-15: an OPEN plan outranks a model that keeps returning
+            # nothing. Closing here is a TEXT-ONLY dead end: the forced close below
+            # forbids tools and asks for prose, while the work needs a tool call
+            # (measured 2026-11-14: the resumed Architect answered "the restart
+            # message forced a plain-text answer … tool calls were off the table").
+            # Bounded: 2 CONTINUE rounds with a fresh tool budget, interactive only.
+            if (_empty_parks < 2 and not autonomous and not plan_only
+                    and not _is_aborted(sess["id"])):
+                _on, _brief = _open_todo_brief(sess)
+                if _on:
+                    _empty_parks += 1
+                    _empty_streak = 0
+                    work_steps = 0
+                    _inject("CONTINUE — %d task(s) are still OPEN: %s. Your last "
+                            "replies were empty, so make the NEXT tool call now."
+                            % (_on, _brief), "continue")
+                    continue
             _kg_stop_reason = "empty_reply"
             on_event("chat.error", session=sess["id"],
                      error="the model returned an empty message three times")
@@ -6866,7 +6887,11 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
         pass
     try:
         runmetrics.finish(sess["id"], outcome=("user_abort" if _is_aborted(sess["id"]) else "done"),
-                          stop_reason=_kg_stop_reason, iterations=_kg_rounds,
+                          # 2026-11-15: the LOOP iterations, not `_kg_rounds`. Every
+                          # turn that finished inside its first tool budget reported
+                          # `iterations: 0` (114 of 149 measured turns) because
+                          # `_kg_rounds` only moves on a keepgoing continuation.
+                          stop_reason=_kg_stop_reason, iterations=iters,
                           steps=_total_work_steps,
                           prompt_tokens=_total_prompt,
                       completion_tokens=_total_completion,
@@ -7121,7 +7146,9 @@ def agent_run(goal, max_steps=6, model=None, on_event=None, trace=None, run_stat
         for i in range(max_steps):
             api_v02.checkpoint(st)  # JAG-111: honour pause / abort between steps
             sys = (prompt_mod.prompt_map_text() + "\n\n" + prompt_mod.capability_text()
-                   + "\n\n" + system_prompt() + "\n\n" + self_summary() + "\n\n" + AGENT_PROMPT
+                   + "\n\n" + system_prompt() + "\n\n" + self_summary()
+                   + "\n\n" + prompt_mod.runtime_model_text(model=model)
+                   + "\n\n" + AGENT_PROMPT
                    + "\n\n" + RULES_POLICY + ("\n" + rb if rb else "")
                    + ("\n\n" + mx if mx else ""))
             # JAG-276: the live task list rides in the user turn, not the system prompt.

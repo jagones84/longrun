@@ -192,9 +192,13 @@ def recover(window_secs=60, max_sessions=10, *, load=None, active=None,
             out["skipped"].append({"session": sid, "why": "session no longer exists"})
             continue
         tail = (sess.get("messages") or [])[-3:]
-        if any(((m.get("meta") or {}).get("matrix_resumed")
+        # 2026-11-15: the restart ticket path renamed its meta keys when it moved
+        # from Matrix to the harness; both spellings mean "already continued".
+        if any(((m.get("meta") or {}).get("restart_resumed")
+                or (m.get("meta") or {}).get("restart_continuation")
+                or (m.get("meta") or {}).get("matrix_resumed")
                 or (m.get("meta") or {}).get("matrix_continuation")) for m in tail):
-            out["skipped"].append({"session": sid, "why": "already resumed by Matrix"})
+            out["skipped"].append({"session": sid, "why": "already resumed by the harness restart"})
             continue
         if not (sess.get("interrupted") or {}):
             # reconcile_orphan_turns did not classify it as half-done: either the
