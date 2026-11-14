@@ -5071,7 +5071,16 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     from longrun.model import runmetrics
     runmetrics.start(sess["id"], model=model)
     _abort_now = (lambda: _is_aborted(sess["id"]))  # JAG-129D: Stop kills the generation
-    _kg_rounds = 0
+    _kg_rounds = 0          # every continuation THIS turn (honest count: display + metrics)
+    # v999: of those, the ones CHARGED to the continuation budget. A round the
+    # harness itself REJECTED (JAG-402: a final answer with open todos) is paid
+    # from that gate's own dedicated budget (`_close_todo_max`), so it must not be
+    # charged here as well — otherwise the work budget buys the anti-stop policy.
+    # Measured live on session b7329cccf94c (2026-11-14): 4 of the 10 rounds the
+    # model was granted were "your final answer was REJECTED", and the plan stopped
+    # at `budget` with 5 of its 8 steps open and the turn's last message published
+    # as the reply. `plan.stopped rounds=` still reports the honest count.
+    _kg_charged = 0
     _kg_stop_reason = None
     _kg_prev = None
     _kg_stale = 0
@@ -5462,7 +5471,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                         _kg_base, _diff_signals(message, used_tools, _kg_stale))}
                 except Exception:  # noqa: BLE001
                     _kg_override = None
-            _dec = _kg.decide(open_nodes=len(_open), rounds=_kg_rounds, stale=_kg_stale,
+            _dec = _kg.decide(open_nodes=len(_open), rounds=_kg_charged, stale=_kg_stale,
                               started=_kg_started, aborted=_is_aborted(sess["id"]),
                               blocked=any(n.get("status") == "blocked" for n in _nodes),
                               steer=has_steer(sess["id"]), override=_kg_override,
@@ -5480,6 +5489,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 if _floor:
                     _delivery_floor_used = True
                     _kg_rounds += 1
+                    _kg_charged += 1
                     _inject(_floor, "continue")
                     continue
                 _kg_stop_reason = _dec["reason"]
@@ -5488,6 +5498,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                          difficulty=_diff_level, duration_s=round(time.time() - _kg_started, 1))
                 break
             _kg_rounds += 1
+            _kg_charged += 1
             _kg_prev = _cur
             work_steps = 0  # grant another round of tool calls
             # JAG-465: auto-compaction runs only at TURN START, so a long agentic turn
@@ -6459,7 +6470,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                         _kg_base, _diff_signals(message, used_tools, _kg_stale))}
                 except Exception:  # noqa: BLE001
                     _kg_override = None
-            _dec = _kg.decide(open_nodes=len(_open), rounds=_kg_rounds, stale=_kg_stale,
+            _dec = _kg.decide(open_nodes=len(_open), rounds=_kg_charged, stale=_kg_stale,
                               started=_kg_started, aborted=_is_aborted(sess["id"]),
                               blocked=any(n.get("status") == "blocked" for n in _nodes),
                           steer=has_steer(sess["id"]), override=_kg_override,
@@ -6498,7 +6509,12 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             if _dec["continue"]:
                 _kg_rounds += 1
                 if _dec.get("reason") == "close_todos":
+                    # JAG-402's forcing is paid from its OWN budget (`_close_todo_max`,
+                    # 4 rounds): charging it to the continuation budget as well threw
+                    # the work away — see `_kg_charged`.
                     _close_todo_rounds += 1
+                else:
+                    _kg_charged += 1
                 _kg_prev = _cur
                 for _s in drain_steer(sess["id"]):
                     msgs.append({"role": "user", "_steer_ctx": True, "content":
