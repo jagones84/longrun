@@ -513,6 +513,17 @@ def gated_call(tool, args, run_id=None, wait=True, by="api", timeout=None, works
     # through. A legacy `namespace` + {action: sub} call is the same tool as the
     # canonical `namespace.sub` the registry advertises, so canonicalise here and
     # the policy lookup, the approval record and the SSE events all agree.
+    # 2026-11-14 (bug hunt): `args` is a JSON object by contract, but this door is
+    # fed by an HTTP body AND by model-emitted actions. A string/list/number used
+    # to reach `dict(args or {})` below and raise inside the handler, closing the
+    # HTTP connection with no response (measured on `POST /api/tools/call`); a
+    # model that emits the wrong shape would kill its own turn the same way.
+    if args is None:
+        args = {}
+    elif not isinstance(args, dict):
+        _bad = type(args).__name__
+        return {"status": "error",
+                "error": "args must be a JSON object (got %s)" % _bad}
     tool = registry.canonical_name(tool, args)
     spec = registry.tool_spec(tool)
     if spec is None:
