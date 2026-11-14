@@ -1378,10 +1378,20 @@
   #pvWin { position: fixed; z-index: 50; top: 50%; left: 50%; transform: translate(-50%,-50%);
     width: min(calc(1180px / var(--zoom, 1)), calc(94vw / var(--zoom, 1)));
     height: calc(100dvh / var(--zoom, 1) - 28px);
+    min-width: calc(420px / var(--zoom, 1));
+    max-width: calc(100vw / var(--zoom, 1));
     display: flex; flex-direction: column; background: var(--menubg);
     border: 1px solid var(--line); border-radius: var(--radius);
-    box-shadow: 0 24px 70px rgba(0,0,0,.55); }
+    box-shadow: 0 24px 70px rgba(0,0,0,.55);
+    overflow: hidden; resize: both; }
   #pvWin[hidden] { display: none; }
+  /* v1011 (operator): "the page is not expanible". The ⤢ control makes the
+     window the screen (and back); the grip at the bottom-right resizes it in
+     between. Both are one persisted state, so the next file opens the same way. */
+  #pvWin.pv-full { top: 0; left: 0; transform: none;
+    width: calc(100vw / var(--zoom, 1)); height: calc(100dvh / var(--zoom, 1));
+    max-width: none; max-height: none; border: 0; border-radius: 0;
+    box-shadow: none; resize: none; }
   .pv-head { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 12px;
     border-bottom: 1px solid var(--line); }
   .pv-ic { flex: 0 0 auto; color: var(--acc); display: inline-flex; }
@@ -1397,7 +1407,18 @@
     min-width: 28px; height: 28px; padding: 0; font-size: 15px; line-height: 1;
     display: inline-flex; align-items: center; justify-content: center; border-radius: 7px; }
   #pvWin .pv-btn:hover { color: var(--txt); background: var(--hover); }
-  #pvWin .pv-btn[aria-expanded="true"] { color: var(--txt); background: var(--hover); }
+  #pvWin .pv-btn[aria-expanded="true"], #pvWin .pv-btn[aria-pressed="true"] {
+    color: var(--txt); background: var(--hover); }
+  /* The view switch: one segmented control, only the views this file HAS
+     (Preview/Source for markdown+HTML, Table/Source for CSV). */
+  .pv-views { display: flex; gap: 2px; padding: 2px; flex: 0 0 auto;
+    border: 1px solid var(--line); border-radius: 8px; }
+  .pv-views[hidden] { display: none; }
+  .pv-views button { border: 0; background: transparent; color: var(--dim);
+    font: inherit; font-size: 10.5px; line-height: 1; padding: 4px 8px; border-radius: 6px;
+    cursor: pointer; }
+  .pv-views button:hover { color: var(--txt); }
+  .pv-views button[aria-pressed="true"] { color: var(--txt); background: var(--hover); }
   .pv-path { padding: 6px 12px; font-family: monospace; font-size: 10.5px; color: var(--muted);
     border-bottom: 1px solid var(--line-2); overflow: hidden; text-overflow: ellipsis;
     white-space: nowrap; cursor: copy; }
@@ -1409,7 +1430,39 @@
   .pv-body iframe.pv-frame { flex: 1 1 auto; width: 100%; min-height: 0; border: 0; background: #fff; }
   .pv-body pre.pv-text { margin: 0; padding: 12px 14px; font-family: monospace; font-size: 11.5px;
     line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
-  .pv-body .pv-md { padding: 14px 18px 26px; font-size: 13px; line-height: 1.55; }
+  /* v1011: the source view is CodeMirror (vendor/codemirror.js via viewer.js), so
+     it fills the body and scrolls INSIDE the editor instead of the body scrolling
+     the gutter away from the code. */
+  .pv-code { flex: 1 1 auto; min-height: 0; overflow: hidden; }
+  .pv-code .cm-editor { height: 100%; }
+  .pv-code .cm-editor.cm-focused { outline: none; }
+  .pv-code .cm-scroller { overscroll-behavior: contain; }
+  /* Markdown had no typography: `.pv-md` was only a padding box, because every
+     rule was scoped to `.bubble.md-content` (chat). The note now reads as a
+     document — headings, code, tables, quotes, rules. */
+  .pv-body .pv-md { padding: 16px 20px 30px; max-width: 980px; font-size: 13px;
+    line-height: 1.6; }
+  .pv-md h1, .pv-md h2, .pv-md h3, .pv-md h4 { margin: 18px 0 8px; line-height: 1.25; }
+  .pv-md h1 { font-size: 22px; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+  .pv-md h2 { font-size: 18px; border-bottom: 1px solid var(--line-2); padding-bottom: 4px; }
+  .pv-md h3 { font-size: 15px; }
+  .pv-md p { margin: 0 0 10px; }
+  .pv-md ul, .pv-md ol { margin: 4px 0 10px; padding-left: 22px; }
+  .pv-md li { margin: 2px 0; }
+  .pv-md code { background: var(--chipbg); padding: 1px 5px; border-radius: 5px;
+    font-family: var(--mono, ui-monospace, monospace); font-size: 11.8px; }
+  .pv-md pre { background: var(--bg-3); border: 1px solid var(--line-2); border-radius: 8px;
+    padding: 10px 12px; overflow: auto; margin: 8px 0 12px; }
+  .pv-md pre code { background: none; padding: 0; font-size: 11.8px; }
+  .pv-md table { border-collapse: collapse; margin: 8px 0 12px; font-size: 12px;
+    display: block; overflow-x: auto; }
+  .pv-md th, .pv-md td { border: 1px solid var(--line-2); padding: 4px 9px; }
+  .pv-md th { background: var(--bg2); color: var(--dim); }
+  .pv-md blockquote { border-left: 2px solid var(--line-2); margin: 8px 0;
+    padding: 2px 12px; color: var(--dim); }
+  .pv-md a { color: var(--acc); }
+  .pv-md img { max-width: 100%; border-radius: 8px; }
+  .pv-md hr { border: 0; border-top: 1px solid var(--line); margin: 16px 0; }
   .pv-note { margin: auto; padding: 26px 18px; text-align: center; color: var(--dim); font-size: 12px; }
   .pv-table { border-collapse: collapse; font-size: 11.5px; margin: 0 0 14px; }
   .pv-table th, .pv-table td { border: 1px solid var(--line); padding: 3px 8px;
@@ -1435,9 +1488,11 @@
     /* Phone: the preview IS the screen — no 94vw window with 3vw of dead margin. */
     #pvWin { top: 0; left: 0; transform: none; width: 100%;
       height: calc(100dvh / var(--zoom, 1)); max-height: calc(100dvh / var(--zoom, 1));
+      min-width: 0; max-width: none; resize: none;
       border-radius: 0; border-left: 0; border-right: 0; }
     .pv-meta { max-width: 22%; }
     .pv-path { font-size: 10px; }
+    .pv-views button { padding: 4px 6px; }
   }
   @media (prefers-reduced-motion: reduce) {
     .art-item { transition: none; }
@@ -4444,6 +4499,9 @@
     <span class="pv-ic" id="pvIc" aria-hidden="true"></span>
     <div class="pv-title"><b class="pv-name" id="pvName">—</b><span class="pv-kind" id="pvKind"></span></div>
     <span class="pv-meta" id="pvMeta"></span>
+    <div class="pv-views" id="pvViews" role="group" aria-label="preview view" hidden></div>
+    <button class="pv-btn" id="pvSize" type="button" aria-label="expand the preview"
+            aria-pressed="false" title="expand the preview">⤢</button>
     <button class="pv-btn" id="pvMore" type="button" aria-label="more actions"
             aria-controls="pvMenu" aria-expanded="false" title="more actions">⋯</button>
     <button class="pv-btn" id="pvClose" type="button" data-call="closePreview"
@@ -17230,20 +17288,31 @@ function renderArtifacts() {
   _artObserveThumbs(grid);
 }
 
-/* ---- the preview window (v1002) -----------------------------------------
+/* ---- the preview window (v1002, views v1011) ----------------------------
    A file opens in a DEDICATED window: not the editor dock (the operator asked
    for a window), not a second browser tab. It renders by kind — an image, a
    video, an audio player, a live HTML page in a sandboxed frame, the first rows
-   of a workbook, sanitized markdown, or the source — and everything else the
-   file can do lives in the ⋯ menu (editor, raw tab, source, copies, reload).
-   Esc, ✕ and the backdrop all close it. */
-const PV_TEXT_EXT = [".md", ".markdown", ".mdx", ".txt", ".rst", ".tex", ".py", ".js",
-  ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".css", ".scss", ".sass", ".less", ".html",
-  ".htm", ".xhtml", ".json", ".jsonl", ".ndjson", ".xml", ".yaml", ".yml", ".toml",
-  ".ini", ".cfg", ".conf", ".env", ".sh", ".bash", ".zsh", ".ps1", ".bat", ".sql",
-  ".c", ".h", ".cpp", ".hpp", ".cc", ".rs", ".go", ".java", ".rb", ".php", ".lua",
-  ".pl", ".r", ".swift", ".kt", ".cs", ".vue", ".svelte", ".csv", ".tsv", ".log"];
-let _pv = { row: null, path: "", src: false };
+   of a workbook, sanitized markdown, a CSV table, or the coloured source — and
+   everything else the file can do lives in the ⋯ menu (editor, raw tab, source,
+   copies, reload). Esc, ✕ and the backdrop all close it.
+   v1011: the head carries ⤢ (window ⇄ screen, persisted) and a view switch when
+   the file has more than one honest view (markdown/HTML: Preview ⇄ Source;
+   CSV/TSV: Table ⇄ Source). The source is CodeMirror, the SAME engine and
+   language table as the editor dock (filetypes.js), not a second highlighter. */
+const PV_TEXT_EXT = [".md", ".markdown", ".mdx", ".txt", ".rst", ".tex", ".latex",
+  ".py", ".pyi", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".css", ".scss",
+  ".sass", ".less", ".styl", ".html", ".htm", ".xhtml", ".vue", ".svelte", ".json",
+  ".jsonl", ".ndjson", ".geojson", ".ipynb", ".xml", ".xsl", ".xsd", ".svg",
+  ".plist", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf", ".env", ".properties",
+  ".sh", ".bash", ".zsh", ".fish", ".ps1", ".psm1", ".bat", ".sql", ".c", ".h",
+  ".cpp", ".cxx", ".hpp", ".hxx", ".cc", ".rs", ".go", ".java", ".rb", ".php",
+  ".lua", ".pl", ".pm", ".r", ".swift", ".kt", ".kts", ".cs", ".scala", ".dart",
+  ".clj", ".cljs", ".hs", ".erl", ".hrl", ".jl", ".cr", ".d", ".elm", ".groovy",
+  ".gradle", ".lhs", ".vb", ".pas", ".vhd", ".vhdl", ".sv", ".proto", ".cmake",
+  ".mk", ".txt", ".log", ".patch", ".diff", ".csv", ".tsv"];
+const PV_VIEW_LABEL = { render: "Preview", source: "Source", table: "Table" };
+const LS_PV_FULL = "sf_pv_full";      // "1" = the window fills the screen
+let _pv = { row: null, path: "", kind: "", view: "", views: [] };
 
 function _pvExt(p) {
   const m = /\.([A-Za-z0-9]+)$/.exec(String(p || ""));
@@ -17277,9 +17346,69 @@ function _pvCopy(text) {
   copyText(String(text || "")).then(ok => toast(ok ? "copied" : "copy failed", ok ? "" : "err"));
 }
 
+/* The window's families. Path first (a `.md` is a document even when the journal
+   row says "document"), then the raw kind for extensions nobody classified. */
+function _pvKind(path, row) {
+  if (_pvIsHtml(path)) return "html";
+  if (_pvIsPdf(path)) return "pdf";
+  if (/\.(xlsx|xlsm)$/i.test(path)) return "sheet";
+  if (/\.(csv|tsv)$/i.test(path)) return "csv";
+  if (_pvIsMd(path)) return "markdown";
+  const media = _pvMediaKind(path);
+  if (media) return media;
+  if (_pvIsText(path)) return "text";
+  const k = String((row && row.kind) || "");
+  return ["image", "video", "audio", "pdf", "sheet"].indexOf(k) >= 0 ? k : "other";
+}
+
+/* The honest views of a file, in the order the segmented control shows them.
+   One view = no control (a switch with a single answer is noise). */
+function _pvViewsFor(path, kind) {
+  if (kind === "markdown" || kind === "html") return ["render", "source"];
+  if (kind === "csv") return ["table", "source"];
+  if (kind === "text" || kind === "code" || kind === "data") return ["source"];
+  return [];
+}
+
+function _pvPaintViews() {
+  const box = $("pvViews");
+  if (!box) return;
+  const views = _pv.views || [];
+  if (views.length < 2) { box.hidden = true; box.innerHTML = ""; return; }
+  box.hidden = false;
+  box.innerHTML = views.map(v => '<button type="button" data-view="' + _attr(v)
+    + '" aria-pressed="' + (_pv.view === v ? "true" : "false") + '">'
+    + esc(PV_VIEW_LABEL[v] || v) + "</button>").join("");
+  box.querySelectorAll("button").forEach(b => {
+    b.onclick = () => {
+      if (_pv.view === b.dataset.view) return;
+      _pv.view = b.dataset.view;
+      renderPreview();
+    };
+  });
+}
+
+/* ⤢ / ⤡: one persisted state, so the operator's last choice is the next open. */
+function _pvSizePaint() {
+  const on = localStorage.getItem(LS_PV_FULL) === "1";
+  const w = $("pvWin"), b = $("pvSize");
+  if (w) w.classList.toggle("pv-full", on);
+  if (!b) return;
+  b.textContent = on ? "⤡" : "⤢";
+  b.setAttribute("aria-pressed", on ? "true" : "false");
+  b.setAttribute("aria-label", on ? "restore the preview size" : "expand the preview");
+  b.title = on ? "restore the preview size" : "expand the preview";
+}
+function _pvToggleSize() {
+  localStorage.setItem(LS_PV_FULL, localStorage.getItem(LS_PV_FULL) === "1" ? "0" : "1");
+  _pvSizePaint();
+}
+
 async function openPreview(path, row) {
   const r = row || _art.all.find(a => a.path === path) || { path: path };
-  _pv = { row: r, path: path, src: false };
+  const kind = _pvKind(path, r);
+  const views = _pvViewsFor(path, kind);
+  _pv = { row: r, path: path, kind: kind, view: views[0] || "", views: views };
   const name = r.name || _short(path);
   $("pvName").textContent = name;
   $("pvName").title = name;
@@ -17295,6 +17424,7 @@ async function openPreview(path, row) {
   $("pvMeta").textContent = bits.join(" · ");
   $("pvBackdrop").hidden = false; $("pvWin").hidden = false;
   closePvMenu(); $("artCtx").hidden = true;
+  _pvSizePaint();
   renderPreview();
   const c = $("pvClose"); if (c) c.focus();
 }
@@ -17303,17 +17433,23 @@ function closePreview() {
   const w = $("pvWin"), b = $("pvBackdrop"), body = $("pvBody");
   if (w) w.hidden = true;
   if (b) b.hidden = true;
+  if (window.LRViewer) window.LRViewer.clear();
   if (body) body.innerHTML = "";
   closePvMenu();
-  _pv = { row: null, path: "", src: false };
+  _pv = { row: null, path: "", kind: "", view: "", views: [] };
 }
 
 async function renderPreview() {
   const body = $("pvBody");
   if (!body || !_pv.path) return;
+  if (window.LRViewer) window.LRViewer.clear();
   body.innerHTML = "";
   const path = _pv.path;
-  const kind = (_pv.row && _pv.row.kind) || _pvMediaKind(path);
+  const kind = _pv.kind || _pvKind(path, _pv.row);
+  _pv.kind = kind;
+  if (!(_pv.views || []).length) _pv.views = _pvViewsFor(path, kind);
+  if (_pv.views.indexOf(_pv.view) < 0) _pv.view = _pv.views[0] || "";
+  _pvPaintViews();
   const note = t => { body.innerHTML = '<div class="pv-note">' + esc(t) + "</div>"; };
   if (_pv.row && _pv.row.exists === false) return note("the file is no longer on disk");
   if (kind === "image") {
@@ -17339,8 +17475,8 @@ async function renderPreview() {
     body.appendChild(a);
     return;
   }
-  if (_pvIsHtml(path)) return _pvRenderHtml(body, note);
-  if (_pvIsPdf(path)) {
+  if (kind === "html") return _pvRenderHtml(body, note);
+  if (kind === "pdf") {
     const f = document.createElement("iframe");
     f.className = "pv-frame";
     f.title = _pv.row.name || _short(path);
@@ -17348,18 +17484,31 @@ async function renderPreview() {
     body.appendChild(f);
     return;
   }
-  if (/\.(xlsx|xlsm)$/i.test(path)) return _pvRenderSheet(body, note);
-  if (_pvIsText(path)) return _pvRenderText(body, note);
+  if (kind === "sheet") return _pvRenderSheet(body, note);
+  if (kind === "csv" && _pv.view === "table") return _pvRenderCsv(body, note);
+  if (kind === "markdown" && _pv.view === "render") return _pvRenderMd(body, note);
+  if (kind === "csv" || kind === "markdown" || kind === "text" || kind === "code"
+      || kind === "data" || _pvIsText(path)) return _pvRenderText(body, note);
   note("no inline preview for " + (_pvExt(path) || "this file") +
        " — ⋯ › open in the editor, or open the raw file in a new tab");
 }
 
+async function _pvRead() {
+  try { return await api("GET", "/api/fs/read?path=" + encodeURIComponent(_pv.path)); }
+  catch (e) { return null; }
+}
+function _pvCut(body) {
+  const n = document.createElement("div");
+  n.className = "pv-sheets";
+  n.textContent = "the file is larger than the server's text limit — this is the first part";
+  body.appendChild(n);
+}
+
 async function _pvRenderHtml(body, note) {
-  let r = null;
-  try { r = await api("GET", "/api/fs/read?path=" + encodeURIComponent(_pv.path)); } catch (e) { r = null; }
+  const r = await _pvRead();
   if (!r || r.error) return note((r && r.error) || "cannot read this file");
   if (r.binary) return note("binary file — no inline preview");
-  if (_pv.src) return _pvRenderText(body, note);
+  if (_pv.view === "source") return _pvRenderText(body, note);
   const f = document.createElement("iframe");
   f.className = "pv-frame";
   // Opaque origin (never allow-same-origin WITH allow-scripts): the page's own
@@ -17377,28 +17526,88 @@ async function _pvRenderHtml(body, note) {
   }
 }
 
-async function _pvRenderText(body, note) {
-  let r = null;
-  try { r = await api("GET", "/api/fs/read?path=" + encodeURIComponent(_pv.path)); } catch (e) { r = null; }
+/* Rendered markdown: marked → DOMPurify (the same pipeline as a chat answer). */
+async function _pvRenderMd(body, note) {
+  const r = await _pvRead();
   if (!r || r.error) return note((r && r.error) || "cannot read this file");
   if (r.binary) return note("binary file — no inline preview");
-  if (_pvIsMd(_pv.path) && !_pv.src) {
-    const d = document.createElement("div");
-    d.className = "pv-md md-content";
-    d.innerHTML = mdToHtml(r.text || "");
-    body.appendChild(d);
+  const d = document.createElement("div");
+  d.className = "pv-md md-content";
+  d.innerHTML = mdToHtml(r.text || "");
+  body.appendChild(d);
+  if (r.truncated) _pvCut(body);
+}
+
+/* Source: CodeMirror (viewer.js) with the editor's language table and oneDark.
+   The <pre> below is the fallback if the module did not load — plain TEXT, so a
+   file can never become HTML. */
+async function _pvRenderText(body, note) {
+  const r = await _pvRead();
+  if (!r || r.error) return note((r && r.error) || "cannot read this file");
+  if (r.binary) return note("binary file — no inline preview");
+  const wrap = document.createElement("div");
+  wrap.className = "pv-code";
+  body.appendChild(wrap);
+  if (window.LRViewer) {
+    window.LRViewer.show(wrap, r.text || "", _pv.path);
   } else {
     const pre = document.createElement("pre");
     pre.className = "pv-text";
     pre.textContent = r.text || "";
-    body.appendChild(pre);
+    wrap.appendChild(pre);
   }
-  if (r.truncated) {
-    const n = document.createElement("div");
-    n.className = "pv-sheets";
-    n.textContent = "the file is larger than the server's text limit — this is the first part";
-    body.appendChild(n);
+  if (r.truncated) _pvCut(body);
+}
+
+/* CSV/TSV: a data file is a TABLE first (RFC-4180 quoting, 500×80 cap). */
+function _pvCsvRows(text, delim) {
+  const rows = [];
+  let row = [], cell = "", q = false;
+  const s = String(text || "");
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (q) {
+      if (ch === '"') { if (s[i + 1] === '"') { cell += '"'; i++; } else q = false; }
+      else cell += ch;
+    } else if (ch === '"') q = true;
+    else if (ch === delim) { row.push(cell); cell = ""; }
+    else if (ch === "\n") {
+      row.push(cell);
+      rows.push(row);
+      row = []; cell = "";
+      if (rows.length >= 500) return rows.map(r => r.slice(0, 80));
+    } else if (ch !== "\r") cell += ch;
   }
+  if (cell || row.length) { row.push(cell); rows.push(row); }
+  return rows.slice(0, 500).map(r => r.slice(0, 80));
+}
+
+async function _pvRenderCsv(body, note) {
+  const r = await _pvRead();
+  if (!r || r.error) return note((r && r.error) || "cannot read this file");
+  if (r.binary) return note("binary file — no inline preview");
+  const rows = _pvCsvRows(r.text || "", _pvExt(_pv.path) === ".tsv" ? "\t" : ",");
+  if (!rows.length) return note("the table is empty");
+  const head = document.createElement("div");
+  head.className = "pv-sheets";
+  head.textContent = rows.length + " row" + (rows.length === 1 ? "" : "s") +
+    (r.truncated ? " · first part of the file" : "");
+  body.appendChild(head);
+  const table = document.createElement("table");
+  table.className = "pv-table";
+  const tb = document.createElement("tbody");
+  rows.forEach((cells, i) => {
+    const tr = document.createElement("tr");
+    (cells || []).forEach(c => {
+      const cell = document.createElement(i ? "td" : "th");
+      cell.textContent = c;
+      tr.appendChild(cell);
+    });
+    tb.appendChild(tr);
+  });
+  table.appendChild(tb);
+  body.appendChild(table);
+  if (r.truncated) _pvCut(body);
 }
 
 async function _pvRenderSheet(body, note) {
@@ -17461,8 +17670,8 @@ function _pvMenuItems() {
   if (kind === "image" || kind === "video" || kind === "audio" || _pvIsPdf(path))
     items.push({ ic: "↗", label: "Open raw in a new tab", act: () => window.open(_rawUrl(path), "_blank", "noopener") });
   if (_pvIsHtml(path) || _pvIsMd(path))
-    items.push({ ic: "{ }", label: _pv.src ? "Show the rendered view" : "Show the source",
-                 act: () => { _pv.src = !_pv.src; renderPreview(); } });
+    items.push({ ic: "{ }", label: _pv.view === "source" ? "Show the rendered view" : "Show the source",
+                 act: () => { _pv.view = _pv.view === "source" ? "render" : "source"; renderPreview(); } });
   items.push({ ic: "⧉", label: "Copy the absolute path", act: () => _pvCopy(path) });
   items.push({ ic: "⧉", label: "Copy the path inside the workspace", act: () => _pvCopy(_pvRel(path)) });
   items.push({ ic: "↻", label: "Reload", act: () => renderPreview() });
@@ -17610,6 +17819,8 @@ function _artIfOpen() {
   };
   const pp = $("pvPath");
   if (pp) pp.onclick = () => { if (_pv.path) _pvCopy(_pv.path); };
+  const pz = $("pvSize");
+  if (pz) pz.onclick = () => _pvToggleSize();
   // Esc closes the topmost thing this page opened: a menu first, then the window.
   document.addEventListener("keydown", e => {
     if (e.key !== "Escape") return;
@@ -19551,6 +19762,7 @@ _bindSessBadgeReveal();   // JAG-428: clicking the collapsed-panel session badge
 <script src="/assets/vendor/marked.min.js"></script>
 <script src="/assets/vendor/purify.min.js"></script>
 <script type="module" src="/assets/editor.js"></script>
+<script type="module" src="/assets/viewer.js"></script>
 <script src="/api/matrix/plugins.js" defer></script>
 </body>
 </html>

@@ -115,10 +115,13 @@ check("B2 a float is short and NaN/inf print as nothing",
 
 # ---------------- C: the dock routes to the grid ----------------------
 UI = _read("webui", "assets", "editor.js")
+# v1011: the extension → viewer table moved to filetypes.js (shared with the
+# preview window), so the sheet pin reads the table's owner.
+TYPES = _read("webui", "assets", "filetypes.js")
 HTML = _read("webui", "index.html")
 API_SRC = _read("src", "longrun", "core", "api_v02.py")
 check("C1 .xlsx/.xlsm get their own viewer, not the code/binary fallback",
-      'if (e === "xlsx" || e === "xlsm") return "sheet";' in UI)
+      'if (e === "xlsx" || e === "xlsm") return "sheet";' in TYPES)
 check("C2 renderActive draws the grid (and keeps the binary fallback for the rest)",
       't.viewer === "sheet"' in UI and "renderSheet(t)" in UI
       and "binary file — no preview" in UI)

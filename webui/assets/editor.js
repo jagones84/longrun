@@ -9,8 +9,11 @@ import {
   syntaxHighlighting, defaultHighlightStyle, bracketMatching, indentOnInput,
   foldGutter, foldKeymap, searchKeymap, highlightSelectionMatches,
   autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap,
-  javascript, python, json, markdown, html, css, yaml, oneDark,
+  oneDark,
 } from "./vendor/codemirror.js";
+// v1011: the extension → viewer/language table moved to filetypes.js so the
+// preview window paints a file exactly like this dock does (one vocabulary).
+import { viewerFor, langOf, langExt } from "./filetypes.js";
 import { bindSearch } from "./fsfind.js";
 
 const TOKEN = () => localStorage.getItem("sf_token") || "";
@@ -33,17 +36,8 @@ const LS_TABS_S = "sf_ed_tabs_";     // JAG-157: per-session tab set
 const LS_OPEN = "sf_dock_open";      // JAG-157: "false" = the user closed the dock
 const LS_MODE = "sf_ed_mode";        // JAG-453: "dock" (default) | "float" | "full"
 const LS_POS = "sf_ed_pos";          // JAG-453: floating window geometry {left,top,w,h}
-// JAG-232/JAG-526: NO "svg" here. The server's `/api/fs/raw` allow-list refuses
-// `image/svg+xml` on purpose (a served SVG runs its embedded JS at this origin),
-// so the old `"image"` viewer painted a broken <img> AND a 415 in the console on
-// every SVG tab. An SVG is XML: the code editor opens it as text.
-const IMG_EXT = new Set(["png", "jpg", "jpeg", "gif", "webp", "ico", "bmp", "avif"]);
-const LANG_BY_EXT = {
-  js: "javascript", mjs: "javascript", cjs: "javascript", jsx: "javascript",
-  ts: "javascript", tsx: "javascript", py: "python", json: "json",
-  md: "markdown", markdown: "markdown", html: "html", htm: "html",
-  css: "css", scss: "css", yml: "yaml", yaml: "yaml",
-};
+// JAG-232/JAG-526: the viewer/language table (and the absence of "svg" from
+// IMG_EXT) lives in filetypes.js, shared with the preview window.
 
 const $id = (id) => document.getElementById(id);
 function authHeaders() { const t = TOKEN(); return t ? { Authorization: "Bearer " + t } : {}; }
@@ -57,30 +51,6 @@ async function jpost(url, body) {
   return r.json();
 }
 
-function extOf(p) { const m = /\.([a-z0-9]+)$/i.exec(p || ""); return m ? m[1].toLowerCase() : ""; }
-function viewerFor(p) {
-  const e = extOf(p);
-  if (IMG_EXT.has(e)) return "image";
-  if (e === "pdf") return "pdf";
-  // EV-45: a workbook is DATA, not a blob — the dock renders a table.
-  if (e === "xlsx" || e === "xlsm") return "sheet";
-  if (e === "md" || e === "markdown") return "markdown";
-  if (e === "html" || e === "htm") return "html";
-  return "code";
-}
-function langOf(p) { return LANG_BY_EXT[extOf(p)] || null; }
-function langExt(name) {
-  switch (name) {
-    case "javascript": return javascript();
-    case "python": return python();
-    case "json": return json();
-    case "markdown": return markdown();
-    case "html": return html();
-    case "css": return css();
-    case "yaml": return yaml();
-    default: return null;
-  }
-}
 function basename(p) { const i = String(p).lastIndexOf("/"); return i >= 0 ? p.slice(i + 1) : String(p); }
 function sessId() { return localStorage.getItem("sf_session") || ""; }
 function tabsKey() { const s = sessId(); return s ? (LS_TABS_S + s) : LS_TABS; }

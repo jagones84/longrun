@@ -529,10 +529,14 @@ operator-selected `none`). This is not whole-agent confinement. Hard-denied patt
   counts, and an editor-dock save (`POST /api/fs/write`) is journalled under its session, so it
   appears there too. A file opens in a **dedicated preview window** (`#pvWin`), not in the editor
   dock: image/video/audio player, a live HTML page in a sandboxed frame, a workbook's first rows
-  (`GET /api/fs/sheet`), sanitized markdown or the source, with the absolute path under the name
-  and a ⋯ menu (editor, raw tab, source, copies) — plus a right-click menu on any card or
-  Workspace row that prints the absolute path. Cards with a first frame (image, HTML, PDF,
-  video) carry a poster created only while on screen.
+  (`GET /api/fs/sheet`), sanitized markdown, a CSV/TSV table or the coloured source, with the
+  absolute path under the name and a ⋯ menu (editor, raw tab, source, copies) — plus a right-click
+  menu on any card or Workspace row that prints the absolute path. The window expands to the screen
+  (`#pvSize`, persisted) and switches views only where it has more than one (Preview/Source for
+  markdown+HTML, Table/Source for CSV). The source is the SAME CodeMirror 6 engine, theme and
+  extension→language table as the editor dock (`webui/assets/filetypes.js`, `viewer.js`,
+  `vendor/langs.js`), read-only. Cards with a first frame (image, HTML, PDF, video) carry a poster
+  created only while on screen.
 - **Orbit** `src/longrun/orbit/` — optional command deck at `/orbit`: org chart,
   constellation, job create/dispatch, team selector, model policy.
 - **CLI** `forge.py` — chat, agent runs, tasks, models, MCP.
