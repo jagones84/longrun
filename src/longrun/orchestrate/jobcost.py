@@ -89,3 +89,69 @@ def aggregate(job):
     out["usd"] = round(usd, 6) if priced else None
     out["sessions"] = sorted(sessions)
     return out
+
+
+# --- S2 (2026-11-15): backward feedback propagation ---
+
+_FEEDBACK_FILE = os.environ.get("LONGRUN_FEEDBACK_FILE") or os.path.join(
+    paths.DATA_DIR, "job_feedback.jsonl")
+_FEEDBACK_LOCK = threading.Lock()
+
+
+def record_feedback(jid, agent_id, summary, details=None):
+    """Append one per-agent feedback record after job completion.
+
+    Called from `jobs.py:_propagate_feedback` after the backward DAG pass.
+    The record is keyed by job id + agent session id so the optimizer (S1) can
+    look up downstream consequences of a specific agent's tool calls.
+    """
+    jid = str(jid or "").strip()
+    if not jid:
+        return None
+    row = {"ts": round(time.time(), 3), "job": jid,
+           "agent": str(agent_id or ""), "summary": str(summary or "")}
+    if details and isinstance(details, dict):
+        row["details"] = details
+    try:
+        os.makedirs(os.path.dirname(_FEEDBACK_FILE), exist_ok=True)
+        with _FEEDBACK_LOCK:
+            with open(_FEEDBACK_FILE, "a", encoding="utf-8") as f:
+                f.write(json.dumps(row, sort_keys=True) + "\n")
+    except OSError:
+        return None
+    return row
+
+
+def feedback_for(jid, agent_id):
+    """The most recent feedback record for an agent in a job.
+
+    `jid` may be None to search across all jobs for the agent.
+    Returns {} when no record exists (the common case — most jobs succeed).
+    """
+    jid = str(jid or "").strip()
+    aid = str(agent_id or "").strip()
+    if not aid:
+        return {}
+    best = {}
+    try:
+        with open(_FEEDBACK_FILE, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except ValueError:
+                    continue
+                if not isinstance(row, dict):
+                    continue
+                if row.get("agent") != aid:
+                    continue
+                if jid and row.get("job") != jid:
+                    continue
+                # Keep the most recent (highest ts)
+                if not best or row.get("ts", 0) > best.get("ts", 0):
+                    best = row
+    except OSError:
+        return {}
+    return best

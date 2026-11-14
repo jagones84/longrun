@@ -1160,6 +1160,45 @@ class JobRegistry:
         return reply
 
     @staticmethod
+    def _propagate_feedback(jid, sessions, job, failed):
+        """S2 (2026-11-15): backward feedback propagation through the job DAG.
+
+        After all agents in a job complete, record per-agent feedback so the
+        local optimizer (S1) can connect a specific agent's tool call to downstream
+        consequences. The backward pass is a read-only traversal of the completed
+        job data — it composes feedback records from (a) each agent's run result
+        and (b) whether any downstream agent failed after consuming that agent's
+        output.
+
+        Failed subjobs produce negative feedback for the agents upstream of them;
+        successful jobs produce neutral (empty) feedback. The common case (all
+        agents succeed) writes nothing — feedback records are only for failures.
+        """
+        if not failed:
+            return  # No failures — no negative feedback to propagate
+        try:
+            from longrun.orchestrate import jobcost as _jc
+            runs = job.get("runs") or {}
+            subjobs = job.get("subjobs") or {}
+            deps = job.get("declared_deps") or {}
+            # For each failed subjob, find the upstream agent whose output it
+            # consumed and record negative feedback.
+            for sub_id, agent_id, error in failed:
+                if not agent_id:
+                    continue
+                # Find what this agent depended on
+                upstream = deps.get(agent_id, [])
+                summary = f"downstream agent {agent_id} failed: {error[:200]}"
+                for up_id in upstream:
+                    up_sid = sessions.get(up_id)
+                    if up_sid:
+                        _jc.record_feedback(jid, up_sid, summary,
+                                           {"failed_agent": agent_id,
+                                            "error": error[:200]})
+        except Exception:  # noqa: BLE001 — feedback is additive, never fails a job
+            pass
+
+    @staticmethod
     def _turn_tail(messages, before, sender, subjob, sent=None):
         """This turn's messages: from ITS OWN user message, else from `before`.
 
@@ -1367,6 +1406,13 @@ class JobRegistry:
             self._update(jid, lambda j, _f=list(failed): j.update(
                 {"status": "partial" if _f else "done", "failed_subjobs":
                  [a for a, _, _ in _f], "ended": round(time.time(), 3)}))
+            # S2 (2026-11-15): backward feedback propagation — after all agents
+            # complete, record per-agent feedback so the local optimizer (S1) can
+            # connect tool calls to downstream consequences.
+            try:
+                self._propagate_feedback(jid, sessions, cur, failed)
+            except Exception:  # noqa: BLE001 — feedback is additive, never fails a job
+                pass
             self.wake()   # JAG-292: release jobs that were blocked on this one
             _report_jobs(True)
             self._notify(jid)

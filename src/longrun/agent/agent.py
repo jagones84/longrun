@@ -6992,6 +6992,15 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
         publish("run.metrics", session=sess["id"], metrics=runmetrics.get(sess["id"]))
     except Exception:  # noqa: BLE001 — metrics must never break a turn
         pass
+
+    # S1 (2026-11-15): post-session local optimizer — reads traces and proposes
+    # harness changes. Additive: failure here logs and continues, never breaks
+    # the session. The optimizer writes proposals, not code changes.
+    try:
+        from longrun.evolve import optimizer as _opt
+        _opt.run(sess["id"])
+    except Exception:  # noqa: BLE001 — optimizer must never break a session
+        pass
     if _gate_fired:
         try:
             # v861: ONE event per turn with the gates that fired and whether real
