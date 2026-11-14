@@ -105,7 +105,7 @@ def post_stream(body):
 # --- stubbed run worker: records the model it was handed ---------------------
 def _scripted_run(goal, max_steps=6, model=None, on_event=None, script=None,
                   run_id=None, workspace=None, fallbacks=None, token_budget=None,
-                  session=None):
+                  session=None, acceptance=None):
     # `token_budget`/`session` belong to the REAL signature (`agent_run_v2`,
     # api_v02.py:851): the streaming path passes `session=` so the run bills its
     # calls and shows its model. A stub without them raises TypeError while BINDING

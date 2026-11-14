@@ -125,6 +125,9 @@ class RunState:
         # `None` (both) = unrestricted, which is exactly the pre-I-1 behaviour.
         self.role = None
         self.tool_allow = None
+        # A1: the caller-supplied acceptance verdict ({command, exit_code, ok,
+        # output}) — None when the request named no check.
+        self.acceptance = None
 
     def public(self):
         return {"id": self.id, "goal": self.goal, "model": self.model,
@@ -133,6 +136,7 @@ class RunState:
                 "tokens_spent": self.tokens_spent,
                 "created": self.created, "summary": self.summary,
                 "steps": len(self.trace), "trace": self.trace,
+                "acceptance": self.acceptance,
                 "scripted": self.script is not None}
 
 
@@ -389,7 +393,45 @@ def tool_action(st, tool, args, on_event, workspace=None, hist=None):
              exit_code=res.get("exit_code"), backend=res.get("backend"),
              sandboxed=res.get("sandboxed"), duration_ms=res.get("duration_ms"),
              stdout=_payload[:20000], stderr=(res.get("stderr") or "")[:8000])
-    return toolmod.observation(res), meta
+    return _run_observation(st, tool, res), meta
+
+
+#: The closing line of an offloaded observation inside a RUN (the chat wording
+#: belongs to a conversational turn, not to the agent loop).
+_RUN_OBS_TAIL = "\n\nContinue with the next action; read the file in windows only if you need it."
+
+
+def _run_observation(st, tool, res, text=None):
+    """The observation the run loop hands the model, sized by CONFIG (H4).
+
+    H4 (2026-11-14): `toolmod.observation()` defaults to 1600 chars, and the run
+    loop called it with no argument — while `config/tools.yaml` says one
+    observation is pasted verbatim up to `context.tool_obs_limit` (6000) and the
+    CHAT path already honours that (and offloads above it instead of losing the
+    tail). An `fs.read` of a 12 KB skill file therefore reached the model as its
+    first 1600 chars with a `…[truncated N chars]` marker, the model re-read the
+    same file with different ranges (47 reads over ~10 files in `run_44ea468b`,
+    8 on one file), and the tail was gone for good — the exact defect JAG-181
+    fixed for the chat loop and left standing here.
+
+    One rule for a single call and a batch: verbatim up to the limit, above it
+    the FULL text goes to `data/offload/<run>/` and the model gets a reference.
+    """
+    from longrun.model import context_limits as _ctx
+    if text is None:
+        text = toolmod.observation(res, max_chars=_ctx.get("render_max"))
+    limit = _ctx.get("tool_obs_limit")
+    if len(text) <= limit:
+        return text
+    try:
+        # `server` re-exports the chat loop's offload (one owner, no second
+        # implementation); importing `longrun.agent.agent` from HERE would be a
+        # circular import when this module loads first.
+        _offload = getattr(_srv(), "_offload_observation")
+        return _offload({"id": getattr(st, "id", None) or "run"}, tool, text,
+                        tail=_RUN_OBS_TAIL)
+    except Exception:  # noqa: BLE001 — an offload failure must not lose the call
+        return text[:limit]
 
 
 def batch_action(st, items, on_event, srv, workspace=None, hist=None):
@@ -446,8 +488,11 @@ def batch_action(st, items, on_event, srv, workspace=None, hist=None):
              % (len(items), len(tool_items), len(other_items))]
     for n, r in enumerate(results, 1):
         lines.append("%d. %s -> %s" % (n, r.get("tool"),
-                                       str(r.get("observation") or "")[:1500]))
-    return "\n".join(lines)[:12000], results
+                                       str(r.get("observation") or "")))
+    # H4: a batch is ONE observation, so it goes through the SAME rule as a
+    # single call (config limit, then offload) — the old per-item 1500-char cut
+    # silently shortened every batched read even when the whole thing fitted.
+    return _run_observation(st, "batch", None, text="\n".join(lines)), results
 
 
 def gated_call(tool, args, run_id=None, wait=True, by="api", timeout=None, workspace=None,
@@ -914,8 +959,63 @@ def _budget_exceeded(st, token_budget):
         return False, 0
 
 
+def acceptance_spec(raw):
+    """Normalise a run request's acceptance command: `(spec, error)`.
+
+    A1 (2026-11-14): a goal named `python3 scripts/check_proposal.py`, the agent
+    ran the TARGET snapshot's older checker instead and reported "checker
+    green"; an independent run of the named tool FAILED on three counts, and the
+    run still closed `termination: completed`. The harness cannot know what
+    "done" means from the model's prose — but the CALLER can state a check, and
+    then "completed" means the check really passed (the same authority L1
+    `goal_verify` already uses for a goal; `plan/goal.py:_check_acceptance`).
+
+    Accepted shapes: a command string, or `{command, expect_exit?, timeout_secs?}`.
+    """
+    if raw in (None, "", {}):
+        return None, ""
+    if isinstance(raw, str):
+        raw = {"command": raw}
+    if not isinstance(raw, dict):
+        return None, ("acceptance must be a command string or an object "
+                      "{command, expect_exit, timeout_secs}")
+    command = str(raw.get("command") or "").strip()
+    if not command:
+        return None, "acceptance.command is required"
+    try:
+        expect = int(raw.get("expect_exit", 0))
+    except (TypeError, ValueError):
+        return None, "acceptance.expect_exit must be an integer"
+    try:
+        timeout = int(raw.get("timeout_secs", 120))
+    except (TypeError, ValueError):
+        return None, "acceptance.timeout_secs must be an integer"
+    if timeout < 1:
+        return None, "acceptance.timeout_secs must be positive"
+    return {"command": command, "expect_exit": expect, "timeout_secs": timeout}, ""
+
+
+def run_acceptance(spec, run_id, workspace):
+    """Run the request's acceptance command in the run's workspace (A1).
+
+    Returns `{command, exit_code, ok, output}`; `ok` is `None` when the command
+    could not run at all — a broken check is "unknown", never "pass".
+    """
+    command = str(spec.get("command") or "")
+    try:
+        res = sandbox.run(command, run_id=run_id, workspace=workspace,
+                          timeout=int(spec.get("timeout_secs") or 120))
+    except Exception as exc:  # noqa: BLE001 — a broken check must not crash the run
+        return {"command": command, "ok": None, "error": str(exc)[:300]}
+    code = res.get("exit_code")
+    return {"command": command, "exit_code": code,
+            "ok": code == int(spec.get("expect_exit") or 0),
+            "output": (str(res.get("stdout") or res.get("stderr") or ""))[-1500:]}
+
+
 def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_id=None,
-                 workspace=None, fallbacks=None, token_budget=None, session=None):
+                 workspace=None, fallbacks=None, token_budget=None, session=None,
+                 acceptance=None):
     """Sense-think-act loop with real tools behind the approval gate + HITL.
 
     M6: `token_budget` caps cumulative prompt+completion tokens for the run
@@ -929,6 +1029,14 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
     srv = _srv()
     if on_event is None:
         on_event = lambda kind, **d: srv.publish(kind, **d)
+    # A1: accept the same shapes as the HTTP route (command string or object).
+    # The route refuses a bad spec with a 400 BEFORE the run exists; a direct
+    # caller that hands one here is a programming error and fails loudly rather
+    # than silently dropping the check.
+    if acceptance is not None:
+        acceptance, _acc_err = acceptance_spec(acceptance)
+        if _acc_err:
+            raise ValueError(_acc_err)
     st = run_get(run_id) if run_id else new_run(goal, model, max_steps, script)
     if st is None:
         st = new_run(goal, model, max_steps, script)
@@ -994,6 +1102,14 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
     # forever (the exact failure that looked like "the model cannot install the
     # app"). We carry assistant actions + observations across the whole run.
     hist = []
+    # H4: the history copy must not be shorter than the observation the model
+    # just received — a 6000-char observation cut to 4000 dropped its tail on
+    # the very next turn with no marker.
+    try:
+        from longrun.model import context_limits as _ctx
+        _hist_obs_cap = max(4000, int(_ctx.get("tool_obs_limit")))
+    except Exception:  # noqa: BLE001 — a budget read must not break a run
+        _hist_obs_cap = 4000
     rb = srv.rules_context(ws=workspace)  # JAG-114/115: standing rules for this run
     mx = srv.matrix_context(ws=workspace)  # JAG-497: …and the Matrix dynamic rules too
     from longrun.model import prompt as prompt_mod  # JAG-128A: prompt-map + capability in the agent loop too
@@ -1051,10 +1167,23 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
                             # M6: a fresh usage dict per attempt; every successful
                             # hop (including failover hops) is accounted below.
                             _call_usage = {}
-                            answer, think = srv._router_stream(
-                                msgs, cand, lambda ch, t: on_event("agent.think",
-                                                                   channel=ch, text=t),
-                                usage=_call_usage, cancel=cancel_of(st))
+                            # H6 (2026-11-14): reasoning arrives PER TOKEN. The chat
+                            # path has coalesced it since JAG-265, but this loop
+                            # forwarded every chunk as its own `agent.think` event —
+                            # 81,750 events / 8.3 MB for ONE run (`run_44ea468b`).
+                            # Same coalescer, same `think_flush_secs` config; the
+                            # live transcript is unchanged, the per-token flood is not.
+                            _tc = srv.ThinkCoalescer(
+                                lambda ch, txt: on_event("agent.think", channel=ch, text=txt))
+                            try:
+                                answer, think = srv._router_stream(
+                                    msgs, cand, _tc.feed,
+                                    usage=_call_usage, cancel=cancel_of(st))
+                            finally:
+                                try:
+                                    _tc.flush()
+                                except Exception:  # noqa: BLE001 — a flush must not fail the hop
+                                    pass
                             _account_call(st, _call_usage, session=session)
                             if cand != model:
                                 on_event("model.fallback", run=st.id, from_model=model,
@@ -1114,10 +1243,26 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
                     return _result(st, goal, model)
 
             if action == "finish":
-                summary = str(act.get("summary", ""))[:600] or "done"
-                st.summary, st.status, st.termination = summary, "done", "completed"
+                # H5: the summary is the model's CLAIM; the failed calls the
+                # harness observed are appended to it, labelled, so a run cannot
+                # close claiming a clean sheet over a failed shell call.
+                failures = failed_tool_calls(st.trace)
+                # A1: a caller-supplied check runs BEFORE the finish is announced,
+                # because "completed" must mean the stated criterion really held.
+                acc = None
+                if acceptance is not None:
+                    acc = run_acceptance(acceptance, st.id, workspace)
+                    st.acceptance = acc
+                    on_event("agent.acceptance", run=st.id, **acc)
+                summary = (finish_summary(act)
+                           + run_evidence(failures=failures, acceptance=acc))
+                term = "completed"
+                if acc is not None and acc.get("ok") is not True:
+                    term = "acceptance_failed"
+                st.summary, st.status, st.termination = summary, "done", term
                 on_event("agent.finish", run=st.id, summary=summary,
-                         termination=st.termination)
+                         termination=st.termination, failures=failures,
+                         acceptance=acc)
                 st.trace.append({"i": i + 1, "thought": thought, "action": "finish",
                                  "summary": summary})
                 return _result(st, goal, model)
@@ -1255,7 +1400,7 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
                          "content": json.dumps(act, ensure_ascii=False, default=str)[:4000]})
             hist.append({"role": "user", "content":
                          "Observation (step %d/%d):\n%s"
-                         % (i + 1, max_steps, (obs or "")[:4000])})
+                         % (i + 1, max_steps, (obs or "")[:_hist_obs_cap])})
             if len(hist) > 30:
                 del hist[:-30]
         else:
@@ -1279,6 +1424,95 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
         st.summary = "run error: %s" % e
         on_event("agent.error", run=st.id, error=str(e), termination=st.termination)
     return _result(st, goal, model)
+
+
+#: How many failed calls the closure line names before summarising the rest.
+_EVIDENCE_MAX_FAILURES = 6
+
+
+def failed_tool_calls(trace):
+    """The failed tool calls of a run trace, as compact rows (H5).
+
+    H5 (2026-11-14): `run_44ea468b` ended `completed` while two shell calls had
+    exited 1 and 126; neither appeared anywhere in the finish summary, so the
+    only artifact a reader sees claimed a clean run. A tool result carries the
+    verdict twice — `tool_result.ok` (v2 loop) and the deterministic first line
+    `[tool] exit=N ok=False …` (both loops) — and this reads whichever exists,
+    so the legacy loop is covered without a second parser.
+    """
+    out = []
+    for e in trace or []:
+        if not isinstance(e, dict) or str(e.get("action") or "") != "tool":
+            continue
+        meta = e.get("tool_result") or {}
+        obs = str(e.get("observation") or "")
+        head = obs.split("\n", 1)[0]
+        ok = meta.get("ok")
+        blocked = meta.get("blocked")
+        if ok is None and not blocked:
+            if " ok=False" not in head:
+                continue
+            ok = False
+        if ok is not False and not blocked:
+            continue
+        err = str(blocked or "")
+        if not err:
+            for line in obs.splitlines():
+                if line.startswith("ERROR: "):
+                    err = line[len("ERROR: "):].strip()
+                    break
+        code = meta.get("exit_code")
+        if code is None and "exit=" in head:  # legacy entry: verdict only in the line
+            frag = head.split("exit=", 1)[1].split()[0] if head.split("exit=", 1)[1] else ""
+            code = int(frag) if frag.isdigit() else None
+        out.append({"i": e.get("i"), "tool": str(e.get("tool") or "?"),
+                    "exit_code": 126 if blocked else code,
+                    "error": err[:200]})
+    return out
+
+
+def run_evidence(trace=None, acceptance=None, failures=None):
+    """The harness's OWN closure lines, appended to the model's finish summary.
+
+    The model writes the summary; the harness owns what it OBSERVED (H5) and,
+    when a run carries one, the acceptance verdict (A1). Labelled `[harness]` so
+    a reader can never mistake a tool verdict for the agent's own words. Returns
+    "" when there is nothing to correct, so a clean run's summary is untouched.
+    """
+    lines = []
+    fails = failed_tool_calls(trace) if failures is None else list(failures or [])
+    if fails:
+        shown = fails[:_EVIDENCE_MAX_FAILURES]
+        bits = ["step %s %s (exit=%s)" % (f["i"], f["tool"], f["exit_code"])
+                for f in shown]
+        more = (" and %d more" % (len(fails) - len(shown))
+                if len(fails) > len(shown) else "")
+        lines.append("tool calls failed: %s%s" % ("; ".join(bits), more))
+    if acceptance is not None:
+        state = "PASS" if acceptance.get("ok") is True else (
+            "COULD NOT RUN" if acceptance.get("ok") is None
+            else "FAIL exit=%s" % acceptance.get("exit_code"))
+        lines.append("acceptance %s — %s" % (state, acceptance.get("command") or "?"))
+    if not lines:
+        return ""
+    return "\n\n" + "\n".join("[harness] " + line for line in lines)
+
+
+def finish_summary(act):
+    """The `finish` action's summary, VERBATIM — the run's only closure artefact.
+
+    H1 (2026-11-14): both run loops cut it at 600 chars with no ellipsis, so a
+    real run ended mid-word ("…baseline-v66-su") and the record of what the
+    agent claimed to have done could not be read back. The model's own output is
+    already bounded by the router's `max_tokens`; the harness stores ALL of it
+    and lets a display surface clamp what it shows. ONE owner for both loops
+    (`agent_run_v2` here and `agent.agent_run`), so the shape cannot drift.
+    """
+    try:
+        text = str((act or {}).get("summary") or "")
+        return text if text.strip() else "done"
+    except Exception:  # noqa: BLE001 — a malformed action must not break the end
+        return "done"
 
 
 def max_steps_summary(max_steps, run_id):
@@ -1329,7 +1563,9 @@ def _result(st, goal, model):
         prm_report = None
     return {"run_id": st.id, "goal": goal, "model": model, "status": st.status,
             "termination": st.termination,
-            "summary": st.summary, "trace": st.trace, "prm": prm_report}
+            "summary": st.summary, "trace": st.trace, "prm": prm_report,
+            "failures": failed_tool_calls(st.trace),
+            "acceptance": getattr(st, "acceptance", None)}
 
 
 def _goal_title(goal, limit=80):
@@ -1354,7 +1590,7 @@ def _transient_model_error(err):
 
 
 def agent_stream_gen_v2(goal, max_steps, model, run_id, script=None, workspace=None,
-                        session_obj=None):
+                        session_obj=None, acceptance=None):
     srv = _srv()
     q = queue.Queue()
     # JAG-476: a HEADLESS run (Paperclip, jobs) used to be INVISIBLE in the WebUI —
@@ -1375,7 +1611,7 @@ def agent_stream_gen_v2(goal, max_steps, model, run_id, script=None, workspace=N
     def worker():
         try:
             agent_run_v2(goal, max_steps, model, on_event, script=script, run_id=run_id,
-                         workspace=workspace,
+                         workspace=workspace, acceptance=acceptance,
                          session=(session_obj.get("id") if isinstance(session_obj, dict) else None))
         except Exception as e:  # noqa: BLE001
             q.put("event: error\ndata: %s\n\n" % json.dumps({"error": str(e)}))
@@ -1787,8 +2023,14 @@ def handle(handler, method, path, qs, body):
                 if model:
                     _srv()._set_session_model(_sess["id"], model)
                     _sess = _srv().load_session(_sess["id"]) or _sess
+            # A1: an optional acceptance command in the query string (a string;
+            # the object form is POST-only).
+            acc, acc_err = acceptance_spec(qs.get("acceptance"))
+            if acc_err:
+                return _r(handler, 400, {"error": acc_err})
             return _sse(handler, agent_stream_gen_v2(goal, max_steps, model, st.id,
-                                                     workspace=ws, session_obj=_sess))
+                                                     workspace=ws, session_obj=_sess,
+                                                     acceptance=acc))
 
         # --- Sperimentale GET routes ---
         if path == "/api/memory":
@@ -2305,8 +2547,11 @@ def handle(handler, method, path, qs, body):
             script = body.get("script")
             if script is not None and not isinstance(script, list):
                 return _r(handler, 400, {"error": "script must be a list of actions"})
+            acc, acc_err = acceptance_spec(body.get("acceptance"))
+            if acc_err:
+                return _r(handler, 400, {"error": acc_err})
             result = agent_run_v2(goal, _int(body.get("max_steps", 6), 6), body.get("model"),
-                                  script=script)
+                                  script=script, acceptance=acc)
             return _r(handler, 200, result)
 
         if path == "/api/agent/run/stream":
@@ -2350,8 +2595,12 @@ def handle(handler, method, path, qs, body):
             if visible is not None and resolved:
                 _srv()._set_session_model(visible["id"], resolved)
                 visible = _srv().load_session(visible["id"]) or visible
+            acc, acc_err = acceptance_spec(body.get("acceptance"))
+            if acc_err:
+                return _r(handler, 400, {"error": acc_err})
             return _sse(handler, agent_stream_gen_v2(goal, ms, resolved, st.id,
-                                                     workspace=ws, session_obj=visible))
+                                                     workspace=ws, session_obj=visible,
+                                                     acceptance=acc))
 
         # --- Sperimentale POST routes ---
         if path == "/api/memory":

@@ -97,11 +97,13 @@ def post_stream(body):
 # --- stubbed run worker: emits a start, a progress and a terminal event ------
 def _scripted_run(goal, max_steps=6, model=None, on_event=None, script=None,
                   run_id=None, workspace=None, fallbacks=None, token_budget=None,
-                  session=None):
+                  session=None, acceptance=None):
     # `token_budget`/`session` are part of the REAL signature (`agent_run_v2`,
     # api_v02.py:851) and the streaming path passes `session=` (JAG-476: a headless
-    # run must appear in the chat). A stub that omits them dies with TypeError while
-    # BINDING arguments — before the body runs — so the test saw no events at all.
+    # run must appear in the chat). `acceptance` is the run request's own check
+    # (A1, 2026-11-14) and the stream route forwards it. A stub that omits them
+    # dies with TypeError while BINDING arguments — before the body runs — so the
+    # test saw no events at all.
     CALLS.append({"goal": goal, "max_steps": max_steps, "model": model,
                   "run_id": run_id, "session": session})
     on_event("agent.start", run=run_id, goal=goal, max_steps=max_steps)

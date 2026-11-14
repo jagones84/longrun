@@ -152,7 +152,10 @@ the sandbox output ceiling, the acceptance bounds and the step/iteration/wait bu
 (`model/context_limits.py`): explicit override → `LONGRUN_*` env var → config →
 `DEFAULTS` (fallback only). Consumers bind it at import, so an edit needs a restart;
 `v827` fails if a key loses its config row, if the loader drops the block, or if a
-consumer drifts from it.
+consumer drifts from it. The same budget applies on BOTH loops: the chat path and the
+headless run (`api_v02._run_observation`) paste an observation verbatim up to
+`tool_obs_limit` and offload the rest through the same `_offload_observation` owner, so
+"one observation" has one size and one spill file wherever it is produced (2026-11-14).
 
 **Four read-only audit surfaces say whether the harness's own scaffolding still earns
 its place** (lot H, 2026-11-07). None of them writes anything or adds a second ledger:

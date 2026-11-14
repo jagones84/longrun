@@ -3399,36 +3399,44 @@ def normalize_args(tool: str, args: Any) -> Any:
 
 
 def _unwrap_nested_args(tool: str, args: Any) -> Any:
-    """Unwrap one duplicate args layer when schema-required keys prove it safe."""
+    """Merge a duplicate `{"args": {...}}` layer into the argument object.
+
+    H3 (2026-11-14): a live run sent `fs.read` as
+    `{"path": "...", "args": {"start_line": 10, "end_line": 40}}`. The old
+    helper only unwrapped when a REQUIRED key was missing outside, so a call
+    whose required key was present kept the wrapper: the range was dropped, the
+    whole file was read, and the model (told "unknown argument 'args' … ignored")
+    re-issued the call — the 8 identical warnings in `run_44ea468b`, and a
+    contributor to re-read thrash. A tool that does NOT declare `args` cannot be
+    given one, so a dict under that key can only be the model's extra layer.
+    Outer keys WIN, nested keys fill what is absent, and the nested object is
+    gone afterwards (the declared schema is the only shape the tool accepts).
+
+    A tool that DOES declare `args` (the `git` tool: a string) is never
+    rewritten — there a dict is a real type error, reported by `_shape_notes`.
+    """
     if not isinstance(args, dict):
+        return args
+    nested = args.get("args")
+    if not isinstance(nested, dict):
         return args
     try:
         from longrun.tools import registry
         schema = ((registry.tool_spec(tool) or {}).get("schema") or {})
-        required = list(schema.get("required") or [])
+        props = dict(schema.get("properties") or {})
     except Exception:  # noqa: BLE001 — normalization must never block a call
         return args
-    nested = args.get("args")
-    if not required or "args" in required or not isinstance(nested, dict):
+    if not props or "args" in props:
         return args
 
     def absent(value: Any) -> bool:
         return value is None or (isinstance(value, str) and not value.strip())
 
-    outer_missing = [key for key in required
-                     if key not in args or absent(args[key])]
-    if not outer_missing or any(key not in nested for key in required):
-        return args
-
-    normalized = dict(nested)
-    for key, value in args.items():
-        if key == "args":
-            continue
-        if not absent(value):
-            normalized[key] = value
-        else:
-            normalized.setdefault(key, value)
-    return normalized
+    merged = {key: value for key, value in args.items() if key != "args"}
+    for key, value in nested.items():
+        if key not in merged or absent(merged[key]):
+            merged[key] = value
+    return merged
 
 
 def _required_names(tool: str, args: Any) -> list[str]:

@@ -80,7 +80,7 @@ class FakeHandler:
 
 def _scripted_run(goal, max_steps=6, model=None, on_event=None, script=None,
                   run_id=None, workspace=None, fallbacks=None, token_budget=None,
-                  session=None):
+                  session=None, acceptance=None):
     CALLS.append({"goal": goal, "model": model, "run_id": run_id, "session": session})
     on_event("agent.start", run=run_id, goal=goal, max_steps=max_steps)
     on_event("agent.finish", run=run_id, summary="scripted done", termination="completed")

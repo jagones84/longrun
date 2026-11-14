@@ -1542,7 +1542,7 @@ def _clean_offload(text):
     return t
 
 
-def _offload_observation(sess, tool, text):
+def _offload_observation(sess, tool, text, tail=None):
     """JAG-88 (harness layer L2 — context budgeting): keep big tool outputs OUT
     of the model's context but NEVER lose them.
 
@@ -1553,15 +1553,20 @@ def _offload_observation(sess, tool, text):
     receives a compact reference — size, line count, path, a head+tail preview,
     and the exact call to read the rest (fs.read / shell grep). The context
     stays bounded; nothing is discarded.
+
+    `tail` is the closing line. The chat wording is the default; the agent RUN
+    loop passes its own (`api_v02._RUN_OBS_TAIL`) because "answer the user"
+    is not the next step of a headless run.
     """
+    tail = ("\nNow answer the user in plain text, or call another tool."
+            if tail is None else str(tail))
     clean = _clean_offload(text)
     n = len(clean)
     seq = _OFFLOAD_SEQ.get(sess["id"], 0) + 1
     _OFFLOAD_SEQ[sess["id"]] = seq
     safe = re.sub(r"[^A-Za-z0-9_.-]", "_", str(tool))[:40] or "tool"
-    fallback = ("Observation for tool %s:\n%s\n\n"
-                "Now answer the user in plain text, or call another tool."
-                % (tool, clean[:CHAT_TOOL_OBS_LIMIT]))
+    fallback = ("Observation for tool %s:\n%s%s"
+                % (tool, clean[:CHAT_TOOL_OBS_LIMIT], tail))
     try:
         outdir = os.path.join(DATA_DIR, "offload", sess["id"])
         os.makedirs(outdir, exist_ok=True)
@@ -1595,8 +1600,7 @@ def _offload_observation(sess, tool, text):
         % (tool, n, lines, path, path, min(_OFFLOAD_HEAD, n), head))
     if n > _OFFLOAD_HEAD + _OFFLOAD_TAIL:
         ref += "...\nPreview — last %d chars:\n%s\n" % (_OFFLOAD_TAIL, clean[-_OFFLOAD_TAIL:])
-    ref += "\nNow answer the user in plain text, or call another tool."
-    return ref
+    return ref + tail
 
 
 def _fit_batch_observations(results, limit, offload):
@@ -7065,8 +7069,18 @@ def agent_run(goal, max_steps=6, model=None, on_event=None, trace=None, run_stat
                      % (goal, i + 1, max_steps, state_block(graph_key=trace.id),
                         _agent_history(actions))}]
             on_event("agent.iteration", i=i + 1, of=max_steps)
-            answer, think = _router_stream(msgs, model, lambda ch, t: on_event("agent.think", channel=ch, text=t),
-                                           cancel=api_v02.cancel_of(st))
+            # H6: the chat path coalesces per-token reasoning since JAG-265; this
+            # loop forwarded every chunk as one event. Same owner, same config.
+            _tc = server.ThinkCoalescer(
+                lambda ch, txt: on_event("agent.think", channel=ch, text=txt))
+            try:
+                answer, think = _router_stream(msgs, model, _tc.feed,
+                                               cancel=api_v02.cancel_of(st))
+            finally:
+                try:
+                    _tc.flush()
+                except Exception:  # noqa: BLE001 — a flush must not fail the step
+                    pass
             _llm(msgs, answer + think)
             api_v02.checkpoint(st)  # JAG-932: never act on a cancelled half-stream
             act = _normalize_action(extract_action_json(answer)) or {}
@@ -7076,7 +7090,10 @@ def agent_run(goal, max_steps=6, model=None, on_event=None, trace=None, run_stat
             action = act.get("action")
             on_event("agent.thought", i=i + 1, thought=thought, action=action)
             if action == "finish":
-                summary = str(act.get("summary", ""))[:600]
+                # H5: same closure rule as the v2 loop — the harness appends the
+                # failed calls it observed to the model's claim.
+                summary = (api_v02.finish_summary(act)
+                           + api_v02.run_evidence(trace=actions))
                 on_event("agent.finish", summary=summary)
                 actions.append({"i": i + 1, "thought": thought, "action": "finish", "summary": summary})
                 st.status = "done"
