@@ -1313,7 +1313,14 @@ def canonical_name(name, args=None):
         return name
     act = ""
     if isinstance(args, dict):
-        act = str(args.get("action") or "").strip()
+        # The HANDLERS read the action with `.lower()` (`tools._memory`,
+        # `tools._matrix`), so `"DELETE"` really deletes. Folding the case HERE
+        # is what lets the alias table and the canonical lookup see it: before,
+        # `memory{action:"DELETE"}` canonicalised to the bare namespace (policy
+        # row `approval: auto`) while the handler ran `forget` — a destructive
+        # action executed with no approval card, on a spelling no schema
+        # advertises but every handler accepts (2026-11-14).
+        act = str(args.get("action") or "").strip().lower()
     if act:
         act = _ACTION_ALIASES.get(n, {}).get(act, act)
     if act and ("%s.%s" % (n, act)) in _CANONICAL_SCHEMAS:
@@ -2248,6 +2255,14 @@ def _shell_paths(command):
         cand = None
         if w.startswith(("/", "~", "./", "../")) or w == "..":
             cand = w
+        elif "$" in w:
+            # 2026-11-14: a shell VARIABLE hid the path from this scan, so
+            # `cat $HOME/.ssh/id_rsa` matched the `^cat` auto-approve pattern and
+            # read the key, while the same command spelled `~/.ssh/id_rsa` asked.
+            # Expand what the shell would expand; an unknown name stays as-is.
+            exp = os.path.expandvars(w)
+            if exp != w and exp.startswith(("/", "~")):
+                cand = exp
         elif w.startswith("--directory="):
             cand = w.split("=", 1)[1]
         elif prev in ("cd", "pushd", "-C", "--directory"):

@@ -773,6 +773,16 @@ class _ToolFreq:
         self.warn = _to_pos_int(warn, 30)
         self.hard = _to_pos_int(hard, 50)
         self.per_tool = per_tool if isinstance(per_tool, dict) else {}
+        # 2026-11-14: the history must hold enough calls for the LONGEST
+        # per-tool threshold. With `window: 50` and `shell: {warn: 100,
+        # hard: 200}` the count could never exceed the window, so both shell
+        # thresholds were dead config and a model could loop on shell with no
+        # nudge — the very case the override was written for.
+        self._keep = max(
+            [self.window] + [
+                max(_to_pos_int((ov or {}).get("warn"), self.warn),
+                    _to_pos_int((ov or {}).get("hard"), self.hard))
+                for ov in self.per_tool.values() if isinstance(ov, dict)])
         self._calls = []
 
     @classmethod
@@ -804,8 +814,12 @@ class _ToolFreq:
         name = str(name or "")
         warn_at, hard_at = self._limits(name)
         self._calls.append(name)
-        del self._calls[:-self.window]
-        count = sum(1 for c in self._calls if c == name)
+        del self._calls[:-self._keep]
+        # The window must be able to REACH the threshold: a per-tool override
+        # larger than the global window widens the span for that tool only, so
+        # interleaved types still count the way the design intends.
+        span = min(len(self._calls), max(self.window, hard_at))
+        count = sum(1 for c in self._calls[-span:] if c == name)
         if count >= hard_at:
             decision = "hard_stop"
         elif count >= warn_at:
@@ -1055,6 +1069,17 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
     st.model = model
     if session:
         st.session = session  # JAG-932: lets a session-scoped Stop find this run
+        # 2026-11-14: a Stop pressed on a PREVIOUS turn of this session set a
+        # persistent flag, and `checkpoint` reads it for every session-bound run.
+        # Nothing cleared it on this path (only a CHAT turn did, at its start), so
+        # the next job/Paperclip run died at step 0 with "aborted by operator" —
+        # blaming the operator for a Stop they pressed on other work. A run is a
+        # NEW turn: it starts un-stopped, exactly like a chat turn.
+        try:
+            from longrun.util.steering import clear_abort as _clear_abort
+            _clear_abort(str(session))
+        except Exception:  # noqa: BLE001 — a steering hiccup must not block a run
+            pass
     # JAG-448: the subagent (and any caller passing `fallbacks`) gets a real
     # failover chain of literal model refs. `model` stays PRIMARY; on a stream
     # failure the loop walks `candidates` instead of dying at the first error.
