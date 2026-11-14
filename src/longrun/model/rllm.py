@@ -446,13 +446,18 @@ def ensure_model(alias, timeout=None, on_event=None):
 
 
 def measure_llm_latency(alias, timeout=60):
-    """Round-trip latency (ms) of a 1-token completion on `alias`; None on error."""
+    """Round-trip latency (ms) of a 1-token completion on `alias`; None on error.
+
+    Provider-aware (JAG-71): the probe hits the endpoint the model REALLY runs on.
+    It used to always POST to the local router, so an install routed to a cloud
+    provider could never have its model path measured and read `degraded` forever.
+    """
     if not alias:
         return None
-    body = json.dumps({"model": alias, "max_tokens": 1, "stream": False,
+    url, headers, mid = _chat_endpoint(alias)
+    body = json.dumps({"model": mid, "max_tokens": 1, "stream": False,
                        "messages": [{"role": "user", "content": "ping"}]}).encode("utf-8")
-    req = urllib.request.Request(ROUTER_BASE + "/v1/chat/completions", data=body,
-                                 headers={"Content-Type": "application/json"})
+    req = urllib.request.Request(url, data=body, headers=headers)
     t0 = time.time()
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
@@ -460,6 +465,27 @@ def measure_llm_latency(alias, timeout=60):
         return round((time.time() - t0) * 1000, 1)
     except Exception:  # noqa: BLE001
         return None
+
+
+def router_in_model_path(role="chat"):
+    """True when `role`'s configured model is served by the llama.cpp router.
+
+    The router is ONE provider, not the harness. An install routed to a cloud
+    provider is healthy with :8080 down, so health/selfcheck must not call that an
+    outright error. An unresolved alias counts as local: the router loads aliases
+    from its own roster.
+    """
+    try:
+        from longrun.model import providers, routing
+        ref = routing.role_model(role) or providers.default_ref()
+        hit = providers.resolve(ref)
+        if not hit:
+            return True
+        provider, _mid = hit
+        base = str(provider.get("base_url") or "").rstrip("/")
+        return bool(base) and base.startswith(ROUTER_BASE.rstrip("/"))
+    except Exception:  # noqa: BLE001 — unreadable config keeps the old severity
+        return True
 
 
 def selfcheck_payload(host="127.0.0.1", port=8790, llm_probe=True):
@@ -472,11 +498,15 @@ def selfcheck_payload(host="127.0.0.1", port=8790, llm_probe=True):
     loaded_alias = next((m["alias"] for m in roster if m.get("loaded")), None)
     req_loaded = bool(requested and any(
         m["alias"] == requested and m["loaded"] for m in roster))
-    llm_ms = measure_llm_latency(loaded_alias or requested) if (llm_probe and ping["reachable"]) else None
+    llm_ms = measure_llm_latency(loaded_alias or requested) if llm_probe else None
+    # Probe: the MODEL PATH decides (a cloud completion is the proof). Cheap read
+    # (`llm=0`): the router is only required when it actually serves the chat model.
+    healthy = (llm_ms is not None) if llm_probe else (
+        ping["reachable"] or not router_in_model_path())
     return {
         "service": "longrun", "version": server.VERSION,
         "ts": round(time.time(), 3),
-        "status": "ok" if (ping["reachable"] and llm_ms is not None) else "degraded",
+        "status": "ok" if healthy else "degraded",
         "model_requested": requested,
         "model_loaded": req_loaded,
         "model_loaded_alias": loaded_alias,

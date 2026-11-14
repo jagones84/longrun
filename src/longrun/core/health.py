@@ -204,7 +204,14 @@ def collect(probe: bool = True, host: str = "127.0.0.1", port: int = 8790,
         _probe("sandbox", _sandbox_probe),
     ]
     if probe:
-        probes.insert(0, _probe("router", _router_probe, "error"))
+        # The router is ONE provider, not the harness: an install routed to a cloud
+        # provider is healthy with :8080 down, so its absence is a warning there and
+        # an error only when the configured chat model really goes through it.
+        from longrun.model import rllm
+        if rllm.router_in_model_path():
+            probes.insert(0, _probe("router", _router_probe, "error"))
+        else:
+            probes.insert(0, _probe("router", _router_probe, "warn"))
 
     host_report = {}
     try:

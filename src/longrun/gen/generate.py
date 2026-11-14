@@ -241,7 +241,10 @@ def _blackboard(extra):
 
 def _object_only(extra):
     """A routine/job goal: the object identity plus who will run it."""
-    out = {k: (extra or {}).get(k) for k in ("routine", "job", "team", "name", "goal")
+    # `agent` is the worker the deck picked for a routine (`genExtra` in orbit.html):
+    # it used to be dropped here, so the draft never knew who would execute the goal.
+    out = {k: (extra or {}).get(k)
+           for k in ("routine", "job", "team", "agent", "name", "goal")
            if (extra or {}).get(k)}
     try:
         from longrun.agent import agents as agents_mod
@@ -313,6 +316,26 @@ def _model_for(surface, session):
         return None
 
 
+# The FILLED-field contract, applied to EVERY generate surface that does not spell
+# out its own (chat.prompt / goal.objective / plan.input already do). The engine can
+# therefore promise the same job for all controls: empty -> write from the surface's
+# real context, filled -> optimize that text and spell out its details.
+_FILLED_REPLACE = (
+    "\nThe field ALREADY holds text: that text is the operator's draft. OPTIMIZE it "
+    "in place — keep its intent, language and every fact it states, fix spelling, "
+    "grammar and ambiguity, and spell out the details it implies so the result is "
+    "more complete and precise. The rewrite REPLACES the field's text: return the "
+    "whole result, never only the missing part, and add nothing the draft or the "
+    "context does not support.")
+# `rules.*` APPEND their draft (a rule is never silently swapped in), so their filled
+# branch completes the operator's text instead of replacing it.
+_FILLED_APPEND = (
+    "\nThe field ALREADY holds text: that text belongs to the operator and is kept. "
+    "Produce ONLY the paragraph that completes it — sharpen the idea it already "
+    "states and spell out the details it implies, without repeating a line that is "
+    "already there and without inventing facts.")
+
+
 def _user_message(surface, ctx, current, hint):
     parts = ["CONTEXT (the real state of this surface — do not contradict it):",
              json.dumps(ctx, ensure_ascii=False, default=str)[:MAX_CONTEXT_CHARS]]
@@ -320,8 +343,7 @@ def _user_message(surface, ctx, current, hint):
     parts.append("\nCURRENT CONTENT OF THE FIELD:\n" + (cur[:4000] if cur
                                                         else "(empty)"))
     if cur:
-        parts.append("\nDo NOT duplicate what is already there; produce the text to "
-                     "put in the field.")
+        parts.append(_FILLED_APPEND if surface.apply == "append" else _FILLED_REPLACE)
     if (hint or "").strip():
         parts.append("\nOPERATOR HINT (obey it):\n" + _clip(hint, 600))
     return "\n".join(parts)

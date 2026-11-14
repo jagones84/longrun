@@ -14778,10 +14778,18 @@ function renderHealth(box, h) {
     esc(String(p.name || "")) + " · " + esc(String(p.detail || "")) +
     " · " + (Number(p.ms) || 0) + " ms</div>").join("");
   const llm = (h.llm && typeof h.llm === "object") ? h.llm : null;
+  // The pill is the OVERALL status (components + live probes + settings checks), so
+  // the counters beside it must count the same three sources — they used to show
+  // "0 error" next to a red ERROR because only the in-memory parts were counted.
+  const probeErr = probes.filter(p => !p.ok && p.severity === "error").length;
+  const probeWarn = probes.filter(p => !p.ok && p.severity !== "error").length;
+  const setSum = (h.settings && h.settings.summary) || {};
+  const errCount = (Number(sum.error) || 0) + probeErr + (Number(setSum.errors) || 0);
+  const warnCount = (Number(sum.warn) || 0) + probeWarn + (Number(setSum.warnings) || 0);
   box.innerHTML =
     '<div class="u-df u-aic u-g8 u-fww"><b>' + _healthDot(status) + esc(status.toUpperCase()) + "</b>" +
-    '<span class="remaining u-f1">' + (Number(sum.error) || 0) + " error · " +
-    (Number(sum.warn) || 0) + " warn · " + (Number(sum.unknown) || 0) + " unknown · " +
+    '<span class="remaining u-f1" title="components + live probes + settings checks">' + errCount + " error · " +
+    warnCount + " warn · " + (Number(sum.unknown) || 0) + " unknown · " +
     (Number(h.uptime_secs) || 0) + " s uptime</span>" +
     '<button class="ghost" data-call="runHealthChecks" title="rerun the live report">↻</button></div>' +
     '<div class="u-mt8" style="font-size:11px">' + partRows + "</div>" +
@@ -15369,14 +15377,17 @@ function genBar(surfaceId, opts) {
   // discard it — the same control OPTIMIZES the draft. The glyph stays ✨ (one icon
   // vocabulary); only the NAME follows the field's state, and the name is the tooltip.
   const _idleName = opts.title || "write this field with AI — the harness knows this section's context";
+  // ONE rule for every ✨: an EMPTY field is written from the surface's context, a
+  // FILLED one is optimized in place (server: `_FILLED_REPLACE` / `_FILLED_APPEND`).
+  // A surface may name its own filled job; the rest fall back to this one.
+  const _filledName = opts.filledTitle || "improve and complete what I typed — same intent, more detail";
   const _name = () => {
-    if (!opts.filledTitle) return _idleName;
     const f = field();
-    return (f && String(f.value || "").trim()) ? opts.filledTitle : _idleName;
+    return (f && String(f.value || "").trim()) ? _filledName : _idleName;
   };
   const _syncName = () => { const t = _name(); btn.title = t; btn.setAttribute("aria-label", t); };
   _syncName();
-  if (opts.filledTitle) {
+  {
     const _f = field();
     if (_f) _f.addEventListener("input", _syncName);
   }
