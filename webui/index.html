@@ -1377,7 +1377,8 @@
   #pvBackdrop { position: fixed; inset: 0; z-index: 49; background: rgba(0,0,0,.62); }
   #pvBackdrop[hidden] { display: none; }
   #pvWin { position: fixed; z-index: 50; top: 50%; left: 50%; transform: translate(-50%,-50%);
-    width: min(1180px, 94vw); height: calc(100dvh / var(--zoom, 1) - 28px);
+    width: min(calc(1180px / var(--zoom, 1)), calc(94vw / var(--zoom, 1)));
+    height: calc(100dvh / var(--zoom, 1) - 28px);
     display: flex; flex-direction: column; background: var(--menubg);
     border: 1px solid var(--line); border-radius: var(--radius);
     box-shadow: 0 24px 70px rgba(0,0,0,.55); }
@@ -3053,10 +3054,10 @@
     <h2 class="art-title">My Artifacts</h2>
     <span class="art-n" id="artCount"></span>
     <div class="art-scope" role="group" aria-label="artifact scope">
-      <button class="art-sbtn" id="artScopeWorkspace" aria-pressed="true"
-              title="every file in this workspace folder">Workspace</button>
-      <button class="art-sbtn" id="artScopeJournal" aria-pressed="false"
-              title="the files the harness wrote, by session">All sessions</button>
+      <button class="art-sbtn" id="artScopeAll" aria-pressed="true"
+              title="every artifact in this workspace — a file a session wrote carries that session's name">All sessions</button>
+      <button class="art-sbtn" id="artScopeSession" aria-pressed="false"
+              title="only the files THIS session wrote — the edit journal, anywhere on disk">This session</button>
     </div>
     <span class="u-f1"></span>
     <input id="artSearch" class="art-search" type="search" spellcheck="false"
@@ -3268,8 +3269,24 @@
             title="open this session's knowledge notebook (Settings ▸ Knowledge)"
             aria-label="open this session's knowledge notebook"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v14.5H6.5A2.5 2.5 0 0 0 4 20V5.5Z"/><path d="M4 20a2.5 2.5 0 0 1 2.5-2.5H20V21H6.5A2.5 2.5 0 0 1 4 20Z"/></svg></button>
     </div>
-    <!-- 2026-11-07 (operator): section 2 — the VIEW controls (how the transcript is
-         read), separated from the objects by one hairline. -->
+    <!-- 2026-11-14 (operator: "terminal and feed group just above then the other"):
+         the Inspector jumps come straight after the session objects, then the runtime
+         panels, then the chat group.
+         v885/v890: each icon points at ONE Inspector section and TOGGLES it —
+         collapse if open, expand (and centre) if collapsed. Two groups: the PANEL
+         jumps, and the RUNTIME panels (terminal, feed) on their own, because they are
+         not what the right column is about. Both lists are built from the REAL
+         sections at runtime (`_buildInspJump`), so they follow your drag order and
+         cannot drift; Approvals/Workspace keep their own badged buttons. -->
+    <div class="tb-sec" id="inspJump" role="group" aria-label="inspector sections"></div>
+    <div class="tb-sec" id="inspJumpRuntime" role="group" aria-label="runtime panels"></div>
+    <!-- 2026-11-07 (operator): section 3 — the CHAT controls (how the transcript is
+         read). 2026-11-14 (operator): *"shift the group relevant to chat session (the
+         one with autogenerate below) … move all that group below. terminal and feed
+         group just above"* — the group now sits LAST, nearest the composer, because it
+         is what you touch while writing a message; the Inspector jumps and the runtime
+         panels moved above it. The PLAN toggle is its neighbour of the ✨
+         (see _buildInspJump): collapsing the plan is a frequent act. -->
     <!-- v890 (operator: "the one impacting the chat session shall be put together as
          collapse the todos … the one relevant to RH panel together"). Group 2 is the
          CHAT's own controls; the ✨ (optimize the draft) now rides here instead of the
@@ -3285,14 +3302,6 @@
     <button class="ghost" data-tree-thoughts data-call="toggleThoughts" title="show every chain-of-thought block" aria-label="show every chain-of-thought block"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.6 12C4.6 7.6 8.1 5.4 12 5.4s7.4 2.2 9.4 6.6c-2 4.4-5.5 6.6-9.4 6.6S4.6 16.4 2.6 12Z"/><circle cx="12" cy="12" r="2.6"/><path class="ic-slash" d="M3.4 3.4 20.6 20.6"/></svg></button>
     <button class="ghost" data-tree-todos data-call="nameThreads" title="name every untitled Free.* group with one LLM subroutine (the chat model; no step limit)" aria-label="title the free thread groups"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0l-7.2-7.2A2 2 0 0 1 2.8 12V4.2A1.2 1.2 0 0 1 4 3h7.8a2 2 0 0 1 1.4.6l7.4 7.4a2 2 0 0 1 0 2.4Z"/><circle cx="7.6" cy="7.6" r="1.2" fill="currentColor" stroke="none"/></svg></button>
     </div>
-    <!-- v885/v890: each icon points at ONE Inspector section and TOGGLES it —
-         collapse if open, expand (and centre) if collapsed. Two groups: the PANEL
-         jumps, and the RUNTIME panels (terminal, feed) on their own, because they are
-         not what the right column is about. Both lists are built from the REAL
-         sections at runtime (`_buildInspJump`), so they follow your drag order and
-         cannot drift; Approvals/Workspace keep their own badged buttons. -->
-    <div class="tb-sec" id="inspJump" role="group" aria-label="inspector sections"></div>
-    <div class="tb-sec" id="inspJumpRuntime" role="group" aria-label="runtime panels"></div>
     </div>
     <!-- RH-27 (operator, 2026-11-03): the rail's FOOT pins the composer-level controls
          level with the send button.
@@ -15840,7 +15849,9 @@ function _inspLabel(sec) {
   return String(t || "").replace(/\s+/g, " ").trim() || sec.dataset.insp;
 }
 function _inspJumpBoxes() {
-  return ["inspJump", "inspJumpRuntime"].map(id => $(id)).filter(Boolean);
+  // The chat group hosts the PLAN jump (2026-11-14), so its current-state mark must
+  // be painted with the others.
+  return ["inspJump", "inspJumpRuntime", "chatViewSec"].map(id => $(id)).filter(Boolean);
 }
 function _buildInspJump() {
   const main = $("inspJump"), runt = $("inspJumpRuntime");
@@ -15860,6 +15871,20 @@ function _buildInspJump() {
       + 'stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
       + (INSP_JUMP_ICONS[key] || INSP_JUMP_ICONS.plan) + "</svg>";
     b.onclick = () => { _inspJumpToggle(key); _paintInspJump(); };
+    if (key === "plan") {
+      // 2026-11-14 (operator): "the button icon to collapse expand plan shall be just
+      // above autogenerate since used frequently. so near the chat box" — the plan
+      // toggle lives in the CHAT group, immediately before the ✨ (which is mounted
+      // last in that row), not with the other Inspector jumps.
+      const host = $("chatViewSec");
+      if (host) {
+        const old = host.querySelector('[data-insp-jump="plan"]');
+        if (old) old.remove();          // rebuild = replace, never a second plan toggle
+        const spark = host.querySelector('[data-gen-surface="chat.prompt"]');
+        if (spark) host.insertBefore(b, spark); else host.appendChild(b);
+        return;
+      }
+    }
     (INSP_JUMP_RUNTIME.indexOf(key) >= 0 ? runt : main).appendChild(b);
   });
   _paintInspJump();
@@ -16986,7 +17011,7 @@ const ART_KIND_LABEL = { html: "HTML", slides: "PPT", document: "Document",
                          sheet: "Sheet", video: "Video", image: "Image",
                          audio: "Audio", code: "Code", data: "Data", other: "Other" };
 const _art = { all: [], kinds: {}, kind: "all", q: "", titles: {}, spaces: {},
-               scope: "workspace", ws: "", wsName: "", total: 0 };
+               scope: "all", ws: "", wsName: "", total: 0 };
 
 function _artIcon(kind) {
   return '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor"'
@@ -17002,10 +17027,13 @@ function _artPickWorkspace(sess) {
   const any = mine || rows.find(s => s.workspace);
   _art.ws = any ? String(any.workspace) : "";
   _art.wsName = _art.ws ? _art.ws.replace(/[\\/]+$/, "").split(/[\\/]/).pop() : "";
-  const b = $("artScopeWorkspace");
+  const b = $("artScopeAll");
   if (b) {
-    b.textContent = _art.wsName ? "Workspace · " + _art.wsName : "Workspace";
-    b.title = _art.ws ? "every file in " + _art.ws : "every file in this workspace folder";
+    // "All sessions" means the WHOLE artifact set of this workspace (a session
+    // name is a column, not a filter): the folder is what the page can see, the
+    // journal only labels who wrote what. It used to list the journal alone, so
+    // every type nobody had journalled (the proposal HTMLs) showed 0.
+    b.title = _art.ws ? "every artifact in " + _art.ws : "every artifact in this workspace";
   }
 }
 
@@ -17020,9 +17048,17 @@ async function loadArtifacts() {
   });
   _artPickWorkspace(sess);
   const qs = new URLSearchParams({ limit: "500" });
-  if (_art.scope === "workspace") {
+  if (_art.scope === "session") {
+    if (!sessionId) {
+      _art.all = []; _art.kinds = {}; _art.total = 0;
+      renderArtifacts();
+      grid.innerHTML = '<div class="art-empty">open a session — this view lists the files it wrote</div>';
+      return;
+    }
+    qs.set("session", sessionId);
+  } else {
     if (!_art.ws) {
-      _art.all = []; _art.kinds = {};
+      _art.all = []; _art.kinds = {}; _art.total = 0;
       renderArtifacts();
       grid.innerHTML = '<div class="art-empty">open a session — this view lists its workspace folder</div>';
       return;
@@ -17061,9 +17097,9 @@ function renderArtifacts() {
     const total = Math.max(Number(_art.total || 0), _art.all.length);
     cnt.textContent = (shown.length === total ? String(total) : shown.length + " of " + total) + " files";
   }
-  const sw = $("artScopeWorkspace"), sj = $("artScopeJournal");
-  if (sw) sw.setAttribute("aria-pressed", String(_art.scope === "workspace"));
-  if (sj) sj.setAttribute("aria-pressed", String(_art.scope === "journal"));
+  const sw = $("artScopeAll"), sj = $("artScopeSession");
+  if (sw) sw.setAttribute("aria-pressed", String(_art.scope !== "session"));
+  if (sj) sj.setAttribute("aria-pressed", String(_art.scope === "session"));
   const chips = $("artKinds");
   if (chips) {
     const rows = [["all", "All", _art.all.length]].concat(
@@ -17079,9 +17115,9 @@ function renderArtifacts() {
   if (!shown.length) {
     grid.innerHTML = '<div class="art-empty">' + (_art.all.length
       ? "no artifact matches this filter"
-      : _art.scope === "workspace"
-        ? "no artifact-typed files in " + esc(_art.wsName || "this folder")
-        : "no artifacts yet — the files the harness writes and the files you save in the editor appear here") + "</div>";
+      : _art.scope === "session"
+        ? "this session has not written an artifact yet — the files it writes and the files you save in its editor appear here"
+        : "no artifact-typed files in " + esc(_art.wsName || "this folder")) + "</div>";
     return;
   }
   grid.innerHTML = shown.map(a => {
@@ -17186,7 +17222,7 @@ async function openPreview(path, row) {
   else if (typeof r.size === "number") bits.push(_fmtSize(r.size));
   if (r.ts) bits.push(_ago(r.ts));
   if (r.session) bits.push(_art.titles[r.session] || r.session);
-  else if (_art.scope === "workspace") bits.push("not written by a session");
+  else if (_art.scope === "all") bits.push("not written by a session");
   $("pvMeta").textContent = bits.join(" · ");
   $("pvBackdrop").hidden = false; $("pvWin").hidden = false;
   closePvMenu(); $("artCtx").hidden = true;
@@ -17323,14 +17359,27 @@ async function _pvRenderSheet(body, note) {
 }
 
 /* One menu geometry for the ⋯ menu and the right-click menu, clamped to the
-   viewport so a card in the last row never opens a menu off-screen. */
+   viewport so a card in the last row never opens a menu off-screen.
+   The page is scaled with CSS `zoom` on <html> (JAG-359, measured: at 1.25 a
+   fixed 100px box reports rect.x = 125 while offsetWidth stays 200), so a rect /
+   a click point arrives in VISUAL px and `left` is laid out in CSS px. Dividing
+   by the zoom is what keeps the popup on its button — without it the menu opened
+   ~250 px away and its items sat outside the window, so "copy the path" could
+   never be clicked. */
+function _uiZoom() {
+  const z = parseFloat(getComputedStyle(document.documentElement).zoom);
+  return isFinite(z) && z > 0 ? z : 1;
+}
 function _placeMenu(m, x, y, alignRight) {
+  const z = _uiZoom();
   m.style.left = "0px"; m.style.top = "0px";
-  const w = m.offsetWidth, h = m.offsetHeight;
-  let left = alignRight ? x - w : x;
-  left = Math.max(8, Math.min(left, window.innerWidth - w - 8));
-  let top = y;
-  if (top + h > window.innerHeight - 8) top = Math.max(8, y - h - 8);
+  const w = m.offsetWidth, h = m.offsetHeight;      // layout px
+  const vw = window.innerWidth, vh = window.innerHeight;   // layout px too
+  const tx = x / z, ty = y / z;                     // visual → layout
+  let left = alignRight ? tx - w : tx;
+  left = Math.max(8, Math.min(left, vw - w - 8));
+  let top = ty;
+  if (top + h > vh - 8) top = Math.max(8, ty - h - 8);
   m.style.left = left + "px";
   m.style.top = top + "px";
 }
@@ -17484,10 +17533,10 @@ function _artIfOpen() {
     _art.scope = sc; _art.kind = "all";
     loadArtifacts();
   };
-  const sw = $("artScopeWorkspace");
-  if (sw) sw.onclick = () => setScope("workspace");
-  const sj = $("artScopeJournal");
-  if (sj) sj.onclick = () => setScope("journal");
+  const sw = $("artScopeAll");
+  if (sw) sw.onclick = () => setScope("all");
+  const sj = $("artScopeSession");
+  if (sj) sj.onclick = () => setScope("session");
   const more = $("pvMore");
   if (more) more.onclick = () => {
     const m = $("pvMenu");

@@ -183,9 +183,10 @@ check("D12 the chip row carries the reference categories",
       and 'video: "Video"' in ui and 'image: "Image"' in ui and 'audio: "Audio"' in ui)
 check("D12b every category is offered (dimmed at zero), not hidden",
       "ART_KIND_ORDER.map(k =>" in ui and 'class="art-chip\' + (r[2] ? "" : " is-empty")' in ui)
-check("D13 the page has a Workspace / All-sessions scope switch",
-      'id="artScopeWorkspace"' in ui and 'id="artScopeJournal"' in ui
-      and 'qs.set("scope", "workspace")' in ui and 'qs.set("workspace", _art.ws)' in ui)
+check("D13 the page has an All-sessions / This-session scope switch",
+      'id="artScopeAll"' in ui and 'id="artScopeSession"' in ui
+      and 'qs.set("scope", "workspace")' in ui and 'qs.set("workspace", _art.ws)' in ui
+      and 'qs.set("session", sessionId)' in ui)
 check("D14 a file with no journal claims no session (it says 'workspace')",
       'esc(a.session ? (_art.titles[a.session] || a.session) : "workspace")' in ui)
 check("D15 the phone topbar rules are declared AFTER the base rules they override",

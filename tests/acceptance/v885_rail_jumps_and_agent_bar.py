@@ -62,10 +62,15 @@ check("A7 the open section is marked from the real class, and lit in CSS",
       and "#toolsBar #inspJumpRuntime button.is-current { color: var(--acc); }" in HTML)
 
 # ---- B: correct separations, no duplicate control --------------------------
-check("B1 one group per job: objects | chat | panel jumps | runtime",
+check("B1 one group per job: objects | panel jumps | runtime | chat",
+      # 2026-11-14 (operator): *"shift the group relevant to chat session … move all
+      # that group below. terminal and feed group just above then the other"* — the
+      # chat group moved to the BOTTOM (nearest the composer, where it is used), so
+      # the order this pin asserts changed; each group still owns one job.
       HTML.count('<div class="tb-sec"') >= 4
-      and HTML.index('id="inspJump"') > HTML.index('id="chatViewSec"')
-      and HTML.index('id="inspJump"') < HTML.index('id="inspJumpRuntime"'))
+      and HTML.index('id="inspJump"') < HTML.index('id="chatViewSec"')
+      and HTML.index('id="inspJump"') < HTML.index('id="inspJumpRuntime"')
+      and HTML.index('id="inspJumpRuntime"') < HTML.index('id="chatViewSec"'))
 check("B2 the sections that already own a badged object button are not repeated",
       'const INSP_JUMP_SKIP = ["approvals", "files"];' in HTML
       and 'if (!key || INSP_JUMP_SKIP.indexOf(key) >= 0) return;' in HTML)
