@@ -2286,6 +2286,14 @@ def touches_outside(tool, args, workspace):
     if tool in ("fs.read", "fs.write", "fs.edit", "diff", "diff.files", "diff.text"):
         if a.get("path"):
             paths.append(str(a["path"]))
+    elif tool in ("grep.search", "glob.list"):
+        # 2026-11-14 (bug hunt): a path-reading tool that names its target with a
+        # DIFFERENT key (`grep.search.path`, `glob.list.root`) was invisible to this
+        # boundary, and both are `approval: auto` — so on a path outside the session
+        # workspace `grep.search` returned file CONTENTS with no card while `fs.read`
+        # on the same path asked (measured: required vs auto in one classify call).
+        if a.get("path") or a.get("root"):
+            paths.append(str(a.get("path") or a.get("root")))
     elif tool in ("git", "git.run"):
         if a.get("cwd") or a.get("workspace"):
             paths.append(str(a.get("cwd") or a.get("workspace")))
