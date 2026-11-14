@@ -1771,10 +1771,24 @@ def handle(handler, method, path, qs, body):
             if not goal:
                 return _r(handler, 400, {"error": "goal required"})
             max_steps = _int(qs.get("max_steps", 6), 6)
-            st = new_run(goal, qs.get("model"), max_steps)
+            model = qs.get("model")
+            st = new_run(goal, model, max_steps)
             ws, _sess = _session_ws(qs.get("session"))  # JAG-115: the session's folder
-            return _sse(handler, agent_stream_gen_v2(goal, max_steps, qs.get("model"),
-                                                     st.id, workspace=ws))
+            # 2026-11-14: `session=` used to pick only the WORKSPACE and then the
+            # session object was dropped, so a session-scoped run (a consumer doing
+            # real tool work) left its session EMPTY in the WebUI while the run was
+            # recorded under /api/agent/runs — "the sessions are empty" (operator).
+            # The streaming path already transcripts a session-bound run
+            # (JAG-476/479: goal = user turn, outcome = reply, chat.run/chat.done);
+            # hand it the session, and resolve the model ONCE (JAG-478) so the run
+            # and the session it shows in cannot disagree.
+            if _sess is not None:
+                model = agent_model_for(goal, model, _sess) or model
+                if model:
+                    _srv()._set_session_model(_sess["id"], model)
+                    _sess = _srv().load_session(_sess["id"]) or _sess
+            return _sse(handler, agent_stream_gen_v2(goal, max_steps, model, st.id,
+                                                     workspace=ws, session_obj=_sess))
 
         # --- Sperimentale GET routes ---
         if path == "/api/memory":
