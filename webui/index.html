@@ -114,17 +114,9 @@
        called "an horrible folder icon". */
     #sessBadge { display: none !important; }
   }
-  @media (max-width: 640px) {
-    /* JAG-425 (#4): the sandbox word is VISUALLY hidden on a phone but stays in the
-       a11y tree, so the state is never conveyed by colour alone. */
-    #sbxTxt { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden;
-              clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
-    #sbxPill { padding: 3px 7px; }
-    #topbar { padding: 8px 10px; gap: 8px; }
-    #topbar .logo { font-size: 0; }
-    #topbar .logo svg { width: 20px; height: 20px; vertical-align: middle; }
-    .topTabs .ttab { padding: 0 10px; }
-  }
+  /* The phone HEADER rules live at the END of this sheet (search "PHONE HEADER"),
+     after the Graphite block that sets the same properties — a media query declared
+     between the two base blocks loses to the later one. */
   .pill.sbox.ok, .pill.sbox.warn { color: var(--dim); }
   .sdot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; background: var(--dim); opacity: .8; }
   #sbxPill.ok .sdot { background: var(--ok); opacity: 1; box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 16%, transparent); }
@@ -1295,6 +1287,15 @@
     padding: 5px 9px; width: 220px; outline: none; }
   .art-search:focus { border-color: var(--line-2); }
   .art-kinds { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+  /* Scope: the journal (what the harness WROTE) vs the folder (what IS there).
+     Two states of one control, so it is a segmented switch, not two buttons. */
+  .art-scope { display: inline-flex; align-items: center; gap: 2px; padding: 2px;
+    border: 1px solid var(--line); border-radius: 999px; }
+  .art-sbtn { background: transparent; border: 0; color: var(--dim); font: inherit;
+    font-size: 11.5px; font-weight: 600; padding: 3px 10px; border-radius: 999px;
+    cursor: pointer; white-space: nowrap; }
+  .art-sbtn:hover { color: var(--txt); }
+  .art-sbtn[aria-pressed="true"] { background: var(--panel2); color: var(--txt); }
   .art-chip { background: transparent; border: 1px solid transparent; color: var(--dim);
     font: inherit; font-size: 11.5px; font-weight: 600; padding: 3px 9px;
     border-radius: 999px; cursor: pointer; }
@@ -2833,6 +2834,35 @@
       width: calc(100vw / var(--zoom, 1) - 88px) !important;
       max-width: calc(100vw / var(--zoom, 1) - 88px); }
   }
+
+  /* ---- PHONE HEADER (≤640, portrait) — declared LAST on purpose -------------
+     The topbar's geometry is written twice in this sheet (the early layout block
+     and the Graphite block at ~1273/~2420). A media query placed between them
+     LOSES to the later base declaration, so the phone compaction never applied:
+     on a 390 px screen the bar's content measured 455 px and the search button and
+     the settings gear sat OUTSIDE the viewport (operator: "settings is no more
+     visible in mobile"). These rules therefore live after every base rule they
+     override. `min-height: 501px` keeps a landscape phone out: there the bar is a
+     44 px LEFT RAIL with its own geometry, and must not be re-padded here. */
+  @media (max-width: 640px) and (min-height: 501px) {
+    /* JAG-425 (#4): the sandbox word is VISUALLY hidden on a phone but stays in the
+       a11y tree, so the state is never conveyed by colour alone. */
+    #sbxTxt { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden;
+              clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
+    #sbxPill { padding: 3px 7px; }
+    #topbar { padding: 8px 10px; gap: 8px; }
+    #topbar .logo { font-size: 0; }
+    #topbar .logo svg { width: 20px; height: 20px; vertical-align: middle; }
+    #topbar .topTabs { margin-right: 0; }
+    .topTabs .ttab { padding: 0 10px; }
+  }
+  @media (max-width: 480px) and (min-height: 501px) {
+    /* Three tabs + the wordmark + the sandbox dot + search + gear must fit 390 px:
+       tighten the tabs and the gaps; the two icon buttons keep a 28 px target. */
+    #topbar { gap: 4px; padding: 8px 8px; }
+    .topTabs .ttab { padding: 0 6px; font-size: 11.5px; }
+    #topbar #palette-open, #topbar #settingsBtn { width: 28px; min-width: 28px; height: 28px; }
+  }
 </style>
 <script>
 /* JAG-352: apply the saved theme + text-weight before first paint (no flash). */
@@ -2928,6 +2958,12 @@
   <div class="art-head">
     <h2 class="art-title">My Artifacts</h2>
     <span class="art-n" id="artCount"></span>
+    <div class="art-scope" role="group" aria-label="artifact scope">
+      <button class="art-sbtn" id="artScopeWorkspace" aria-pressed="true"
+              title="every file in this workspace folder">Workspace</button>
+      <button class="art-sbtn" id="artScopeJournal" aria-pressed="false"
+              title="the files the harness wrote, by session">All sessions</button>
+    </div>
     <span class="u-f1"></span>
     <input id="artSearch" class="art-search" type="search" spellcheck="false"
            placeholder="filter by name or path" aria-label="filter artifacts by name or path">
@@ -16833,7 +16869,8 @@ const ART_KIND_ORDER = ["html", "slides", "document", "sheet", "video", "image",
 const ART_KIND_LABEL = { html: "HTML", slides: "PPT", document: "Document",
                          sheet: "Sheet", video: "Video", image: "Image",
                          audio: "Audio", code: "Code", data: "Data", other: "Other" };
-const _art = { all: [], kinds: {}, kind: "all", q: "", titles: {} };
+const _art = { all: [], kinds: {}, kind: "all", q: "", titles: {}, spaces: {},
+               scope: "workspace", ws: "", wsName: "", total: 0 };
 
 function _artIcon(kind) {
   return '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor"'
@@ -16841,15 +16878,45 @@ function _artIcon(kind) {
     + (ART_ICONS[kind] || ART_ICONS.other) + "</svg>";
 }
 
+/* The folder this view lists: the SELECTED session's workspace, else the newest
+   session that has one. The switch shows the folder name, so it is never a guess. */
+function _artPickWorkspace(sess) {
+  const rows = (sess && sess.sessions) || [];
+  const mine = rows.find(s => s.id === sessionId && s.workspace);
+  const any = mine || rows.find(s => s.workspace);
+  _art.ws = any ? String(any.workspace) : "";
+  _art.wsName = _art.ws ? _art.ws.replace(/[\\/]+$/, "").split(/[\\/]/).pop() : "";
+  const b = $("artScopeWorkspace");
+  if (b) {
+    b.textContent = _art.wsName ? "Workspace · " + _art.wsName : "Workspace";
+    b.title = _art.ws ? "every file in " + _art.ws : "every file in this workspace folder";
+  }
+}
+
 async function loadArtifacts() {
   const grid = $("artGrid"); if (!grid) return;
-  let out, sess;
-  try {
-    [out, sess] = await Promise.all([
-      api("GET", "/api/artifacts?limit=500"),
-      api("GET", "/api/sessions").catch(() => null)
-    ]);
-  } catch (e) {
+  let sess = null;
+  try { sess = await api("GET", "/api/sessions"); } catch (e) { sess = null; }
+  _art.titles = {}; _art.spaces = {};
+  ((sess && sess.sessions) || []).forEach(s => {
+    _art.titles[s.id] = s.title || s.id;
+    if (s.workspace) _art.spaces[s.id] = s.workspace;
+  });
+  _artPickWorkspace(sess);
+  const qs = new URLSearchParams({ limit: "500" });
+  if (_art.scope === "workspace") {
+    if (!_art.ws) {
+      _art.all = []; _art.kinds = {};
+      renderArtifacts();
+      grid.innerHTML = '<div class="art-empty">open a session — this view lists its workspace folder</div>';
+      return;
+    }
+    qs.set("scope", "workspace");
+    qs.set("workspace", _art.ws);
+  }
+  let out;
+  try { out = await api("GET", "/api/artifacts?" + qs.toString()); }
+  catch (e) {
     grid.innerHTML = '<div class="art-empty">' + esc(e) + "</div>";
     return;
   }
@@ -16859,8 +16926,7 @@ async function loadArtifacts() {
   }
   _art.all = out.artifacts || [];
   _art.kinds = out.kinds || {};
-  _art.titles = {};
-  ((sess && sess.sessions) || []).forEach(s => { _art.titles[s.id] = s.title || s.id; });
+  _art.total = Number(out.count || (_art.all.length)) || _art.all.length;
   renderArtifacts();
 }
 
@@ -16873,7 +16939,15 @@ function renderArtifacts() {
   const grid = $("artGrid"); if (!grid) return;
   const shown = _art.all.filter(_artMatches);
   const cnt = $("artCount");
-  if (cnt) cnt.textContent = shown.length + (_art.all.length !== shown.length ? " of " + _art.all.length : "") + " files";
+  if (cnt) {
+    // The list is capped (500). Say so instead of pretending the folder holds 500
+    // files: "500 of 1859 files".
+    const total = Math.max(Number(_art.total || 0), _art.all.length);
+    cnt.textContent = (shown.length === total ? String(total) : shown.length + " of " + total) + " files";
+  }
+  const sw = $("artScopeWorkspace"), sj = $("artScopeJournal");
+  if (sw) sw.setAttribute("aria-pressed", String(_art.scope === "workspace"));
+  if (sj) sj.setAttribute("aria-pressed", String(_art.scope === "journal"));
   const chips = $("artKinds");
   if (chips) {
     const rows = [["all", "All", _art.all.length]].concat(
@@ -16889,7 +16963,9 @@ function renderArtifacts() {
   if (!shown.length) {
     grid.innerHTML = '<div class="art-empty">' + (_art.all.length
       ? "no artifact matches this filter"
-      : "no artifacts yet — the files the harness writes and the files you save in the editor appear here") + "</div>";
+      : _art.scope === "workspace"
+        ? "no artifact-typed files in " + esc(_art.wsName || "this folder")
+        : "no artifacts yet — the files the harness writes and the files you save in the editor appear here") + "</div>";
     return;
   }
   grid.innerHTML = shown.map(a => {
@@ -16902,11 +16978,12 @@ function renderArtifacts() {
       + "</span>"
       + '<span class="art-name">' + esc(a.name) + "</span>"
       + '<span class="art-path">' + esc(dir) + "</span>"
-      + '<span class="art-meta"><span>' + esc(a.action === "created" ? "created" : "edited") + "</span>"
+      + '<span class="art-meta"><span>'
+      + esc(a.action === "created" ? "created" : a.action === "modified" ? "edited" : "file") + "</span>"
       + "<span>" + esc(_fmtSize(a.size)) + "</span>"
       + "<span>" + esc(_ago(a.ts)) + "</span>"
-      + '<span class="art-sess" title="' + _attr(a.session) + '">'
-      + esc(_art.titles[a.session] || a.session) + "</span>"
+      + '<span class="art-sess" title="' + _attr(a.session || "") + '">'
+      + esc(a.session ? (_art.titles[a.session] || a.session) : "workspace") + "</span>"
       + "</span></button>";
   }).join("");
   grid.querySelectorAll(".art-card").forEach(c => {
@@ -16930,6 +17007,15 @@ function _artIfOpen() {
   if (s) s.addEventListener("input", () => { _art.q = s.value.trim().toLowerCase(); renderArtifacts(); });
   const r = $("artReload");
   if (r) r.onclick = () => loadArtifacts();
+  const setScope = sc => {
+    if (_art.scope === sc) return;
+    _art.scope = sc; _art.kind = "all";
+    loadArtifacts();
+  };
+  const sw = $("artScopeWorkspace");
+  if (sw) sw.onclick = () => setScope("workspace");
+  const sj = $("artScopeJournal");
+  if (sj) sj.onclick = () => setScope("journal");
 })();
 
 /* ---- JAG-127: file-diff journal — change summary, side-by-side diff, undo ----

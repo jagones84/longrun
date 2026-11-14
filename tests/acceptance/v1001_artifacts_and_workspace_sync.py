@@ -125,6 +125,37 @@ check("C5 the HTTP handler wraps the same index", "artifacts" in A.artifacts_lis
 check("C6 the route is wired", 'path == "/api/artifacts"' in open(
     os.path.join(REPO, "src", "longrun", "core", "api_v02.py"), encoding="utf-8").read())
 
+# --- E: the WORKSPACE scope reads the folder, not only the journal -------------
+WS = os.path.join(WORK, "proj")
+for sub in ("", ".agent/docs/proposals", "node_modules/pkg", ".agent/trash"):
+    os.makedirs(os.path.join(WS, sub), exist_ok=True)
+for rel in ("report.docx", "deck.pptx", ".agent/docs/proposals/p.html",
+            "node_modules/pkg/skip.md", ".agent/trash/skip.md"):
+    with open(os.path.join(WS, rel), "w", encoding="utf-8") as f:
+        f.write("x\n")
+J = os.path.join(WS, "made.md")
+with open(J, "w", encoding="utf-8") as f:
+    f.write("a\n")
+E.record(KEY, J, "", "a\n", "created")
+w = E.workspace_artifacts(WS)
+names = {x["name"]: x for x in (w.get("artifacts") or [])}
+check("E1 the workspace scope lists files the journal never saw",
+      "report.docx" in names and "p.html" in names, sorted(names))
+check("E2 hidden folders ARE scanned (the proposal html lives under .agent)",
+      names.get("p.html", {}).get("kind") == "html", names.get("p.html"))
+check("E3 dependency trees and harness churn stay out", "skip.md" not in names, sorted(names))
+check("E4 a journaled file keeps its provenance in the scan",
+      names.get("made.md", {}).get("session") == KEY
+      and names["made.md"]["source"] == "journal", names.get("made.md"))
+check("E5 an unjournaled file claims no session",
+      names.get("report.docx", {}).get("session") is None
+      and names["report.docx"]["source"] == "workspace", names.get("report.docx"))
+check("E6 kinds are counted for the chips", w["kinds"].get("slides") == 1, w.get("kinds"))
+check("E7 the route takes scope + workspace",
+      A.artifacts_list({"scope": "workspace", "workspace": WS, "root": WORK}).get("scope") == "workspace")
+check("E8 a path outside the allowed roots is refused",
+      "error" in A.artifacts_list({"scope": "workspace", "workspace": "/", "root": WORK}))
+
 # --- D: the page ------------------------------------------------------------
 ui = open(os.path.join(REPO, "webui", "index.html"), encoding="utf-8").read()
 check("D1 the third tab exists beside Sessions/Control",
@@ -132,7 +163,7 @@ check("D1 the third tab exists beside Sessions/Control",
       and ui.find('id="tabControl"') < ui.find('id="tabArtifacts"'))
 check("D2 the page is a real container, not a panel",
       'id="artifactsView"' in ui and 'id="artGrid"' in ui and 'body.artifacts-on #app { display: none; }' in ui)
-check("D3 it reads the real route", '"/api/artifacts?limit=500"' in ui)
+check("D3 it reads the real route", '"/api/artifacts?" + qs.toString()' in ui)
 check("D4 a card opens the file in the editor (the page hands the row back)",
       "function openArtifact(path)" in ui and "showSessions();" in ui[ui.find("function openArtifact"):][:160]
       and "openFile(path);" in ui[ui.find("function openArtifact"):][:200])
@@ -151,6 +182,16 @@ check("D12 the chip row carries the reference categories",
       and 'video: "Video"' in ui and 'image: "Image"' in ui and 'audio: "Audio"' in ui)
 check("D12b every category is offered (dimmed at zero), not hidden",
       "ART_KIND_ORDER.map(k =>" in ui and 'class="art-chip\' + (r[2] ? "" : " is-empty")' in ui)
+check("D13 the page has a Workspace / All-sessions scope switch",
+      'id="artScopeWorkspace"' in ui and 'id="artScopeJournal"' in ui
+      and 'qs.set("scope", "workspace")' in ui and 'qs.set("workspace", _art.ws)' in ui)
+check("D14 a file with no journal claims no session (it says 'workspace')",
+      'esc(a.session ? (_art.titles[a.session] || a.session) : "workspace")' in ui)
+check("D15 the phone topbar rules are declared AFTER the base rules they override",
+      # they used to sit between two base blocks, so the whole compaction was dead
+      # and the search + gear sat outside a 390 px viewport.
+      ui.find("#topbar { gap: 10px; }") < ui.find("/* ---- PHONE HEADER")
+      and "@media (max-width: 480px) and (min-height: 501px)" in ui)
 deck = open(os.path.join(REPO, "src", "longrun", "orbit", "web", "orbit.html"), encoding="utf-8").read()
 check("D9 the deck's twin tab bar carries the same third tab",
       'href="/#artifacts"' in deck and "My Artifacts" in deck)
