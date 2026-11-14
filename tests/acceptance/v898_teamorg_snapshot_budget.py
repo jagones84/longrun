@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """v898 — the Teamorg automation snapshot is BUILT to a budget, never cut to one.
 
-Operator-approved proposal `.agent/docs/proposals/2026-11-08_teamorg-automation-context.html`.
+Operator-approved proposal `.agent/docs/proposals/2026-11/2026-11-08_teamorg-automation-context.html`.
 
 Measured 2026-11-08 on the live org (94 agents): the `agents` inspect section was
 32,162 characters and `automate()` handed the model only the first 6,000 — a

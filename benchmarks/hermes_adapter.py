@@ -9,7 +9,7 @@ the harness contribution, with the model held fixed.
 
 Like the other adapters it imports nothing from `longrun.*`.
 
-Default paths come from `.agent/docs/HARNESS_PATHS.md` (Hermes section). Override
+Default paths come from `.agent/docs/reference/HARNESS_PATHS.md` (Hermes section). Override
 with env: HERMES_PY, HERMES_CLI.
 """
 import os

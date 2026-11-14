@@ -205,7 +205,7 @@ All notable changes to Longrun are documented here. The format follows
   buttons, the four daily surfaces, and the contrast arithmetic for all 8 themes) and it audits BOTH
   surfaces: the Control deck had 12 of its 13 static controls named by a `title` or a placeholder
   only, and a `role="button"` must never be reachable by mouse alone. Evidence:
-  `.agent/docs/research/2026-11-07_webui-a11y/axe.json` (violations 5 → 0; `incomplete` is reported,
+  `.agent/docs/research/webui-a11y/2026-11-07_webui-a11y/axe.json` (violations 5 → 0; `incomplete` is reported,
   never counted as a pass).
 - **The harness audits its own scaffolding (lot H, `v844`…`v850`).** Six read-only reports now say
   whether the rules, the skills, the tools and the permission gate still earn their place:
@@ -287,6 +287,24 @@ All notable changes to Longrun are documented here. The format follows
   old shortcut say the new one.
 
 ### Fixed
+- **A turn resumed after a restart keeps ITS plan and finishes it (`v1005`).** Operator, 2026-11-14:
+  *"i asked something to architect but after restart wake up he didn't finish the work"*. The
+  `[Harness restart]` continuation WAS delivered and the agent worked (a 5-call and a 3-call batch),
+  then the turn closed with four steps still open and "Reply to continue". Three defects, measured on
+  the durable log: (1) the graph had split in two — the 2026-11-11 identity migration renamed
+  `architect.json` and rewrote every identifier except `key`, and `save()` addressed the file by
+  `key`, so every write went to a second file while every read by session id served the frozen one:
+  the nudge after `todo.write` said "Task list saved (4 new step(s)) … OPEN (0): (none — the current
+  plan is empty)" and the continuation loop saw no open step at all (the later 17:12 turn then wrote
+  the frozen 9-node copy back, erasing those 4 steps); (2) the three-empty-reply breaker counted
+  LIFETIME empties, so two reasoning-only replies, two successful batches and one later empty ended
+  the turn with `stop_reason: empty_reply`; (3) the second `retry` injection was suppressed as a
+  "byte-identical repeat", re-sending the request that had just produced nothing. One address per
+  graph now (`load()` normalises in memory, `save()` keys off it, a boot heal groups files by
+  `(session_id, run_id)`, keeps the newer copy and moves the duplicate to the recoverable trash), the
+  empty cap counts CONSECUTIVE replies, and `retry` is never deduplicated. Locked by `v1005` (13/13,
+  red at HEAD without the fix: 10/13 and the exact `empty message three times` error) and `v958`
+  (16/16, B7b pins the graph address through the rename).
 - **A truncated subagent is a FAILURE, and the plan shows a run's real ending (`v924`/`v925`).**
   A child stopped at its step budget still ended `status: done`, so the Session-Job scheduler marked
   the subjob `done` and handed the sentinel text to every dependent as input — a dependent then worked
@@ -413,7 +431,7 @@ All notable changes to Longrun are documented here. The format follows
   `codebase/*`, `embedding/active`). Machine-checked: all 77 ARCHITECTURE
   modules exist on disk and are named in the map; all 39 `forge` subcommands
   exist in code (`.agent/trash/docs_coherence.py`).
-- **Docs self-organization.** New `.agent/docs/MAINTENANCE.md` (WHEN+HOW per
+- **Docs self-organization.** New `.agent/docs/reference/MAINTENANCE.md` (WHEN+HOW per
   section, same-session rule); `AGENTS.md` points at it and drops the stale
   `reports/` reference; `UserPrompts.md` rewritten without leading-dash lists
   (Trae preview hid them) + §3.5 live-verification note.
@@ -582,7 +600,7 @@ All notable changes to Longrun are documented here. The format follows
   for failures, the error text — so a retry or an outage can no longer look like "$0.00"
   or vanish from the panel. The header adds `N failed · M no usage · p50 Xms`, and each
   row/run shows a `failed` or `no usage` badge. Shape borrowed from Maka's
-  `usage_model_call_attempts` (see `.agent/docs/research/2026-10-24_maka-usage-ledger.md`);
+  `usage_model_call_attempts` (see `.agent/docs/research/notes/2026-10/2026-10-24_maka-usage-ledger.md`);
   no Maka code was copied. Locked by `v558`.
 - **The regression gate now says where it is.** `tests/battery.sh` truncates and then
   appends `.agent/logs/battery-progress.log` in real time — `RUN`, one `START`/`END <test>

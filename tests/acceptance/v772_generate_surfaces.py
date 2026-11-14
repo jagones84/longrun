@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """v772 — the ✨ control: ONE registry, ONE engine, the RIGHT context and model.
 
-Operator request (2026-11-02, `.agent/docs/USER_NOTES.md` §"LLM AUTO-EDIT"): an AI
+Operator request (2026-11-02, `.agent/docs/reference/USER_NOTES.md` §"LLM AUTO-EDIT"): an AI
 control on every editable text surface, whose writer KNOWS the context of that exact
 surface, and whose prompt data lives in ONE place ("pay attentio on wher ethis
 hardocded prompt data"). The distinct point: a chat prompt is written by the CHAT's own

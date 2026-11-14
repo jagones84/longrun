@@ -2,7 +2,7 @@
 
 > SUPERSEDED (2026-10-25): the 2026-09-28 design-base snapshot. Current
 > reference is `.agent/docs/research/` (dated reports, papers, notes) plus
-> `.agent/docs/harness-strengths.md` (actionable port map). Kept for history.
+> `.agent/docs/reference/harness-strengths.md` (actionable port map). Kept for history.
 
 *Research performed 2026-09-28 as the design base for Longrun (JAG-32). Live web search across MarkTechPost, TrueFoundry, Winder.AI, Lil'Log, FutureAGI, Atlan, awesome-harness-engineering (Sep 2026).*
 

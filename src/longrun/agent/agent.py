@@ -407,8 +407,9 @@ def inject_repeat_decision(kind, text, seen, cap=INJECT_IDENTICAL_CAP):
     2026-11-01 was 189 harness turns and 151 kB of injections in one session, but
     only a REPEAT of the exact same `(kind, text)` costs context without telling
     the model anything new — it already holds those bytes. So that is all this
-    bounds. A different text, a different kind, the first occurrence and every
-    tool observation (its payload is data the model must see) all pass.
+    bounds. A different text, a different kind, the first occurrence, every tool
+    observation (its payload is data the model must see) and every `retry` (its job
+    is to re-drive a model that produced nothing usable) all pass.
 
     `0` or a negative `cap` disables the bound — deliberately WITHOUT the floor
     `invalid_reply_cap()` has, because this knob is not a safety valve: turning it
@@ -422,7 +423,12 @@ def inject_repeat_decision(kind, text, seen, cap=INJECT_IDENTICAL_CAP):
         limit = INJECT_IDENTICAL_CAP
     if limit < 1 or not isinstance(seen, dict):
         return False
-    if str(kind) == "observation":
+    # v1005: `retry` is the harness RE-DRIVING the model after a reply it could not
+    # use (empty, unparseable, DSML). Suppressing the second copy sent the SAME
+    # request again and left the "retry" only in the event log — measured
+    # 2026-11-14 (architect): two `retry` injections, one message on the wire.
+    # The callers bound retries with their own streak caps, so this never grows.
+    if str(kind) in ("observation", "retry"):
         return False
     key = (str(kind), str(text))
     already = int(seen.get(key, 0) or 0)
@@ -5640,6 +5646,13 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             on_event("chat.error", session=sess["id"],
                      error="the model returned an empty message three times")
             break
+        # 2026-11-15: the cap above bounds CONSECUTIVE empty messages. Any reply
+        # that carries something ends the streak — measured 2026-11-14 (the
+        # Architect, resumed after a restart) TWO reasoning-only replies, a
+        # successful 5-call batch, another batch, and then a third empty were
+        # counted as one streak, so the resumed turn was force-closed with four
+        # open steps and asked the operator to reply.
+        _empty_streak = 0
         if not _think_action_used and _reasoning_only_action(answer, think):
             # The action exists but lives in the reasoning channel: the harness cannot
             # execute a thought. Ask for it once, as a message.

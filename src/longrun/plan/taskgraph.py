@@ -115,8 +115,23 @@ def _path(key):
     return os.path.join(GRAPH_DIR, _safe_id(key) + ".json")
 
 
+def _address(graph):
+    """The ONE address of a graph — the file it is stored under (2026-11-15).
+
+    `run_id` wins over `key`: `ensure()` always writes both, but the 2026-11-11
+    identity migration rewrote `run_id` and left `key` naming the retired id, so
+    a save addressed by `key` created a SECOND file (see `heal_split_graphs`).
+    """
+    return str((graph or {}).get("run_id") or (graph or {}).get("key") or "")
+
+
 def load(key):
     """Load the graph for `key` (a session id = a task, or a run id) or None.
+
+    The addressed file IS the graph, so the in-memory copy carries `key` as both
+    identifiers (2026-11-15): a stale field can never make a later `save()` write
+    somewhere else. The FILE is not rewritten here on purpose — the boot heal has
+    to still see a split pair (see `heal_split_graphs`).
 
     One-way 1-based migration: graphs written when plans started at 0 get
     every stored plan number + 1 (untagged nodes count as plan 0) and a
@@ -125,31 +140,112 @@ def load(key):
     resolving old cards.
     """
     g = read_json(_path(key), None)
-    if not isinstance(g, dict) or g.get("plan_base") == 1:
+    if not isinstance(g, dict):
         return g
-    try:
-        g["plan"] = int(g.get("plan", 0) or 0) + 1
-    except (TypeError, ValueError):
-        g["plan"] = 1
-    for n in g.get("nodes") or []:
-        if not isinstance(n, dict):
-            continue
+    _key = str(key or "")
+    if not _key:
+        return g
+    g["run_id"] = _key
+    g["key"] = _key
+    if g.get("plan_base") != 1:
         try:
-            n["plan"] = int(n.get("plan", 0) or 0) + 1
+            g["plan"] = int(g.get("plan", 0) or 0) + 1
         except (TypeError, ValueError):
-            n["plan"] = 1
-    g["plan_base"] = 1
-    try:
-        save(g)
-    except Exception:  # noqa: BLE001 — a read-only checkout still reads fine
-        pass
+            g["plan"] = 1
+        for n in g.get("nodes") or []:
+            if not isinstance(n, dict):
+                continue
+            try:
+                n["plan"] = int(n.get("plan", 0) or 0) + 1
+            except (TypeError, ValueError):
+                n["plan"] = 1
+        g["plan_base"] = 1
+        try:
+            save(g)
+        except Exception:  # noqa: BLE001 — a read-only checkout still reads fine
+            pass
     return g
 
 
 def save(graph):
     graph["updated"] = round(time.time(), 3)
-    write_json(_path(graph.get("key") or graph.get("run_id")), graph)
+    write_json(_path(_address(graph)), graph)
     return graph
+
+
+def heal_split_graphs():
+    """Converge the files a rename split ONE graph into (2026-11-15).
+
+    Measured 2026-11-14: the Architect's session (`architect`) had a graph in
+    `architect.json` frozen at 9 closed steps AND a second file named after its
+    RETIRED id carrying the 4 steps it had just saved. The identity migration
+    renamed the file and rewrote every identifier except `key`, and `save()`
+    addressed the file by `key` — so every read by session id served the frozen
+    copy (the harness told the model "OPEN (0) … the current plan is empty" right
+    after saving four steps) and every write went to the alias. The continuation
+    loop therefore never saw an open step and the resumed turn stopped mid-work.
+
+    Identity, not a field, decides: files are grouped by `(session_id, run_id)`,
+    so a prior load/save of the frozen copy cannot hide the pair. A group of two
+    or more is the split: the NEWER copy wins (after the split ALL writes went
+    there, so it is the complete one), it is stored at the run's own address and
+    the duplicates move to the recoverable `data/trash` (never deleted). Files of
+    different graphs are never merged. Idempotent, and it never raises.
+    """
+    out = {"healed": [], "trashed": []}
+    try:
+        names = sorted(os.listdir(GRAPH_DIR))
+    except OSError:
+        return out
+    groups = {}
+    for fn in names:
+        if not fn.endswith(".json"):
+            continue
+        g = read_json(os.path.join(GRAPH_DIR, fn), None)
+        if not isinstance(g, dict):
+            continue
+        ident = (str(g.get("session_id") or ""), str(g.get("run_id") or ""))
+        if not ident[1]:
+            continue
+        groups.setdefault(ident, []).append((fn, g))
+    for (_sid, run_id), items in groups.items():
+        canonical = _safe_id(run_id)
+        if len(items) > 1:
+            fn, g = max(items, key=lambda it: float(it[1].get("updated") or 0))
+            g["run_id"] = run_id
+            g["key"] = canonical
+            try:
+                save(g)
+            except Exception:  # noqa: BLE001 — a read-only checkout still reads fine
+                continue
+            out["healed"].append(canonical)
+            for ofn, _og in items:
+                if _safe_id(_key_of(ofn)) == canonical:
+                    continue
+                try:
+                    trash = os.path.join(paths.DATA_DIR, "trash")
+                    os.makedirs(trash, exist_ok=True)
+                    dest = os.path.join(trash, ofn)
+                    if os.path.exists(dest):
+                        dest = os.path.join(trash, "%d-%s" % (int(time.time()), ofn))
+                    os.replace(os.path.join(GRAPH_DIR, ofn), dest)
+                    out["trashed"].append(_key_of(ofn))
+                except OSError:
+                    pass
+            continue
+        # ONE file: only a stale `key` (the field that caused the split) is fixed,
+        # and only when the address itself is right — the save must land in the
+        # same file. Any other mismatch is left alone (it is not this defect).
+        fn, g = items[0]
+        key = _key_of(fn)
+        if run_id == key and str(g.get("key") or "") != key:
+            g["key"] = key
+            try:
+                save(g)
+            except Exception:  # noqa: BLE001
+                continue
+            out["healed"].append(key)
+    return out
 
 
 def ensure(key, session_id=None, goal=None):

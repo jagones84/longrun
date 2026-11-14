@@ -55,8 +55,12 @@ _FLAGS_MARKER = ".identity-flags-migrated"
 
 # Identifier-bearing JSON keys: only these carry a session/run id, so only these
 # are rewritten by the migration. Prose (a message body, a note) is never touched.
+# `key` is the address a task GRAPH is stored under — omitting it renamed
+# `longrunAgent.json` to `architect.json` while the file still claimed `key:
+# longrunAgent`, and the next `taskgraph.save()` wrote a SECOND file there while
+# every read by session id served the frozen one (2026-11-14).
 _IDENT_KEYS = frozenset({
-    "id", "session", "sessions", "session_id", "sid", "run", "run_id",
+    "id", "key", "session", "sessions", "session_id", "sid", "run", "run_id",
     "agent", "agent_id", "by", "from", "to", "sender", "target", "owner",
     "workspace", "path", "source", "deleted", "allow_architect",
 })

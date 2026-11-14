@@ -12,7 +12,7 @@ are the ones the org table shows; `kind="session"` agents are deliberately hidde
 there (they have no reports and are not team members) while staying in `list()`,
 which is what the WebUI reads to badge every session with its `A<n>`.
 
-Object model (see .agent/docs/architecture/design-agents-jobs.md):
+Object model (see .agent/docs/architecture/designs/design-agents-jobs.md):
   * Agent  = a session, id ``AX``  (todos are ``AX.nY``)
   * Job    = a higher-level goal ``JN`` that orchestrates several agents (jobs.py)
 

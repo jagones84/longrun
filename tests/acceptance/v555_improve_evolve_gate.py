@@ -6,8 +6,8 @@ M11 of the upgrade plan: `improve` is `approval: auto` in config/tools.yaml, so
 though the end-of-turn path asks. The fix is a subtool gate inside
 `registry.classify()`.
 
-This file lives in `.agent/docs/plans/staged-tests/` until the implementation lands, then it
-moves to `tests/acceptance/` unchanged. Deterministic, no model, no network.
+This file was staged under `.agent/docs/plans/staged-tests/` until the implementation landed,
+then moved to `tests/acceptance/` unchanged. Deterministic, no model, no network.
 
 Run: python3 v555_improve_evolve_gate.py
 """

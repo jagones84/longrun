@@ -3527,6 +3527,17 @@ def main():
         pass
     try:
         from longrun.plan import taskgraph as _tg_boot
+        # 2026-11-15: a rename that left the graph's internal address behind split
+        # ONE plan into two files — reads by session id served the frozen copy
+        # while every write went to the alias, so the continuation loop saw "0
+        # open steps" and a resumed turn stopped mid-work (measured 2026-11-14,
+        # `architect`). Converge the pair BEFORE the orphan sweep, so the stale
+        # duplicate is moved to the recoverable trash by its owner.
+        _tg_boot.heal_split_graphs()
+    except Exception:  # noqa: BLE001 — a heal must never stop the boot
+        pass
+    try:
+        from longrun.plan import taskgraph as _tg_boot
         # v812: a graph is an artifact of an owner (session or run). Graphs whose
         # owner is gone are unreachable, so they must not pile up in data/ forever;
         # only files older than the grace window move, into the recoverable trash.

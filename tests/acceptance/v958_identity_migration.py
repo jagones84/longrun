@@ -56,6 +56,10 @@ with open(os.path.join(TMP, "sessions", OLD + ".json.bak-1"), "w", encoding="utf
     json.dump({"id": OLD}, f)
 with open(os.path.join(TMP, "graphs", OLD + "_run_abc.json"), "w", encoding="utf-8") as f:
     json.dump({"session": OLD + "_run_abc", "nodes": []}, f)
+# the Architect's own task graph ALSO carries its address in `key` (v1005): the
+# field was not rewritten, so the next save created a second graph file.
+with open(os.path.join(TMP, "graphs", OLD + ".json"), "w", encoding="utf-8") as f:
+    json.dump({"key": OLD, "run_id": OLD, "session_id": OLD, "nodes": []}, f)
 with open(os.path.join(TMP, "agents.json"), "w", encoding="utf-8") as f:
     json.dump({"seq": 1, "agents": {OLD: {"id": "A1", "n": 1, "session": OLD,
                                           "kind": "session", "name": "Architect"}}}, f)
@@ -118,6 +122,12 @@ check("B6 the stale backup copy is renamed too, not lost",
 _graph = json.load(open(os.path.join(TMP, "graphs", NEW + "_run_abc.json"), encoding="utf-8"))
 check("B7 a stateless run graph follows its run id",
       _graph.get("session") == NEW + "_run_abc", _graph.get("session"))
+
+_graph_main = json.load(open(os.path.join(TMP, "graphs", NEW + ".json"), encoding="utf-8"))
+check("B7b the graph's own ADDRESS follows the rename too (v1005: save keyed by it)",
+      _graph_main.get("key") == NEW and _graph_main.get("run_id") == NEW
+      and _graph_main.get("session_id") == NEW,
+      {k: _graph_main.get(k) for k in ("key", "run_id", "session_id")})
 
 _store = json.load(open(os.environ["LONGRUN_AGENTS_FILE"], encoding="utf-8"))
 check("B8 the agent registry key is renamed and pinned",

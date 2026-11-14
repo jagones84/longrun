@@ -248,7 +248,7 @@ check("E14 a reply with no VISIBLE part after the reasoning strip is not an answ
       and A._visible_reply("17") == "17")
 
 # ---- E15/E16/E17. the reasoning parameter has a DIALECT per provider ----
-# Measured 2026-11-01 (`.agent/docs/research/2026-11-01_reasoning-effort.md`): a single
+# Measured 2026-11-01 (`.agent/docs/research/notes/2026-11/2026-11-01_reasoning-effort.md`): a single
 # shape for every provider is the defect. On `z-ai/glm-5.3-flash` a flat
 # `reasoning_effort: high` bought 107 mean reasoning tokens against 1419 for the provider
 # default — the "level" was CAPPING the thinking. On a local llama.cpp model the flat

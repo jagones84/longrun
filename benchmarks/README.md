@@ -228,7 +228,7 @@ openclaw pass it by naming the conflict and refusing the impossible total. The r
 fix that came with it — a typed RESULT/BLOCKED contract in the system prompt plus a
 mechanical citation audit (`plan/artifacts.dangling_citations`) — is pinned by
 `tests/acceptance/v832_honesty_contract.py`; the evidence is
-`.agent/docs/research/2026-11-06_honest-abstention.md`.
+`.agent/docs/research/notes/2026-11/2026-11-06_honest-abstention.md`.
 
 **Two harnesses, one set (2026-11-06, glm-5.3-flash, n=1).** `longrun` 8/8 strict
 (2 turn timeouts, 3233 s, $0.1893) against `openclaw` 7/8 (0 timeouts, 169 s, $0.0516).
@@ -256,7 +256,7 @@ Never run an arm on an instance that has not passed `--verify`: the screen is wh
 proves the task is gradable here (the first attempt failed honestly — a 2014 `setup.py`
 cannot build on Python 3.12). `--verify psf__requests-1142` → gold 1/1 f2p, 5/5 p2p;
 base 0/1, 5/5 → GRADABLE. Suite landscape and per-repo traps:
-`.agent/docs/research/2026-11-06_swe-and-hard-suites.md`.
+`.agent/docs/research/notes/2026-11/2026-11-06_swe-and-hard-suites.md`.
 
 ## Trend — a stored run read as its own bill (v842)
 

@@ -15,7 +15,7 @@ Contract locked here:
     high-frequency case);
   * `from_config()` falls back to defaults when the YAML block is absent.
 
-Staged in `.agent/docs/plans/staged-tests/` until the implementation lands. Deterministic.
+Staged under `.agent/docs/plans/staged-tests/` until the implementation landed; it now lives here. Deterministic.
 
 Run: python3 v556_tool_frequency.py
 """
