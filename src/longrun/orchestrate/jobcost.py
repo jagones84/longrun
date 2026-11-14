@@ -150,7 +150,7 @@ def feedback_for(jid, agent_id):
                 if jid and row.get("job") != jid:
                     continue
                 # Keep the most recent (highest ts)
-                if not best or row.get("ts", 0) > best.get("ts", 0):
+                if not best or row.get("ts", 0) >= best.get("ts", 0):
                     best = row
     except OSError:
         return {}
