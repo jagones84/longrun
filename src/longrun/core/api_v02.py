@@ -2295,6 +2295,8 @@ def handle(handler, method, path, qs, body):
             return _r(handler, 200, fs_find(qs))
         if path == "/api/fs/read":  # JAG-124: read a text file into the editor
             return _r(handler, 200, fs_read(qs))
+        if path == "/api/fs/structured":  # v1015: YAML/JSON as a display tree
+            return _r(handler, 200, fs_structured(qs))
         if path == "/api/fs/sheet":  # EV-45: table preview for a spreadsheet
             return _r(handler, 200, fs_sheet(qs))
         if path == "/api/fs/raw":  # JAG-150: raw bytes for inline image/pdf preview
@@ -3916,6 +3918,104 @@ def fs_read(qs=None) -> dict:
     except (UnicodeDecodeError, ValueError):
         return {"path": p, "text": "", "size": size, "truncated": False, "binary": True}
     return {"path": p, "text": text, "size": size, "truncated": False, "binary": False}
+
+
+# v1015: a YAML/JSON document has a STRUCTURED view (tree), not only its source.
+# The parse happens here with the SAME loader the harness uses (PyYAML safe_load /
+# json), so the preview can never disagree with the effective configuration; the
+# browser never grows a second YAML parser. Deliberately bounded: a big document
+# is cut, never allowed to freeze the window.
+FS_STRUCT_MAX_NODES = 4000
+FS_STRUCT_MAX_DEPTH = 24
+FS_STRUCT_MAX_ITEMS = 200
+FS_STRUCT_MAX_CHARS = 400
+
+
+def _struct_scalar(v):
+    """One leaf as {t, v}: the type is what the tree colours, never a repr."""
+    if v is None:
+        return {"t": "null", "v": "null"}
+    if isinstance(v, bool):
+        return {"t": "bool", "v": "true" if v else "false"}
+    if isinstance(v, (int, float)):
+        return {"t": "num", "v": _sheet_cell(v)}
+    s = str(v)
+    if len(s) > FS_STRUCT_MAX_CHARS:
+        s = s[:FS_STRUCT_MAX_CHARS] + "…"
+    return {"t": "str", "v": s}
+
+
+def _struct_node(v, depth, budget):
+    if budget["n"] <= 0 or depth > FS_STRUCT_MAX_DEPTH:
+        budget["cut"] = True
+        return {"t": "null", "v": "…"}
+    budget["n"] -= 1
+    if isinstance(v, dict):
+        items = []
+        for i, (k, val) in enumerate(v.items()):
+            if i >= FS_STRUCT_MAX_ITEMS or budget["n"] <= 0:
+                budget["cut"] = True
+                break
+            items.append([str(k), _struct_node(val, depth + 1, budget)])
+        return {"t": "map", "n": len(v), "v": items}
+    if isinstance(v, (list, tuple)):
+        items = []
+        for i, val in enumerate(v):
+            if i >= FS_STRUCT_MAX_ITEMS or budget["n"] <= 0:
+                budget["cut"] = True
+                break
+            items.append(_struct_node(val, depth + 1, budget))
+        return {"t": "seq", "n": len(v), "v": items}
+    return _struct_scalar(v)
+
+
+def fs_structured(qs=None) -> dict:
+    """GET /api/fs/structured — a YAML/JSON file as a display tree.
+
+    Returns ``{ok, path, format, tree, truncated, nodes}``; a parse or size
+    problem is a message the window shows, never a silent empty tree.
+    """
+    import json as _json
+    import os as _os
+    q = qs or {}
+    p = _safe_fs_path(_link_path(q.get("path"), q), _fs_allowed_roots(q))
+    if not p:
+        return {"ok": False, "error": "path outside allowed roots"}
+    if not _os.path.isfile(p):
+        return {"ok": False, "error": "not a file: %s" % p}
+    ext = _os.path.splitext(p)[1].lower()
+    if ext in (".json", ".geojson", ".ipynb"):
+        fmt = "json"
+    elif ext in (".yaml", ".yml"):
+        fmt = "yaml"
+    else:
+        return {"ok": False, "path": p,
+                "error": "no structured view for %s" % (ext or "this file")}
+    size = _os.path.getsize(p)
+    if size > FS_TEXT_MAX:
+        return {"ok": False, "path": p, "size": size, "format": fmt,
+                "error": "the file is larger than the server's text limit"}
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            text = f.read()
+    except (UnicodeDecodeError, ValueError):
+        return {"ok": False, "path": p, "format": fmt,
+                "error": "not a UTF-8 text file"}
+    try:
+        if fmt == "yaml":
+            import yaml
+            doc = yaml.safe_load(text)
+        else:
+            doc = _json.loads(text)
+    except Exception as e:  # noqa: BLE001 — a parse error is the message
+        return {"ok": False, "path": p, "format": fmt,
+                "error": "cannot parse %s: %s" % (fmt, e)}
+    budget = {"n": FS_STRUCT_MAX_NODES, "cut": False}
+    tree = _struct_node(doc, 0, budget)
+    return {"ok": True, "path": p, "format": fmt, "tree": tree,
+            "truncated": bool(budget["cut"]),
+            "nodes": FS_STRUCT_MAX_NODES - budget["n"]}
+
 
 
 def _sheet_cell(v):

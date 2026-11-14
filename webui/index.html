@@ -1473,6 +1473,27 @@
     text-align: left; white-space: nowrap; }
   .pv-table th { background: var(--bg2); color: var(--dim); position: sticky; top: 0; }
   .pv-sheets { padding: 8px 12px 0; font-size: 11px; color: var(--dim); }
+  /* v1015: YAML/JSON/XML as a foldable tree. Text nodes only (never markup);
+     the leaf colour says the TYPE, like the IDE colours a token. */
+  .pv-tree { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 10px 14px 26px;
+    font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+    font-size: 12px; line-height: 1.6; }
+  .pv-tree .pv-tnode { margin-left: 12px; }
+  .pv-tree > .pv-tnode { margin-left: 0; }
+  .pv-tree summary { cursor: pointer; list-style: none; display: flex; gap: 6px;
+    align-items: baseline; }
+  .pv-tree summary::-webkit-details-marker { display: none; }
+  .pv-tree summary::before { content: "▸"; color: var(--dim); width: 10px; flex: 0 0 auto; }
+  .pv-tree details[open] > summary::before { content: "▾"; }
+  .pv-tree .pv-trow { display: flex; gap: 8px; padding-left: 18px; align-items: baseline; }
+  .pv-tree .pv-tkey { color: var(--txt); white-space: nowrap; }
+  .pv-tree .pv-tkey.xmltag { color: #61afef; }
+  .pv-tree .pv-tcount, .pv-tree .pv-tskip { color: var(--dim); font-size: 10.5px; }
+  .pv-tree .pv-tval { color: var(--txt); word-break: break-word; }
+  .pv-tree .pv-tval.str { color: #98c379; }
+  .pv-tree .pv-tval.num { color: #d19a66; }
+  .pv-tree .pv-tval.bool { color: #c678dd; }
+  .pv-tree .pv-tval.null { color: var(--dim); font-style: italic; }
   /* One menu anatomy for the ⋯ menu and the right-click menu. */
   .pv-menu, .art-ctx { position: fixed; z-index: 52; min-width: 212px; padding: 4px;
     max-width: calc(100vw - 16px);
@@ -17323,7 +17344,12 @@ const PV_TEXT_EXT = [".md", ".markdown", ".mdx", ".txt", ".rst", ".tex", ".latex
   ".clj", ".cljs", ".hs", ".erl", ".hrl", ".jl", ".cr", ".d", ".elm", ".groovy",
   ".gradle", ".lhs", ".vb", ".pas", ".vhd", ".vhdl", ".sv", ".proto", ".cmake",
   ".mk", ".txt", ".log", ".patch", ".diff", ".csv", ".tsv"];
-const PV_VIEW_LABEL = { render: "Preview", source: "Source", table: "Table" };
+const PV_VIEW_LABEL = { render: "Preview", source: "Source", table: "Table", tree: "Tree" };
+/* v1015: a document with a native structure earns a TREE next to its source.
+   YAML/JSON parse on the SERVER (the same loader the harness uses); XML uses the
+   browser's own DOMParser. SVG deliberately stays TEXT (a script container). */
+const PV_STRUCT_EXT = [".yaml", ".yml", ".json", ".geojson", ".ipynb"];
+const PV_XML_EXT = [".xml", ".xsl", ".xsd", ".plist"];
 const LS_PV_FULL = "sf_pv_full";      // "1" = the window fills the screen
 let _pv = { row: null, path: "", kind: "", view: "", views: [] };
 
@@ -17334,6 +17360,8 @@ function _pvExt(p) {
 function _pvIsPdf(p) { return _pvExt(p) === ".pdf"; }
 function _pvIsHtml(p) { return [".html", ".htm", ".xhtml", ".mhtml"].indexOf(_pvExt(p)) >= 0; }
 function _pvIsMd(p) { return [".md", ".markdown", ".mdx"].indexOf(_pvExt(p)) >= 0; }
+function _pvIsStruct(p) { return PV_STRUCT_EXT.indexOf(_pvExt(p)) >= 0; }
+function _pvIsXmlTree(p) { return PV_XML_EXT.indexOf(_pvExt(p)) >= 0; }
 function _pvIsText(p) { return PV_TEXT_EXT.indexOf(_pvExt(p)) >= 0; }
 /* The media family of a path. The server's kind table owns the chip vocabulary;
    this only decides how the WINDOW paints a file opened from a door that has no
@@ -17367,6 +17395,8 @@ function _pvKind(path, row) {
   if (/\.(xlsx|xlsm)$/i.test(path)) return "sheet";
   if (/\.(csv|tsv)$/i.test(path)) return "csv";
   if (_pvIsMd(path)) return "markdown";
+  if (_pvIsStruct(path)) return "structured";
+  if (_pvIsXmlTree(path)) return "xmltree";
   const media = _pvMediaKind(path);
   if (media) return media;
   if (_pvIsText(path)) return "text";
@@ -17379,6 +17409,7 @@ function _pvKind(path, row) {
 function _pvViewsFor(path, kind) {
   if (kind === "markdown" || kind === "html") return ["render", "source"];
   if (kind === "csv") return ["table", "source"];
+  if (kind === "structured" || kind === "xmltree") return ["tree", "source"];
   if (kind === "text" || kind === "code" || kind === "data") return ["source"];
   return [];
 }
@@ -17500,8 +17531,11 @@ async function renderPreview() {
   if (kind === "sheet") return _pvRenderSheet(body, note);
   if (kind === "csv" && _pv.view === "table") return _pvRenderCsv(body, note);
   if (kind === "markdown" && _pv.view === "render") return _pvRenderMd(body, note);
+  if (kind === "structured" && _pv.view === "tree") return _pvRenderStruct(body, note);
+  if (kind === "xmltree" && _pv.view === "tree") return _pvRenderXmlTree(body, note);
   if (kind === "csv" || kind === "markdown" || kind === "text" || kind === "code"
-      || kind === "data" || _pvIsText(path)) return _pvRenderText(body, note);
+      || kind === "data" || kind === "structured" || kind === "xmltree"
+      || _pvIsText(path)) return _pvRenderText(body, note);
   note("no inline preview for " + (_pvExt(path) || "this file") +
        " — ⋯ › open in the editor, or open the raw file in a new tab");
 }
@@ -17570,6 +17604,129 @@ async function _pvRenderText(body, note) {
     wrap.appendChild(pre);
   }
   if (r.truncated) _pvCut(body);
+}
+
+/* v1015: the structured view. The SERVER parsed YAML/JSON with the harness's own
+   loader; this only paints nodes — never innerHTML, so a file value can never
+   become markup. Maps/sequences fold; leaves carry their type as a colour class. */
+function _pvTreeHead(key, node) {
+  const h = document.createElement("span");
+  h.className = "pv-tkey";
+  h.textContent = key == null ? "root" : key;
+  const c = document.createElement("span");
+  c.className = "pv-tcount";
+  c.textContent = node.t === "map" ? " {" + node.n + "}" : " [" + node.n + "]";
+  h.appendChild(c);
+  return h;
+}
+function _pvTreeInto(box, node, key, depth) {
+  if (!node || typeof node !== "object") return;
+  if (node.t === "map" || node.t === "seq") {
+    const d = document.createElement("details");
+    d.className = "pv-tnode";
+    d.open = depth < 2;
+    const s = document.createElement("summary");
+    s.appendChild(_pvTreeHead(key, node));
+    d.appendChild(s);
+    (node.v || []).forEach((it, i) => {
+      if (node.t === "map") _pvTreeInto(d, it[1], it[0], depth + 1);
+      else _pvTreeInto(d, it, "[" + i + "]", depth + 1);
+    });
+    if (node.n > (node.v || []).length) {
+      const m = document.createElement("div");
+      m.className = "pv-tskip";
+      m.textContent = "… " + (node.n - (node.v || []).length) + " more";
+      d.appendChild(m);
+    }
+    box.appendChild(d);
+    return;
+  }
+  const row = document.createElement("div");
+  row.className = "pv-trow";
+  const k = document.createElement("span");
+  k.className = "pv-tkey";
+  k.textContent = key == null ? "value" : key;
+  const v = document.createElement("span");
+  v.className = "pv-tval " + (node.t || "str");
+  v.textContent = node.t === "str" ? '"' + (node.v || "") + '"' : (node.v || "");
+  row.append(k, v);
+  box.appendChild(row);
+}
+async function _pvRenderStruct(body, note) {
+  const d = await api("GET", "/api/fs/structured?path=" + encodeURIComponent(_pv.path)).catch(() => null);
+  if (!d || !d.ok) return note((d && d.error) || "cannot parse this file");
+  const box = document.createElement("div");
+  box.className = "pv-tree";
+  _pvTreeInto(box, d.tree, null, 0);
+  body.appendChild(box);
+  if (d.truncated) {
+    const n = document.createElement("div");
+    n.className = "pv-sheets";
+    n.textContent = "the document is larger than the tree limit — this is the first part";
+    body.appendChild(n);
+  }
+}
+/* XML: the browser's own parser builds the tree; text nodes and attributes are
+   painted as text, so an entity in the file cannot execute. */
+function _pvXmlNode(el, budget) {
+  if (budget.n <= 0) return null;
+  budget.n -= 1;
+  const attrs = {};
+  Array.from(el.attributes || []).forEach(a => { attrs[a.name] = a.value; });
+  const kids = [];
+  Array.from(el.childNodes || []).forEach(c => {
+    if (c.nodeType === 1) { const n = _pvXmlNode(c, budget); if (n) kids.push(n); }
+    else if (c.nodeType === 3 && c.textContent.trim()) {
+      kids.push({ t: "str", v: c.textContent.trim().slice(0, 400) });
+    }
+  });
+  return { tag: el.nodeName, attrs: attrs, kids: kids };
+}
+function _pvXmlInto(box, node, depth) {
+  if (!node) return;
+  const d = document.createElement("details");
+  d.className = "pv-tnode";
+  d.open = depth < 2;
+  const s = document.createElement("summary");
+  const k = document.createElement("span");
+  k.className = "pv-tkey xmltag";
+  k.textContent = "<" + node.tag + ">";
+  s.appendChild(k);
+  d.appendChild(s);
+  Object.keys(node.attrs || {}).forEach(a => {
+    const row = document.createElement("div");
+    row.className = "pv-trow";
+    const ak = document.createElement("span");
+    ak.className = "pv-tkey"; ak.textContent = a;
+    const av = document.createElement("span");
+    av.className = "pv-tval str"; av.textContent = '"' + node.attrs[a] + '"';
+    row.append(ak, av);
+    d.appendChild(row);
+  });
+  (node.kids || []).forEach(c => {
+    if (c.tag) { _pvXmlInto(d, c, depth + 1); return; }
+    const row = document.createElement("div");
+    row.className = "pv-trow";
+    const v = document.createElement("span");
+    v.className = "pv-tval str"; v.textContent = c.v;
+    row.appendChild(v);
+    d.appendChild(row);
+  });
+  box.appendChild(d);
+}
+async function _pvRenderXmlTree(body, note) {
+  const r = await _pvRead();
+  if (!r || r.error) return note((r && r.error) || "cannot read this file");
+  if (r.binary) return note("binary file — no inline preview");
+  const doc = new DOMParser().parseFromString(r.text || "", "application/xml");
+  const err = doc.querySelector && doc.querySelector("parsererror");
+  if (err) return note("cannot parse this XML: " + String(err.textContent || "").split("\n")[0]);
+  const root = doc.documentElement;
+  if (!root) return note("this XML has no root element");
+  const box = document.createElement("div");
+  box.className = "pv-tree";
+  _pvXmlInto(box, _pvXmlNode(root, { n: 4000 }), 0);
+  body.appendChild(box);
 }
 
 /* CSV/TSV: a data file is a TABLE first (RFC-4180 quoting, 500×80 cap). */
@@ -17682,9 +17839,10 @@ function _pvMenuItems() {
   ];
   if (kind === "image" || kind === "video" || kind === "audio" || _pvIsPdf(path))
     items.push({ ic: "↗", label: "Open raw in a new tab", act: () => window.open(_rawUrl(path), "_blank", "noopener") });
-  if (_pvIsHtml(path) || _pvIsMd(path))
+  const alt = _pv.views[0] || "render";
+  if (_pvIsHtml(path) || _pvIsMd(path) || kind === "structured" || kind === "xmltree")
     items.push({ ic: "{ }", label: _pv.view === "source" ? "Show the rendered view" : "Show the source",
-                 act: () => { _pv.view = _pv.view === "source" ? "render" : "source"; renderPreview(); } });
+                 act: () => { _pv.view = _pv.view === "source" ? alt : "source"; renderPreview(); } });
   items.push({ ic: "⧉", label: "Copy the absolute path", act: () => _pvCopy(path) });
   items.push({ ic: "⧉", label: "Copy the path inside the workspace", act: () => _pvCopy(_pvRel(path)) });
   items.push({ ic: "↻", label: "Reload", act: () => renderPreview() });

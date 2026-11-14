@@ -109,7 +109,7 @@ check("C5 only the views a file really has (render/source, table/source)",
       and "if (views.length < 2)" in ui)
 check("C6 clicking a view re-renders (a different view is a different answer)",
       "_pv.view = b.dataset.view;" in ui and "renderPreview();" in ui
-      and 'const PV_VIEW_LABEL = { render: "Preview", source: "Source", table: "Table" };' in ui)
+      and 'const PV_VIEW_LABEL = { render: "Preview", source: "Source", table: "Table", tree: "Tree" };' in ui)
 check("C7 HTML keeps the sandboxed frame in Preview and the source in Source",
       'if (_pv.view === "source") return _pvRenderText(body, note);' in ui
       and 'f.setAttribute("sandbox", "allow-scripts allow-popups")' in ui)
@@ -129,7 +129,8 @@ check("C11 SVG is TEXT (XML), so the window never asks the raw route for it",
       < ui.index('const k = String((row && row.kind) || "");'))
 check("C12 the ⋯ source toggle drives the SAME view state",
       'label: _pv.view === "source" ? "Show the rendered view" : "Show the source"' in ui
-      and '_pv.view = _pv.view === "source" ? "render" : "source";' in ui)
+      and 'const alt = _pv.views[0] || "render";' in ui
+      and '_pv.view = _pv.view === "source" ? alt : "source";' in ui)
 check("C13 closing the window destroys the editor view (no leaked CodeMirror)",
       "if (window.LRViewer) window.LRViewer.clear();" in ui
       and "if (window.LRViewer) window.LRViewer.clear();" in ui.split("function closePreview()")[1][:300])
