@@ -432,7 +432,12 @@ def rollback(cp_id, by="api"):
         srv.save_plan(payload["plan"])
         srv.save_tasks(payload["tasks"])
         if manifest.get("session_id") and payload.get("session"):
-            srv.save_session(payload["session"])
+            # 2026-11-14 (bug hunt, found by the v418 pin): a rollback is a
+            # DELIBERATE wipe of the records the anchor never had, so it must skip
+            # `save_session`'s tail adoption. Without `truncate` the disk copy's
+            # newer messages were re-appended to the restored snapshot and the
+            # transcript never rewound (rewind reported ok, messages stayed).
+            srv.save_session(payload["session"], truncate=True)
         # JAG-431: restore the SESSION TASK GRAPH too (the real, live todo list).
         graph_info = None
         if manifest.get("session_id"):
