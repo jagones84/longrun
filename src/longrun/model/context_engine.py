@@ -260,9 +260,14 @@ def compact(messages, budget_tokens, keep_recent=DEFAULT_KEEP_RECENT, summarizer
                 stats["summary"] = "llm" if new_from_llm else "extractive"
         # F6: append the mechanical anchors AFTER the body is final (and after the
         # COMBINED cap pruned it), so the details a long task needs to continue
-        # survive every path — LLM, extractive, carried. `exclude=summary` stops a
-        # second compaction from repeating what the carried body already lists.
-        if isinstance(summary, str):
+        # survive the LLM and extractive paths. `exclude=summary` stops a second
+        # compaction from repeating what the carried body already lists.
+        # 2026-11-14 (bug hunt, context axis): NOT on the carried path — that branch
+        # is taken only when NOTHING in `fresh` is an effective turn, so every item
+        # the miner could find there is `[harness]` scaffolding (exactly what
+        # JAG-461 keeps out of this summary as noise), and appending it broke the
+        # documented "previous block returned byte-identical" cooldown.
+        if isinstance(summary, str) and not stats["summary_carried"]:
             _anchors = anchors_block(fresh, exclude=summary)
             if _anchors:
                 summary = summary.rstrip() + "\n\n" + _anchors
