@@ -21,8 +21,8 @@ Three defects, one page:
 Locked here:
   A1 the placement converts a visual point/size to layout px with the live zoom, then
      clamps inside the layout viewport (and the preview window divides 94vw too);
-  B1 "All sessions" = the workspace scan (every artifact), "This session" = that
-     session's journal — two different questions, both wired to real routes;
+  B1 the page lists FOLDERS, never a session's journal (the scope model itself is
+     owned by `v1004`, which is where its pins live);
   C1 the rail order is objects → Inspector jumps → runtime (terminal/feed) → chat;
   C2 the PLAN jump is mounted INSIDE the chat group, immediately before the ✨.
 
@@ -43,6 +43,10 @@ def check(name, ok, detail=""):
 
 
 ui = open(os.path.join(REPO, "webui", "index.html"), encoding="utf-8").read()
+# The artifacts page's own slice: its scope model is pinned by `v1004`, and these
+# checks only need to prove no dead route of the old models survives here.
+_art_src = ui[ui.find("const ART_KIND_ORDER"):]
+_art_src = _art_src[:_art_src.find("function _artThumbDrop(")]
 
 
 def block(start, length=1400):
@@ -67,25 +71,15 @@ check("A5 both popups go through the ONE placement",
       # the definition + its two callers: the ⋯ menu and the right-click menu
       ui.count("_placeMenu(m,") == 3 and "openPvMenu" in ui and "openFileCtx" in ui)
 
-# --- B: ONE population, and a session FILTER on it --------------------------
-# The two scopes this file originally pinned let a session with no journal EMPTY the
-# page ("if i put this session disappear the artifacts!!! all counted zero") — so they
-# were replaced by a filter. These pins lock the corrected behaviour.
-check("B1 the list is always the workspace (one population, one route)",
+# --- B: the page's scope model — ONE owner, in v1004 -------------------------
+# This file pinned the intermediate models twice (the two-way scope switch, then a
+# per-row session filter) and both were wrong. The page now asks which FOLDERS to
+# list (this session's / every session's), and `v1004` owns every pin for it, so a
+# page change has one test to update instead of two that can disagree.
+check("B1 the list is a FOLDER scan, never a session's journal",
       'scope: "workspace", workspace: _art.ws' in ui
-      and 'qs.set("session", sessionId)' not in block("async function loadArtifacts()", 1800))
-check("B2 the session is a FILTER, built from the rows themselves",
-      'id="artSess"' in ui and "function _artSessPaint()" in ui
-      and "_art.all.forEach(a => { seen[a.session || \"\"] = 1; })" in ui)
-check("B3 the filter narrows, it never swaps the data set",
-      "function _artSessMatch(a)" in ui
-      and 'ss.onchange = () => { _art.sess = ss.value; renderArtifacts(); };' in ui)
-check("B4 an empty filter names itself and offers the way back",
-      "has not written an artifact in this workspace" in ui
-      and 'data-clear-sess="1"' in ui and "show every session" in ui)
-check("B5 the chips count the FILTERED set (a zero is about the filter, not the page)",
-      "const inSess = _art.all.filter(_artSessMatch);" in ui
-      and 'const rows = [["all", "All", inSess.length]]' in ui)
+      and 'qs.set("session", sessionId)' not in block("async function loadArtifacts()", 1800)
+      and "scope: \"sessions\"" in ui)
 
 # --- C: the rail groups, bottom-up toward the composer ----------------------
 i_objects = ui.index('id="dockBtn"')
@@ -109,8 +103,9 @@ check("C5 the chat group is painted with the other jump boxes (state stays true)
 check("D1 the old ids are gone (one vocabulary)",
       "artScopeWorkspace" not in ui and "artScopeJournal" not in ui
       and "artScopeAll" not in ui and "artScopeSession" not in ui)
-check("D2 no dead reference to the removed scope value",
-      not re.search(r"_art\.scope", ui) and 'scope: "all"' not in ui)
+check("D2 the page never queries the journal route (a journal is not a folder)",
+      _art_src.find('scope: "journal"') < 0 and _art_src.find('qs.set("session"') < 0
+      and not re.search(r"_art\.sess\b", _art_src))
 
 print("---")
 passed = sum(RESULTS)

@@ -83,8 +83,10 @@ check("A4 every fs handler resolves the path argument",
       "def _fs_allowed_roots(qs=None)" in API
       # 3 handlers in JAG-354 (list/read/write) + the JAG-501 search handler
       # + EV-45 `/api/fs/sheet` (the workbook preview) + v1001 `/api/artifacts`
-      # with `scope=workspace` (it resolves the listed folder the same way) = 6.
-      and API.count("_fs_allowed_roots(q)") == 6
+      # with `scope=workspace` (it resolves the listed folder the same way)
+      # + v1004 the same route's `scope=sessions` (it resolves every session's
+      # folder through the SAME allow-list) = 7.
+      and API.count("_fs_allowed_roots(q)") == 7
       and "_fs_allowed_roots(b)" in API, "")
 
 # --- A4: the README is accurate (positioning + dependencies) -----------------

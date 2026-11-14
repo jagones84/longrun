@@ -183,13 +183,13 @@ check("D12 the chip row carries the reference categories",
       and 'video: "Video"' in ui and 'image: "Image"' in ui and 'audio: "Audio"' in ui)
 check("D12b every category is offered (dimmed at zero), not hidden",
       "ART_KIND_ORDER.map(k =>" in ui and 'class="art-chip\' + (r[2] ? "" : " is-empty")' in ui)
-check("D13 the page lists ONE population and filters it by session (v1004)",
-      # v1003's scope SWITCH let a session with no journal empty the whole page; the
-      # session is a filter on the workspace list now (v1004).
+check("D13 the page lists folders — this session's, or every session's (v1004)",
+      # The page has moved twice since this pin: the journal "scope", then a per-row
+      # session filter. It asks which FOLDERS now, and v1004 owns the pins for that.
       'id="artSess"' in ui and 'scope: "workspace", workspace: _art.ws' in ui
-      and '_artSessMatch' in ui and "artScopeAll" not in ui)
-check("D14 a file with no journal claims no session (it says 'workspace')",
-      'esc(a.session ? (_art.titles[a.session] || a.session) : "workspace")' in ui)
+      and 'scope: "sessions"' in ui and "artScopeAll" not in ui)
+check("D14 a file with no journal claims no session (it says which folder it is in)",
+      'esc(a.session ? (_art.titles[a.session] || a.session) : _artFolderName(a.workspace))' in ui)
 check("D15 the phone topbar rules are declared AFTER the base rules they override",
       # they used to sit between two base blocks, so the whole compaction was dead
       # and the search + gear sat outside a 390 px viewport.
