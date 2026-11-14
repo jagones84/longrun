@@ -72,5 +72,35 @@ check("A7 ordinary prose does not match", agent._argkv_action("I read the file."
 check("A8 a half-written key is not an action",
       agent._extract_action("<arg_value>nothing</arg_value>") is None)
 
+# Live 2026-11-14 (session b7329cccf94c): glm-5.3-flash dropped the `action` pair
+# entirely and wrote its name bare after `<tool_call>` — the k/v pairs carry
+# `tool`+`args` with NO `action` key. The whole call was rejected ("Your reply
+# could not be executed", ~25 retries) and the turn ended on `budget` with 5 of
+# its 8 steps open. A `tool` pair IS the call.
+LIVE = ('<tool_call>action\n<arg_key>tool</arg_key>\n<arg_value>fs.read</arg_value>\n'
+        '<arg_key>args</arg_key>\n'
+        '<arg_value>{"path": "src/Matrix/memory/hooks.py"}</arg_value>\n</tool_call>')
+act_live = agent._extract_action(LIVE)
+check("A9 the live bare-`action` dialect resolves to a tool action",
+      isinstance(act_live, dict) and act_live.get("action") == "tool", act_live)
+check("A10 the live dialect's tool name is read",
+      (act_live or {}).get("tool") == "fs.read", act_live)
+check("A11 the live dialect's JSON args are decoded, not left as text",
+      isinstance((act_live or {}).get("args"), dict)
+      and (act_live or {}).get("args", {}).get("path", "").endswith("hooks.py"), act_live)
+LIVE2 = ('<tool_call>action\n<arg_key>tool</arg_key>\n<arg_value>matrix.status</arg_value>\n'
+         '<arg_key>args</arg_key>\n<arg_value>{}</arg_value>\n</tool_call>')
+check("A12 an empty-args live dialect still resolves",
+      (agent._extract_action(LIVE2) or {}).get("tool") == "matrix.status",
+      agent._extract_action(LIVE2))
+# The tool fallback must NOT hijack a call that names a real action.
+MIXED = ('<tool_call>action</arg_key><arg_value>todo.update</arg_value>'
+         '<arg_key>tool</arg_key><arg_value>fs.read</arg_value>'
+         '<arg_key>steps</arg_key><arg_value>[{"id":"n1","status":"done"}]</arg_value>'
+         '</tool_call>')
+check("A13 an explicit action pair is never re-labelled as a tool call",
+      (agent._extract_action(MIXED) or {}).get("action") == "todo.update",
+      agent._extract_action(MIXED))
+
 print("%d/%d checks" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

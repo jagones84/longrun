@@ -1154,6 +1154,16 @@ def _argkv_action(text):
         args = data.get("args")
         return {"action": "tool", "tool": data["tool"].strip(),
                 "args": args if isinstance(args, dict) else {}}
+    # Live 2026-11-14 (session b7329cccf94c): glm-5.3-flash dropped the `action`
+    # pair entirely and wrote its name bare after `<tool_call>` — `<tool_call>action`
+    # then `<arg_key>tool</arg_key><arg_value>fs.read</arg_value>` + `args`. The
+    # pairs carry `tool`+`args` with NO `action` key, so every call was rejected
+    # ("Your reply could not be executed", ~25 retries) and the turn ended on
+    # `budget` with 5 of its 8 steps open. A `tool` pair IS the call.
+    if "action" not in data and isinstance(data.get("tool"), str) and data["tool"].strip():
+        args = data.get("args")
+        return {"action": "tool", "tool": data["tool"].strip(),
+                "args": args if isinstance(args, dict) else {}}
     if isinstance(data.get("action"), str) and data["action"].strip():
         return data
     return None
