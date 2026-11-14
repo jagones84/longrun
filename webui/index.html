@@ -4739,7 +4739,7 @@ let cursorEl = null;
  * decides nothing). */
 async function tokenState(t) {
   if (!t) return "none";
-  // 2026-11-11: bounded — a phone that opened the installed PWA before its network
+  // 2026-11-14: bounded — a phone that opened the installed PWA before its network
   // (Tailscale/LAN) is up must not sit on a hanging probe before the app boots.
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), 4000);
@@ -4789,36 +4789,48 @@ async function ensureToken() {
     }
   }
   if (TOKEN) {
-    // 2026-11-11 (operator, from mobile): a STORED token used to be trusted blindly.
+    // 2026-11-14 (operator, from mobile): a STORED token used to be trusted blindly.
     // Once the server token rotated (or the PWA was installed with an old one) every
     // /api call 401ed while the auth card sat in the sessions drawer — closed by
-    // default on a phone — so the app asked NOTHING and looked empty. Ask again.
+    // default on a phone — so the app asked NOTHING and looked empty. Ask again —
+    // but never DESTROY the saved credential: a 401 can also come from the proxy in
+    // front of Longrun, and a cleared token turns a transient error into a lockout.
     if (await tokenState(TOKEN) !== "rejected") return TOKEN;
-    TOKEN = ""; localStorage.removeItem("sf_token");
+    const t = await askServerToken(TOKEN);
+    if (t) { TOKEN = t; localStorage.setItem("sf_token", TOKEN); }
+    return TOKEN;   // cancelled: keep the saved one; the auth card explains the state
   }
   const ok = await fetch("/api/status", { headers: authHeaders() }).then(r => r.ok).catch(() => false);
   if (ok) { await firstRunSetup(); return TOKEN; }
-  TOKEN = await askServerToken();
-  localStorage.setItem("sf_token", TOKEN);
+  TOKEN = (await askServerToken("")) || "";
+  if (TOKEN) localStorage.setItem("sf_token", TOKEN);
+  else localStorage.removeItem("sf_token");
   return TOKEN;
 }
 /* The token ask on a browser with no working credential. It is the app's OWN modal
  * (the 2026-11-07 rule: no native prompt()/confirm() — the operator reported those
  * boxes, and on an installed mobile PWA they are easy to miss entirely). The typed
  * token is probed before it is stored; a rejected one keeps the dialog open with the
- * reason, an unreachable server keeps the token (the server state decides nothing). */
-async function askServerToken() {
-  let hint = "Paste the Longrun server token — LONGRUN_TOKEN in the server's .env.";
+ * reason, an unreachable server keeps the token (the server state decides nothing).
+ * Cancelling returns null: the caller decides whether to keep what it already had. */
+async function askServerToken(previous) {
+  let value = String(previous || "");
+  let hint = "";
   for (;;) {
     const entered = await uiAsk({
-      title: "Connect to Longrun", hint, placeholder: "server token", okLabel: "connect", secret: true
+      title: "Connect to Longrun",
+      hint: hint || (value
+        ? "The saved token was rejected. Paste the active server token — LONGRUN_TOKEN in the server's .env."
+        : "Paste the Longrun server token — LONGRUN_TOKEN in the server's .env."),
+      placeholder: "server token", okLabel: "connect", secret: true, value
     });
-    if (entered == null) return "";
+    if (entered == null) return null;
     const t = String(entered).trim();
     if (!t) { hint = "The token cannot be empty. Paste the server token."; continue; }
     const st = await tokenState(t);
     if (st === "ok") return t;
     if (st !== "rejected") return t;
+    value = t;
     hint = "The server rejected that token. Paste the active server token.";
   }
 }
