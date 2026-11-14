@@ -1161,40 +1161,79 @@ class JobRegistry:
 
     @staticmethod
     def _propagate_feedback(jid, sessions, job, failed):
-        """S2 (2026-11-15): backward feedback propagation through the job DAG.
+        """S2 (2026-11-15): backward feedback through the job DAG.
 
-        After all agents in a job complete, record per-agent feedback so the
-        local optimizer (S1) can connect a specific agent's tool call to downstream
-        consequences. The backward pass is a read-only traversal of the completed
-        job data — it composes feedback records from (a) each agent's run result
-        and (b) whether any downstream agent failed after consuming that agent's
-        output.
+        After all agents in a job complete, traverse the dependency DAG in REVERSE
+        topological order (HarnessNet §3.1.2, Algorithm 2) and compose, for each
+        agent, the consequence of what it PRODUCED: did a downstream agent that
+        consumed this output fail — its own turn, or deeper in the chain?
 
-        Failed subjobs produce negative feedback for the agents upstream of them;
-        successful jobs produce neutral (empty) feedback. The common case (all
-        agents succeed) writes nothing — feedback records are only for failures.
+        The record names the output that was consumed, the immediate consumer, and
+        the agent the chain actually failed at, so the local optimizer (S1) can tie
+        one agent's work to a downstream result instead of seeing only a local error.
+
+        The traversal is a read-only walk of completed job data. A chain where
+        nothing fails writes NOTHING — records exist only for failures.
         """
         if not failed:
-            return  # No failures — no negative feedback to propagate
+            return  # No failures — nothing to propagate
         try:
             from longrun.orchestrate import jobcost as _jc
+            from longrun.util.dag import waves as _waves
+
             runs = job.get("runs") or {}
-            subjobs = job.get("subjobs") or {}
-            deps = job.get("declared_deps") or {}
-            # For each failed subjob, find the upstream agent whose output it
-            # consumed and record negative feedback.
-            for sub_id, agent_id, error in failed:
-                if not agent_id:
+            # deps[agent] = the upstream agents whose output it consumes. The
+            # effective DAG is the job's own deps UNION what the coordinator
+            # declared in its plan (JAG-330).
+            deps = merge_deps(job.get("deps") or {}, job.get("declared_deps") or {})
+            agents = list(dict.fromkeys(list(sessions.keys()) + list(runs.keys())))
+
+            # successors[a] = the agents that CONSUME a's output.
+            succ = {}
+            for a in agents:
+                for up in (deps.get(a) or []):
+                    if up in sessions or up in runs:
+                        succ.setdefault(up, []).append(a)
+
+            # Which agents failed, and why.
+            failed_by = {}
+            for _sub, agent, err in (failed or []):
+                if agent:
+                    failed_by.setdefault(agent, str(err or ""))
+
+            # Reverse topological order: sinks first, so a successor's verdict is
+            # composed before its predecessors read it.
+            order = [a for wave in _waves(agents, deps) for a in wave]
+            downstream = {}
+            for a in reversed(order):
+                sig = None
+                for s in succ.get(a, []):
+                    if s in failed_by:
+                        sig = {"consumed_by": s, "failed_agent": s,
+                               "error": failed_by[s], "chain": [s]}
+                        break
+                    if s in downstream:
+                        f = downstream[s]
+                        sig = {"consumed_by": s, "failed_agent": f["failed_agent"],
+                               "error": f["error"], "chain": [s] + f.get("chain", [])}
+                        break
+                if sig:
+                    downstream[a] = sig
+
+            for a, sig in downstream.items():
+                sid = sessions.get(a)
+                if not sid:
                     continue
-                # Find what this agent depended on
-                upstream = deps.get(agent_id, [])
-                summary = f"downstream agent {agent_id} failed: {error[:200]}"
-                for up_id in upstream:
-                    up_sid = sessions.get(up_id)
-                    if up_sid:
-                        _jc.record_feedback(jid, up_sid, summary,
-                                           {"failed_agent": agent_id,
-                                            "error": error[:200]})
+                out = str((runs.get(a) or {}).get("result") or "")
+                summary = ("downstream agent %s consumed this output; the chain failed "
+                           "at %s: %s" % (sig["consumed_by"], sig["failed_agent"],
+                                          sig["error"][:160]))
+                _jc.record_feedback(jid, sid, summary,
+                                    {"failed_agent": sig["failed_agent"],
+                                     "consumed_by": sig["consumed_by"],
+                                     "chain": sig["chain"],
+                                     "error": sig["error"][:200],
+                                     "output_excerpt": out[:200]})
         except Exception:  # noqa: BLE001 — feedback is additive, never fails a job
             pass
 
