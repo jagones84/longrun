@@ -67,18 +67,25 @@ check("A5 both popups go through the ONE placement",
       # the definition + its two callers: the ⋯ menu and the right-click menu
       ui.count("_placeMenu(m,") == 3 and "openPvMenu" in ui and "openFileCtx" in ui)
 
-# --- B: the two scopes ask two different questions ---------------------------
-check("B1 'All sessions' is the workspace scan (every artifact, provenance labelled)",
-      'id="artScopeAll"' in ui and 'id="artScopeSession"' in ui
-      and 'qs.set("scope", "workspace")' in ui and 'qs.set("workspace", _art.ws)' in ui)
-check("B2 'This session' is that session's journal — a route, not a client filter",
-      'qs.set("session", sessionId)' in ui
-      and 'open a session — this view lists the files it wrote' in ui)
-check("B3 the default scope shows every type (scope 'all', not the journal)",
-      'scope: "all", ws: "", wsName: "", total: 0' in ui
-      and '_art.scope !== "session"' in ui)
-check("B4 a session-less folder is an honest empty state, not a silent blank",
-      "this view lists its workspace folder" in ui)
+# --- B: ONE population, and a session FILTER on it --------------------------
+# The two scopes this file originally pinned let a session with no journal EMPTY the
+# page ("if i put this session disappear the artifacts!!! all counted zero") — so they
+# were replaced by a filter. These pins lock the corrected behaviour.
+check("B1 the list is always the workspace (one population, one route)",
+      'scope: "workspace", workspace: _art.ws' in ui
+      and 'qs.set("session", sessionId)' not in block("async function loadArtifacts()", 1800))
+check("B2 the session is a FILTER, built from the rows themselves",
+      'id="artSess"' in ui and "function _artSessPaint()" in ui
+      and "_art.all.forEach(a => { seen[a.session || \"\"] = 1; })" in ui)
+check("B3 the filter narrows, it never swaps the data set",
+      "function _artSessMatch(a)" in ui
+      and 'ss.onchange = () => { _art.sess = ss.value; renderArtifacts(); };' in ui)
+check("B4 an empty filter names itself and offers the way back",
+      "has not written an artifact in this workspace" in ui
+      and 'data-clear-sess="1"' in ui and "show every session" in ui)
+check("B5 the chips count the FILTERED set (a zero is about the filter, not the page)",
+      "const inSess = _art.all.filter(_artSessMatch);" in ui
+      and 'const rows = [["all", "All", inSess.length]]' in ui)
 
 # --- C: the rail groups, bottom-up toward the composer ----------------------
 i_objects = ui.index('id="dockBtn"')
@@ -100,9 +107,10 @@ check("C5 the chat group is painted with the other jump boxes (state stays true)
 
 # --- no leftover of the old two-name scope ---------------------------------
 check("D1 the old ids are gone (one vocabulary)",
-      "artScopeWorkspace" not in ui and "artScopeJournal" not in ui)
+      "artScopeWorkspace" not in ui and "artScopeJournal" not in ui
+      and "artScopeAll" not in ui and "artScopeSession" not in ui)
 check("D2 no dead reference to the removed scope value",
-      not re.search(r'_art\.scope === "workspace"', ui) and 'scope: "workspace"' not in ui)
+      not re.search(r"_art\.scope", ui) and 'scope: "all"' not in ui)
 
 print("---")
 passed = sum(RESULTS)

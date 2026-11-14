@@ -6,7 +6,7 @@ English-only). Partial by construction: a section lands here only when the
 operator stated a rule that holds for the WHOLE app. One-off fixes and
 workflow notes stay in `HANDOFF.md`; agent workflow stays in project rules.
 
-How to rebuild from zero with this file: implement §1–§4 literally; every
+How to rebuild from zero with this file: implement §1–§5 literally; every
 MUST below is load-bearing. Dates mark when each rule was agreed.
 
 ## 1. Object identity — every id resolves against its owning store (2026-10-25)
@@ -131,6 +131,20 @@ preview (text `Aa` + accent dot); light/dark counts and solid-aside
 invariants are pinned by tests (v352/v364 evolved with each addition).
 4.2 Pastels are backgrounds, never text; accents are darkened to WCAG
 AA; dark themes use desaturated surfaces and off-white text.
+
+## 5. Lists, filters and empty states — a view never empties itself (2026-11-14)
+
+Operator: *"if i put this session disappear the artifacts!!! all counted zero. BUG!"* (My Artifacts).
+
+5.1 One population per page. A control that narrows a list (session, kind, text) is a FILTER on that
+population, never a scope that swaps the data set behind the operator's eyes; the default state shows
+everything the page can see.
+5.2 A filter can narrow a list to zero but must never do it silently: the counter names the active filter
+("0 of 1862 files · Head of Longrun Testing") and the empty state says why plus a one-click way back.
+5.3 Changing the SUBJECT of a page elsewhere (selecting another session, tab, workspace) must not empty
+the page: either the content stays, or the page says what changed.
+5.4 A filter's options come from the data on screen, never from a second hand-written list, and a count
+of zero is a fact about the filter — not an error state.
 
 ## Admission criterion
 

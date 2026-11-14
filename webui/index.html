@@ -1287,15 +1287,12 @@
     padding: 5px 9px; width: 220px; outline: none; }
   .art-search:focus { border-color: var(--line-2); }
   .art-kinds { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
-  /* Scope: the journal (what the harness WROTE) vs the folder (what IS there).
-     Two states of one control, so it is a segmented switch, not two buttons. */
-  .art-scope { display: inline-flex; align-items: center; gap: 2px; padding: 2px;
-    border: 1px solid var(--line); border-radius: 999px; }
-  .art-sbtn { background: transparent; border: 0; color: var(--dim); font: inherit;
-    font-size: 11.5px; font-weight: 600; padding: 3px 10px; border-radius: 999px;
-    cursor: pointer; white-space: nowrap; }
-  .art-sbtn:hover { color: var(--txt); }
-  .art-sbtn[aria-pressed="true"] { background: var(--panel2); color: var(--txt); }
+  /* The session is a FILTER on one population (never a scope that empties the page). */
+  .art-sel { background: var(--bg-2); border: 1px solid var(--line); color: var(--txt);
+    font: inherit; font-size: 11.5px; font-weight: 600; padding: 4px 9px;
+    border-radius: 999px; max-width: 210px; outline: none; cursor: pointer; }
+  .art-sel:focus-visible { border-color: var(--line-2); outline: 2px solid var(--acc);
+    outline-offset: 1px; }
   .art-chip { background: transparent; border: 1px solid transparent; color: var(--dim);
     font: inherit; font-size: 11.5px; font-weight: 600; padding: 3px 9px;
     border-radius: 999px; cursor: pointer; }
@@ -1332,11 +1329,12 @@
   .art-meta > span { flex: 0 0 auto; }
   .art-meta .art-sess { flex: 1 1 auto; min-width: 0; overflow: hidden;
     text-overflow: ellipsis; color: var(--muted); text-align: right; }
-  /* Phone: title+count, then the filter with the reload beside it, then the kind
-     chips on their own line. Nothing wraps into a lone button on its own row. */
+  /* Phone: title+count, then the session filter with the search and the reload beside
+     it, then the kind chips on their own line. Nothing wraps into a lone control. */
   @media (max-width: 640px) {
     .art-head { gap: 8px; }
     .art-head .u-f1 { display: none; }
+    .art-sel { order: 2; max-width: 42vw; }
     .art-search { order: 3; flex: 1 1 auto; width: auto; min-width: 0; }
     .art-head #artReload { order: 4; }
     .art-kinds { order: 5; flex: 1 1 100%; }
@@ -1344,6 +1342,7 @@
   .art-empty { grid-column: 1 / -1; color: var(--dim); font-size: 12px;
     border: 1px dashed var(--line); border-radius: var(--radius); padding: 26px 18px;
     text-align: center; }
+  .art-empty .lnk { color: var(--acc); cursor: pointer; text-decoration: underline; }
   @media (prefers-reduced-motion: reduce) {
     .art-card { transition: none; }
     .art-card:active { transform: none; }
@@ -3053,12 +3052,13 @@
   <div class="art-head">
     <h2 class="art-title">My Artifacts</h2>
     <span class="art-n" id="artCount"></span>
-    <div class="art-scope" role="group" aria-label="artifact scope">
-      <button class="art-sbtn" id="artScopeAll" aria-pressed="true"
-              title="every artifact in this workspace — a file a session wrote carries that session's name">All sessions</button>
-      <button class="art-sbtn" id="artScopeSession" aria-pressed="false"
-              title="only the files THIS session wrote — the edit journal, anywhere on disk">This session</button>
-    </div>
+    <!-- 2026-11-14 (operator: "if i put this session disappear the artifacts!!! all counted
+         zero. BUG!"): the page had a SCOPE switch, so choosing a session that wrote nothing
+         emptied the whole page. There is ONE population now — every artifact of the
+         workspace — and the session is a FILTER whose default is all of them, so picking a
+         session can never make the list vanish: it narrows it, and the counter says so. -->
+    <select id="artSess" class="art-sel" aria-label="filter artifacts by the session that wrote them"
+            title="show every artifact, or only those one session wrote"></select>
     <span class="u-f1"></span>
     <input id="artSearch" class="art-search" type="search" spellcheck="false"
            placeholder="filter by name or path" aria-label="filter artifacts by name or path">
@@ -17011,7 +17011,7 @@ const ART_KIND_LABEL = { html: "HTML", slides: "PPT", document: "Document",
                          sheet: "Sheet", video: "Video", image: "Image",
                          audio: "Audio", code: "Code", data: "Data", other: "Other" };
 const _art = { all: [], kinds: {}, kind: "all", q: "", titles: {}, spaces: {},
-               scope: "all", ws: "", wsName: "", total: 0 };
+               sess: "", ws: "", wsName: "", total: 0 };
 
 function _artIcon(kind) {
   return '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor"'
@@ -17027,14 +17027,6 @@ function _artPickWorkspace(sess) {
   const any = mine || rows.find(s => s.workspace);
   _art.ws = any ? String(any.workspace) : "";
   _art.wsName = _art.ws ? _art.ws.replace(/[\\/]+$/, "").split(/[\\/]/).pop() : "";
-  const b = $("artScopeAll");
-  if (b) {
-    // "All sessions" means the WHOLE artifact set of this workspace (a session
-    // name is a column, not a filter): the folder is what the page can see, the
-    // journal only labels who wrote what. It used to list the journal alone, so
-    // every type nobody had journalled (the proposal HTMLs) showed 0.
-    b.title = _art.ws ? "every artifact in " + _art.ws : "every artifact in this workspace";
-  }
 }
 
 async function loadArtifacts() {
@@ -17047,25 +17039,16 @@ async function loadArtifacts() {
     if (s.workspace) _art.spaces[s.id] = s.workspace;
   });
   _artPickWorkspace(sess);
-  const qs = new URLSearchParams({ limit: "500" });
-  if (_art.scope === "session") {
-    if (!sessionId) {
-      _art.all = []; _art.kinds = {}; _art.total = 0;
-      renderArtifacts();
-      grid.innerHTML = '<div class="art-empty">open a session — this view lists the files it wrote</div>';
-      return;
-    }
-    qs.set("session", sessionId);
-  } else {
-    if (!_art.ws) {
-      _art.all = []; _art.kinds = {}; _art.total = 0;
-      renderArtifacts();
-      grid.innerHTML = '<div class="art-empty">open a session — this view lists its workspace folder</div>';
-      return;
-    }
-    qs.set("scope", "workspace");
-    qs.set("workspace", _art.ws);
+  // ONE population: the workspace. A session only FILTERS it (see _artSessPaint), so
+  // choosing one can never empty the page — the mistake this page shipped with.
+  if (!_art.ws) {
+    _art.all = []; _art.kinds = {}; _art.total = 0;
+    _artSessPaint();
+    renderArtifacts();
+    grid.innerHTML = '<div class="art-empty">open a session — this view lists its workspace folder</div>';
+    return;
   }
+  const qs = new URLSearchParams({ limit: "500", scope: "workspace", workspace: _art.ws });
   let out;
   try { out = await api("GET", "/api/artifacts?" + qs.toString()); }
   catch (e) {
@@ -17083,27 +17066,60 @@ async function loadArtifacts() {
 }
 
 function _artMatches(a) {
+  if (!_artSessMatch(a)) return false;
   if (_art.kind !== "all" && a.kind !== _art.kind) return false;
   return !_art.q || (a.name + " " + a.path).toLowerCase().indexOf(_art.q) >= 0;
+}
+/* The session filter's options, from the rows themselves (never a second list):
+   every session, then each writer, then the files no session wrote. */
+function _artSessPaint() {
+  const sel = $("artSess");
+  if (!sel) return;
+  const seen = {};
+  _art.all.forEach(a => { seen[a.session || ""] = 1; });
+  const opts = [["", "Every session"]];
+  Object.keys(seen).filter(k => k).forEach(k => opts.push([k, _art.titles[k] || k]));
+  if (seen[""]) opts.push(["__none__", "not written by a session"]);
+  const mine = _art.sess;
+  if (mine && mine !== "__none__" && opts.every(o => o[0] !== mine))
+    opts.push([mine, _art.titles[mine] || mine]);
+  sel.innerHTML = opts.map(o => '<option value="' + _attr(o[0]) + '">' + esc(o[1]) + "</option>").join("");
+  sel.value = mine || "";
+}
+/* Does this row pass the SESSION filter? A file with no provenance matches only the
+   "not written by a session" sentinel. */
+function _artSessMatch(a) {
+  if (!_art.sess) return true;
+  if (_art.sess === "__none__") return !a.session;
+  return (a.session || "") === _art.sess;
+}
+function _artSessLabel() {
+  if (_art.sess === "__none__") return "not written by a session";
+  return _art.titles[_art.sess] || _art.sess || "";
 }
 
 function renderArtifacts() {
   const grid = $("artGrid"); if (!grid) return;
   const shown = _art.all.filter(_artMatches);
+  // The notebook: a session filter narrows the population, so the chips count that
+  // subset — an "HTML 0" under a filter is then a fact about the filter, never a
+  // silently empty page (the defect the operator hit).
+  const inSess = _art.all.filter(_artSessMatch);
+  const kinds = {};
+  inSess.forEach(a => { kinds[a.kind] = (kinds[a.kind] || 0) + 1; });
   const cnt = $("artCount");
   if (cnt) {
     // The list is capped (500). Say so instead of pretending the folder holds 500
-    // files: "500 of 1859 files".
+    // files: "500 of 1862 files", "12 of 1862 files" once a filter narrows it.
     const total = Math.max(Number(_art.total || 0), _art.all.length);
-    cnt.textContent = (shown.length === total ? String(total) : shown.length + " of " + total) + " files";
+    cnt.textContent = (shown.length === total ? String(total) : shown.length + " of " + total) + " files"
+      + (_art.sess ? " · " + _artSessLabel() : "");
   }
-  const sw = $("artScopeAll"), sj = $("artScopeSession");
-  if (sw) sw.setAttribute("aria-pressed", String(_art.scope !== "session"));
-  if (sj) sj.setAttribute("aria-pressed", String(_art.scope === "session"));
+  _artSessPaint();
   const chips = $("artKinds");
   if (chips) {
-    const rows = [["all", "All", _art.all.length]].concat(
-      ART_KIND_ORDER.map(k => [k, ART_KIND_LABEL[k], _art.kinds[k] || 0]));
+    const rows = [["all", "All", inSess.length]].concat(
+      ART_KIND_ORDER.map(k => [k, ART_KIND_LABEL[k], kinds[k] || 0]));
     chips.innerHTML = rows.map(r =>
       '<button class="art-chip' + (r[2] ? "" : " is-empty") + '" data-kind="' + r[0] + '"'
       + ' aria-pressed="' + (r[0] === _art.kind) + '" title="' + esc(r[1] + " · " + r[2] + " file" + (r[2] === 1 ? "" : "s")) + '">'
@@ -17113,11 +17129,19 @@ function renderArtifacts() {
     });
   }
   if (!shown.length) {
-    grid.innerHTML = '<div class="art-empty">' + (_art.all.length
-      ? "no artifact matches this filter"
-      : _art.scope === "session"
-        ? "this session has not written an artifact yet — the files it writes and the files you save in its editor appear here"
-        : "no artifact-typed files in " + esc(_art.wsName || "this folder")) + "</div>";
+    let msg;
+    if (!_art.all.length) msg = "no artifact-typed files in " + esc(_art.wsName || "this folder");
+    else if (_art.sess && !inSess.length)
+      msg = esc(_artSessLabel()) + " has not written an artifact in this workspace"
+        + ' — <span class="lnk" data-clear-sess="1" role="button" tabindex="0">show every session</span>';
+    else msg = "no artifact matches this filter";
+    grid.innerHTML = '<div class="art-empty">' + msg + "</div>";
+    const clr = grid.querySelector("[data-clear-sess]");
+    if (clr) {
+      const reset = () => { _art.sess = ""; renderArtifacts(); };
+      clr.onclick = reset;
+      clr.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); reset(); } };
+    }
     return;
   }
   grid.innerHTML = shown.map(a => {
@@ -17222,7 +17246,7 @@ async function openPreview(path, row) {
   else if (typeof r.size === "number") bits.push(_fmtSize(r.size));
   if (r.ts) bits.push(_ago(r.ts));
   if (r.session) bits.push(_art.titles[r.session] || r.session);
-  else if (_art.scope === "all") bits.push("not written by a session");
+  else bits.push("not written by a session");
   $("pvMeta").textContent = bits.join(" · ");
   $("pvBackdrop").hidden = false; $("pvWin").hidden = false;
   closePvMenu(); $("artCtx").hidden = true;
@@ -17528,15 +17552,10 @@ function _artIfOpen() {
   if (s) s.addEventListener("input", () => { _art.q = s.value.trim().toLowerCase(); renderArtifacts(); });
   const r = $("artReload");
   if (r) r.onclick = () => loadArtifacts();
-  const setScope = sc => {
-    if (_art.scope === sc) return;
-    _art.scope = sc; _art.kind = "all";
-    loadArtifacts();
-  };
-  const sw = $("artScopeAll");
-  if (sw) sw.onclick = () => setScope("all");
-  const sj = $("artScopeSession");
-  if (sj) sj.onclick = () => setScope("session");
+  // The session is a FILTER, so changing it repaints the SAME population — no
+  // reload, nothing disappears, and the counter names the filter.
+  const ss = $("artSess");
+  if (ss) ss.onchange = () => { _art.sess = ss.value; renderArtifacts(); };
   const more = $("pvMore");
   if (more) more.onclick = () => {
     const m = $("pvMenu");
