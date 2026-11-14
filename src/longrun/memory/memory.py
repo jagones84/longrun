@@ -823,13 +823,21 @@ def _augment(kind, results, limit):
 
 
 def governed_query(kind=None, limit=6, halflife=None, threshold=0.85,
-                   include_invalid=False):
+                   include_invalid=False, workspace=None):
     """Retrieve deduped, score+decay-ranked records (governed recall).
 
     JAG-204: invalidated (tombstoned) and expired records are dropped unless
     `include_invalid`.
+
+    CO-1 (2026-11-14, CoReMem arXiv 2611.17316): `workspace` scopes the recall
+    to the project a session works in, exactly like `query()`/`recall_governed`.
+    The prompt's always-injected index is the ONE consumer, and it was the one
+    place a lesson learned in project A reached project B: a memory of the wrong
+    repository costs steps (the paper's misplaced-memory arm), so a record with
+    no workspace stays GLOBAL (`_visible`) and only explicitly scoped records
+    are filtered — this can never hide a lesson that was already global.
     """
-    recs = query(None, kind, limit=500)
+    recs = query(None, kind, limit=500, workspace=workspace)
     if not include_invalid:
         bad = invalid_targets()
         now = time.time()

@@ -3467,7 +3467,9 @@ def user_turn_context(session_id=None, sess=None, history=None):
     parts = []
     try:
         from longrun.model import prompt as _prompt
-        _mem = _prompt.memory_block(sess)
+        # CO-1: the memory index is scoped to the project the session works in —
+        # a lesson written for another project is not this project's truth.
+        _mem = _prompt.memory_block(sess, ws=(sess or {}).get("workspace"))
         if _mem:
             parts.append(_mem)
     except Exception:  # noqa: BLE001 — a prompt block must never break a turn

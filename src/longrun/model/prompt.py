@@ -517,6 +517,11 @@ def _provider_memory(sess, ws, ctx):
     user asked that nobody has answered yet. The whole section is hard-bounded
     (``_MEM_PROMPT_MAX``), and the CORE block comes FIRST so the truncation tail
     can never be the always-visible one.
+
+    CO-1 (2026-11-14): `ws` is the session's workspace, and it now REACHES the
+    query. The parameter was accepted and ignored, so every project's prompt
+    carried the newest lessons of every OTHER project — the misplaced-memory
+    failure CoReMem measures. A record with no workspace stays global.
     """
     parts = []
     try:
@@ -524,7 +529,7 @@ def _provider_memory(sess, ws, ctx):
 
         def _items(kind, limit):
             out = []
-            for r in memory.governed_query(kind=kind, limit=limit):
+            for r in memory.governed_query(kind=kind, limit=limit, workspace=ws):
                 c = " ".join(str(r.get("content", "")).split())
                 if c:
                     out.append("- " + (c[:_MEM_ITEM_CHARS] + "…"

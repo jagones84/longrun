@@ -1071,7 +1071,11 @@ def context_items(session_id=None):
     # it from the SAME renderer instead of from `_secs` (which would now report 0).
     try:
         from longrun.model import prompt as _pmem
-        tok["memory"] = context_engine.count_tokens(_pmem.memory_block(sess))
+        # CO-1: the meter renders the SAME block the turn sends — the session's
+        # OWN workspace (the value the write and `user_turn_context` use), never
+        # the resolved default, or the number would describe another prompt.
+        tok["memory"] = context_engine.count_tokens(
+            _pmem.memory_block(sess, ws=(sess or {}).get("workspace")))
     except Exception:  # noqa: BLE001 — the panel must never break
         tok["memory"] = 0
     tok["plan"] = context_engine.count_tokens(state_block(session_id=session_id))
