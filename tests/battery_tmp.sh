@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # battery_tmp.sh — the fix in flight. Overwritten every round; tests/battery.sh is the gate.
-# 2026-11-14 v997 (CO-2): the memory store can be REMOVED for one arm of a run.
-# CoReMem (arXiv 2611.17316) values a memory by what the next task saves with it and without it.
-# `memory.py` built its own folder while every other store subdirectory was overridable, so the
-# ablation instrument (skills/rules/hooks) could not remove memory. `paths.MEMORY_DIR` +
-# `LONGRUN_MEMORY_DIR` is now the ONE owner; `benchmarks/ablation.py` gains a `memory` layer.
-# The other names are the dependency oracle: the ablation instrument itself (v849 iterates every
-# layer), the memory consumers CO-1 scoped, the improvement ledger that names the written file, and
-# the badge pin.
+# 2026-11-14 v998 (CO-3): a finished turn leaves WHERE/VERIFY anchors for the next one.
+# CoReMem (arXiv 2611.17316 §3.1) values a memory by what its REMOVAL costs the next task; what pays
+# is the location and the check command, not the narrative. Longrun stored the raw material (one tool
+# card per call: path, command, exit code) and extracted anchors for compaction only. `memory/anchors`
+# now writes ONE bounded `repo.anchor` note per turn that touched files, with no model call, injected
+# in its own bucket and subject to the ordinary workspace/dedupe/budget governance.
+# The other names are the dependency oracle: the end-of-turn pass (v446/v799 call it directly), the
+# memory governance/hygiene of the new kind, CO-1's scoping, and the badge pin.
 set -u
 cd /home/jagones/Repositories/longrun || exit 1
-LONGRUN_BATTERY_TESTS="v997_memory_ablation v849_harness_ablation v996_memory_workspace_scope v929_memory_in_user_turn v819_memory_kinds v972_memory_hygiene v354_ui_links_pins" \
+LONGRUN_BATTERY_TESTS="v998_memory_anchors v446_improvement v799_reflect_evidence v972_memory_hygiene v996_memory_workspace_scope v929_memory_in_user_turn v819_memory_kinds v853_prompt_memory_dedupe_budget v354_ui_links_pins" \
   bash tests/battery.sh

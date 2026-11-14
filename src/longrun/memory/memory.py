@@ -62,6 +62,10 @@ MEMORY_FIELDS = {
     # the ordinary lifecycle (`memory.invalidate`).
     "user.preference": "user_preferences.md",
     "question.open": "open_questions.md",
+    # CO-3 (v998, CoReMem arXiv 2611.17316): WHERE + VERIFY anchors extracted
+    # mechanically from a finished turn's tool cards (`memory/anchors.py`). It is
+    # a harness-written kind, so the ordinary dedupe/budget governance applies.
+    "repo.anchor": "repo_anchors.md",
 }
 
 
@@ -908,7 +912,7 @@ def health():
 # JAG-447: kinds the HARNESS writes on its own (telemetry + distilled lessons),
 # as opposed to `memory.store` which is deliberate provenance-tagged knowledge.
 AUTO_KINDS = frozenset(("agent.note", "tool.result", "plan.update",
-                        "task.done", "chat.summary"))
+                        "task.done", "chat.summary", "repo.anchor"))
 
 
 #: v973: kinds the OPERATOR owns. These are never auto-retired AND never

@@ -541,11 +541,18 @@ def _provider_memory(sess, ws, ctx):
             parts.append("## Core memory (always visible \u2014 edit with "
                          "memory{action:'set_core'})\n" + core)
         facts = _items("memory.store", 3) + _items("user.preference", 2)
+        # CO-3 (v998): the WHERE/VERIFY anchors a finished turn left behind. They
+        # are copied from real tool arguments, so they outrank a prose lesson.
+        anchors = _items("repo.anchor", 2)
         lessons = _items("agent.note", 4)
         questions = _items("question.open", 3)
         if facts:
             parts.append("## Memory \u2014 user facts (told by the user; trust these)\n"
                          + "\n".join(facts))
+        if anchors:
+            parts.append("## Memory \u2014 repo anchors (where the code is and what to "
+                         "run, from earlier turns; verify before relying)\n"
+                         + "\n".join(anchors))
         if lessons:
             parts.append("## Memory \u2014 self-distilled lessons (your own past "
                          "reflections; verify before relying)\n" + "\n".join(lessons))

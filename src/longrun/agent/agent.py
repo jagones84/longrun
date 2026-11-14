@@ -3195,7 +3195,7 @@ def _gate_observation(tool, res):
 
 
 def _improvement_pass(sess, message, answer, used_tools, work_steps, model, meta,
-                      evidence=None):
+                      evidence=None, cards=None):
     """JAG-447: the EFFECTIVE end-of-turn self-improvement loop.
 
     Replaces the old cosmetic ``improve.nudge`` (which the model never saw and
@@ -3205,6 +3205,9 @@ def _improvement_pass(sess, message, answer, used_tools, work_steps, model, meta
       1. gates on a harness-computed importance score (tools/error/correction);
       2. distills ONE reusable lesson into memory when the turn is significant
          (Reflexion / Generative-Agents pattern; provenance origin=reflect);
+      2b. stores the turn's WHERE/VERIFY anchors (CO-3, `memory/anchors.py`) — no
+         model call and no importance gate: a small turn that edited one file is
+         exactly what the next session needs;
       3. on a HIGH-SIGNAL turn (an error or a user correction with real tool
          use) mines repeated tool sequences into skill PROPOSALS (selfevolve);
       4. records everything in the audit LEDGER (what changed, and who did it);
@@ -3232,6 +3235,16 @@ def _improvement_pass(sess, message, answer, used_tools, work_steps, model, meta
                               # CO-2: the ONE owner of the filename, so the ledger
                               # names the file an ablation arm actually wrote.
                               "path": _memory.path_for("agent.note")})
+        # 2b. the WHERE/VERIFY anchors of this turn (CO-3). Deterministic, no
+        # model call, and deliberately NOT behind the importance gate: a small
+        # turn that edited one file is exactly what the next session needs.
+        if cards and k_mem != "denied":
+            from longrun.memory import anchors as _anchors
+            from longrun.memory import memory as _memstore
+            note = _anchors.remember(sess, cards)
+            if note:
+                wrote.append({"kind": "memory", "origin": "anchor", "summary": note,
+                              "path": _memstore.path_for("repo.anchor")})
         # 3. cross-trajectory abstraction on a high-signal turn
         if (errored or corrected) and n_tools >= 3 and k_skills != "denied":
             for p in improve_mod.mine_once(note="auto: %s" % sess.get("id", ""),
@@ -6856,9 +6869,9 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     # + high-signal skill mining + audit ledger). Replaces the old decorative
     # JAG-128B nudge, which the model never saw and which offered the user nothing
     # to act on. Never blocking: any exception is swallowed inside the pass.
+    _turn_cards = (sess.get("tool_cards") or [])[_cards_base:]
     _improvement_pass(sess, message, answer, used_tools, work_steps, model, meta,
-                      evidence=_tool_evidence(
-                          (sess.get("tool_cards") or [])[_cards_base:]))
+                      evidence=_tool_evidence(_turn_cards), cards=_turn_cards)
     # JAG-129A: safety net — if the turn ends with open steps (e.g. after
     # an abort), it still publishes the end-of-turn metrics. `plan.incomplete`
     # coexists with `plan.stopped` emitted by the loop.
