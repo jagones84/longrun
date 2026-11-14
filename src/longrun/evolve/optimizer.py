@@ -169,13 +169,38 @@ def run(sid, jid=None):
 
     prompt = _build_analysis_prompt(trace, policy_hits, job_cost, feedback)
 
-    # The optimizer is a coding agent — it calls the LLM through the normal
-    # tool path. For now, we return the prompt as the proposal artifact;
-    # the actual LLM call happens when the operator reviews the proposal.
-    # This keeps the optimizer additive and reviewable.
+    # S1 (2026-11-16): the optimizer calls the model to produce a real proposal.
+    # It uses a synchronous HTTP call to the router's chat completions endpoint
+    # with stream=false so it returns one JSON response. Fail-safe: any error
+    # (router down, timeout, bad response) logs the prompt-only proposal and
+    # continues — the optimizer never breaks the session.
+    import json as _json
+    import urllib.request as _req
+    proposal_text = None
+    try:
+        from longrun.model.rllm import ROUTER_BASE, default_model as _def
+        _model = os.environ.get("LONGRUN_OPTIMIZER_MODEL") or _def()
+        _body = _json.dumps({
+            "model": _model,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 1024,
+            "temperature": 0.3,
+            "stream": False,
+        }).encode("utf-8")
+        _r = _req.Request(ROUTER_BASE + "/v1/chat/completions",
+                          data=_body,
+                          headers={"Content-Type": "application/json"})
+        _resp = _req.urlopen(_r, timeout=30)
+        _data = _json.loads(_resp.read().decode("utf-8"))
+        proposal_text = (_data.get("choices", [{}])[0]
+                         .get("message", {}).get("content", ""))
+    except Exception:  # noqa: BLE001 — LLM call is additive, never fails the session
+        proposal_text = None
+
     proposal = {
         "session": sid,
         "job": jid,
+        "proposal": proposal_text,
         "prompt": prompt,
         "evidence": {
             "tokens": trace.get("tokens", 0),

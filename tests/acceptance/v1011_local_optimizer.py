@@ -52,6 +52,8 @@ check("B4 evidence records token count", r["evidence"].get("tokens") == 500, r["
 check("B5 evidence records step count", r["evidence"].get("steps") == 3, r["evidence"])
 check("B6 evidence records outcome", r["evidence"].get("outcome") == "done", r["evidence"])
 check("B7 proposal has an analysis prompt", isinstance(r.get("prompt"), str) and len(r["prompt"]) > 50, len(r.get("prompt", "")))
+check("B8 proposal has proposal field (None when router unreachable)", "proposal" in r, list(r.keys()))
+check("B9 optimizer survives router unreachable without crashing", r.get("skip") is not True, r)
 
 # ---- C) the optimizer handles sessions with exit codes ---------------------
 runmetrics.start("s-failed")
