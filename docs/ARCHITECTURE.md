@@ -505,6 +505,13 @@ operator-selected `none`). This is not whole-agent confinement. Hard-denied patt
 ## Interfaces
 
 - **WebUI** `webui/index.html` — one file, no build step; chat + CoT, task graph, feed.
+  Three top-level pages share one tab strip (`TAB_IDS`): **Sessions** (`#app`), **Control**
+  (the Orbit deck in an iframe) and **My Artifacts** (`#artifactsView`, fed by
+  `GET /api/artifacts` — the edit journal read as one cross-session index of produced files).
+  The inspector's Workspace list is the SAME journal, reconciled with the disk on every read:
+  a file changed or deleted outside the harness reports `disk: changed|missing` with the live
+  counts, and an editor-dock save (`POST /api/fs/write`) is journalled under its session, so it
+  appears there too.
 - **Orbit** `src/longrun/orbit/` — optional command deck at `/orbit`: org chart,
   constellation, job create/dispatch, team selector, model policy.
 - **CLI** `forge.py` — chat, agent runs, tasks, models, MCP.

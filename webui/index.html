@@ -1277,6 +1277,64 @@
   #controlView iframe { width: 100%; height: 100%; border: 0; display: block; background: var(--bg); }
   /* the session/inspector toggles make no sense on the Control view */
   body.control-on .pane-tog-grp { display: none !important; }
+  /* ---- MyArtifacts — a top-level PAGE (third tab), not a panel --------------
+     Same contract as the Control tab: while it is up it owns the row and #app is
+     out of the way. Cards are flat surfaces (Graphite Instrument): one hairline,
+     one radius, no glow; the icon names the kind, the text names the file. */
+  #artifactsView { display: none; flex: 1; min-height: 0; overflow-y: auto;
+    padding: 18px 22px 42px; }
+  body.artifacts-on #app { display: none; }
+  body.artifacts-on #artifactsView { display: block; }
+  body.artifacts-on .pane-tog-grp { display: none !important; }
+  .art-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    margin-bottom: 14px; min-height: 30px; }
+  .art-title { margin: 0; font-size: 15px; font-weight: 650; letter-spacing: .01em; }
+  .art-n { font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums; }
+  .art-search { background: var(--bg-2); border: 1px solid var(--line);
+    border-radius: var(--r-sm); color: var(--txt); font: inherit; font-size: 12px;
+    padding: 5px 9px; width: 220px; outline: none; }
+  .art-search:focus { border-color: var(--line-2); }
+  .art-kinds { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+  .art-chip { background: transparent; border: 1px solid transparent; color: var(--dim);
+    font: inherit; font-size: 11.5px; font-weight: 600; padding: 3px 9px;
+    border-radius: 999px; cursor: pointer; }
+  .art-chip:hover { color: var(--txt); background: var(--hover); }
+  .art-chip[aria-pressed="true"] { color: var(--txt); border-color: var(--line-2);
+    background: var(--panel); }
+  .art-chip b { font-weight: 600; color: var(--muted); margin-left: 4px;
+    font-variant-numeric: tabular-nums; }
+  .art-grid { display: grid; gap: 10px;
+    grid-template-columns: repeat(auto-fill, minmax(212px, 1fr)); }
+  .art-card { display: flex; flex-direction: column; align-items: flex-start; gap: 7px;
+    text-align: left; background: var(--panel); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 12px 13px; cursor: pointer; color: var(--txt);
+    font: inherit; min-height: 96px;
+    transition: border-color .12s, background .12s, transform .12s; }
+  .art-card:hover { background: var(--panel2); border-color: var(--line-2); }
+  .art-card:active { transform: translateY(1px); }
+  .art-card:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+  .art-row { display: flex; align-items: center; gap: 7px; width: 100%; }
+  .art-ic { flex: 0 0 auto; color: var(--acc); display: inline-flex; }
+  .art-kind { font-size: 9px; letter-spacing: .07em; text-transform: uppercase;
+    color: var(--muted); font-weight: 700; }
+  .art-gone { margin-left: auto; color: var(--err); font-size: 11px; }
+  .art-name { font-size: 12.5px; font-weight: 600; width: 100%; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  .art-path { font-size: 10.5px; color: var(--muted); width: 100%; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  .art-meta { margin-top: auto; display: flex; align-items: center; gap: 8px;
+    font-size: 10.5px; color: var(--dim); font-variant-numeric: tabular-nums;
+    width: 100%; overflow: hidden; white-space: nowrap; }
+  .art-meta > span { flex: 0 0 auto; }
+  .art-meta .art-sess { flex: 1 1 auto; min-width: 0; overflow: hidden;
+    text-overflow: ellipsis; color: var(--muted); text-align: right; }
+  .art-empty { grid-column: 1 / -1; color: var(--dim); font-size: 12px;
+    border: 1px dashed var(--line); border-radius: var(--radius); padding: 26px 18px;
+    text-align: center; }
+  @media (prefers-reduced-motion: reduce) {
+    .art-card { transition: none; }
+    .art-card:active { transform: none; }
+  }
   #composer #inp { width: 100%; }
   #inp, .inp { background: var(--bg-2); border: 1px solid var(--line-2); color: var(--txt);
     border-radius: var(--r-sm); padding: 11px 14px; font: inherit; outline: none; }
@@ -2599,6 +2657,20 @@
     letter-spacing: .06em; text-transform: uppercase; color: var(--dim);
     border: 1px solid var(--line-2); border-radius: 4px; padding: 2px 4px; flex: 0 0 auto; }
   .edkind.new { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
+  /* The file moved on the disk after the journal wrote it (another agent, an
+     external editor, a shell). A glyph, not a sentence, kept INSIDE the kind
+     chip so the filename keeps its column. */
+  .eddisk { font-size: 9px; line-height: 1; flex: 0 0 auto; color: var(--warn); cursor: help; }
+  .edkind .eddisk { margin-left: 3px; }
+  .eddisk.missing { color: var(--err); }
+  /* A change row is a NAME line + a META line. The inspector is ~150 px wide and
+     one flex row squeezed the filename to zero, so the list showed a change with
+     no file — the exact report this fixes. The name owns the full width; the
+     controls share the line under it. */
+  #editsList .ftrow { display: flex; flex-direction: column; align-items: stretch;
+    gap: 3px; padding: 4px 0; }
+  #editsList .ftrow + .ftrow { border-top: 1px solid var(--line); }
+  #editsList .edmeta { display: flex; align-items: center; gap: 6px; width: 100%; }
   /* the context list classified its rows with five different COLOURED emoji, which
      broke the single-accent rule and never aligned between rows. One quiet mono
      label in a fixed column does the same job and reads as one list. */
@@ -2689,6 +2761,7 @@
 
     /* everything that was below the bar now starts at the left rail */
     #app { margin-left: 44px; }
+    #artifactsView { margin-left: 44px; }
     #controlView { top: 0; left: 44px; }
     body.show-left #aside {
       top: 0; left: 44px; width: calc(100vw / var(--zoom, 1) - 88px) !important;
@@ -2741,6 +2814,7 @@
        `width: 100vw/zoom` is 938 css px = the full 844, so the rail covered its last
        40 px and that strip was neither visible nor clickable. */
     #app { margin-right: 44px; }
+    #artifactsView { margin-right: 44px; }
     #controlView { right: 44px; }
     body.show-right [data-col="context"] {
       left: 44px !important; right: 44px !important;
@@ -2785,6 +2859,8 @@
        aria-label="sessions" title="sessions" aria-current="page">Sessions</a>
     <a class="ttab" id="tabControl" href="#control" data-call="showControl" data-ic="◫"
        aria-label="control deck" title="control deck">Control</a>
+    <a class="ttab" id="tabArtifacts" href="#artifacts" data-call="showArtifacts" data-ic="▧"
+       aria-label="my artifacts" title="files the harness produced">My Artifacts</a>
   </nav>
   <span class="sessbadge" id="sessBadge" hidden></span>
   <span class="u-f1"></span>
@@ -2833,6 +2909,25 @@
   </button>
 </header>
 <div id="controlView" aria-hidden="true"><iframe id="controlFrame" title="Control deck"></iframe></div>
+<!-- MyArtifacts — files the harness (or the journaled editor save) produced,
+     read from GET /api/artifacts. A PAGE, not a panel: while its tab is active it
+     owns the row, exactly like the Control deck, and the tab strip marks it. -->
+<section id="artifactsView" aria-label="my artifacts" aria-hidden="true">
+  <div class="art-head">
+    <h2 class="art-title">My Artifacts</h2>
+    <span class="art-n" id="artCount"></span>
+    <span class="u-f1"></span>
+    <input id="artSearch" class="art-search" type="search" spellcheck="false"
+           placeholder="filter by name or path" aria-label="filter artifacts by name or path">
+    <div class="art-kinds" id="artKinds" role="group" aria-label="filter by artifact kind"></div>
+    <button class="ghost" id="artReload" title="reload artifacts" aria-label="reload artifacts">
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
+           stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 4v5h-5"/></svg>
+    </button>
+  </div>
+  <div id="artGrid" class="art-grid"></div>
+</section>
 <main id="app">
   <aside id="aside" data-col="sessions" aria-label="sessions rail">
     <section class="rail">
@@ -11719,7 +11814,7 @@ const _FEED_REFRESH = {
   "memory.forget": () => loadMemories(),
   "memory.purge": () => loadMemories(),
   "tools.update": () => { loadRuntime(); loadVerifier(); loadBestofn(); loadGoalVerify(); loadDifficulty(); },
-  "edits.recorded": () => loadEdits(),
+  "edits.recorded": () => { loadEdits(); _artIfOpen(); },
   "edits.undone": () => loadEdits(),
   "edits.approved": () => loadEdits(),
   "knowledge.docs": () => loadIndexCfg(),
@@ -15854,7 +15949,8 @@ function _applyCodebaseEvent(ev) {
   cbStatus();
   _cbProgressTimer = setTimeout(() => { progress.hidden = true; }, 10000);
 }
-function _cbAgo(ts) {
+/* ONE age formatter for every surface (codebase panel, MyArtifacts, …). */
+function _ago(ts) {
   const secs = Math.max(0, Math.round((Date.now() / 1000) - Number(ts || 0)));
   if (secs < 60) return secs + "s ago";
   if (secs < 3600) return Math.round(secs / 60) + "m ago";
@@ -15899,7 +15995,7 @@ async function cbStatus() {
     else if (!last) autoHow = " · waiting for the first pass";
     else if (last.error) autoHow = " · <span class=\"cb-err\">last pass failed · " + esc(last.error) + "</span>";
     else if (last.skipped) autoHow = " · " + esc(last.skipped);
-    else autoHow = " · last pass " + _cbAgo(last.at) + " · " + count(Number(last.files || 0)) +
+    else autoHow = " · last pass " + _ago(last.at) + " · " + count(Number(last.files || 0)) +
       " files · every " + Number(watcher.interval_s || 10) + "s";
     // v640: "auto-index …" and the freshness verdict are ONE line — two separate
     // lines said almost the same thing ("no watcher" then "no re-index needed").
@@ -15928,7 +16024,7 @@ async function cbStatus() {
         esc(_short(_cbWorkspace)) + "</b> · " + esc(s.embed_model || "lexical only") +
         (s.dim ? " · " + count(Number(s.dim)) + "d" : "") +
         " · " + esc(_fmtSize((s.size_kb || 0) * 1024)) +
-        (s.built_at ? " · built " + _cbAgo(s.built_at) : "") + "</div>" +
+        (s.built_at ? " · built " + _ago(s.built_at) : "") + "</div>" +
         autoHtml +
         (s.embed_error ? '<span class="cb-error">Embedding incomplete · ' + esc(s.embed_error) + "</span>" : "") +
         (files === 0 ? '<span class="cb-empty">' +
@@ -16698,6 +16794,121 @@ async function openFile(path, opts) {
 
 async function saveFile() { if (window.SparkEditor) window.SparkEditor.save(); }
 
+/* ---- MyArtifacts — the files the harness produced (GET /api/artifacts) ----
+   One card per file, newest first, read from the SAME edit journal the Workspace
+   panel reads, so the two can never disagree. The kind glyph is decorative
+   inside a named button; a card whose file is gone says "missing" instead of
+   pretending it is still there. Clicking a card is a door: it hands the row back
+   to Sessions and opens the file in the editor — never a second editor. */
+const ART_ICONS = {
+  document: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/>',
+  data: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 10v10M15 10v10"/>',
+  image: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.6"/><path d="m21 16-5-5-6 6-3-3-4 4"/>',
+  code: '<path d="m8 7-5 5 5 5"/><path d="m16 7 5 5-5 5"/><path d="m13 4-2 16"/>',
+  media: '<circle cx="12" cy="12" r="9"/><path d="m10 8.5 6 3.5-6 3.5Z"/>',
+  other: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/>'
+};
+const ART_KIND_ORDER = ["document", "data", "image", "code", "media", "other"];
+const ART_KIND_LABEL = { document: "documents", data: "data", image: "images",
+                         code: "code", media: "media", other: "other" };
+const _art = { all: [], kinds: {}, kind: "all", q: "", titles: {} };
+
+function _artIcon(kind) {
+  return '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor"'
+    + ' stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+    + (ART_ICONS[kind] || ART_ICONS.other) + "</svg>";
+}
+
+async function loadArtifacts() {
+  const grid = $("artGrid"); if (!grid) return;
+  let out, sess;
+  try {
+    [out, sess] = await Promise.all([
+      api("GET", "/api/artifacts?limit=500"),
+      api("GET", "/api/sessions").catch(() => null)
+    ]);
+  } catch (e) {
+    grid.innerHTML = '<div class="art-empty">' + esc(e) + "</div>";
+    return;
+  }
+  if (!out || out.error) {
+    grid.innerHTML = '<div class="art-empty">' + esc((out && out.error) || "artifacts unavailable") + "</div>";
+    return;
+  }
+  _art.all = out.artifacts || [];
+  _art.kinds = out.kinds || {};
+  _art.titles = {};
+  ((sess && sess.sessions) || []).forEach(s => { _art.titles[s.id] = s.title || s.id; });
+  renderArtifacts();
+}
+
+function _artMatches(a) {
+  if (_art.kind !== "all" && a.kind !== _art.kind) return false;
+  return !_art.q || (a.name + " " + a.path).toLowerCase().indexOf(_art.q) >= 0;
+}
+
+function renderArtifacts() {
+  const grid = $("artGrid"); if (!grid) return;
+  const shown = _art.all.filter(_artMatches);
+  const cnt = $("artCount");
+  if (cnt) cnt.textContent = shown.length + (_art.all.length !== shown.length ? " of " + _art.all.length : "") + " files";
+  const chips = $("artKinds");
+  if (chips) {
+    const rows = [["all", "all", _art.all.length]].concat(
+      ART_KIND_ORDER.filter(k => _art.kinds[k]).map(k => [k, ART_KIND_LABEL[k], _art.kinds[k]]));
+    chips.innerHTML = rows.map(r =>
+      '<button class="art-chip" data-kind="' + r[0] + '" aria-pressed="' + (r[0] === _art.kind) + '">'
+      + esc(r[1]) + "<b>" + Number(r[2] || 0) + "</b></button>").join("");
+    chips.querySelectorAll(".art-chip").forEach(b => {
+      b.onclick = () => { _art.kind = b.dataset.kind; renderArtifacts(); };
+    });
+  }
+  if (!shown.length) {
+    grid.innerHTML = '<div class="art-empty">' + (_art.all.length
+      ? "no artifact matches this filter"
+      : "no artifacts yet — the files the harness writes and the files you save in the editor appear here") + "</div>";
+    return;
+  }
+  grid.innerHTML = shown.map(a => {
+    const dir = a.path.slice(0, Math.max(0, a.path.length - a.name.length)).replace(/[\/\\]$/, "");
+    return '<button class="art-card" data-path="' + _attr(a.path) + '"'
+      + ' aria-label="open ' + _attr(a.name) + ' in the editor" title="' + _attr(a.path) + '">'
+      + '<span class="art-row"><span class="art-ic">' + _artIcon(a.kind) + "</span>"
+      + '<span class="art-kind">' + esc(ART_KIND_LABEL[a.kind] || a.kind) + "</span>"
+      + (a.exists ? "" : '<span class="art-gone" title="the file is no longer on disk">missing</span>')
+      + "</span>"
+      + '<span class="art-name">' + esc(a.name) + "</span>"
+      + '<span class="art-path">' + esc(dir) + "</span>"
+      + '<span class="art-meta"><span>' + esc(a.action === "created" ? "created" : "edited") + "</span>"
+      + "<span>" + esc(_fmtSize(a.size)) + "</span>"
+      + "<span>" + esc(_ago(a.ts)) + "</span>"
+      + '<span class="art-sess" title="' + _attr(a.session) + '">'
+      + esc(_art.titles[a.session] || a.session) + "</span>"
+      + "</span></button>";
+  }).join("");
+  grid.querySelectorAll(".art-card").forEach(c => {
+    c.onclick = () => openArtifact(c.dataset.path);
+  });
+}
+
+function openArtifact(path) {
+  showSessions();
+  openFile(path);
+}
+
+/* A write (agent or editor) while the page is up must repaint it — the same
+   event that refreshes the Workspace list. Nothing polls. */
+function _artIfOpen() {
+  if (document.body.classList.contains("artifacts-on")) loadArtifacts();
+}
+
+(function _wireArtifacts() {
+  const s = $("artSearch");
+  if (s) s.addEventListener("input", () => { _art.q = s.value.trim().toLowerCase(); renderArtifacts(); });
+  const r = $("artReload");
+  if (r) r.onclick = () => loadArtifacts();
+})();
+
 /* ---- JAG-127: file-diff journal — change summary, side-by-side diff, undo ----
    The harness journals every fs.write/fs.edit under the session id (chat) or run
    id (agent). We surface it as: a per-turn change chip in the transcript, a
@@ -16836,16 +17047,33 @@ function _renderEditsList(cur) {
   files.forEach(f => {
     const row = document.createElement("div");
     row.className = "ftrow";
-    row.style.cssText = "display:flex;gap:6px;align-items:center";
-    row.innerHTML = '<span class="edkind' + (f.action === "created" ? " new" : "") + '">' +
-      (f.action === "created" ? "new" : "edit") + "</span>" +
-      '<span class="edname" title="open in the editor" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;border-bottom:1px dotted transparent">' +
-      esc(f.path) + "</span>" +
+    // The disk, not the journal, has the last word: a file another process
+    // changed (or deleted) carries a glyph INSIDE the kind chip. The hover text
+    // says the rest, and the row stays one name + one meta line.
+    const kindChip = (function () {
+      const kind = f.action === "created" ? "new" : "edit";
+      const d = (f.disk === "changed" || f.disk === "missing") ? f.disk : "";
+      if (!d) return '<span class="edkind' + (kind === "new" ? " new" : "") + '">' + kind + "</span>";
+      return '<span class="edkind' + (kind === "new" ? " new" : "") + '">' + kind +
+        '<span class="eddisk' + (d === "missing" ? " missing" : "") + '" role="img" aria-label="'
+        + (d === "missing" ? "missing on disk" : "changed on disk") + '" title="'
+        + (d === "missing"
+            ? "deleted on disk — reject restores the journal's pre-image"
+            : "changed on disk after it was recorded — the counts and the diff show the file as it is now")
+        + '">' + (d === "missing" ? "⊘" : "●") + "</span></span>";
+    })();
+    row.innerHTML =
+      // The BASENAME owns the line (a 150 px rail can only show that much); the
+      // full path is in the tooltip and in the diff header.
+      '<span class="edname" title="' + _attr(f.path) + ' — open in the editor" style="width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;border-bottom:1px dotted transparent">' +
+      esc(_short(f.path)) + "</span>" +
+      '<div class="edmeta">' + kindChip +
       // JAG-452: the +/-N badge is its own control (opens the diff); the name opens the file.
       '<span class="edstat" title="show the diff for this file" style="display:flex;gap:6px;cursor:pointer;border-radius:5px;padding:0 4px;border-bottom:1px dotted var(--line)">' +
       '<span class="add">+' + f.add + '</span><span class="del">−' + f.del + "</span></span>" +
+      '<span class="u-f1"></span>' +
       '<button class="ghost ed-ok" title="approve: keep this file as written, clear it from the list">✓</button>' +
-      '<button class="ghost ed-no" title="reject: restore this file to its pre-image">↩</button>';
+      '<button class="ghost ed-no" title="reject: restore this file to its pre-image">↩</button></div>';
     row.title = f.path;
     row.querySelector(".edname").onclick = () => openFile(f.path);
     row.querySelector(".edstat").onclick = () => showDiff(f.path);
@@ -16873,7 +17101,10 @@ async function showDiff(path) {
   }
   const _ap2 = $("diffApprove"); if (_ap2) _ap2.disabled = false;
   $("diffSub").textContent = path + "  ·  " + (d.edits || 1) + " edit(s)  ·  " +
-    (d.action === "created" ? "created" : "modified") + (d.truncated ? "  ·  truncated" : "");
+    (d.action === "created" ? "created" : "modified") +
+    (d.disk === "changed" ? "  ·  file changed on disk" :
+      d.disk === "missing" ? "  ·  missing on disk" : "") +
+    (d.truncated ? "  ·  truncated" : "");
   $("diffStat").innerHTML = '<span class="add">+' + (d.add || 0) + '</span> <span class="del">−' + (d.del || 0) + "</span>";
   const rows = (d.rows || []).map(r =>
     '<div class="diffrow r-' + r.t + '"><span class="dl">' + esc(r.l) + '</span><span class="dr">' + esc(r.r) + "</span></div>").join("");
@@ -17565,10 +17796,17 @@ function _tabTop() {
   const z = (typeof _zoom === "number" && _zoom > 0) ? _zoom : 1;
   return Math.round(h.getBoundingClientRect().height / z);
 }
+/* One tab name → its element. Adding a page means one row here, never a second
+   hand-written pair of toggles that can drift out of step with the strip. */
+const TAB_IDS = { sessions: "tabSessions", control: "tabControl", artifacts: "tabArtifacts" };
 function _setTabs(which) {
-  const s = document.getElementById("tabSessions"), c = document.getElementById("tabControl");
-  if (s) { const on = which === "sessions"; s.classList.toggle("active", on); on ? s.setAttribute("aria-current", "page") : s.removeAttribute("aria-current"); }
-  if (c) { const on = which === "control"; c.classList.toggle("active", on); on ? c.setAttribute("aria-current", "page") : c.removeAttribute("aria-current"); }
+  Object.keys(TAB_IDS).forEach(name => {
+    const el = document.getElementById(TAB_IDS[name]);
+    if (!el) return;
+    const on = name === which;
+    el.classList.toggle("active", on);
+    if (on) el.setAttribute("aria-current", "page"); else el.removeAttribute("aria-current");
+  });
 }
 /* v642: while the Control deck is up, #app is `inert` — and inert is INHERITED, so
    a floating editor window (a fixed box that draws above the deck) was visible but
@@ -17621,16 +17859,35 @@ function showControl() {
   else { try { if (f && f.contentDocument) f.contentDocument.documentElement.dataset.theme = (localStorage.getItem("sf_theme") || "indigo"); } catch (_) {} }
   _ctlShellWatch(f);   // I-8: a changed shell must not stay invisible in the deck
   cv.classList.add("on"); cv.setAttribute("aria-hidden", "false"); document.body.classList.add("control-on"); _setTabs("control");
+  document.body.classList.remove("artifacts-on");
+  const av = document.getElementById("artifactsView"); if (av) av.setAttribute("aria-hidden", "true");
   // JAG-424g: while Control is up, the Sessions page must not receive mouse OR keyboard —
   // `inert` removes it from hit-testing, focus and the a11y tree in one shot.
   const app = document.getElementById("app"); if (app) app.setAttribute("inert", "");
   _dockControlSettle();   // v642: a floating editor window stays usable over the deck
   try { history.replaceState(null, "", location.pathname + location.search + "#control"); } catch (_) {}
 }
+/* MyArtifacts: the third top-level page. Same contract as the Control deck —
+   it owns the row, #app stands down, the strip marks it, the hash deep-links it. */
+function showArtifacts() {
+  const cv = document.getElementById("controlView");
+  if (cv) { cv.classList.remove("on"); cv.setAttribute("aria-hidden", "true"); }
+  document.body.classList.remove("control-on");
+  document.body.classList.add("artifacts-on");
+  const av = document.getElementById("artifactsView");
+  if (av) av.setAttribute("aria-hidden", "false");
+  const app = document.getElementById("app"); if (app) app.setAttribute("inert", "");
+  _setTabs("artifacts");
+  _dockControlSettle();
+  try { history.replaceState(null, "", location.pathname + location.search + "#artifacts"); } catch (_) {}
+  loadArtifacts();
+}
 function showSessions() {
   const cv = document.getElementById("controlView"); if (cv) { cv.classList.remove("on"); cv.setAttribute("aria-hidden", "true"); }
-  const app = document.getElementById("app"); if (app) app.removeAttribute("inert");
   document.body.classList.remove("control-on");
+  document.body.classList.remove("artifacts-on");
+  const av = document.getElementById("artifactsView"); if (av) av.setAttribute("aria-hidden", "true");
+  const app = document.getElementById("app"); if (app) app.removeAttribute("inert");
   _dockControlSettle();   // v642: put the editor back in the row, where it was
   _setTabs("sessions");
   try { history.replaceState(null, "", location.pathname + location.search); } catch (_) {}
@@ -17639,6 +17896,7 @@ function showSessions() {
 function goControlDetached() { location.href='/orbit' + (TOKEN ? ('?token=' + encodeURIComponent(TOKEN)) : ''); }
 function goControl() { showControl(); }
 function goSession() { showSessions(); }
+function goArtifacts() { showArtifacts(); }
 /* JAG-431r10: the Control deck asks US to open a task — a double-click on a
    constellation task when the deck runs EMBEDDED in the Control tab (navigating the
    iframe would trap the main app inside the deck frame). We hop to the Sessions
@@ -17661,13 +17919,16 @@ window.addEventListener("message", (e) => {
 });
 window.addEventListener("DOMContentLoaded", () => {
   if (location.hash === "#control") showControl();
+  else if (location.hash === "#artifacts") showArtifacts();
   mountStaticSparkles();
 });
 // JAG-431r4: honour a hash CHANGE too (a deep link after load, back/forward, or a
 // manual URL edit). Without this, navigating from #control to #sessions left the
 // Control deck up — the two views never swapped.
 window.addEventListener("hashchange", () => {
-  if (location.hash === "#control") showControl(); else showSessions();
+  if (location.hash === "#control") showControl();
+  else if (location.hash === "#artifacts") showArtifacts();
+  else showSessions();
 });
 /* ---- v0.8.1 resizable columns + panel toggles ---- */
 /* JAG-361: the centre column's floor, in CSS px. A side panel may never grow so

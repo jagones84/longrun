@@ -875,6 +875,7 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   <nav class="topTabs" aria-label="top-level sections">
     <a class="ttab" href="/">Sessions</a>
     <span class="ttab active" aria-current="page">Control</span>
+    <a class="ttab" href="/#artifacts">My Artifacts</a>
   </nav>
   <span class="spacer"></span>
   <!-- v624: the app is long-lived (installed PWA, pinned tab) — when the
@@ -4269,9 +4270,14 @@ class OrbitApp {
   start(){
     $("led").classList.toggle("on", !!this.api.token);
     if (!this.api.token){ const t = prompt("Longrun API token (stored in localStorage):"); if (t){ this.api.token = t.trim(); localStorage.setItem("sf_token", t.trim()); $("led").classList.add("on"); } }
-    // JAG-295: the "Sessions" link must carry the token, or it lands on a 401.
-    const link = document.querySelector('header a[href^="/"]');
-    if (link && this.api.token) link.setAttribute("href", "/?token=" + encodeURIComponent(this.api.token));
+    // JAG-295: every top-level link must carry the token, or it lands on a 401.
+    // The fragment (e.g. #artifacts) is preserved so the tab still deep-links.
+    document.querySelectorAll('header a[href^="/"]').forEach(link => {
+      if (!this.api.token) return;
+      const frag = (link.getAttribute("href") || "").split("#")[1];
+      link.setAttribute("href", "/?token=" + encodeURIComponent(this.api.token)
+        + (frag ? "#" + frag : ""));
+    });
     this.refresh(); this.feed.connect();
     setInterval(() => this.refresh(), 5000);
     this._watchBuild();

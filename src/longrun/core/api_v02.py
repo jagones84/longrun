@@ -2270,6 +2270,8 @@ def handle(handler, method, path, qs, body):
             return _r(handler, 200, edits_summary(qs))
         if path == "/api/edits/diff":  # JAG-127: side-by-side rows for one file
             return _r(handler, 200, edits_diff(qs))
+        if path == "/api/artifacts":  # MyArtifacts: the journal as one index
+            return _r(handler, 200, artifacts_list(qs))
         if path == "/api/costs":  # JAG-355: per-session cost ledger + totals
             from longrun.model import costs
             return _r(handler, 200, costs.summary(qs.get("session"),
@@ -4004,12 +4006,31 @@ def _fs_raw(handler, qs=None):
     return True
 
 
+def _journal_save(session, path, before, after):
+    """Journal an editor save so it lands in the Workspace change list.
+
+    The harness's own `fs.write` tool journals in `tools._journal`; the editor
+    dock writes through THIS route, and it used to be invisible to the journal —
+    the operator saved a file and the right-rail list never showed it. One call,
+    the same journal, so the panel, the diff and reject all work for a save.
+    Never raises: a journal problem must not fail a save that already happened.
+    """
+    if not session:
+        return
+    try:
+        from longrun.tools import edits
+        edits.record(session, path, before, after, "modified")
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def fs_write(body) -> dict:
     """POST /api/fs/write — overwrite an EXISTING text file with `content`.
 
     Overwrite-only (never creates new files) and length-capped, so the editor
     cannot be used to plant files or blow up the disk. Publishes `fs.write` so
-    the app/UI can react to on-disk changes.
+    the app/UI can react to on-disk changes, and journals the save under the
+    session so the Workspace change list (and MyArtifacts) see it.
     """
     import os as _os
     b = body or {}
@@ -4024,6 +4045,12 @@ def fs_write(body) -> dict:
     raw = content.encode("utf-8")
     if len(raw) > FS_TEXT_MAX:
         return {"error": "content too large (%d bytes > %d)" % (len(raw), FS_TEXT_MAX)}
+    before = ""
+    try:
+        with open(p, "r", encoding="utf-8", errors="replace") as f:
+            before = f.read(FS_TEXT_MAX)
+    except OSError:
+        before = ""
     try:
         from longrun.tools import matrix_guard
         with matrix_guard.NUCLEUS_EXEC_LOCK:
@@ -4031,6 +4058,7 @@ def fs_write(body) -> dict:
                 f.write(content)
     except OSError as e:
         return {"error": str(e)}
+    _journal_save(b.get("session"), p, before, content)
     _publish("fs.write", path=p, bytes=len(raw))
     return {"ok": True, "path": p, "bytes": len(raw)}
 
@@ -4187,6 +4215,21 @@ def edits_approve(body) -> dict:
     from longrun.tools import edits as edits_mod
     b = body or {}
     return edits_mod.approve(b.get("session") or b.get("key") or "default", b.get("path"))
+
+
+def artifacts_list(qs=None) -> dict:
+    """GET /api/artifacts?session=&kind=&q=&limit= — files the harness produced.
+
+    The cross-session index behind the MyArtifacts page. Same journal the
+    Workspace panel reads (one store), aggregated per session+path, with the
+    size/existence taken from the disk at request time.
+    """
+    from longrun.tools import edits as edits_mod
+    q = qs or {}
+    return edits_mod.artifacts(limit=_int(q.get("limit", 500), 500),
+                               session=q.get("session") or None,
+                               kind=q.get("kind") or None,
+                               query=q.get("q") or None)
 
 
 def _session_ws(session_id):

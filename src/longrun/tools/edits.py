@@ -79,6 +79,13 @@ def record(key, path, before, after, action="modified"):
         "after": after[:MAX_TEXT],
         "truncated": len(before) > MAX_TEXT or len(after) > MAX_TEXT,
     }
+    # The post-write stat is the cheap fingerprint of "the disk still holds what
+    # the journal says": summary() compares it before reading a single byte.
+    try:
+        st = os.stat(path)
+        entry["after_stat"] = [int(st.st_mtime_ns), int(st.st_size)]
+    except OSError:
+        entry["after_stat"] = None
     with _lock:
         entries = _load(key)
         entries.append(entry)
@@ -111,12 +118,49 @@ def drop_after(key, upto_ts):
         return len(keep)
 
 
+def _disk_state(path, entry):
+    """Does the file on disk still match what the journal last recorded?
+
+    Returns `(state, text)` with state `clean` | `changed` | `missing`. `text` is
+    the file as it is now, and is only returned when it differs AND can be
+    compared (a truncated journal image cannot be diffed honestly, so the caller
+    keeps the recorded counts instead of inventing new ones). The stat stored by
+    `record()` makes the common case one `stat()` call and no read.
+    """
+    try:
+        st = os.stat(path)
+    except OSError:
+        return "missing", None
+    ref = (entry or {}).get("after_stat")
+    if isinstance(ref, (list, tuple)) and len(ref) == 2:
+        try:
+            if [int(st.st_mtime_ns), int(st.st_size)] == [int(ref[0]), int(ref[1])]:
+                return "clean", None
+        except (TypeError, ValueError):
+            pass
+    if (entry or {}).get("truncated"):
+        return "changed", None
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            text = f.read(MAX_TEXT + 1)
+    except OSError:
+        return "missing", None
+    return ("clean", None) if text == entry.get("after", "") else ("changed", text)
+
+
 def summary(key):
     """Per-file aggregate + totals for an IDE-style change summary.
 
     JAG-127: each file's `add`/`del` is the NET of its first pre-image vs its
     last post-image (the same numbers the diff modal shows), not the sum of every
     intermediate edit — so the chip, the Changes list and the diff always agree.
+
+    The list is reconciled with the DISK on every read: a file edited outside the
+    harness (the editor dock, another agent, an external editor) reports
+    `disk: "changed"` and its counts describe the file as it is NOW; a deleted
+    file reports `disk: "missing"`. The journal is still the source of each
+    file's pre-image (that is what makes reject possible), but it never claims a
+    state the workspace no longer has.
     """
     with _lock:
         entries = _load(key)
@@ -126,17 +170,22 @@ def summary(key):
         if p not in per:
             per[p] = {"path": p, "action": x["action"], "add": 0, "del": 0,
                       "edits": 0, "first_ts": x["ts"], "last_ts": x["ts"],
-                      "_before": x["before"], "_after": x["after"]}
+                      "_before": x["before"], "_after": x["after"], "_last": x}
             order.append(p)
         per[p]["edits"] += 1
         per[p]["last_ts"] = x["ts"]
         per[p]["_after"] = x["after"]
+        per[p]["_last"] = x
         if x["action"] == "created":
             per[p]["action"] = "created"
     files = []
     for p in order:
         f = per[p]
-        f["add"], f["del"] = _counts(f.pop("_before"), f.pop("_after"))
+        before, after = f.pop("_before"), f.pop("_after")
+        f["add"], f["del"] = _counts(before, after)
+        f["disk"], disk_text = _disk_state(p, f.pop("_last"))
+        if disk_text is not None:
+            f["add"], f["del"] = _counts(before, disk_text)
         files.append(f)
     files.sort(key=lambda f: f["last_ts"], reverse=True)
     totals = {
@@ -217,9 +266,17 @@ def diff(key: str, path: str) -> dict[str, Any]:
     if not entries:
         return {"error": "no edits recorded for %s" % requested_path}
     before, after = entries[0]["before"], entries[-1]["after"]
+    # Same disk reconciliation as summary(): the diff's RIGHT column is the file
+    # as it is now, so an edit made outside the harness cannot be hidden behind a
+    # stale recorded image. A file that no longer exists keeps the recorded image
+    # — the same choice summary() makes — and is labelled `missing` instead, so
+    # the list and the diff can never report different counts for one file.
+    disk, disk_text = _disk_state(entries[-1]["path"], entries[-1])
+    if disk_text is not None:
+        after = disk_text
     add, dele = _counts(before, after)
     return {"key": key, "path": requested_path, "action": entries[0]["action"],
-            "add": add, "del": dele, "edits": len(entries),
+            "add": add, "del": dele, "edits": len(entries), "disk": disk,
             "truncated": any(e.get("truncated") for e in entries),
             "rows": _rows(before, after)}
 
@@ -286,3 +343,97 @@ def clear(key):
     with _lock:
         _save(key, [])
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# MyArtifacts — the same journal, read as one cross-session index of what the
+# harness produced. No second store: a file is an artifact because a journal
+# recorded it, so the page and the Workspace change list can never disagree.
+# ---------------------------------------------------------------------------
+
+#: Suffix → the group the page shows it under. `plan.artifacts.DELIVERABLE_EXTS`
+#: is NOT reused: that list exists to GRADE a turn and deliberately excludes
+#: code and images, which are exactly what a "my artifacts" page must show.
+ARTIFACT_KINDS = (
+    ("document", (".md", ".markdown", ".txt", ".rst", ".pdf", ".doc", ".docx",
+                  ".odt", ".rtf", ".pptx", ".ppt", ".html", ".htm")),
+    ("data", (".csv", ".tsv", ".xlsx", ".xlsm", ".xls", ".json", ".jsonl", ".xml",
+              ".yaml", ".yml", ".db", ".sqlite", ".parquet")),
+    ("image", (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg", ".avif",
+               ".ico", ".tiff")),
+    ("code", (".py", ".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".sh", ".bash",
+              ".ps1", ".sql", ".go", ".rs", ".java", ".rb", ".php", ".css", ".scss",
+              ".c", ".h", ".cpp", ".hpp", ".swift", ".kt")),
+    ("media", (".mp4", ".webm", ".mov", ".mp3", ".wav", ".m4a")),
+)
+MAX_ARTIFACT_JOURNALS = 400
+
+
+def kind_of(path):
+    """The artifact group a produced file belongs to (`other` when unknown)."""
+    suffix = os.path.splitext(str(path or ""))[1].lower()
+    for kind, exts in ARTIFACT_KINDS:
+        if suffix in exts:
+            return kind
+    return "other"
+
+
+def _journal_keys():
+    """Every journal key present on disk, the most recently written first."""
+    try:
+        names = [n for n in os.listdir(_dir()) if n.endswith(".json")]
+    except OSError:
+        return []
+    rows = []
+    for name in names:
+        p = os.path.join(_dir(), name)
+        try:
+            rows.append((os.path.getmtime(p), name[:-5]))
+        except OSError:
+            continue
+    rows.sort(reverse=True)
+    return [key for _mtime, key in rows]
+
+
+def artifacts(limit=500, session=None, kind=None, query=None):
+    """One row per (session, path) the harness produced, newest first.
+
+    Fields: `session`, `path`, `name`, `kind`, `action` (created|modified),
+    `edits` (how many journal entries name it), `ts` (last write), `size` and
+    `exists` (read from the disk NOW — a card never claims a file that is gone).
+    """
+    limit = max(1, min(2000, int(limit or 500)))
+    keys = [str(session)] if session else _journal_keys()[:MAX_ARTIFACT_JOURNALS]
+    needle = str(query or "").strip().lower()
+    rows = {}
+    for key in keys:
+        for e in _load(key):
+            path = str(e.get("path") or "")
+            if not path:
+                continue
+            k = kind_of(path)
+            if kind and kind != "all" and k != kind:
+                continue
+            if needle and needle not in path.lower():
+                continue
+            rec = rows.get((key, path))
+            if rec is None:
+                rec = {"session": key, "path": path, "name": os.path.basename(path),
+                       "kind": k, "action": e.get("action") or "modified",
+                       "edits": 0, "ts": 0.0}
+                rows[(key, path)] = rec
+            rec["edits"] += 1
+            rec["ts"] = max(rec["ts"], float(e.get("ts") or 0.0))
+            if e.get("action") == "created":
+                rec["action"] = "created"
+    out = list(rows.values())
+    for rec in out:
+        try:
+            rec["size"], rec["exists"] = int(os.path.getsize(rec["path"])), True
+        except OSError:
+            rec["size"], rec["exists"] = 0, False
+    out.sort(key=lambda r: r["ts"], reverse=True)
+    kinds = {}
+    for rec in out:
+        kinds[rec["kind"]] = kinds.get(rec["kind"], 0) + 1
+    return {"artifacts": out[:limit], "count": len(out), "kinds": kinds}
