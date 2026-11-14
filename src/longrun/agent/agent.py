@@ -1101,16 +1101,27 @@ def _dsml_unwrap_args(args):
     The model copies the JSON protocol's own example, so the real tool arguments
     sit one level down. Applied before AND after naming the tool: the name may be
     a sibling `tool` parameter that the wrapper unwrap consumes.
+
+    2026-11-15 (session `fd98ee64e89f`): the sibling is not hypothetical.
+    deepseek-flash emits
+
+        <invoke name="shell.exec">
+          <parameter name="args">{"command": "…"}</parameter>
+          <parameter name="tool">shell.exec</parameter>
+        </invoke>
+
+    so `len(args) == 2` and the old single-key guard refused to unwrap. The
+    whole envelope reached the tool as `unknown argument 'args'` /
+    `unknown argument 'tool'`, and the model re-sent the same shape.
     """
-    if len(args) == 1 and "args" in args:
-        inner = args["args"]
-        if isinstance(inner, str):
-            try:
-                inner = json.loads(inner)
-            except Exception:  # noqa: BLE001
-                inner = _json_prefix(inner)
-        if isinstance(inner, dict):
-            return inner
+    inner = args.get("args")
+    if isinstance(inner, str):
+        try:
+            inner = json.loads(inner)
+        except Exception:  # noqa: BLE001
+            inner = _json_prefix(inner) if inner.lstrip()[:1] in ("{", "[") else inner
+    if isinstance(inner, dict) and set(args) <= {"args", "tool"}:
+        return dict(inner)
     return args
 
 
@@ -4607,6 +4618,62 @@ def _normalize_action(act):
     return act
 
 
+def _dsml_attr_value(text, start):
+    """Decode one attribute value beginning just after its opening quote.
+
+    Returns ``(value, next_index)``. A JSON object/array is decoded with
+    ``raw_decode``, so quotes and ``>`` INSIDE it cannot end it early — the
+    measured 2026-11-15 shape ``args="{"limit": 12}"`` broke the old
+    ``"([^"]*)"`` regex on the first inner quote and yielded '' or '{'.
+    Anything else is a plain double-quoted string, with a trailing wire marker
+    removed (the body form is ``<… command="…"|DSML|>``).
+    """
+    rest = text[start:]
+    lead = rest.lstrip()
+    if lead[:1] in ("{", "["):
+        try:
+            dec, used = json.JSONDecoder().raw_decode(lead)
+        except (TypeError, ValueError):
+            dec = None
+        else:
+            return dec, start + (len(rest) - len(lead)) + used
+    q = text.find('"', start)
+    if q == -1:
+        q = len(text)
+    val = text[start:q]
+    val = re.sub(r"\s*(?:" + _DSML_MARK + r")\s*$", "", val).strip()
+    return val, q + 1
+
+
+def _dsml_body_attrs(body):
+    """Bare attribute tags in an invoke BODY as tool arguments.
+
+    Live 2026-11-15 (session `fd98ee64e89f`, deepseek-flash): the arguments were
+    written as their own marked tag rather than as `<parameter>` children —
+
+        <|DSML| invoke name="shell.exec">
+        <|DSML| command="cd /… | head -3"|DSML|>
+
+    — so the parameter scan found nothing and every call reached the harness
+    with ``args={}`` and failed "missing REQUIRED command". `parameter`,
+    `invoke` and `invocation` tags are excluded, and the scan steps PAST each
+    decoded value, so text inside a command cannot be mistaken for a key.
+    """
+    out = {}
+    pos = 0
+    rx = re.compile(_DSML_TAG + r"(?!(?:parameter|invoke|invocation)\b)"
+                    r"([A-Za-z_][\w\-]*)\s*=\s*\"", re.I)
+    while pos < len(body):
+        m = rx.search(body, pos)
+        if not m:
+            break
+        key = m.group(1)
+        val, pos = _dsml_attr_value(body, m.end())
+        if key not in ("name", "string"):
+            out[key] = val
+    return out
+
+
 def _dsml_one_invoke(attrs, body):
     """Parse ONE DSML `<invoke>` block into a harness action, or None.
 
@@ -4642,17 +4709,30 @@ def _dsml_one_invoke(attrs, body):
                 val = _json_prefix(val) if val.lstrip()[:1] in ("{", "[") else val
         args[key] = val
     args = _dsml_coerce(args)
+    # 2026-11-15: the measured body form puts the arguments on their own marked
+    # tag (`<… command="…"…>` / `<… args="{…}"…>`), not in <parameter> children.
+    # A parameter always wins over a same-named body attribute.
+    for _bk, _bv in _dsml_body_attrs(body).items():
+        args.setdefault(_bk, _bv)
     if not args:
         # JAG-534: another live shape puts the arguments as ATTRIBUTES of the
         # invoke — `<invoke name="skills" action="search" query="…">` — with no
         # <parameter> children at all, so the call arrived with empty args.
-        for am in re.finditer(r'([A-Za-z_][\w\-]*)\s*=\s*"([^"]*)"', attrs):
-            if am.group(1) in ("name", "string"):
-                continue
-            args[am.group(1)] = am.group(2)
+        # Read with the quote-aware scanner so a JSON value keeps its quotes.
+        _apos = 0
+        while _apos < len(attrs):
+            _am = re.search(r'([A-Za-z_][\w\-]*)\s*=\s*"', attrs[_apos:])
+            if not _am:
+                break
+            _k = _am.group(1)
+            _v, _apos = _dsml_attr_value(attrs, _apos + _am.end())
+            if _k not in ("name", "string"):
+                args[_k] = _v
     # JAG-501/JAG-526: unwrap the `args` envelope BEFORE naming the tool — it is
     # both the arguments and (in `<calls><parameter name="args">{…}`) the only
-    # clue to which tool the model meant.
+    # clue to which tool the model meant. Keep the sibling `tool` value first:
+    # the unwrap consumes the envelope it lives in.
+    _hint_tool = args.get("tool") if isinstance(args.get("tool"), str) else ""
     args = _dsml_unwrap_args(args)
     nm = re.search(r'\bname\s*=\s*"([^"]*)"', attrs)
     name = nm.group(1).strip() if nm else ""
@@ -4668,7 +4748,10 @@ def _dsml_one_invoke(attrs, body):
             # `<invoke name="permission"><parameter name="action">todo.update<…`
             rest = {k: v for k, v in args.items() if k != "action"}
             return dict(rest, action=_TODO_ACTION_ALIASES.get(inner, inner))
-        if isinstance(args.get("tool"), str) and args["tool"].strip():
+        if _hint_tool.strip():
+            name = _hint_tool.strip()
+            args.pop("tool", None)
+        elif isinstance(args.get("tool"), str) and args["tool"].strip():
             name = args.pop("tool").strip()
             args = _dsml_unwrap_args(args)
         elif re.fullmatch(r"[A-Za-z_][\w.\-]*", lead or ""):

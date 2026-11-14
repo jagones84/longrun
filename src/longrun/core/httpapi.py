@@ -3503,6 +3503,14 @@ def main():
     backfill_session_workspaces()  # JAG-117: every session gets a folder
     backfill_agents()              # EV-30: every session gets its A<n> identity record
     reconcile_agent_models()       # JAG-309: agent model == its session's model
+    try:
+        # 2026-11-15: every memory record needs a `mid` or no lifecycle action
+        # (invalidate/supersede/restore/forget) can ever reach it. The pre-`mid`
+        # v0.3 writer left 13 such records in the live `user_memories.md`.
+        from longrun.memory import memory as _memory_boot
+        _memory_boot.backfill_mids()
+    except Exception:  # noqa: BLE001 — a repair bug must never stop the boot
+        pass
     reconcile_orphan_turns()       # JAG-262: close turns killed by a hard restart
     try:
         # 2026-11-15: the harness restart owns its ticket; Matrix no longer does.

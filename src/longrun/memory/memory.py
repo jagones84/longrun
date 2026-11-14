@@ -16,6 +16,14 @@ Rules:
 - Every write has a timestamp, kind, session/run id, and freeform content.
 - Old entries are never mutated (append-only).
 - The vector index is rebuilt on server start and after every N writes.
+
+Scoping (2026-11-15): the store is OPERATOR-WIDE, not per-agent. An agent IS a
+session (EV-30), so an agent-scoped store would be a session-scoped one, and a
+lesson learned at 10:00 would be invisible at 10:05 in the next session — the
+fragmentation this module exists to avoid. The one scope that matters is the
+PROJECT: a record written with `workspace=<path>` is visible only there, and a
+record without one is GLOBAL (see `_visible`). `session`/`origin`/`source` keep
+the provenance, so recall can still say which agent wrote what.
 """
 
 import json
@@ -244,8 +252,17 @@ def query(term=None, kind=None, limit=20, workspace=None):
     out = []
     kinds = [kind] if kind else list(MEMORY_FIELDS.keys()) + ["other"]
     ws = _ws_key(workspace)
+    # 2026-11-15: `memory.invalidate` and `memory.restore` share ONE append-only
+    # file (the lifecycle ledger), so walking `kinds` read it TWICE and every
+    # tombstone was returned twice — which is also why `health().total` counted
+    # ledger entries double. The FILE is the unit of reading; a kind only selects
+    # which file.
+    seen_paths = set()
     for k in kinds:
         p = _path(k)
+        if p in seen_paths:
+            continue
+        seen_paths.add(p)
         if not os.path.isfile(p):
             continue
         for rec in _parse_md_file(p):
@@ -821,6 +838,46 @@ def purge_invalidated():
     return {"ok": True, "removed": removed}
 
 
+def backfill_mids():
+    """Give every stored record a `mid`, so the lifecycle can address it.
+
+    2026-11-15: `invalidate`, `supersede`, `restore` and `forget` are ALL keyed
+    by `mid`. A record without one can be recalled and counted but nothing can
+    ever retire it — the one failure mode an append-only store cannot repair
+    from inside. Measured live: `user_memories.md` held 13 records written by the
+    pre-`mid` (v0.3) writer, twelve of them battery markers, sitting in the store
+    that is never auto-retired and therefore permanent.
+
+    Append-only in spirit: the file is rewritten with the same content and
+    front-matter, only the missing `mid` is added. Idempotent, and a record that
+    already has an id is left untouched. Returns the number repaired.
+    """
+    n = 0
+    with _lock:
+        for kind in list(MEMORY_FIELDS.keys()) + ["other"]:
+            p = _path(kind)
+            if not os.path.isfile(p):
+                continue
+            recs = _parse_md_file(p)
+            used = {str(r.get("mid") or "") for r in recs if r.get("mid")}
+            dirty = False
+            for r in recs:
+                if str(r.get("mid") or "").strip():
+                    continue
+                mid = uuid.uuid4().hex[:8]
+                while mid in used:
+                    mid = uuid.uuid4().hex[:8]
+                used.add(mid)
+                r["mid"] = mid
+                dirty = True
+                n += 1
+            if dirty:
+                _rewrite_records(p, recs)
+        if n:
+            _rebuild_index()
+    return n
+
+
 def _augment(kind, results, limit):
     """The `augment_recall` Matrix seam, fail-open, called from ONE place (v659).
 
@@ -888,7 +945,16 @@ def recall_governed(text, kind=None, limit=6, semantic=False, include_invalid=Fa
 
 
 def health():
-    """Read-only memory health: counts of expired / invalidated / no-source."""
+    """Read-only memory health: expired / invalidated / no-source counts.
+
+    `total` counts every record on disk, tombstoned or not — this report is what
+    the repair actions (`purge`, `forget`) act on, so hiding the dead ones would
+    hide the work. `live` is what recall can actually return; the two differ by
+    exactly the retired records. 2026-11-15: `live`, `stores_live`,
+    `unaddressable` and `core_chars` were added because the previous report made
+    a store at budget look over budget (see `stats`) and had no way to say that
+    a record can never be retired (no `mid`).
+    """
     recs = query(None, None, limit=100000)
     bad = invalid_targets()
     now = time.time()
@@ -905,6 +971,14 @@ def health():
     return {"total": len(recs), "stores": len(stores), "expired": expired,
             "invalidated": invalidated, "superseded": superseded,
             "no_source": no_source,
+            "live": sum(1 for r in recs if is_valid(r, now=now, invalid=bad)),
+            "stores_live": sum(1 for r in stores
+                               if is_valid(r, now=now, invalid=bad)),
+            # A record with no `mid` is outside the whole lifecycle: invalidate,
+            # supersede, restore and forget are all keyed by id (2026-11-15).
+            "unaddressable": sum(1 for r in recs
+                                 if not str(r.get("mid") or "").strip()),
+            "core_chars": len(core_read().strip()),
             "bounded": bounded_usage(),
             "invalid_targets": sorted(bad)[:20]}
 
@@ -920,6 +994,12 @@ AUTO_KINDS = frozenset(("agent.note", "tool.result", "plan.update",
 #: would silently drop something a human wrote on purpose.
 USER_KINDS = frozenset(("memory.store", "user.preference", "question.open",
                         "memory.invalidate", "memory.restore"))
+
+#: 2026-11-15: the invalidation ledger is BOOKKEEPING, not knowledge. The
+#: `recent` listing walked every kind, so the newest rows an agent saw were 15
+#: `(memory.invalidate) hygiene: over budget 300` tombstones and it reported them
+#: as its latest memories. Any default listing skips these unless asked for one.
+LEDGER_KINDS = frozenset(("memory.invalidate", "memory.restore"))
 
 
 # ---------------------------------------------------- v972: bounded admission --
@@ -1073,14 +1153,48 @@ def provenance(limit=3000):
 
 
 def stats():
-    """Return counts per kind and whether the vector index is available."""
-    kinds = {}
-    for k, fn in MEMORY_FIELDS.items():
-        p = os.path.join(DATA_DIR, fn)
-        if os.path.isfile(p):
-            kinds[k] = len(_parse_md_file(p))
-        else:
-            kinds[k] = 0
+    """Inventory: LIVE records per kind, with the stored history beside them.
+
+    2026-11-15 (session `fd98ee64e89f`): this reported RAW record counts — every
+    tombstoned lesson and every retired artifact included. `agent_notes.md`
+    therefore read 313 against a budget of 300 while the store held exactly 300
+    recallable records (hygiene had retired 13, with a tombstone for each). An
+    agent reading that number concluded the budget was broken and that lessons
+    were being silently dropped — a false alarm created by the report itself.
+    `kinds`/`total` now count what recall can return; `stored`/`stored_total`
+    keep the append-only history visible, and `bounded` carries the budget so
+    "over" is a computed fact rather than a comparison the caller must make.
+    """
+    try:
+        bad = invalid_targets()
+    except Exception:  # noqa: BLE001 — an inventory must never raise
+        bad = set()
+    kinds, stored, bounded = {}, {}, {}
+    per_live, per_stored = {}, {}
+    unaddressable = 0
+    seen_paths = set()
+    for k in MEMORY_FIELDS:
+        p = _path(k)
+        if p in seen_paths:
+            continue
+        seen_paths.add(p)
+        for r in (_parse_md_file(p) if os.path.isfile(p) else []):
+            # Count by the record's OWN kind: the invalidate/restore ledger is one
+            # file holding two kinds, and attributing its whole content to both
+            # inflated `total` (2026-11-15).
+            rk = str(r.get("kind") or k)
+            per_stored[rk] = per_stored.get(rk, 0) + 1
+            if is_valid(r, invalid=bad):
+                per_live[rk] = per_live.get(rk, 0) + 1
+            if not str(r.get("mid") or "").strip():
+                unaddressable += 1
+    for k in MEMORY_FIELDS:
+        stored[k] = per_stored.get(k, 0)
+        kinds[k] = per_live.get(k, 0)
+        b = hygiene_budget(k)
+        if b is not None:
+            bounded[k] = {"budget": int(b), "live": kinds[k],
+                          "over": max(0, kinds[k] - int(b))}
     has_numpy = False
     try:
         import numpy  # noqa: F401
@@ -1088,6 +1202,11 @@ def stats():
     except ImportError:
         pass
     return {"kinds": kinds, "total": sum(kinds.values()),
+            "stored": stored, "stored_total": sum(stored.values()),
+            "tombstoned": sum(stored.values()) - sum(kinds.values()),
+            "unaddressable": unaddressable,
+            "bounded": bounded,
+            "core_chars": len(core_read().strip()),
             "vector_index": _vector_db is not None,
             "numpy_available": has_numpy}
 

@@ -67,6 +67,22 @@ SHELL = ('<｜｜DSML｜｜ calls>\n<｜｜DSML｜｜ invoke name="shell.exec">\
          '<｜｜DSML｜｜ parameter name="args" string="false">{"command": "pwd && ls -la"}\n'
          '</｜｜DSML｜｜ parameter>\n</｜｜DSML｜｜ invoke>\n</｜｜DSML｜｜ calls>')
 ONE_BAR = '<|DSML| invoke name="fs.read">\n<|DSML| parameter name="path">a</|DSML| parameter>'
+# 2026-11-15 (session fd98ee64e89f, message 190): the marker drifted again — corner
+# brackets, `parameter="x"` without `name=`, and a close spelled `<「DSML」 invoke>`
+# (no slash). is_dsml said False, so the turn ENDED with this markup as the answer.
+CORNER = ('<「DSML」 calls>\n'
+          '<「DSML」 invoke name="shell.exec">\n'
+          '<「DSML」 parameter="command">pwd</「DSML」 parameter>\n'
+          '<「DSML」 invoke>\n'
+          '<「DSML」 calls>')
+CORNER_TWO = ('<「DSML」 calls>\n'
+              '<「DSML」 invoke name="shell.exec">\n'
+              '<「DSML」 parameter="command">pwd</「DSML」 parameter>\n'
+              '<「DSML」 invoke>\n'
+              '<「DSML」 invoke name="shell.exec">\n'
+              '<「DSML」 parameter="command">ls</「DSML」 parameter>\n'
+              '<「DSML」 invoke>\n'
+              '<「DSML」 calls>')
 HERMES = '<tool_call><function=fs.write><parameter=path>a.py</parameter></function></tool_call>'
 ARGKV = ('<tool_call>action</arg_key><arg_value>fs.write</arg_value>'
          '<arg_key>path</arg_key><arg_value>a.py</arg_value></tool_call>')
@@ -90,6 +106,27 @@ check("A8 an empty/None message is not markup",
 check("A9 the agent's own predicates still answer (compat)",
       A._looks_like_dsml(DSML) and A._looks_like_tool_markup(HERMES)
       and not A._looks_like_dsml("just an answer"))
+check("A10 corner-bracket DSML is markup (2026-11-15 drift)",
+      TK.is_dsml(CORNER) and TK.is_tool_markup(CORNER))
+check("A11 the agent's predicate sees the corner form too",
+      A._looks_like_dsml(CORNER))
+ACT_C = A._extract_action(CORNER) or {}
+check("A12 a corner-bracket call still PARSES (it is a call, not prose)",
+      ACT_C.get("tool") == "shell.exec"
+      and (ACT_C.get("args") or {}).get("command") == "pwd", str(ACT_C)[:120])
+ACT_C2 = A._extract_action(CORNER_TWO) or {}
+check("A13 two corner invokes become a batch of two tools",
+      ACT_C2.get("action") == "batch" and len(ACT_C2.get("calls") or []) == 2
+      and [c.get("args", {}).get("command") for c in ACT_C2["calls"]] == ["pwd", "ls"],
+      str(ACT_C2)[:160])
+# The safety net: an unknown glyph around the marker must still be machine text,
+# or the next drift repeats the 2026-11-15 bug one alphabet further.
+MARKERLESS = ('<unknown calls>\n<unknown invoke name="shell.exec">\n'
+              '<unknown parameter="command">pwd</unknown parameter>\n</unknown calls>')
+check("A14 an unknown-marker envelope is still machine text",
+      TK.is_tool_markup(MARKERLESS))
+check("A15 prose that merely MENTIONS the tags is not markup",
+      not TK.is_tool_markup("Use <invoke> and <parameter> when a model answers in XML."))
 
 # ---- B) reply selection: prose wins, markup is skipped ---------------------
 TURN = [{"role": "user", "content": "Plan the work"},
@@ -111,6 +148,10 @@ check("B6 a finish summary still wins over a later gate message",
       stores.turn_reply([{"role": "assistant",
                           "content": '{"action":"finish","summary":"the real result"}'},
                          {"role": "assistant", "content": "gate prose"}]) == "the real result")
+check("B7 a corner-bracket call is never the reply",
+      stores.turn_reply([{"role": "assistant", "content": CORNER}]) == "")
+check("B8 a corner-bracket call counts as work",
+      stores._starts_work(CORNER))
 
 # ---- C) the assignment: the plan line, never the envelope ------------------
 check("C1 a markup plan yields NO assignment (caller falls back to the goal)",

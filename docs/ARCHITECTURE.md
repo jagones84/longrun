@@ -494,6 +494,22 @@ Lifecycle and retention — every store has an owner and an end:
 | Trash | `_prune_trash` | newest 200 entries + 30 days; sheds files **and folders** (`v973`) |
 | Event | `prune_events` | newest 200 000 rows, every 15 minutes |
 
+**Memory is operator-wide, and its report counts LIVE records** (2026-11-15). The
+store is deliberately not per-agent: an agent IS a session (`EV-30`), so an
+agent-scoped store would be a session-scoped one and a lesson learned in one chat
+would vanish with it. The only scope is the PROJECT — a record carrying
+`workspace=<path>` is visible there alone, a record with no workspace is global
+(`M1`/`CO-1`) — while `session`/`origin`/`source` stay as provenance.
+`memory.stats()` (`GET /api/memory`) and `memory.health` report `kinds`/`total` as
+LIVE, i.e. what recall can return, beside `stored`/`tombstoned`; the old raw count
+made a store held exactly at `memory_max_records` (300 live, 13 retired) read as
+"313 records over budget" and the caller concluded the bound was broken. A record
+with no `mid` is outside the whole lifecycle (`invalidate`/`supersede`/`restore`/
+`forget` are all id-keyed), so `backfill_mids()` repairs one at boot and
+`unaddressable` stays visible until it does. The invalidate/restore ledger shares
+ONE append-only file, is attributed per record, and `memory{action:'recent'}` skips
+it unless its kind is named (`v1007`).
+
 ## Safety model
 
 Allowlist registry (a tool must be `enabled` in `config/tools.yaml`) → per-action

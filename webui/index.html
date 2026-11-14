@@ -4996,14 +4996,28 @@ function openChanges() {
   // 2026-11-03: the section KEY is `files` (its header word is "Workspace") — the
   // first draft opened `data-insp="workspace"`, which does not exist, so the list
   // was fetched and never shown.
-  _railOpenInsp("files");
+  // 2026-11-15 (operator): "the side bars button relevant to the RH panel (opening
+  // them) when re-clicked shall collapse their objects in RH panel". This button and
+  // `openApprovals` were the only rail controls that opened unconditionally, so a
+  // second click did nothing; both now use the same two-way helper as the jumps.
+  if (!_railToggleInsp("files")) return;
   loadEdits();
   const box = $("editsList");
   if (box) box.scrollIntoView({ block: "nearest" });
 }
 function openApprovals() {
-  _railOpenInsp("approvals");
+  if (!_railToggleInsp("approvals")) return;
   loadApprovals();
+}
+/* ONE helper for every rail button that targets an Inspector section (2026-11-15):
+   closed -> open + centre (`_railOpenInsp`), open -> collapse in place. Re-clicking a
+   rail button is now the way BACK from the panel it opened, on desktop and phone. */
+function _railToggleInsp(name) {
+  const sec = _inspSecOf(name);
+  const body = sec && sec.querySelector(".insp-body");
+  if (sec && body && !body.hidden) { _inspJumpToggle(name); return false; }
+  _railOpenInsp(name);
+  return true;
 }
 let cursorEl = null;
 
@@ -15902,6 +15916,12 @@ function _buildInspJump() {
         if (old) old.remove();          // rebuild = replace, never a second plan toggle
         const spark = host.querySelector('[data-gen-surface="chat.prompt"]');
         if (spark) host.insertBefore(b, spark); else host.appendChild(b);
+        // 2026-11-15 (operator): "the collapse all groups icon just above the expand or
+        // collapse plan one in the sidebar". Both control how much of the transcript
+        // tree is open, so they sit together and the fold-all is the row ABOVE the plan
+        // toggle — moved here, not in the markup, so a rebuild cannot separate them.
+        const groups = host.querySelector('[data-call="toggleGroups"]');
+        if (groups) host.insertBefore(groups, b);
         return;
       }
     }

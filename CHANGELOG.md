@@ -106,6 +106,63 @@ All notable changes to Longrun are documented here. The format follows
   `git remote -v` through `POST /api/tools/call` returns `https://[redacted]@github.com/...` to the
   model. The approval ledger still stores the raw args of the call it recorded — not model-bound.)
 
+### Fixed
+- **A rail button is a two-way door, and the fold-all icon sits above the plan toggle (`v780`).** The
+  two badged rail buttons (Workspace changes, Approvals) opened their Inspector section
+  unconditionally, so a second click did nothing — the only rail controls that were one-way, while the
+  jump icons already opened on the first click and collapsed on the second. Both now route through
+  `_railToggleInsp` (same two-way rule, drawer included on a narrow viewport), so re-clicking any rail
+  button closes the object it opened in the RH panel. The collapse-all-groups icon is also moved
+  immediately above the expand/collapse-plan icon on every `_buildInspJump` rebuild (operator: "the
+  collapse all groups icon just above the expand or collapse plan one in the sidebar"). (Pinned by
+  `v780` 17/17; rail/UI guard 8/8 — v885, v890, v879, v426, v851, v761, v758. The static pins plus the
+  testing head's `PASS` verdict are the evidence; no browser was available for a rendered click.)
+- **The memory report counts LIVE records, and every record can be retired (`v1007`).** An agent
+  read the store and reported "`agent_notes.md` 313 records against `memory_max_records: 300` — old
+  lessons are being silently retired". The store held exactly **300 live** records: `stats()` (and
+  therefore `GET /api/memory`) counted the raw file, so the 13 lessons hygiene had correctly retired
+  were counted as memory. `kinds`/`total` are now LIVE, `stored`/`tombstoned` keep the history, and
+  `bounded[kind].over` is computed from live records, so a store held at its budget never reads as over.
+  `health()` keeps `total` as every record (the repair view) and adds `live`, `stores_live`,
+  `unaddressable` and `core_chars`; the `memory{action:'health'}` stdout says LIVE vs stored and names
+  the budget. Two further defects the same report exposed: `memory{action:'recent'}` listed the
+  invalidate/restore ledger as knowledge (its newest rows were 15 `hygiene: over budget 300`
+  tombstones) and the shared ledger file was read twice, double-counting every tombstone in `query()`
+  and `health().total`. And a record with **no `mid`** is outside the whole lifecycle — `invalidate`/
+  `supersede`/`restore`/`forget` are all id-keyed — so 13 records from the pre-`mid` v0.3 writer
+  (12 battery markers + 1 "live check") sat permanently in the store that is never auto-retired;
+  `backfill_mids()` now assigns ids at boot (idempotent, content untouched) and the 13 were retired
+  with a tombstone. (Locked by `v1007` 24/24; memory suite regression 14/14: v204, v317, v628, v794,
+  v818, v819, v841, v853, v876, v929, v972, v996, v997, v998. Live: `/api/memory` reports
+  `agent.note` 300 live / 313 stored, `over: 0`; `user_memories` 57 live / 70 stored,
+  `unaddressable: 0`.)
+- **A model's native DSML arguments are no longer dropped (`v1006`).** Session `fd98ee64e89f`
+  (deepseek-flash) made 139 tool calls and 18 failed; 13 of them had ONE cause — the arguments were in
+  a dialect the parser did not read. Three shapes: an `args` envelope with a SIBLING `tool` parameter
+  (`_dsml_unwrap_args` required it to be the only parameter), a JSON value on a marked body tag
+  (`args="{"path": …}"` — only invoke attributes were read, and the old `"([^"]*)"` regex stopped at
+  the first inner quote), and a bare body attribute (`command="…"`, never scanned). The calls reached
+  the tools with `{}` or `{"args": …, "tool": …}` and were rejected as usage errors, and the model
+  re-sent the same shape ten times. `_dsml_attr_value` now decodes a JSON attribute with
+  `raw_decode`, `_dsml_body_attrs` reads the marked body tags, `_dsml_unwrap_args` accepts the `tool`
+  sibling, and `normalize_args` decodes a string `args` envelope and drops the `tool` sibling when the
+  schema does not declare it — so `git`'s string `args` and `self.tools` are untouched. (Locked by
+  `v1006` 12/12; regression set 11/11: v369, v782, v793, v978, v968, v736, v742, v510, v904, v774.
+  The proposal that records the session evidence is
+  `.agent/docs/proposals/2026-11/2026-11-15_tool-registry-audit.html`.)
+
+- **A drifting DSML marker can no longer turn a tool call into the final answer (`v904`).** The last
+  turn of session `fd98ee64e89f` emitted its two `shell.exec` calls wrapped in `<「DSML」 …>` — corner
+  brackets instead of the bars `textkit.DSML_MARK` knew. `is_dsml` returned False, so the message was
+  classified as prose, stored as the assistant's final reply (2 KB of raw markup) and painted in the
+  chat; the calls never ran. The detector has ONE owner (`textkit.DSML_MARK`, read by the agent loop
+  and by reply selection in `stores.turn_reply`); it now accepts `「」『』【】` as well as `|`/`｜`.
+  Replaying the stored message through the real parser yields the two intended calls. A second,
+  marker-agnostic rule treats a message that STARTS as a tag envelope and names both `invoke` and
+  `parameter` as machine text, so the next glyph drift cannot repaint a call as the answer. (Locked by
+  `v904` 39/39, extended with the corner form, the `parameter="x"` spelling, the no-slash `<…invoke>`
+  close and the unknown-marker safety net.)
+
 ### Changed
 - **The official default Desk keeps the operator's proportions (`368201b` round).** The operator's
   screenshot set the official shape: Agents 25 · Jobs 15 · Org chart 36 · Constellation 24 — measured

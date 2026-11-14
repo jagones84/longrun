@@ -16,7 +16,8 @@ Contract:
   C) the counts come from those endpoints — no new route, no stub, no mirror;
   D) the number is also in the control's accessible name;
   E) clicking focuses the surface that owns the data (workspace changes / approvals),
-     opening the drawer on a narrow viewport instead of doing nothing.
+     opening the drawer on a narrow viewport instead of doing nothing; a RE-click
+     collapses the section it opened (2026-11-15).
 
 Deterministic: static contract on webui/index.html. No server, no model, no net.
 Run: python3 tests/acceptance/v780_rail_states.py
@@ -105,15 +106,29 @@ OC = ui[ui.find("function openChanges"):]
 OC = OC[:OC.find("\n}\n")]
 OA = ui[ui.find("function openApprovals"):]
 OA = OA[:OA.find("\n}\n")]
+HELP = ui[ui.find("function _railToggleInsp"):]
+HELP = HELP[:HELP.find("\n}\n")]
 check("E1 changes opens the changes section and reloads the list",
       # the section KEY is `files` — its header WORD is "Workspace". The first draft
       # opened `data-insp="workspace"`, which does not exist, so the list was fetched
       # and never shown (caught live: sectionOpen false while 4 rows existed).
-      '_railOpenInsp("files")' in OC and "loadEdits()" in OC)
+      # 2026-11-15: the open goes through `_railToggleInsp`, so a re-click collapses
+      # (operator: "when re-clicked shall collapse their objects in RH panel").
+      '_railToggleInsp("files")' in OC and "loadEdits()" in OC)
 check("E2 approvals opens the approvals section and reloads the queue",
-      '_railOpenInsp("approvals")' in OA and "loadApprovals()" in OA)
+      '_railToggleInsp("approvals")' in OA and "loadApprovals()" in OA)
+check("E2b a re-click collapses instead of re-opening the same section",
+      '_inspJumpToggle(name); return false' in HELP and "_railOpenInsp(name)" in HELP
+      and "body.hidden" in HELP, HELP[:160])
 check("E3 on a narrow viewport the click opens the drawer (never a no-op)",
       "_toggleMobileDrawer(\"right\")" in ui[ui.find("function _railOpenInsp"):])
+# 2026-11-15 (operator): "the collapse all groups icon just above the expand or
+# collapse plan one in the sidebar" — the builder guarantees the order on every build.
+BJ = ui[ui.find("function _buildInspJump"):]
+BJ = BJ[:BJ.find("\n}\n\n")] if "\n}\n\n" in BJ else BJ
+check("E4 the fold-all icon is inserted immediately ABOVE the plan toggle",
+      'querySelector(\'[data-call="toggleGroups"]\')' in BJ
+      and "host.insertBefore(groups, b)" in BJ, BJ[-220:])
 
 print("---")
 ok = sum(results)

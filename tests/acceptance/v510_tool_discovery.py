@@ -86,7 +86,11 @@ check("A3b2 the prompt forbids a second nested args wrapper",
 check("A3c the prompt maps the enabled NAMESPACES (with counts), not their members",
       "fs(" in tctx and "shell(" in tctx and "memory(" in tctx and "fs{" not in tctx)
 check("A3d the block is COMPACT and free of a member catalogue",
-      len(tctx) < 4000, "%d chars" % len(tctx))
+      # 2026-11-15: the registry gained the `harness` namespace (one line in the
+      # counts), which is what pushed this to 4003. The cap guards against a
+      # member catalogue (the old dump was >10k chars), so it carries headroom
+      # for a few more namespaces rather than being a byte target.
+      len(tctx) < 4200, "%d chars" % len(tctx))
 _chat_tool_context = _server._tool_context()
 check("A3e chat assembly includes the discovery contract",
       "Tool discovery" in _chat_tool_context and "shell(" in _chat_tool_context)

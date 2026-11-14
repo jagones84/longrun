@@ -1742,13 +1742,15 @@ def _memory(args, run_id):
                    surfaced in EVERY prompt; `tool.result`/`plan.update`/`task.done`
                    are telemetry and are recalled on demand.
     action=recall  {query, kind?, limit?, include_invalid?} → search
-    action=recent  {kind?, limit?}             → newest first
+    action=recent  {kind?, limit?}             → newest first (the
+                   invalidate/restore ledger is skipped unless kind= names it)
     action=core    {}                          → read the always-visible CORE block
     action=set_core {content}                  → rewrite the CORE block (JAG-127f)
     action=invalidate {target|query, reason?}  → tombstone a wrong/outdated memory (JAG-204)
     action=forget  {target|query}              → PERMANENTLY delete (true compaction, JAG-317)
     action=purge   {}                          → physically drop invalidated/expired records
-    action=health  {}                          → expired / invalidated / no-source counts
+    action=health  {}                          → LIVE vs stored per kind, budget,
+                                                 unaddressable records, CORE size
 
     Closes a real gap: the store existed and was auto-injected, but the agent had
     NO tool to deliberately remember or recall anything.
@@ -1924,18 +1926,47 @@ def _memory(args, run_id):
                 "stdout": head + "\n" + "\n".join(lines),
                 "backend": "host", "sandboxed": False}
     if action in ("health", "audit"):
+        # 2026-11-15: say LIVE vs stored. The old line printed only the raw
+        # record count, so a store held at its budget (`agent.note` 300 live with
+        # 13 retired) read as "313 records, budget 300" and the caller concluded
+        # the bound was broken. `unaddressable` names the records no memory action
+        # can retire; `core` saves a file read to find out it is empty.
         h = mem.health()
-        return {"ok": True, "count": h["total"], "report": h,
-                "stdout": ("memory: %d records (%d stores) | %d expired | "
-                           "%d invalidated | %d no-source"
-                           % (h["total"], h["stores"], h["expired"],
-                              h["invalidated"], h["no_source"])),
+        lines = ["memory: %d live / %d stored (%d stores, %d no-source) | "
+                 "%d expired | %d invalidated"
+                 % (h["live"], h["total"], h["stores_live"], h["no_source"],
+                    h["expired"], h["invalidated"])]
+        for kind, row in sorted((h.get("bounded") or {}).items()):
+            if row.get("records"):
+                lines.append("%s: %d live / budget %d%s"
+                             % (kind, row["records"], row["budget"],
+                                (" — %d OVER" % row["excess"])
+                                if row.get("excess") else " — at budget"
+                                if row["records"] >= row["budget"] else ""))
+        if h.get("unaddressable"):
+            lines.append("unaddressable: %d record(s) with no id — no memory "
+                         "action can invalidate or forget them (repaired at the "
+                         "next start by memory.backfill_mids)"
+                         % h["unaddressable"])
+        lines.append("core: %d chars%s"
+                     % (h["core_chars"],
+                        "" if h["core_chars"] else
+                        " (empty — write one with memory{action:'set_core'})"))
+        return {"ok": True, "count": h["live"], "report": h,
+                "stdout": "\n".join(lines),
                 "backend": "host", "sandboxed": False}
     include_invalid = bool(args.get("include_invalid"))
     sem_flag = False
     try:
         if action in ("recent", "list"):
-            hits = [(1.0, r) for r in mem.query("", args.get("kind"), limit)]
+            # 2026-11-15: `memory.invalidate`/`memory.restore` are the lifecycle
+            # LEDGER, not knowledge. They were listed like any other kind, so the
+            # newest rows of `recent` were 15 `hygiene: over budget 300`
+            # tombstones and an agent read the budget bookkeeping as its latest
+            # memories. Skipped unless the caller names the kind.
+            want = args.get("kind")
+            hits = [(1.0, r) for r in mem.query("", want, 100000)
+                    if want or r.get("kind") not in mem.LEDGER_KINDS][:limit]
         else:
             query = (args.get("query") or "").strip()
             if not query:
@@ -3446,10 +3477,22 @@ def _unwrap_nested_args(tool: str, args: Any) -> Any:
 
     A tool that DOES declare `args` (the `git` tool: a string) is never
     rewritten — there a dict is a real type error, reported by `_shape_notes`.
+
+    2026-11-15 (session `fd98ee64e89f`): the same envelope arrives from a model
+    that writes the JSON protocol's example verbatim — `args` as a JSON STRING
+    plus a sibling `tool` name. Neither was repaired, so `shell.exec` and
+    `fs.read` failed with "unknown argument 'args'/'tool'" and empty required
+    fields. Decode the string and drop the `tool` sibling (unless the schema
+    really declares `tool`, as `self` does).
     """
     if not isinstance(args, dict):
         return args
     nested = args.get("args")
+    if isinstance(nested, str) and nested.lstrip()[:1] in ("{", "["):
+        try:
+            nested = json.JSONDecoder().raw_decode(nested.lstrip())[0]
+        except (TypeError, ValueError):
+            nested = None
     if not isinstance(nested, dict):
         return args
     try:
@@ -3464,7 +3507,8 @@ def _unwrap_nested_args(tool: str, args: Any) -> Any:
     def absent(value: Any) -> bool:
         return value is None or (isinstance(value, str) and not value.strip())
 
-    merged = {key: value for key, value in args.items() if key != "args"}
+    drop = {"args"} if "tool" in props else {"args", "tool"}
+    merged = {key: value for key, value in args.items() if key not in drop}
     for key, value in nested.items():
         if key not in merged or absent(merged[key]):
             merged[key] = value

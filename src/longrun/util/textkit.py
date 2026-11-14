@@ -124,10 +124,18 @@ def extract_action_json(text):
 
 #: The marker a model's NATIVE tool-call dialect wraps its tags in — full-width
 #: bars on DeepSeek V4 (`<｜｜DSML｜｜ invoke ...>`), one bar or none on drifting
-#: builds (JAG-534). It lives here, in the pure text layer, because TWO readers
-#: must agree on it: the agent loop (is this message a call?) and reply selection
-#: (is this message an ANSWER?) — `memory.stores.turn_reply` 2026-11-08.
-DSML_MARK = r"[|｜]{1,3}\s*DSML\s*[|｜]{1,3}"
+#: builds (JAG-534), CORNER BRACKETS on the 2026-11-15 build
+#: (`<「DSML」 invoke ...>`, session fd98ee64e89f). It lives here, in the pure text
+#: layer, because TWO readers must agree on it: the agent loop (is this message a
+#: call?) and reply selection (is this message an ANSWER?) —
+#: `memory.stores.turn_reply`, 2026-11-08.
+#:
+#: 2026-11-15: `「」` was not in the class, so `is_dsml` was False for a message
+#: that WAS a call. The turn ended with 2 KB of raw markup stored as the final
+#: answer and painted in the chat (the operator's screenshot), instead of the two
+#: shell calls being executed. Only `|`/`｜` were known; the drift is the same
+#: event JAG-534 described, one alphabet further.
+DSML_MARK = r"[|｜「」『』【】]{1,3}\s*DSML\s*[|｜「」『』【】]{1,3}"
 
 
 def is_dsml(text):
@@ -149,6 +157,18 @@ def is_tool_markup(text):
         return False
     if is_dsml(t):
         return True
+    # 2026-11-15: marker drift is a recurring event (bars → one bar → corner
+    # brackets). A message that STARTS as a tag envelope and names both `invoke`
+    # and `parameter` is a call whatever glyph wraps the marker — and reply
+    # selection must prefer a rejected retry over 2 KB of markup shown as the
+    # answer. The window keeps a long prose answer that merely QUOTES the tags
+    # out of this rule.
+    head = t.lstrip()
+    if head.startswith("<"):
+        window = head[:2000]
+        if (re.search(r"\binvoke\b", window, re.I)
+                and re.search(r"\bparameter\b", window, re.I)):
+            return True
     if re.search(r"<tool_call\b", t, re.I) and re.search(r"<function\s*=", t, re.I):
         return True
     if "<arg_value>" in t and "</arg_key>" in t:
