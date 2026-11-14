@@ -4926,6 +4926,7 @@ function toggleThoughts() {
    exist). Lives between the chat and the right inspector. */
 function _updateTreeTools() {
   const t = $("toolsBar"); if (!t) return;
+  const wasHidden = t.hidden;
   // RH-27 (operator, 2026-11-03): only the rail's MID cluster is session-scoped. Its
   // FOOT — settings and the ✨ AI draft — must stay reachable with NO session: settings
   // is how a fresh install gets configured, and the ✨ writes the OPENING message of an
@@ -4933,6 +4934,12 @@ function _updateTreeTools() {
   const mid = t.querySelector(".tb-mid");
   if (mid) mid.hidden = !sessionId;
   t.hidden = false;
+  // 2026-11-15 (operator: "the sidebar shall not disappear when editor is opened"):
+  // the rail is a real 44px flex column and it appears when a session loads — AFTER
+  // the boot re-fit. Without a second fit the dock keeps the room the rail needs and
+  // the inspector is pushed 44px past the right edge (clipped away). Only the
+  // visibility CHANGE re-fits; the routine transcript updates must not.
+  if (wasHidden && typeof _settleHandles === "function") _settleHandles();
   const groups = _allGroups();
   t.querySelectorAll("[data-tree-todos]").forEach(b => { b.hidden = !groups.length; });
   // v879: the glyph is the STATE, the name is the ACTION (one control, one name).
