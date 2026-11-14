@@ -458,8 +458,34 @@ WORKSPACE_SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv",
 #: benchmark clones and the data home. They would bury every real deliverable.
 WORKSPACE_SKIP_PATHS = {".agent/trash", ".agent/logs", ".agent/BENCHMARKS/runs",
                         ".agent/docs/research/runs", "data", "runs", "trash"}
+#: A skipped folder may EXPOSE one subfolder: `trash/artifacts-demo` holds the
+#: operator's dummy artifacts, which must show in My Artifacts while the 1 500+
+#: scratch files around them stay out. Paths here (and everything under them)
+#: are walked even though an ancestor is in WORKSPACE_SKIP_PATHS.
+WORKSPACE_KEEP_PATHS = {"trash/artifacts-demo"}
 MAX_WORKSPACE_FILES = 20000
 _ARTIFACT_EXTS = frozenset(ext for _kind, exts in ARTIFACT_KINDS for ext in exts)
+
+
+def _under(path, root):
+    return path == root or path.startswith(root + "/")
+
+
+def _dir_walkable(rel):
+    """May the scan enter this workspace-relative directory?"""
+    if any(_under(rel, k) for k in WORKSPACE_KEEP_PATHS):
+        return True
+    if any(_under(rel, p) for p in WORKSPACE_SKIP_PATHS):
+        # inside a churn folder: descend only toward an explicitly kept subtree
+        return any(k.startswith(rel + "/") for k in WORKSPACE_KEEP_PATHS)
+    return True
+
+
+def _files_walkable(rel):
+    """May files DIRECTLY in this directory become artifact rows?"""
+    if any(_under(rel, k) for k in WORKSPACE_KEEP_PATHS):
+        return True
+    return not any(_under(rel, p) for p in WORKSPACE_SKIP_PATHS)
 
 
 def _provenance():
@@ -501,7 +527,9 @@ def _scan_root(root, kind=None, needle="", own=None, cap=MAX_WORKSPACE_FILES):
         rel = "" if rel == "." else rel
         dirnames[:] = [d for d in dirnames
                        if d not in WORKSPACE_SKIP_DIRS
-                       and (rel + "/" + d).lstrip("/") not in WORKSPACE_SKIP_PATHS]
+                       and _dir_walkable((rel + "/" + d).lstrip("/"))]
+        if not _files_walkable(rel):
+            continue                    # a churn folder itself holds no artifacts
         for name in filenames:
             scanned += 1
             if scanned > cap:
