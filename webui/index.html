@@ -1328,6 +1328,15 @@
   .art-meta > span { flex: 0 0 auto; }
   .art-meta .art-sess { flex: 1 1 auto; min-width: 0; overflow: hidden;
     text-overflow: ellipsis; color: var(--muted); text-align: right; }
+  /* Phone: title+count, then the filter with the reload beside it, then the kind
+     chips on their own line. Nothing wraps into a lone button on its own row. */
+  @media (max-width: 640px) {
+    .art-head { gap: 8px; }
+    .art-head .u-f1 { display: none; }
+    .art-search { order: 3; flex: 1 1 auto; width: auto; min-width: 0; }
+    .art-head #artReload { order: 4; }
+    .art-kinds { order: 5; flex: 1 1 100%; }
+  }
   .art-empty { grid-column: 1 / -1; color: var(--dim); font-size: 12px;
     border: 1px dashed var(--line); border-radius: var(--radius); padding: 26px 18px;
     text-align: center; }
