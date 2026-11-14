@@ -351,20 +351,26 @@ def clear(key):
 # recorded it, so the page and the Workspace change list can never disagree.
 # ---------------------------------------------------------------------------
 
-#: Suffix → the group the page shows it under. `plan.artifacts.DELIVERABLE_EXTS`
-#: is NOT reused: that list exists to GRADE a turn and deliberately excludes
-#: code and images, which are exactly what a "my artifacts" page must show.
+#: Suffix → the group the page shows it under. The first six follow the operator's
+#: reference page (All · HTML · PPT · Document · Sheet · Video · Image); audio,
+#: code and data are the formats a harness also produces. `plan.artifacts.
+#: DELIVERABLE_EXTS` is NOT reused: that list exists to GRADE a turn and
+#: deliberately excludes code and images, which a "my artifacts" page must show.
 ARTIFACT_KINDS = (
-    ("document", (".md", ".markdown", ".txt", ".rst", ".pdf", ".doc", ".docx",
-                  ".odt", ".rtf", ".pptx", ".ppt", ".html", ".htm")),
-    ("data", (".csv", ".tsv", ".xlsx", ".xlsm", ".xls", ".json", ".jsonl", ".xml",
-              ".yaml", ".yml", ".db", ".sqlite", ".parquet")),
-    ("image", (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg", ".avif",
-               ".ico", ".tiff")),
+    ("document", (".md", ".markdown", ".mdx", ".txt", ".rst", ".pdf", ".doc",
+                  ".docx", ".odt", ".rtf", ".epub", ".pages", ".tex")),
+    ("sheet", (".xlsx", ".xlsm", ".xls", ".csv", ".tsv", ".ods", ".numbers")),
+    ("slides", (".pptx", ".ppt", ".odp", ".key")),
+    ("html", (".html", ".htm", ".xhtml", ".mhtml")),
+    ("image", (".png", ".jpg", ".jpeg", ".jfif", ".gif", ".webp", ".bmp", ".svg",
+               ".avif", ".ico", ".tiff", ".tif", ".heic", ".heif", ".psd")),
+    ("video", (".mp4", ".webm", ".mov", ".m4v", ".mkv", ".avi", ".wmv")),
+    ("audio", (".mp3", ".wav", ".m4a", ".ogg", ".flac", ".aac", ".opus")),
     ("code", (".py", ".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".sh", ".bash",
               ".ps1", ".sql", ".go", ".rs", ".java", ".rb", ".php", ".css", ".scss",
-              ".c", ".h", ".cpp", ".hpp", ".swift", ".kt")),
-    ("media", (".mp4", ".webm", ".mov", ".mp3", ".wav", ".m4a")),
+              ".c", ".h", ".cpp", ".hpp", ".swift", ".kt", ".ipynb")),
+    ("data", (".json", ".jsonl", ".ndjson", ".xml", ".yaml", ".yml", ".toml",
+              ".db", ".sqlite", ".parquet", ".arrow", ".geojson")),
 )
 MAX_ARTIFACT_JOURNALS = 400
 

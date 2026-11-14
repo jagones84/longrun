@@ -115,6 +115,12 @@ check("C3 a missing file is marked, never hidden",
 with open(NOTE, "w", encoding="utf-8") as f:
     f.write("v1\n")
 check("C4 the kind filter is real", E.artifacts(kind="image")["count"] == 0)
+check("C7 the kind table covers the reference categories",
+      [E.kind_of(x) for x in ("a.pptx", "a.html", "a.docx", "a.xlsx", "a.mp4",
+                              "a.png", "a.mp3", "a.py", "a.json", "a.bin")] ==
+      ["slides", "html", "document", "sheet", "video", "image", "audio", "code",
+       "data", "other"],
+      [E.kind_of(x) for x in ("a.pptx", "a.html", "a.docx", "a.xlsx", "a.mp4")])
 check("C5 the HTTP handler wraps the same index", "artifacts" in A.artifacts_list({}))
 check("C6 the route is wired", 'path == "/api/artifacts"' in open(
     os.path.join(REPO, "src", "longrun", "core", "api_v02.py"), encoding="utf-8").read())
@@ -140,6 +146,11 @@ check("D8 the tab strip is one table, not two hand-written toggles",
       "const TAB_IDS = {" in ui and 'artifacts: "tabArtifacts"' in ui)
 check("D11 the change row shows the FILE NAME on its own line (the rail is narrow)",
       '#editsList .edmeta' in ui and 'class="edmeta"' in ui and "esc(_short(f.path))" in ui)
+check("D12 the chip row carries the reference categories",
+      'html: "HTML"' in ui and 'slides: "PPT"' in ui and 'sheet: "Sheet"' in ui
+      and 'video: "Video"' in ui and 'image: "Image"' in ui and 'audio: "Audio"' in ui)
+check("D12b every category is offered (dimmed at zero), not hidden",
+      "ART_KIND_ORDER.map(k =>" in ui and 'class="art-chip\' + (r[2] ? "" : " is-empty")' in ui)
 deck = open(os.path.join(REPO, "src", "longrun", "orbit", "web", "orbit.html"), encoding="utf-8").read()
 check("D9 the deck's twin tab bar carries the same third tab",
       'href="/#artifacts"' in deck and "My Artifacts" in deck)
