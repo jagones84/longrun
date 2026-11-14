@@ -37,7 +37,7 @@ AGENT_WRITE = {
 # Every improvement product (proposal, mined skill, ledger entry) and every
 # memory record carries one of these, so auto-generated knowledge is never
 # mixed with what the user actually said.
-ORIGINS = ("user", "agent", "reflect", "mining", "harness", "matrix")
+ORIGINS = ("user", "agent", "reflect", "mining", "harness", "matrix", "optimizer")
 
 _TOOLCALL_THRESHOLD = 5
 
@@ -535,7 +535,7 @@ def list_forged():
 
 
 def propose(scope, content, reason="", target_path="", ws=None, origin="agent",
-            experiment=None, artifacts=None):
+            experiment=None, artifacts=None, delta=None):
     """Register a PROPOSAL (writes nothing definitive).
 
     `ws` is the workspace the rule will be written to in case of approve:
@@ -549,6 +549,8 @@ def propose(scope, content, reason="", target_path="", ws=None, origin="agent",
     refuses a harness proposal without it. `artifacts` is the EXACT learned
     bundle (kind, name, content, sha256) that approving a Matrix proposal writes
     — the approval is bound to those hashes, never to a re-read of the model.
+    `delta` (S1) is the machine-applicable registry-row change a `registry`
+    proposal carries — `decide(approve)` applies exactly those bytes.
     """
     if ws is None:
         try:
@@ -566,6 +568,8 @@ def propose(scope, content, reason="", target_path="", ws=None, origin="agent",
         rec["experiment"] = experiment
     if artifacts:
         rec["artifacts"] = artifacts
+    if delta is not None:
+        rec["delta"] = delta
     write_json(_path(pid), rec)
     try:
         ledger_add("proposal", origin=rec["origin"], scope=scope, proposal=pid,
@@ -1011,6 +1015,26 @@ def decide(pid, decision):
         except Exception:  # noqa: BLE001 — the audit must never break a decision
             pass
         return {"ok": True, **saved, "installed_to": rec.get("installed_to")}
+    if rec.get("scope") == "registry":
+        # S1 (2026-11-15): a local-optimizer proposal changes ONE registry row.
+        # The write goes through the registry owner (`apply_delta` -> the sparse
+        # overlay), never `config/tools.yaml`, so a rejected proposal leaves the
+        # registry byte-identical and an approved one changes exactly one row.
+        from longrun.tools import registry
+        applied = registry.apply_delta(rec.get("delta") or {})
+        if not applied.get("ok"):
+            return {"ok": False, "error": applied.get("error") or "registry apply refused"}
+        rec["status"] = "approved"
+        rec["installed_to"] = applied.get("overlay") or ""
+        saved = _save(rec)
+        try:
+            ledger_add("decide", origin=rec.get("origin", "agent"), scope="registry",
+                       proposal=rec["id"], decision="approve",
+                       path=rec.get("installed_to") or "",
+                       target=applied.get("target"), field=applied.get("field"))
+        except Exception:  # noqa: BLE001 — the audit must never break a decision
+            pass
+        return {"ok": True, **saved, "applied": applied}
     if rec["scope"] in ("project", "global"):
         from longrun.memory import rules
         rules.append(rec["scope"], rec["content"], ws=rec.get("ws"))

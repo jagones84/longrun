@@ -83,7 +83,7 @@ def start(key, model=None):
     rec = {"key": key, "model": model, "started": round(time.time(), 3),
            "ended": None, "duration_s": None, "iterations": 0, "steps": 0,
            "tokens": 0, "outcome": "running", "stop_reason": None,
-           "difficulty": None}
+           "difficulty": None, "code": None}
     with _LOCK:
         if len(_START) > 512:
             _START.pop(next(iter(_START)), None)
@@ -104,6 +104,10 @@ def finish(key, outcome="done", stop_reason=None, iterations=0, steps=0, tokens=
                 "prompt_tokens": int(prompt_tokens),
                 "completion_tokens": int(completion_tokens),
                 "outcome": outcome, "stop_reason": stop_reason,
+                # S1 (2026-11-15): keep the RAW exit code too — the local optimizer
+                # reads it as evidence (the classified `failure_cause` alone loses the
+                # distinction between, e.g., a timeout and a blocked call).
+                "code": code,
                 # B-4: one classified cause, always present (None = a clean run).
                 "failure_cause": classify_cause(outcome, stop_reason, error, code)})
     if usd is not None:

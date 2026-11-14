@@ -1778,6 +1778,76 @@ def save_config(cfg):
         return cfg
 
 
+# S1 (2026-11-15): the ONE contract for a registry-row change the local optimizer
+# (evolve/optimizer.py) may propose. A delta names a tool row (or its namespace),
+# one editable field, and the new value; `improve.decide` applies it through
+# `apply_delta`, which writes ONLY the sparse overlay — `config/tools.yaml` is
+# never touched, so a rejected proposal leaves the registry byte-identical.
+REGISTRY_FIELDS = ("enabled", "approval", "auto_approve", "roots", "deny",
+                   "allow_hosts", "always_ask")
+REGISTRY_LIST_FIELDS = ("auto_approve", "roots", "deny", "allow_hosts", "always_ask")
+_APPROVAL_VALUES = ("auto", "required", "denied")
+
+
+def delta_error(delta):
+    """Why `delta` cannot be applied as a registry-row change ('' = valid).
+
+    The single validator, shared by the optimizer (to skip an unusable proposal)
+    and `apply_delta` (to refuse one at apply time) — so a proposal can never
+    write a row the harness would not accept.
+    """
+    if not isinstance(delta, dict):
+        return "delta is not a JSON object"
+    if delta.get("skip"):
+        return "model reported skip"
+    target = str(delta.get("target") or "").strip()
+    field = str(delta.get("field") or "").strip()
+    if not target:
+        return "delta has no target"
+    if field not in REGISTRY_FIELDS:
+        return "field %r is not an editable registry field" % field
+    live = load_config().get("tools") or {}
+    ship = shipped_tools() or {}
+    ns = target.split(".", 1)[0]
+    if not (target in live or target in ship or ns in live or ns in ship):
+        return "target %r is not a known tool row" % target
+    value = delta.get("value")
+    if field == "enabled":
+        if not isinstance(value, bool):
+            return "`enabled` must be a boolean"
+    elif field == "approval":
+        if value not in _APPROVAL_VALUES:
+            return "`approval` must be one of %s" % "|".join(_APPROVAL_VALUES)
+    elif field in REGISTRY_LIST_FIELDS:
+        if not (isinstance(value, list) and all(isinstance(x, str) for x in value)):
+            return "`%s` must be a list of strings" % field
+    return ""
+
+
+def apply_delta(delta):
+    """Apply ONE approved registry-row change. Overlay-only, reversible.
+
+    Writes the change into the sparse overlay (`save_config`), which
+    `load_config()` merges on top of `config/tools.yaml`. Returns
+    {"ok": True, "target", "field", "overlay"} or {"ok": False, "error"}.
+    """
+    err = delta_error(delta)
+    if err:
+        return {"ok": False, "error": err}
+    target = str(delta["target"]).strip()
+    field = str(delta["field"]).strip()
+    cfg = load_config()
+    tools = cfg.setdefault("tools", {})
+    row = tools.get(target)
+    if not isinstance(row, dict):
+        row = {}
+    row[field] = delta.get("value")
+    tools[target] = row
+    save_config(cfg)
+    load_config(reload=True)
+    return {"ok": True, "target": target, "field": field, "overlay": OVERLAY_YAML}
+
+
 def forget_tool_policies(names):
     """Drop policy entries for uninstalled tools from the live config + overlay.
 
