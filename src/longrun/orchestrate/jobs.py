@@ -428,7 +428,7 @@ def merge_deps(job_deps, declared):
     return out
 
 
-_STATUS_RE = re.compile(r"^\s*STATUS\s*:\s*(DONE|OK|COMPLETE|BLOCKED|FAILED)\b[:\-]?\s*(.*)$",
+_STATUS_RE = re.compile(r"^[ \t]*STATUS[ \t]*:[ \t]*(DONE|OK|COMPLETE|BLOCKED|FAILED)\b[:\-]?[ \t]*(.*)$",
                         re.I | re.M)
 
 
@@ -439,9 +439,17 @@ def parse_status(reply):
     worker declared none. Workers are asked to end with `STATUS: DONE` (or
     `STATUS: BLOCKED: <why>`); a missing status is treated by the CALLER as DONE only
     when the worker left no open steps.
+
+    2026-11-14 (bug hunt): the LAST declaration wins, because the contract is
+    "END with it". `search` took the FIRST one, so a reply that rehearsed the
+    format before reporting the real outcome was recorded with the rehearsal — a
+    reply ending `STATUS: BLOCKED: migration error 1064` came back `DONE`, and a
+    subjob marked DONE is handed to the synthesis as delivered work.
     """
-    m = _STATUS_RE.search(str(reply or ""))
-    if not m:
+    m = None
+    for cand in _STATUS_RE.finditer(str(reply or "")):
+        m = cand
+    if m is None:
         return None, ""
     word = m.group(1).upper()
     if word in ("DONE", "OK", "COMPLETE"):
