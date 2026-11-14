@@ -416,6 +416,31 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   .ctxmenu .pop-x:hover{color:var(--txt);background:var(--brief)}
   .ctxmenu div:hover{background:var(--brief);color:var(--txt)}
   .ctxmenu .sep{height:1px;background:var(--line);margin:4px 2px;padding:0}
+  /* 2026-11-15 (operator: "that window is not in the style of the webui"): EVERY
+     dialog is the deck's OWN. A native prompt()/confirm()/alert() draws the browser's
+     box — its own title bar, its own buttons, none of the theme. ONE anatomy for
+     ask + confirm + notice, built from this deck's variables. */
+  .ovl{position:fixed;inset:0;z-index:150;background:rgba(0,0,0,.55);display:flex;
+    align-items:center;justify-content:center;padding:16px}
+  .dlg{width:min(92vw,430px);background:var(--panel2);border:1px solid var(--line);
+    border-radius:12px;box-shadow:0 18px 50px rgba(0,0,0,.6);display:flex;
+    flex-direction:column;gap:10px;padding:14px}
+  .dlg-hd{display:flex;align-items:center;gap:8px}
+  .dlg-hd b{flex:1;min-width:0;font-size:13px;color:var(--txt)}
+  .dlg-x{border:0;background:transparent;color:var(--dim);cursor:pointer;padding:2px 6px;
+    border-radius:6px;font-size:12px;line-height:1}
+  .dlg-x:hover{color:var(--txt);background:var(--brief)}
+  .dlg .hint{white-space:pre-wrap;font-size:12px;line-height:1.45;color:var(--dim);
+    max-height:46vh;overflow:auto}
+  .dlg .inp{width:100%}
+  .dlg-ft{display:flex;justify-content:flex-end;gap:8px}
+  /* A themed alert(): one line, in place, gone by itself. A long REPORT uses a
+     notice dialog instead so nothing is truncated. */
+  .toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:160;
+    max-width:min(92vw,540px);background:var(--panel2);border:1px solid var(--line);
+    border-radius:10px;padding:9px 13px;font-size:12px;color:var(--txt);
+    box-shadow:0 12px 30px rgba(0,0,0,.5);white-space:pre-wrap}
+  .toast.err{border-color:var(--err);color:var(--err)}
   /* JAG-2.0: agents grouped by team + per-agent team picker + org-chart hint/tools. */
   .panel > h2 .hint{margin-left:8px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
     font-size:10px;color:var(--dim);text-transform:none;letter-spacing:0;font-weight:400}
@@ -1233,6 +1258,90 @@ function closePopover(){ const m = _POP; if (!m) return;
   if (m.__nav) m.removeEventListener("keydown", m.__nav);
   m.remove(); _POP = null; }
 
+/* 2026-11-15 (operator: "that window is not in the style of the webui"): ONE themed
+   dialog for ask + confirm + notice, the same anatomy as WebUI's `uiDialog` and the
+   same ✕ dismissal every popover already has (v894). It is a Promise, so a caller
+   awaits the operator's answer instead of the browser's blocking box. */
+let _dlgBusy = false;
+function uiDialog(opts){
+  opts = opts || {};
+  return new Promise(resolve => {
+    if (_dlgBusy){ resolve(opts.input === false ? false : null); return; }
+    _dlgBusy = true;
+    const ov = document.createElement("div"); ov.className = "ovl";
+    const box = document.createElement("div"); box.className = "dlg";
+    box.setAttribute("role", "dialog"); box.setAttribute("aria-modal", "true");
+    box.setAttribute("aria-labelledby", "dlgTitle");
+    const hd = document.createElement("div"); hd.className = "dlg-hd";
+    const title = document.createElement("b"); title.id = "dlgTitle";
+    title.textContent = opts.title || (opts.input === false ? "Confirm" : "Enter a value");
+    hd.append(title);
+    const x = document.createElement("button");
+    x.type = "button"; x.className = "dlg-x"; x.textContent = "\u2715";
+    x.setAttribute("aria-label", "close"); x.title = "close";
+    hd.append(x); box.append(hd);
+    if (opts.hint){
+      const hint = document.createElement("div");
+      hint.className = "hint"; hint.textContent = opts.hint; box.append(hint);
+    }
+    let field = null;
+    if (opts.input !== false){
+      field = document.createElement("input");
+      field.className = "inp";
+      if (opts.secret) field.type = "password";
+      field.setAttribute("aria-label", opts.title || "value");
+      if (opts.placeholder) field.placeholder = opts.placeholder;
+      field.value = opts.value == null ? "" : String(opts.value);
+      box.append(field);
+    }
+    const ft = document.createElement("div"); ft.className = "dlg-ft";
+    const no = document.createElement("button");
+    no.type = "button"; no.className = "btn"; no.textContent = opts.cancelLabel || "cancel";
+    const yes = document.createElement("button");
+    yes.type = "button"; yes.className = "btn primary"; yes.textContent = opts.okLabel || "ok";
+    if (opts.danger){ yes.style.borderColor = "var(--err)"; yes.style.color = "var(--err)"; }
+    if (opts.cancel !== false) ft.append(no);
+    ft.append(yes); box.append(ft);
+    document.body.append(ov, box);
+    let closed = false;
+    const close = ok => {
+      if (closed) return;
+      closed = true;
+      document.removeEventListener("keydown", onKey, true);
+      _dlgBusy = false;
+      ov.remove(); box.remove();
+      if (!ok){ resolve(field ? null : false); return; }
+      resolve(field ? field.value : true);
+    };
+    const onKey = e => {
+      if (e.key === "Escape"){ e.preventDefault(); e.stopPropagation(); close(false); return; }
+      if (e.key !== "Enter") return;
+      e.preventDefault(); e.stopPropagation(); close(true);
+    };
+    yes.onclick = () => close(true);
+    no.onclick = () => close(false);
+    x.onclick = () => close(false);
+    ov.onclick = () => close(false);
+    document.addEventListener("keydown", onKey, true);
+    setTimeout(() => {
+      const f = field || yes;
+      try { f.focus(); if (field && field.select) field.select(); } catch (e) {}
+    }, 0);
+  });
+}
+function uiAsk(opts){ return uiDialog(Object.assign({}, opts || {}, {input: true})); }
+function uiConfirm(title, hint, opts){ return uiDialog(Object.assign({}, opts || {}, {title, hint, input: false})); }
+function uiNotice(title, hint){ return uiConfirm(title, hint, {okLabel: "ok", cancel: false}); }
+/* A themed replacement for alert(): same window, one OK, and the page stays put. */
+function toast(msg, kind){
+  const t = document.createElement("div");
+  t.className = "toast" + (kind === "err" ? " err" : "");
+  t.setAttribute("role", "status");
+  t.textContent = String(msg == null ? "" : msg);
+  document.body.append(t);
+  setTimeout(() => t.remove(), 4500);
+}
+
 /* ----------------------------------------------------- Agents (table) ---- */
 class AgentsView {
   constructor(api, onChanged, onOpenAgent){ this.api = api; this.onChanged = onChanged;
@@ -1581,16 +1690,19 @@ class AgentsView {
     m.querySelector('[data-amenu="teams"]').onclick = () => { closePopover(); this.openTeamPicker(ev, a); };
     m.querySelector('[data-amenu="clear"]').onclick = async () => {
       closePopover();
-      if (!confirm("Clear this session? It wipes the chat history and task list (the agent + its role stay).")) return;
+      if (!(await uiConfirm("Clear this session?",
+        "It wipes the chat history and task list (the agent + its role stay).",
+        {okLabel: "clear"}))) return;
       const r = await this.api.post("/api/sessions/" + encodeURIComponent(a.session) + "/clear", {});
-      if (!r || r.ok === false){ alert((r && r.error) || "clear failed"); return; }
+      if (!r || r.ok === false){ toast((r && r.error) || "clear failed", "err"); return; }
       if (this.onChanged) this.onChanged();
     };
     m.querySelector('[data-amenu="del"]').onclick = async () => {
       closePopover();
-      if (!confirm("Release this agent? The session stays but loses the agent badge.")) return;
+      if (!(await uiConfirm("Release this agent?",
+        "The session stays but loses the agent badge.", {okLabel: "release"}))) return;
       const r = await this.api.del("/api/agents/" + encodeURIComponent(a.session));
-      if (!r || !r.ok){ alert((r && r.error) || "release refused"); return; }
+      if (!r || !r.ok){ toast((r && r.error) || "release refused", "err"); return; }
       if (this.onChanged) this.onChanged();
     };
   }
@@ -1671,7 +1783,7 @@ class AgentsView {
       const tr = b.closest("tr"), sid = b.dataset.save;
       const text = tr.querySelector('textarea[data-p="role"]').value;
       const r = await this.api.post("/api/roles", {session: sid, text});
-      if (!r || !r.ok){ alert((r && r.error) || "save failed"); return; }
+      if (!r || !r.ok){ toast((r && r.error) || "save failed", "err"); return; }
       this.open = null; this.openText = null;
       if (this.onChanged) this.onChanged();
     }; });
@@ -2007,7 +2119,7 @@ class AgentsView {
   async setTeamMembership(ref, tid, add, keepOpen){
     const r = await this.api.post("/api/teams/" + encodeURIComponent(tid) + "/members",
       {session: ref, action: add ? "add" : "remove"});
-    if (!r || r.ok === false){ alert((r && r.error) || "membership update failed"); return; }
+    if (!r || r.ok === false){ toast((r && r.error) || "membership update failed", "err"); return; }
     if (keepOpen){
       // JAG-2.3: the assign picker stays open for a multi-select. Keep the local
       // roster truthful so a second toggle does not fight a stale membership list;
@@ -2068,33 +2180,36 @@ class AgentsView {
     const del = m.querySelector('[data-a="del"]');
     if (del) del.onclick = async () => { closePopover();
       const members = ((this.agents || []).filter(a => (a.teams || []).includes(tid))).length;
-      if (!confirm("Delete team \"" + (t.name || tid) + "\"?\n\n" +
+      if (!(await uiConfirm("Delete team \"" + (t.name || tid) + "\"?",
         (members ? members + " agent(s) stay \u2014 only the team link disappears.\n" : "") +
-        "This cannot be undone.")) return;
+        "This cannot be undone.", {okLabel: "delete", danger: true}))) return;
       const r = await this.api.del("/api/teams/" + encodeURIComponent(tid));
-      if (!r || r.ok === false){ alert((r && r.error) || "delete failed"); return; }
+      if (!r || r.ok === false){ toast((r && r.error) || "delete failed", "err"); return; }
       if (this.onChanged) this.onChanged();
     };
-    m.querySelector('[data-a="reset"]').onclick = () => { closePopover();
-      if (confirm("Reset " + subj +
-        "?\n\nTheir chat history and task list are wiped — the agents, their names and " +
-        "their ROLE.md stay. Nothing is deleted."))
+    m.querySelector('[data-a="reset"]').onclick = async () => { closePopover();
+      if (await uiConfirm("Reset " + subj + "?",
+        "Their chat history and task list are wiped — the agents, their names and " +
+        "their ROLE.md stay. Nothing is deleted.", {okLabel: "reset"}))
         this.teamBulk(tid, "reset"); };
-    m.querySelector('[data-a="compact"]').onclick = () => { closePopover();
-      if (confirm("Compact " + subj +
-        "?\n\nThe older half of each transcript is summarised so the context shrinks."))
+    m.querySelector('[data-a="compact"]').onclick = async () => { closePopover();
+      if (await uiConfirm("Compact " + subj + "?",
+        "The older half of each transcript is summarised so the context shrinks.",
+        {okLabel: "compact"}))
         this.teamBulk(tid, "compact"); };
-    m.querySelector('[data-a="dropold"]').onclick = () => { closePopover();
-      if (confirm("Drop ALL old plans in every session of " + (none ? "the No-team bucket" : (t.name || tid)) +
-        " (" + n + " session(s))?\n\nOnly plans below each session's current one are deleted — " +
-        "current work, chats and agents stay."))
+    m.querySelector('[data-a="dropold"]').onclick = async () => { closePopover();
+      if (await uiConfirm("Drop ALL old plans in every session of " +
+        (none ? "the No-team bucket" : (t.name || tid)) + " (" + n + " session(s))?",
+        "Only plans below each session's current one are deleted — current work, " +
+        "chats and agents stay.", {okLabel: "drop"}))
         this.teamBulk(tid, "drop-old-plans"); };
     const delall = m.querySelector('[data-a="delall"]');
-    if (delall) delall.onclick = () => { closePopover();
-      if (confirm("Delete " + subj + " and their agents?\n\n" +
+    if (delall) delall.onclick = async () => { closePopover();
+      if (await uiConfirm("Delete " + subj + " and their agents?",
         "The REAL delete: every chat, task list and agent record in scope goes. " +
         "Jobs and routines that name them are scrubbed; an agent with reports " +
-        "re-points them to nobody. This cannot be undone."))
+        "re-points them to nobody. This cannot be undone.",
+        {okLabel: "delete all", danger: true}))
         this.teamBulk(tid, "delete-sessions"); };
   }
   /* JAG-536: a team was create-and-forget — every property was frozen at birth.
@@ -2170,7 +2285,7 @@ class AgentsView {
       const r = await this.api.post("/api/teams/" + encodeURIComponent(tid),
         { description: gv("description"), regenerate_icon: true });
       btn.disabled = false; btn.textContent = "✨ generate icon";
-      if (!r || r.ok === false){ alert((r && r.error) || "could not generate the icon"); return; }
+      if (!r || r.ok === false){ toast((r && r.error) || "could not generate the icon", "err"); return; }
       const team = r.team || {};
       if (selI && team.symbol) selI.value = team.symbol;
       if (colI && team.color) colI.value = team.color;
@@ -2179,14 +2294,14 @@ class AgentsView {
     m.querySelector('[data-a="save"]').onclick = async () => {
       const r = await this.api.post("/api/teams/" + encodeURIComponent(tid), {
         name: gv("name"), symbol: gv("symbol"), color: gv("color"), description: gv("description") });
-      if (!r || r.ok === false){ alert((r && r.error) || "save failed"); return; }
+      if (!r || r.ok === false){ toast((r && r.error) || "save failed", "err"); return; }
       closePopover();
       if (this.onChanged) this.onChanged();
     };
   }
   async teamBulk(tid, action){
     const r = await this.api.post("/api/teams/" + encodeURIComponent(tid) + "/" + action, {});
-    if (!r || r.ok === false){ alert((r && r.error) || (action + " failed")); return; }
+    if (!r || r.ok === false){ toast((r && r.error) || (action + " failed"), "err"); return; }
     const bad = (r.results || []).filter(x => x.error || (x.result && x.result.error));
     const lines = (r.results || []).map(x => {
       const err = x.error || (x.result && x.result.error);
@@ -2207,29 +2322,29 @@ class AgentsView {
       }
       return "  " + x.session + " — reset";
     });
-    // v910: a bucket can hold 100+ sessions — the alert lists the first lines
-    // and counts the rest instead of becoming unreadable.
+    // v910: a bucket can hold 100+ sessions — the notice lists the first lines and
+    // counts the rest instead of becoming unreadable.
     const shown = lines.slice(0, 12).join("\n") +
       (lines.length > 12 ? "\n  … and " + (lines.length - 12) + " more" : "");
-    alert(action + ": " + (r.count || 0) + " session(s)" +
+    await uiNotice(action + ": " + (r.count || 0) + " session(s)" +
       (r.deleted != null ? " \u2014 " + r.deleted + " deleted" : "") +
-      (bad.length ? " \u2014 " + bad.length + " issue(s)" : "") + "\n" + shown);
+      (bad.length ? " \u2014 " + bad.length + " issue(s)" : ""), shown);
     if (this.onChanged) this.onChanged();
   }
   async save(sid, patch){
     const r = await this.api.post("/api/agents", Object.assign({session: sid}, patch));
-    if (!r || !r.ok){ alert((r && r.error) || "save failed"); return; }
+    if (!r || !r.ok){ toast((r && r.error) || "save failed", "err"); return; }
     if (this.onChanged) this.onChanged();
   }
   async create(){
     const name = $("agNewName").value.trim();
-    if (!name){ alert("give the agent a name"); return; }
+    if (!name){ toast("give the agent a name", "err"); return; }
     if (this.agents.some(a => (a.name||"").toLowerCase() === name.toLowerCase())){
-      alert("name already in use: " + name); return; }
+      toast("name already in use: " + name, "err"); return; }
     const s = await this.api.post("/api/orbit/sessions", {title: name});
-    if (!s || !s.ok){ alert((s && s.error) || "could not create session"); return; }
+    if (!s || !s.ok){ toast((s && s.error) || "could not create session", "err"); return; }
     const r = await this.api.post("/api/agents", {session: s.session, name, role: $("agNewRole").value.trim() || undefined});
-    if (!r || !r.ok){ alert((r && r.error) || "could not designate"); return; }
+    if (!r || !r.ok){ toast((r && r.error) || "could not designate", "err"); return; }
     $("agNewName").value = ""; $("agNewRole").value = "";
     if (this.onChanged) this.onChanged();
   }
@@ -2504,8 +2619,9 @@ class OrgChartView {
     m.querySelector('[data-a="const"]').onclick = () => { closePopover(); if (this.onPick) this.onPick(a); };
     m.querySelector('[data-a="open"]').onclick = () => { closePopover(); if (this.onGoTo) this.onGoTo(a); };
     m.querySelector('[data-a="prompt"]').onclick = () => { closePopover(); if (this.onPrompt) this.onPrompt(a); };
-    m.querySelector('[data-a="reset"]').onclick = () => { closePopover();
-      if (confirm("Reset " + a.id + " " + (a.name || "") + " \u2014 wipe its chat and task list (the agent stays)?"))
+    m.querySelector('[data-a="reset"]').onclick = async () => { closePopover();
+      if (await uiConfirm("Reset " + a.id + " " + (a.name || "") + "?",
+        "Wipe its chat and task list (the agent stays).", {okLabel: "reset"}))
         clearOrbitSession(a.session); };
   }
   /* The menu itself is the deck's shared .ctxmenu popover (see openPopover). */
@@ -3221,9 +3337,10 @@ class JobsView {
       if (run) run.onclick = () => { closePopover(); this.dispatch(jid); };
       m.querySelector('[data-jmenu="del"]').onclick = async () => {
         closePopover();
-        if (!confirm("Delete job " + jid + "?")) return;
+        if (!(await uiConfirm("Delete job " + jid + "?", "",
+          {okLabel: "delete", danger: true}))) return;
         const r = await this.api.del("/api/jobs/" + encodeURIComponent(jid));
-        if (!r || r.ok === false){ alert((r && r.error) || "delete failed"); return; }
+        if (!r || r.ok === false){ toast((r && r.error) || "delete failed", "err"); return; }
         if (this.onChanged) this.onChanged();
       };
     }; });
@@ -3283,7 +3400,7 @@ class JobsView {
     const r = await this.api.post("/api/jobs/" + encodeURIComponent(jid) + "/dispatch", {});
     // JAG-322: a refused run (no agents left, blocked, already running) must be
     // visible — before, the click silently did nothing.
-    if (!r || r.ok === false) alert((r && r.error) || "could not run job");
+    if (!r || r.ok === false) toast((r && r.error) || "could not run job", "err");
     if (this.onChanged) this.onChanged();
   }
 }
@@ -3328,7 +3445,7 @@ class RoutinesView {
       const g = k => (m.querySelector('[data-f="' + k + '"]').value || "").trim();
       const res = await this.api.post("/api/routines/" + encodeURIComponent(rid), {
         goal: g("goal"), every_seconds: parseInt(g("every_seconds"), 10) });
-      if (!res || res.ok === false){ alert((res && res.error) || "save failed"); return; }
+      if (!res || res.ok === false){ toast((res && res.error) || "save failed", "err"); return; }
       closePopover();
       if (this.onChanged) this.onChanged();
     };
@@ -3338,7 +3455,7 @@ class RoutinesView {
   async del(rid){ await this.api.del("/api/routines/" + encodeURIComponent(rid)); if (this.onChanged) this.onChanged(); }
   async create(){
     const r = await this.api.post("/api/routines", {agent: $("rtAgent").value, goal: $("rtGoal").value.trim(), every_seconds: parseInt($("rtEvery").value, 10)});
-    if (!r || !r.ok){ alert((r && r.error) || "create failed"); return; }
+    if (!r || !r.ok){ toast((r && r.error) || "create failed", "err"); return; }
     $("rtGoal").value = ""; if (this.onChanged) this.onChanged();
   }
 }
@@ -3674,9 +3791,9 @@ class OrbitApp {
      the per-agent before -> after the table now shows. Scope = the filter's team. */
   async applyModelPolicy(){
     const scope = this.team || "ALL";
-    if (scope === "__none__"){ alert("'No team' is not a team — pick a team or ALL"); return; }
+    if (scope === "__none__"){ toast("'No team' is not a team — pick a team or ALL", "err"); return; }
     const ids = scope === "ALL" ? (this.teams || []).map(t => t.id) : [scope];
-    if (!ids.length){ alert("model policy: no team to apply it to"); return; }
+    if (!ids.length){ toast("model policy: no team to apply it to", "err"); return; }
     const before = {};
     (this.agents || []).forEach(a => { if (a.session) before[a.session] = a.model || ""; });
     // v899 (operator: "the model policy button does nothing"): under ALL this fires one
@@ -3836,24 +3953,28 @@ class OrbitApp {
       });
     });
   }
-  viewCreate(){
-    const name = ((typeof prompt === "function" && prompt("Name the new view (up to 6 panels side by side):", "View " + (this.views.length + 1))) || "").trim().slice(0, 40);
+  async viewCreate(){
+    const name = String((await uiAsk({title: "Name the new view",
+      hint: "Up to 6 panels side by side.",
+      value: "View " + (this.views.length + 1), placeholder: "view name"})) || "").trim().slice(0, 40);
     if (!name) return;
     const id = "v-" + Date.now().toString(36);
     this.views.push({id, name, panels: ["agents"]});
     this.saveViews(); this.renderViewList();
     this.applyView("view:" + id);
   }
-  viewRename(){
-    const v = this.activeView(); if (!v || typeof prompt !== "function") return;
-    const name = (prompt("Rename view:", v.name) || "").trim().slice(0, 40);
+  async viewRename(){
+    const v = this.activeView(); if (!v) return;
+    const name = String((await uiAsk({title: "Rename view", value: v.name,
+      placeholder: "view name"})) || "").trim().slice(0, 40);
     if (!name) return;
     v.name = name; this.saveViews(); this.renderViewList(); this.paintViewBar();
   }
-  viewDelete(){
+  async viewDelete(){
     const v = this.activeView(); if (!v) return;
-    if (this.views.length <= 1){ alert("keep at least one view"); return; }
-    if (typeof confirm === "function" && !confirm("Delete view '" + v.name + "'?")) return;
+    if (this.views.length <= 1){ toast("keep at least one view", "err"); return; }
+    if (!(await uiConfirm("Delete view '" + v.name + "'?", "",
+      {okLabel: "delete", danger: true}))) return;
     this.views = this.views.filter(x => x.id !== v.id);
     this.saveViews(); this.renderViewList();
     this.applyView("view:" + this.views[0].id);
@@ -3879,7 +4000,7 @@ class OrbitApp {
   viewAddPanel(key){
     const v = this.activeView(); if (!v || !key) return;
     if (v.panels.includes(key)) return;
-    if (v.panels.length >= 6){ alert("a view holds at most 6 panels side by side"); return; }
+    if (v.panels.length >= 6){ toast("a view holds at most 6 panels side by side", "err"); return; }
     v.panels.push(key); this._dropRatios(); this.saveViews(); this.applyView(this.view);
   }
   viewRemove(key){
@@ -4146,7 +4267,7 @@ class OrbitApp {
     // JAG-536: the description is now a first-class field — Architect reads it
     // together with the name to pick the icon, and it was unreachable from here.
     const name = $("tmNewName").value.trim();
-    if (!name){ alert("give the team a name"); return; }
+    if (!name){ toast("give the team a name", "err"); return; }
     const description = ($("tmNewDesc").value || "").trim();
     const sel = $("tmNewIcon");
     const symbol = sel ? (sel.value || "") : "";
@@ -4159,7 +4280,7 @@ class OrbitApp {
     const r = await this.api.post("/api/teams", { name,
       description: description || undefined,
       symbol: symbol || undefined, color: color || undefined });
-    if (!r || !r.ok){ alert((r && r.error) || "could not create team"); return; }
+    if (!r || !r.ok){ toast((r && r.error) || "could not create team", "err"); return; }
     $("tmNewName").value = ""; $("tmNewDesc").value = "";
     if (sel) sel.value = "";
     this.refresh();
@@ -4262,14 +4383,18 @@ class OrbitApp {
   }
   async createJob(){
     const goal = $("jobGoal").value.trim(), assignee = $("jobTo").value;
-    if (!goal || !assignee){ alert("a job needs a goal and someone to give it to"); return; }
+    if (!goal || !assignee){ toast("a job needs a goal and someone to give it to", "err"); return; }
     const r = await this.api.post("/api/jobs", {goal, assignee});
-    if (!r || !r.ok){ alert((r && r.error) || "create failed"); return; }
+    if (!r || !r.ok){ toast((r && r.error) || "create failed", "err"); return; }
     $("jobGoal").value = ""; this.refresh();
   }
-  start(){
+  async start(){
     $("led").classList.toggle("on", !!this.api.token);
-    if (!this.api.token){ const t = prompt("Longrun API token (stored in localStorage):"); if (t){ this.api.token = t.trim(); localStorage.setItem("sf_token", t.trim()); $("led").classList.add("on"); } }
+    if (!this.api.token){
+      const t = await uiAsk({title: "Longrun API token",
+        hint: "Stored in localStorage.", secret: true, placeholder: "token"});
+      if (t){ this.api.token = t.trim(); localStorage.setItem("sf_token", t.trim()); $("led").classList.add("on"); }
+    }
     // JAG-295: every top-level link must carry the token, or it lands on a 401.
     // The fragment (e.g. #artifacts) is preserved so the tab still deep-links.
     document.querySelectorAll('header a[href^="/"]').forEach(link => {

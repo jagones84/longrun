@@ -1053,10 +1053,20 @@ function activate(i) {
   show();
 }
 
-function closeTab(i) {
+/* 2026-11-15 (operator: "that window is not in the style of the webui"): the editor
+   never draws the browser's own confirm box. The app's themed dialog (`uiConfirm` in
+   index.html) is the ONE anatomy; the native box stays only as a fallback for a page
+   that loads the editor without the app. */
+async function appConfirm(title, hint) {
+  if (typeof window.uiConfirm === "function") return !!(await window.uiConfirm(title, hint));
+  return window.confirm(title + (hint ? "\n\n" + hint : ""));
+}
+
+async function closeTab(i) {
   const t = state.tabs[i];
   if (!t) return;
-  if (t.dirty && !window.confirm('Close "' + basename(t.path) + '" with unsaved changes?')) return;
+  if (t.dirty && !(await appConfirm('Close "' + basename(t.path) + '"?',
+      "It has unsaved changes that will be discarded."))) return;
   if (i === state.active) syncActive();
   if (t.temp && t.objectUrl) { try { URL.revokeObjectURL(t.objectUrl); } catch (e) { /* ignore */ } }
   state.tabs.splice(i, 1);
@@ -1078,10 +1088,11 @@ function closeTab(i) {
 
 /* JAG-494: close every open file in the editor (one confirmation if any is
    dirty). JAG-499b: the dock STAYS OPEN on an empty state — it does not hide. */
-function closeAllTabs() {
+async function closeAllTabs() {
   if (!state.tabs.length) return;
   const dirty = state.tabs.filter((t) => t.dirty).length;
-  if (dirty && !window.confirm("Close all " + state.tabs.length + " tabs? " + dirty + " have unsaved changes.")) return;
+  if (dirty && !(await appConfirm("Close all " + state.tabs.length + " tabs?",
+      dirty + " have unsaved changes."))) return;
   state.tabs.forEach((t) => { if (t.temp && t.objectUrl) { try { URL.revokeObjectURL(t.objectUrl); } catch (e) { /* ignore */ } } });
   state.tabs = [];
   showEmpty();
@@ -1268,7 +1279,8 @@ async function refreshAll() {
   // in-memory buffer, silently discarding unsaved edits (closeTab already asks;
   // this path did not).
   const dirty = state.tabs.filter((t) => !t.temp && t.dirty);
-  if (dirty.length && !window.confirm("Reload and discard unsaved changes in " + dirty.length + " file(s)?")) return;
+  if (dirty.length && !(await appConfirm("Reload and discard unsaved changes?",
+      dirty.length + " file(s) have unsaved changes."))) return;
   const paths = state.tabs.filter((t) => !t.temp).map((t) => t.path);
   await loadTree();
   for (const p of paths) { await refresh(p); }
