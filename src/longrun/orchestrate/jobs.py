@@ -1136,8 +1136,28 @@ class JobRegistry:
         # teammate may be in the middle of an operator turn when the job starts,
         # so that count landed BEFORE the other turn's reply and the job would
         # report someone else's work as its own.
-        return self._best_reply(self._turn_tail(s.get("messages") or [], before,
-                                                sender, subjob, sent=message))
+        reply = self._best_reply(self._turn_tail(s.get("messages") or [], before,
+                                                 sender, subjob, sent=message))
+        return self._note_cost(jid, sid, reply)
+
+    @staticmethod
+    def _note_cost(jid, sid, reply):
+        """Record this delegated turn in the per-job cost ledger (R6), then return.
+
+        `runmetrics` already finished this session's turn (tokens, seconds, and
+        the priced `usd` when the cost ledger had one). This adds the JOB key the
+        routing decision is made in; it never changes the reply or the job.
+        """
+        if jid:
+            try:
+                from longrun.model import runmetrics as _rm
+                from longrun.orchestrate import jobcost as _jc
+                m = _rm.get(sid) or {}
+                _jc.record(jid, session=sid, tokens=m.get("tokens"),
+                           usd=m.get("usd"), seconds=m.get("duration_s"))
+            except Exception:  # noqa: BLE001 — accounting must never fail a job
+                pass
+        return reply
 
     @staticmethod
     def _turn_tail(messages, before, sender, subjob, sent=None):

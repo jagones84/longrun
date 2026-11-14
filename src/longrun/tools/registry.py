@@ -258,7 +258,8 @@ _LEGACY_SCHEMAS = {
     },
     "browser": {
         "description": ("Fetch a page and extract readable text (lightweight; not a headless browser). "
-                        "Disabled by default."),
+                        "Public internet only, SSRF-guarded; use `http` for the local "
+                        "allowlist."),
         "type": "object",
         "properties": {"url": {"type": "string", "description": "absolute http(s) URL to fetch"},
                        "max_bytes": {"type": "integer", "default": 32768,
@@ -617,7 +618,8 @@ _LEGACY_SCHEMAS = {
                         "tested Matrix tool; review audits THE WHOLE backlog "
                         "(proposals + distilled lessons) with an LLM against the "
                         "current codebase and reports keep/implemented/obsolete/"
-                        "update/conflict for each artifact."),
+                        "update/conflict for each artifact; scan proposes routines "
+                        "from your own sessions (created disabled)."),
         "type": "object",
         "properties": {
             "action": {"type": "string",
@@ -867,17 +869,18 @@ _SUBTOOL_FIELDS = {
         "info": [], "diagnose": [], "logs": ["session", "limit", "kind"],
         "context": ["session"], "tools": ["tool", "query"],
         "diagnostics": ["session", "model", "code", "source", "limit"],
-        "sj": ["session", "job"],
+        "sj": ["session", "job"], "trace": ["session"],
     },
     "skills": {
         "list": [], "search": ["query", "limit"], "read": ["name"],
+        "audit": [], "retire": ["days", "confirm"],
     },
     "index": {
         "search": ["query", "k", "kind"], "reindex": ["workspace", "force"],
         "status": ["workspace"],
     },
     "knowledge": {
-        "search": ["query", "notebook", "session", "k", "kind"],
+        "search": ["query", "notebook", "session", "k"],
         "read_source": ["ref", "notebook", "session", "max_chars"],
         "list_notebooks": [], "create_notebook": ["name"],
         "add_source": ["notebook", "session", "refs", "ref", "url", "query"],
@@ -901,12 +904,13 @@ _SUBTOOL_FIELDS = {
     "memory": {
         "store": ["content", "kind", "source", "ttl_secs"],
         "recall": ["query", "kind", "limit", "include_invalid", "semantic"],
-        "recent": ["kind", "limit"], "list": ["kind", "limit"],
-        "core": [], "set_core": ["content"], "clear_core": [],
+        "recent": ["kind", "limit"], "core": [], "set_core": ["content"],
+        "clear_core": [],
         "invalidate": ["target", "query", "kind", "reason"],
         "supersede": ["target", "superseded_by", "reason"],
         "restore": ["target", "reason"],
         "forget": ["target", "query", "kind"], "purge": [], "health": [],
+        "hygiene": ["kind", "confirm"],
     },
     "improve": {
         "propose": ["scope", "content", "reason", "path"],
@@ -919,6 +923,8 @@ _SUBTOOL_FIELDS = {
         # EV-22: the abstraction step (name the capability a repeat IS).
         "abstract": ["path"],
         "review": ["limit", "model"],
+        # E-5: scan reads the operator's sessions and proposes routines.
+        "scan": ["limit", "model", "agent"],
     },
     "web": {
         "search": ["query", "max_results"], "fetch": ["url", "max_bytes"],
@@ -960,6 +966,9 @@ _SUBTOOL_REQUIRED = {
     "chapters.read": ["id"], "chapters.title": ["id", "title"],
     "memory.store": ["content"], "memory.recall": ["query"],
     "memory.set_core": ["content"],
+    # C2: both handlers refuse a call without `target`; query matching is
+    # forbidden on purpose (supersede/restore must name ONE record).
+    "memory.supersede": ["target"], "memory.restore": ["target"],
     "improve.propose": ["scope", "content"],
     "improve.mine": [], "improve.evolve": [],
     "improve.verify": ["path"],
@@ -971,12 +980,17 @@ _SUBTOOL_REQUIRED = {
     # EV-22: the abstraction step reads the same draft folder forge does.
     "improve.abstract": ["path"],
     "improve.review": [],
+    # C3: scan does not read `scope`; inheriting improve's namespace requirement
+    # advertised a meaningless argument.
+    "improve.scan": [],
     "web.search": ["query"], "web.fetch": ["url"],
     "diff.files": ["a", "b"], "diff.text": ["text_a", "text_b"],
     "process.kill": ["pid"],
     "matrix.checkpoint_save": ["slot"],
     "matrix.checkpoint_rollback": ["slot"],
     "matrix.remove": ["name"],
+    # C1: the handler refuses a scaffold without `name`.
+    "matrix.scaffold": ["name"],
     "matrix.verify_target": ["name"],
     "matrix.promote_to_nucleus": ["name"],
     "matrix.load_module": ["name"],
@@ -1208,6 +1222,53 @@ _SUBTOOL_GUIDANCE = {
         "Nucleus code). `dry_run=true` returns the ticket a real restart would "
         "write and leaves no pending resume behind."
     ),
+    # R2 (2026-11-15): one actionable line per canonical action. Before this
+    # block 43 of the 90 multi-action tools had no row and fell back to the
+    # whole namespace story, which `self.tools` then cut at 160 characters —
+    # siblings became indistinguishable.
+    "self.info": "Report install paths (repo, data, config), the systemd state and how to install a skill or MCP server. No arguments.",
+    "self.diagnose": "Report live health: cpu, memory, disk, gpu, service and ports. No arguments.",
+    "self.logs": "Read this session's event history; optional `kind` filter, `limit` (default 100) and `session`.",
+    "self.context": "Report how full this session's context window is (tokens, budget, pct); optional `session`.",
+    "self.diagnostics": "Run the Settings diagnostics report; filter with `code`, `source` or `model`; optional `session` and `limit`.",
+    "self.sj": "List this session's Session Jobs (SJ…): deps, status and output; optional `job` for one and `session`.",
+    "self.trace": "Show what the HARNESS did in a session: gates fired, context spent, replies repeated; optional `session`.",
+    "skills.list": "List every skill in the skills tree with its one-line description. No arguments.",
+    "skills.audit": "Audit the skill library read-only: duplicate descriptions, near-duplicate names, missing descriptions, oversized SKILL.md.",
+    "skills.retire": "Retire machine-created skills that were never opened into skills/_retired/; `days` sets the age bar, dry run unless `confirm=true`.",
+    "index.search": "Search THIS workspace's code index; `query` is required, `k` caps results, optional `kind`.",
+    "index.reindex": "Rebuild this workspace's code index now; optional `workspace` path and `force`.",
+    "index.status": "Report index counts for this workspace; optional `workspace`.",
+    "knowledge.status": "Report notebook and source counts, index state and the embedding backend. No arguments.",
+    "sessions.list": "List other sessions with agent, title, age and running state; optional `query` and `limit`.",
+    "sessions.read": "Read one session's full transcript (messages, tool calls, results, injections) in order; `session` required, `limit`/`tail` bound it.",
+    "sessions.compact": "Compact one session now; `session` (or `to`) selects it, `force=true` only when the operator explicitly asked to compact early.",
+    "sessions.reset": "Clear one session's transcript and start it fresh; `session` (or `to`) is required. Destructive and irreversible.",
+    "chapters.list": "List this session's thread groups in order with ids, ranges, previews and justifications; optional `session`.",
+    "chapters.untitled": "List free groups missing a title (ids plus previews) so you can title them; optional `session` and `limit`.",
+    "chapters.read": "Read one thread group by `id`; optional `session`.",
+    "chapters.title": "Set the `title` (and optional `summary`) of thread group `id`; optional `session`.",
+    "context.status": "Report this session's context tokens, budget, pct and over_threshold flag; optional `session`.",
+    "context.compact": "Compact this session now; it refuses below the policy trigger unless `force=true`; `session` may name a subordinate.",
+    "memory.core": "Show the always-visible CORE memory block. No arguments.",
+    "memory.supersede": "Replace one memory: `target` is the old id, `superseded_by` the replacement id, optional `reason`; `target` is required.",
+    "memory.restore": "Restore a tombstoned memory by exact `target` id; query matching is refused.",
+    "memory.health": "Report live versus stored memory counts, per-kind budgets and unaddressable records. No arguments.",
+    "memory.hygiene": "Enforce the per-kind record budget; dry run unless `confirm=true`; optional `kind` limits it to one store.",
+    "improve.scan": "Scan your own sessions and PROPOSE routines from what repeats (created disabled); optional `limit`, `model`, `agent`.",
+    "web.search": "Search the public internet; `query` required, optional `max_results`; returns titles, urls and snippets.",
+    "web.fetch": "Fetch one public URL and return readable text; `url` required, optional `max_bytes`.",
+    "diff.files": "Compare two files and return a unified diff; `a` and `b` are paths, optional `context` lines.",
+    "diff.text": "Compare two strings and return a unified diff; `text_a` and `text_b` are required, optional `context` lines.",
+    "process.list": "List running processes with pid, RSS and cmdline; optional `match` substring and `limit`.",
+    "process.kill": "Send SIGTERM to one process by `pid`; never signals pid<=1 or the harness.",
+    "matrix.enable": "Turn the Matrix suite master switch ON so its artifacts are discovered; no arguments.",
+    "matrix.disable": "Turn the Matrix suite master switch OFF; no arguments.",
+    "matrix.checkpoint_save": "Save a Matrix checkpoint into `slot` with an optional `label`.",
+    "matrix.test": "Verify Matrix: `script` names a test script, `code` runs host code with the service env, or `target` names an artifact; optional `install_deps`, `timeout_secs`.",
+    "matrix.webui_init": "Create the Matrix WebUI shadow so it serves at `/`; no arguments.",
+    "matrix.verify_target": "Verify one Matrix artifact by `kind` (default tool) and `name`; verification is recorded, not assumed.",
+    "matrix.load_module": "Import a Matrix module by `name` into the live harness process.",
 }
 
 
@@ -1227,8 +1288,6 @@ def _build_canonical_schemas():
         props = dict(sch.get("properties") or {})
         act_prop = props.get("action") or {}
         actions = list(act_prop.get("enum") or ["run"])
-        if k == "memory" and "list" not in actions:
-            actions.insert(0, "list")
         if k == "skills" and "search" not in actions:
             actions.append("search")
         field_map = _SUBTOOL_FIELDS.get(k, {})
@@ -1242,9 +1301,13 @@ def _build_canonical_schemas():
         for act in actions:
             cname = "%s.%s" % (k, act)
             fields = field_map.get(act)
+            # C3/C4: an action without an explicit field list must not inherit
+            # the WHOLE namespace. That inheritance is how `self.trace` came to
+            # advertise job/model/code/source/tool/query, none of which it reads.
+            # A missing row now yields an empty contract, so the invariant test
+            # fails on the next omission instead of shipping a broader schema.
             sub_props = ({pk: props[pk] for pk in fields if pk in props}
-                         if fields is not None else
-                         {pk: pv for pk, pv in props.items() if pk != "action"})
+                         if fields is not None else {})
             if k == "improve" and act == "propose":
                 sub_props["scope"] = {
                     **(props.get("scope") or {}),
@@ -1256,9 +1319,13 @@ def _build_canonical_schemas():
                 action_required = {"search": ["query"], "fetch": ["url"]}.get(act, sub_req)
             guidance = _SUBTOOL_GUIDANCE.get(cname)
             if guidance is None:
-                fields_note = ", ".join(sub_props) or "no arguments"
-                guidance = ("%s This tool performs only action=%s; use only: %s."
-                            % (base_desc, act, fields_note))
+                # R2: the old fallback appended "This tool performs only
+                # action=…; use only: …" to the whole namespace story, so the
+                # 160-char discovery index cut every sibling to the same prefix.
+                # Each multi-action tool now carries its own line; a tool that
+                # still reaches here is single-action and its own description is
+                # already the answer.
+                guidance = base_desc
             out[cname] = {
                 "description": ("%s — %s" % (cname, guidance)
                                 if guidance else cname),
@@ -1336,6 +1403,11 @@ _ACTION_ALIASES = {
 # share one schema, one policy row and one recorded tool name.
 _TOOL_ALIASES = {
     "matrix.restart": "harness.restart",
+    # C8 (2026-11-15): `memory.list` was a synthetic 14th action for the 13
+    # memory verbs. The catalogue now advertises `memory.recent` only; an old
+    # dotted call still lands there because this table is consulted before the
+    # dotted-name early return.
+    "memory.list": "memory.recent",
 }
 _ACTION_ALIAS_TOOLS = {
     ("matrix", "restart"): "harness.restart",
@@ -1395,7 +1467,32 @@ _SUBTOOL_GATES = {
     # like every other writer. The forged tool never bypasses a gate at run time;
     # this row is about creating it at all.
     "improve.forge": "writes a new executable Matrix tool forged from a mined sequence",
+    # R3 (2026-11-15): the same acts their siblings already ask for. All three
+    # run under `approval: auto` today while a smaller act (memory.forget,
+    # python.run) asks. `harness.restart` stays out on purpose: C3 is an open
+    # operator decision and it is the only verb that ends every session's turn.
+    "matrix.scaffold": "writes a new Matrix artifact into the live source tree",
+    "matrix.load_module": "imports a module into the running harness process",
+    "sessions.reset": "discards a session transcript irreversibly",
 }
+
+# R3: the SAME verb is only destructive in one FORM. A plain `matrix.test
+# {target:…}` or `skills.retire` dry run must stay silent; the dangerous
+# spelling asks. Keyed by the argument whose truthy value makes the call
+# destructive, so the gate and the handler read the same field.
+_SUBTOOL_GATE_WHEN = {
+    "matrix.test": ("code", "runs host code with the service environment", "present"),
+    "sessions.compact": ("force", "forces a compaction now", "bool"),
+    "skills.retire": ("confirm", "moves never-opened skills out of the live set", "bool"),
+    "memory.hygiene": ("confirm", "retires memory records beyond the per-kind budget", "bool"),
+}
+
+
+def _truthy(value):
+    """The argument forms a JSON caller can send for a boolean flag."""
+    if isinstance(value, str):
+        return value.strip().lower() in ("1", "true", "yes", "on")
+    return bool(value)
 
 
 def subtool_gate(tool, args):
@@ -1409,7 +1506,17 @@ def subtool_gate(tool, args):
     except Exception:  # noqa: BLE001 — no override is the safe answer
         return None
     reason = _SUBTOOL_GATES.get(name)
-    return ("required", reason) if reason else None
+    if reason:
+        return ("required", reason)
+    when = _SUBTOOL_GATE_WHEN.get(name)
+    if when:
+        value = (args or {}).get(when[0])
+        # `code` is a PAYLOAD (any non-empty string is dangerous), while
+        # `force`/`confirm` are flags whose string spellings a caller may send.
+        triggered = bool(value) if when[2] == "present" else _truthy(value)
+        if triggered:
+            return ("required", when[1])
+    return None
 
 
 
@@ -1986,6 +2093,12 @@ def policy_report():
     obsolete rule instead of leaving a dead gate in the Permissions page.
     """
     hits = dict(_hits())
+    # R4 (2026-11-15, staged): an undeclared argument still RUNS the call and
+    # only warns, so a refusal cannot be counted yet. The same ledger records
+    # the occurrence under kind `unknown_arg`; the week's count here is the
+    # evidence that decides whether the refusal may ship.
+    unknown = {k: v for k, v in hits.items() if ":unknown_arg:" in k}
+    rules = {k: v for k, v in hits.items() if ":unknown_arg:" not in k}
     configured = []
     try:
         # Key by the CANONICAL tool name — the same name `note_rule_hit` records —
@@ -2005,8 +2118,9 @@ def policy_report():
                         configured.append(key)
     except Exception:  # noqa: BLE001
         pass
-    return {"firings": hits, "never_fired": sorted(r for r in configured if r not in hits),
-            "configured_rules": len(configured), "fired_rules": len(hits)}
+    return {"firings": rules, "unknown_args": unknown,
+            "never_fired": sorted(r for r in configured if r not in rules),
+            "configured_rules": len(configured), "fired_rules": len(rules)}
 
 
 def footprint(days=30, now=None):

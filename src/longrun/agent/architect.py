@@ -393,7 +393,9 @@ TOOL_SCHEMAS = {
         "description": (
             "job.create — Create a job: a goal assigned to a coordinator agent and "
             "optional workers, with optional dependencies. It is created NOT dispatched; use "
-            "`job.dispatch` to run it."
+            "`job.dispatch` to run it. Scope: your own subtree; the one exception is "
+            "naming another team's LEAD as `coordinator` with every worker inside that "
+            "lead's subtree."
         ),
         "type": "object",
         "properties": {
@@ -1486,18 +1488,43 @@ def delegation_section(sess):
         "wait for another — the dependency (and its failure) is then managed instead "
         "of improvised.\n"
         "- SCOPE: you may name ONLY agents inside your own subtree — %s. Anything "
-        "outside is refused (exit 126); a Teamorg grant does not widen this.\n"
+        "outside is refused (exit 126); a Teamorg grant does not widen this. The "
+        "ONE hand-off allowed: name another team's LEAD as `coordinator`, with every "
+        "worker inside that lead's subtree — you keep the job (`assigned_by`), so you "
+        "can still get, dispatch and delete it; a bare member is refused.\n"
         "- Available verbs now: %s.\n"
         % (len(reports), shown or "none", ", ".join("`%s`" % t for t in sorted(tools)))
     )
 
 
-def _job_in_scope(job, scope, mutate=False):
-    """Whether a `job.*` caller may touch `job` (read: any member; write: coordinator)."""
+def _caller_agent_id(caller):
+    """The A-id behind a `job.*` caller (session id, agent id or name)."""
+    raw = str(caller or "").strip()
+    if not raw:
+        return ""
+    try:
+        from longrun.agent import agents as _agents_mod
+        rec = _agents_mod.REGISTRY.resolve(raw) or {}
+        return str(rec.get("id") or raw)
+    except Exception:  # noqa: BLE001 — a broken registry keeps the raw value
+        return raw
+
+
+def _job_in_scope(job, scope, mutate=False, caller=None):
+    """Whether a `job.*` caller may touch `job` (read: any member; write: coordinator).
+
+    Work-scope B (2026-11-15): the ASSIGNER keeps a handle on the job it
+    created, even when the coordinator is another team's lead. Without this
+    the cross-team hand-off was creatable but invisible and undispatchable —
+    a create with no next verb.
+    """
     if scope is None:
         return True
     if not isinstance(job, dict):
         return False
+    assigned = str(job.get("assigned_by") or "")
+    if caller and assigned and assigned in (str(caller), _caller_agent_id(caller)):
+        return True
     if mutate:
         return str(job.get("coordinator") or "") in scope
     members = list(job.get("agents") or []) + [job.get("coordinator") or ""]
@@ -2116,14 +2143,29 @@ def _job_create(args, caller=None):
     elif me:
         coordinator = me.get("id")
     if scope is not None:
-        outside = [w for w in workers if w not in scope]
-        if outside:
-            return _scope_denied(
-                "job.create", "agents outside your org subtree: %s (yours: %s)"
-                % (", ".join(outside[:6]), ", ".join(sorted(scope)[:12])))
+        from longrun.agent import agents as agents_mod
+        # Work-scope B (R7, 2026-11-15): a coordinator may hand a job to ANOTHER
+        # team's LEAD — every worker must then be inside that lead's subtree. A
+        # bare member (nobody reporting to it) stays refused: the hand-off is to
+        # a team, not to an individual outside your org. The creator keeps the
+        # job visible and dispatchable through `assigned_by` (`_job_in_scope`).
+        allowed = scope
+        cross_team = False
         if coordinator and coordinator not in scope:
-            return _scope_denied("job.create",
-                                 "coordinator %s is outside your org subtree" % coordinator)
+            if not agents_mod.REGISTRY.reports_of(coordinator):
+                return _scope_denied(
+                    "job.create",
+                    "coordinator %s is outside your org subtree and is not a lead "
+                    "(nobody reports to it)" % coordinator)
+            allowed = set(agents_mod.REGISTRY.subtree(coordinator))
+            cross_team = True
+        outside = [w for w in workers if w not in allowed]
+        if outside:
+            where = ("the coordinator's subtree" if cross_team
+                     else "your org subtree")
+            return _scope_denied(
+                "job.create", "agents outside %s: %s (yours: %s)"
+                % (where, ", ".join(outside[:6]), ", ".join(sorted(scope)[:12])))
     if coordinator:
         # v629.1: the TEAM is org-driven for the tool too. The panel derives it
         # from the assignee; a tool-created job used to keep only the hand-listed
@@ -2169,7 +2211,7 @@ def _job_update(args, caller=None):
     scope = coordinator_scope(caller)
     if scope is not None:
         job = jobs_mod.JOBS.get(jid)
-        if not _job_in_scope(job, scope, mutate=True):
+        if not _job_in_scope(job, scope, mutate=True, caller=caller):
             return _scope_denied("job.update",
                                  "job %s is not coordinated by you" % jid)
     workers = None
@@ -2218,7 +2260,7 @@ def _job_wake(_args=None, caller=None):
                                  "only a coordinator may release blocked jobs")
         mine = [j["id"] for j in jobs_mod.JOBS.list().get("jobs") or []
                 if j.get("status") == "blocked"
-                and _job_in_scope(j, scope, mutate=True)]
+                and _job_in_scope(j, scope, mutate=True, caller=caller)]
         res = jobs_mod.JOBS.wake(only=mine)
     res.setdefault("ok", True)
     res["stdout"] = "%d released, %d failed" % (
@@ -2234,7 +2276,7 @@ def _job_dispatch(args, caller=None):
         return {"ok": False, "error": "job required"}
     scope = coordinator_scope(caller)
     if scope is not None and not _job_in_scope(jobs_mod.JOBS.get(jid), scope,
-                                               mutate=True):
+                                               mutate=True, caller=caller):
         return _scope_denied("job.dispatch",
                              "job %s is not coordinated by you" % jid)
     res = jobs_mod.JOBS.dispatch(jid)
@@ -2252,9 +2294,16 @@ def _job_get(args, caller=None):
     if not job:
         return {"ok": False, "error": "job not found: %s" % jid}
     scope = coordinator_scope(caller)
-    if scope is not None and not _job_in_scope(job, scope):
+    if scope is not None and not _job_in_scope(job, scope, caller=caller):
         return _scope_denied("job.get",
                              "job %s has none of your team in it" % jid)
+    # R6: one aggregate keyed by job id, additive to the job record.
+    try:
+        from longrun.orchestrate import jobcost as _jobcost
+        job = dict(job)
+        job["cost"] = _jobcost.aggregate(jid)
+    except Exception:  # noqa: BLE001 — cost is additive, never a read failure
+        pass
     return {"ok": True, "job": job}
 
 
@@ -2264,7 +2313,8 @@ def _job_list(_args=None, caller=None):
     out = jobs_mod.JOBS.list()
     scope = coordinator_scope(caller)
     if scope is not None:
-        out["jobs"] = [j for j in out.get("jobs") or [] if _job_in_scope(j, scope)]
+        out["jobs"] = [j for j in out.get("jobs") or []
+                       if _job_in_scope(j, scope, caller=caller)]
         out["count"] = len(out["jobs"])
     out["ok"] = True
     out["stdout"] = "%d job(s)" % len(out.get("jobs") or [])
@@ -2279,7 +2329,7 @@ def _job_delete(args, caller=None):
         return {"ok": False, "error": "job required"}
     scope = coordinator_scope(caller)
     if scope is not None and not _job_in_scope(jobs_mod.JOBS.get(jid), scope,
-                                               mutate=True):
+                                               mutate=True, caller=caller):
         return _scope_denied("job.delete",
                              "job %s is not coordinated by you" % jid)
     res = jobs_mod.JOBS.delete(jid)

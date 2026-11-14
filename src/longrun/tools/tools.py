@@ -3861,6 +3861,15 @@ def _dispatch_execute_raw(tool, args, run_id=None):
         _ignored = [text for kind, text in _shape_notes(tool, args) if kind == "unknown"]
         if _ignored:
             res["warning"] = "; ".join(_ignored) + " — ignored"
+            # R4 (staged): the call still ran. Count the occurrence in the
+            # existing rule-hit ledger so a week of evidence decides whether
+            # the refusal may ship; nothing about this call changes.
+            try:
+                from longrun.tools import registry as _reg
+                for _text in _ignored:
+                    _reg.note_rule_hit(tool, "unknown_arg", _text)
+            except Exception:  # noqa: BLE001 — counting must never fail a call
+                pass
     return res
 
 

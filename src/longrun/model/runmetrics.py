@@ -94,7 +94,7 @@ def start(key, model=None):
 
 def finish(key, outcome="done", stop_reason=None, iterations=0, steps=0, tokens=0,
            prompt_tokens=0, completion_tokens=0, model=None, difficulty=None,
-           error=None, code=None):
+           error=None, code=None, usd=None):
     rec = get(key)
     if not rec:
         rec = start(key)
@@ -106,6 +106,13 @@ def finish(key, outcome="done", stop_reason=None, iterations=0, steps=0, tokens=
                 "outcome": outcome, "stop_reason": stop_reason,
                 # B-4: one classified cause, always present (None = a clean run).
                 "failure_cause": classify_cause(outcome, stop_reason, error, code)})
+    if usd is not None:
+        # R6: the priced half of the same turn, from the cost ledger that already
+        # owns it. Absent stays absent (a fake 0 would read as "free").
+        try:
+            rec["usd"] = round(float(usd), 6)
+        except (TypeError, ValueError):
+            pass
     if model:
         rec["model"] = model
     if difficulty is not None:

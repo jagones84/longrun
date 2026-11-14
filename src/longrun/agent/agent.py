@@ -181,7 +181,7 @@ MEMORY_POLICY = (
     "learn a durable fact — a user preference, a decision and its reason, a "
     "project convention, the fix for a bug. Keep it short and self-contained.\n"
     "- to RECALL: call `memory.recall` {query:'...'} whenever the user "
-    "refers to earlier work or you are missing context; `memory.list` / `memory.recent` "
+    "refers to earlier work or you are missing context; `memory.recent` "
     "shows the newest notes.\n"
     "- CORE (always visible): keep a compact, living CORE block of durable facts "
     "— user preferences, project conventions, key decisions. Read it with "
@@ -6969,6 +6969,14 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     except Exception:  # noqa: BLE001 — a measurement must never break a turn
         pass
     try:
+        # R6: the priced half of this turn comes from the same cost ledger the
+        # Cost panel reads; a turn with no priced call leaves `usd` absent.
+        _spent = {}
+        try:
+            from longrun.model import costs as _costs_mod
+            _spent = _costs_mod.for_run(sess["id"], getattr(trace, "id", None)) or {}
+        except Exception:  # noqa: BLE001 — pricing is optional
+            _spent = {}
         runmetrics.finish(sess["id"], outcome=("user_abort" if _is_aborted(sess["id"]) else "done"),
                           # 2026-11-15: the LOOP iterations, not `_kg_rounds`. Every
                           # turn that finished inside its first tool budget reported
@@ -6977,8 +6985,9 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                           stop_reason=_kg_stop_reason, iterations=iters,
                           steps=_total_work_steps,
                           prompt_tokens=_total_prompt,
-                      completion_tokens=_total_completion,
-                      tokens=_total_prompt + _total_completion,
+                          completion_tokens=_total_completion,
+                          tokens=_total_prompt + _total_completion,
+                          usd=_spent.get("usd") if _spent.get("calls") else None,
                           model=model, difficulty=_diff_level)
         publish("run.metrics", session=sess["id"], metrics=runmetrics.get(sess["id"]))
     except Exception:  # noqa: BLE001 — metrics must never break a turn

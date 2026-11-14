@@ -40,7 +40,7 @@ plain = [n for n in cat_names if "." not in n and "__" not in n]
 check("A zero plain tools in registry.catalog() (every tool has <namespace>.<subtool> or <server>__<tool>)",
       len(cat) > 30 and plain == [], plain)
 
-# B: Base subtools exist in catalog & schemas (memory.list, memory.recall, skills.list, shell.exec, etc.)
+# B: Base subtools exist in catalog & schemas (memory.recent, memory.recall, skills.list, shell.exec, etc.)
 expected_subtools = {
     "shell.exec", "fs.read", "fs.write", "fs.edit", "git.run", "http.fetch", "browser.fetch",
     "self.info", "self.diagnose", "self.logs", "self.context", "self.tools",
@@ -50,7 +50,7 @@ expected_subtools = {
     "sessions.list", "sessions.read", "sessions.send", "sessions.wait",
     "chapters.list", "chapters.untitled", "chapters.read", "chapters.title",
     "context.status", "context.compact",
-    "memory.list", "memory.recall", "memory.store", "memory.recent", "memory.core",
+    "memory.recall", "memory.store", "memory.recent", "memory.core",
     "memory.set_core", "memory.invalidate", "memory.forget", "memory.purge", "memory.health",
     "improve.propose", "improve.review",
     "web.search", "web.fetch", "diff.files", "diff.text",
@@ -59,16 +59,19 @@ expected_subtools = {
     "matrix.remove", "matrix.verify_target", "matrix.promote_to_nucleus",
 }
 missing = sorted(expected_subtools - set(cat_names))
-check("B all canonical base subtools (including memory.list, skills.list, matrix.status, etc.) are registered",
+check("B all canonical base subtools (memory.recent, skills.list, matrix.status, etc.) are registered",
       missing == [], missing)
+check("B2 memory.list is an ALIAS of memory.recent, not a 14th advertised action",
+      registry.canonical_name("memory.list", {}) == "memory.recent"
+      and "memory.list" not in set(cat_names), "")
 
 # C: Calling namespaced subtools directly works without passing an `action` field
 r_mem_store = tools.execute("memory.store", {"content": "v507 namespaced subtool fact", "kind": "test"})
-r_mem_list = tools.execute("memory.list", {"limit": 5})
+r_mem_list = tools.execute("memory.list", {"limit": 5})   # alias -> memory.recent
 r_sk_list = tools.execute("skills.list", {})
 r_self_info = tools.execute("self.info", {})
 r_mtx_st = tools.execute("matrix.status", {})
-check("C tools.execute dispatches namespaced subtools (memory.store, memory.list, skills.list, self.info, matrix.status)",
+check("C tools.execute dispatches namespaced subtools (memory.store, memory.list alias, skills.list, self.info, matrix.status)",
       r_mem_store.get("ok") is True
       and r_mem_list.get("ok") is True and "v507 namespaced subtool fact" in (r_mem_list.get("stdout") or "")
       and r_sk_list.get("ok") is True
