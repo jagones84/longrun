@@ -379,7 +379,10 @@ selfevolve:
 # The v2 identical-action trap misses a model calling one tool type dozens of
 # times with different args. Warn at `warn`, cap the run at `hard` (reusing the
 # no_progress termination + a loop_capped event). `per_tool` overrides one
-# type: the shell is the legitimate high-frequency case. enabled: false = off.
+# type: the shell is the legitimate high-frequency case, and a per-tool
+# threshold LARGER than `window` is counted over its own span — the count must be
+# able to reach the threshold (2026-11-14: 100/200 against a 50-call window was
+# dead config). enabled: false = off.
 loop_detection:
   enabled: true
   window: 50
