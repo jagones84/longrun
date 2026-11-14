@@ -45,9 +45,17 @@ LAYERS = {
          "LONGRUN_HOOKS_OVERLAY": "{root}/hooks.overlay.yaml"},
         "the commands that fire before/after a tool and at Stop",
     ),
+    # CO-2 (2026-11-14): the cross-session memory store. Without this layer the
+    # question "does memory pay for itself?" (CoReMem, arXiv 2611.17316) cannot
+    # be asked: every arm would carry the same lessons and the same anchors.
+    "memory": (
+        {"LONGRUN_MEMORY_DIR": "{root}/memory"},
+        "the persistent memory store: core, user facts, lessons, repo anchors",
+    ),
 }
 
-_DIRS = {"LONGRUN_SKILLS_DIR", "LONGRUN_CONFIG_DIR", "LONGRUN_PROJECTS_DIR"}
+_DIRS = {"LONGRUN_SKILLS_DIR", "LONGRUN_CONFIG_DIR", "LONGRUN_PROJECTS_DIR",
+         "LONGRUN_MEMORY_DIR"}
 
 
 def materialize(layer, root):

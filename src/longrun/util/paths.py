@@ -206,6 +206,11 @@ EMBEDDING_DIR = os.environ.get("LONGRUN_EMBEDDING_DIR") or os.path.join(DATA_DIR
 # JAG-431j: the per-session THREAD ledger (durable chat outline, compaction-proof).
 # Overridable so tests never write it into the live data/.
 THREADS_DIR = os.environ.get("LONGRUN_THREADS_DIR") or os.path.join(DATA_DIR, "threads")
+# CO-2 (2026-11-14): the cross-session memory store (facts, lessons, anchors, core).
+# The last file-backed layer that had no switch; without one a run cannot be
+# measured WITH and WITHOUT memory (`benchmarks/ablation.py` refuses a layer it
+# cannot remove, and a no-op arm is the failure it exists to avoid).
+MEMORY_DIR = os.environ.get("LONGRUN_MEMORY_DIR") or os.path.join(DATA_DIR, "memory")
 # I-3: agent-to-agent SEND bookkeeping — the per-sender idempotency map that lets
 # a retried `sessions.send` return the original message_id instead of delivering
 # the text twice. Overridable so tests never write it into the live data/.

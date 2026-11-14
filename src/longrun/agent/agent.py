@@ -3226,9 +3226,12 @@ def _improvement_pass(sess, message, answer, used_tools, work_steps, model, meta
         if used_tools and importance >= improve_mod.IMPORTANCE_THRESHOLD and k_mem != "denied":
             lesson = maybe_reflect(sess, message, answer, True, model, evidence=evidence)
             if lesson:
+                from longrun.memory import memory as _memory
                 wrote.append({"kind": "memory", "origin": "reflect",
                               "summary": lesson,
-                              "path": os.path.join(DATA_DIR, "memory", "agent_notes.md")})
+                              # CO-2: the ONE owner of the filename, so the ledger
+                              # names the file an ablation arm actually wrote.
+                              "path": _memory.path_for("agent.note")})
         # 3. cross-trajectory abstraction on a high-signal turn
         if (errored or corrected) and n_tools >= 3 and k_skills != "denied":
             for p in improve_mod.mine_once(note="auto: %s" % sess.get("id", ""),

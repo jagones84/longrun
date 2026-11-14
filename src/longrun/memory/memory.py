@@ -31,7 +31,9 @@ from longrun.model import context_limits as ctx_limits
 
 REPO = registry.REPO
 # JAG-533: persistent memory is user state -> the data home, never the checkout.
-DATA_DIR = os.path.join(paths.DATA_DIR, "memory")
+# CO-2 (2026-11-14): `paths.MEMORY_DIR` is the ONE owner of the folder, so
+# `LONGRUN_MEMORY_DIR` can empty it for an ablation arm (see benchmarks/ablation).
+DATA_DIR = paths.MEMORY_DIR
 
 _lock = threading.RLock()
 _writes_since_index = 0
@@ -68,6 +70,16 @@ def _path(kind):
     p = os.path.join(DATA_DIR, fn)
     os.makedirs(os.path.dirname(p), exist_ok=True)
     return p
+
+
+def path_for(kind):
+    """The file `kind` is stored in — the ONE owner of the filename mapping.
+
+    CO-2 (2026-11-14): a caller that has to NAME the file (the improvement
+    ledger records the path it wrote) must ask here; joining `data/memory` by
+    hand would point at a file that an ablation arm never wrote.
+    """
+    return _path(kind)
 
 
 def _ws_key(workspace):
