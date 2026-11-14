@@ -437,15 +437,20 @@ def query_events(session=None, kind=None, since=None, until=None, limit=200):
     if kind:
         where.append("kind = ?")
         args.append(kind)
-    try:
-        if since is not None and str(since) != "":
-            where.append("ts >= ?")
-            args.append(float(since))
-        if until is not None and str(until) != "":
-            where.append("ts <= ?")
-            args.append(float(until))
-    except (TypeError, ValueError):
-        pass
+    # 2026-11-14 (bug hunt): convert the value BEFORE appending the clause. The
+    # old order left `ts >= ?` in the WHERE with no bound argument when the value
+    # was not a number, and sqlite raised `ProgrammingError: Incorrect number of
+    # bindings` — so `GET /api/events?since=xyz` closed the connection with no
+    # response instead of ignoring the filter.
+    for _col, _val in (("ts >= ?", since), ("ts <= ?", until)):
+        if _val is None or str(_val) == "":
+            continue
+        try:
+            _num = float(_val)
+        except (TypeError, ValueError):
+            continue
+        where.append(_col)
+        args.append(_num)
     if session:
         where.append("data LIKE ?")
         args.append('%"session": "' + str(session) + '"%')
