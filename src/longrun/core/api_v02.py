@@ -1066,6 +1066,13 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
     if st is None:
         st = new_run(goal, model, max_steps, script)
     st.goal, st.max_steps, st.script = goal, max_steps, script
+    # S1 (2026-11-15): record run start for the local optimizer
+    try:
+        from longrun.model import runmetrics as _rm
+        _key = session or st.id
+        _rm.start(_key)
+    except Exception:  # noqa: BLE001
+        pass
     # R3: the ceiling is a property of the RUN, so it is resolved here once when
     # the caller passed none — otherwise the M6 check below never fires in prod.
     token_budget = _effective_budget(token_budget)
@@ -1459,6 +1466,15 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
         st.termination = "error"
         st.summary = "run error: %s" % e
         on_event("agent.error", run=st.id, error=str(e), termination=st.termination)
+    # S1 (2026-11-15): record run finish for the local optimizer
+    try:
+        from longrun.model import runmetrics as _rm
+        _key = session or st.id
+        _rm.finish(_key, tokens=getattr(st, 'tokens_spent', 0) or len(st.trace) * 500,
+                   steps=len(st.trace), outcome=st.status or "done",
+                   model=model)
+    except Exception:  # noqa: BLE001
+        pass
     return _result(st, goal, model)
 
 
@@ -1658,6 +1674,14 @@ def agent_stream_gen_v2(goal, max_steps, model, run_id, script=None, workspace=N
                                        _outcome["text"] or "(run produced no summary)")
                 except Exception:  # noqa: BLE001 — visibility must never fail a run
                     pass
+            # S1 (2026-11-15): post-run local optimizer — reads session traces and
+            # proposes harness changes. Additive: failure never breaks the run.
+            try:
+                from longrun.evolve import optimizer as _opt
+                _sid = session_obj.get("id") if isinstance(session_obj, dict) else None
+                _opt.run(_sid or run_id)
+            except Exception:  # noqa: BLE001 — optimizer must never fail a run
+                pass
             # JAG-479: release the running bracket ONLY after the reply is stored, so
             # a browser that reacts to `chat.done` by reloading the transcript already
             # finds the run's answer on disk.
