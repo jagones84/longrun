@@ -3991,10 +3991,17 @@ def _fs_raw(handler, qs=None):
     # its embedded JS (verified — an `<svg onload>` set a global). The workspace is
     # agent-writable, so a planted .svg was a stored-XSS -> token theft. Never do
     # `startswith("image/")`: SVG passes it.
+    # v1002: the media containers are inert (a video/audio stream cannot run
+    # script), so the artifact preview window can play them; text/html and every
+    # `+xml` stay refused for the reason above.
     _SAFE_PREVIEW = {"image/png", "image/jpeg", "image/jpg", "image/gif",
                      "image/webp", "image/bmp", "image/x-icon",
                      "image/vnd.microsoft.icon", "image/avif", "image/tiff",
-                     "application/pdf"}
+                     "application/pdf",
+                     "video/mp4", "video/webm", "video/ogg", "video/quicktime",
+                     "video/x-m4v",
+                     "audio/mpeg", "audio/mp4", "audio/ogg", "audio/wav",
+                     "audio/x-wav", "audio/flac", "audio/aac", "audio/webm"}
     if ctype not in _SAFE_PREVIEW:
         return _r(handler, 415, {"error": "unsupported preview type: %s" % ctype})
     try:

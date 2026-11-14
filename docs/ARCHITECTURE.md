@@ -511,7 +511,12 @@ operator-selected `none`). This is not whole-agent confinement. Hard-denied patt
   The inspector's Workspace list is the SAME journal, reconciled with the disk on every read:
   a file changed or deleted outside the harness reports `disk: changed|missing` with the live
   counts, and an editor-dock save (`POST /api/fs/write`) is journalled under its session, so it
-  appears there too.
+  appears there too. A file opens in a **dedicated preview window** (`#pvWin`), not in the editor
+  dock: image/video/audio player, a live HTML page in a sandboxed frame, a workbook's first rows
+  (`GET /api/fs/sheet`), sanitized markdown or the source, with the absolute path under the name
+  and a ⋯ menu (editor, raw tab, source, copies) — plus a right-click menu on any card or
+  Workspace row that prints the absolute path. Cards with a first frame (image, HTML, PDF,
+  video) carry a poster created only while on screen.
 - **Orbit** `src/longrun/orbit/` — optional command deck at `/orbit`: org chart,
   constellation, job create/dispatch, team selector, model policy.
 - **CLI** `forge.py` — chat, agent runs, tasks, models, MCP.

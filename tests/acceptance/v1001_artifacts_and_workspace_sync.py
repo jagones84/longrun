@@ -20,7 +20,7 @@ Locked here:
   B3 a deleted file reports `disk: "missing"`;
   C  `GET /api/artifacts` aggregates the same journal (session, kind, size, exists);
   D  the MyArtifacts page exists as a third top-level tab, reads that route, opens
-     a card in the editor, and refreshes on `edits.recorded`.
+     a card in the dedicated preview window (v1002), and refreshes on `edits.recorded`.
 
 Deterministic: no model, no network, no server. Run:
 python3 tests/acceptance/v1001_artifacts_and_workspace_sync.py
@@ -164,9 +164,10 @@ check("D1 the third tab exists beside Sessions/Control",
 check("D2 the page is a real container, not a panel",
       'id="artifactsView"' in ui and 'id="artGrid"' in ui and 'body.artifacts-on #app { display: none; }' in ui)
 check("D3 it reads the real route", '"/api/artifacts?" + qs.toString()' in ui)
-check("D4 a card opens the file in the editor (the page hands the row back)",
-      "function openArtifact(path)" in ui and "showSessions();" in ui[ui.find("function openArtifact"):][:160]
-      and "openFile(path);" in ui[ui.find("function openArtifact"):][:200])
+check("D4 a card opens the file in the dedicated preview window (v1002: not the editor)",
+      "c.onclick = () => openPreview(c.dataset.path, row);" in ui
+      and "function openPreview(path, row)" in ui
+      and "function openArtifact(" not in ui)
 check("D5 a write repaints the page (SSE, no polling)",
       '"edits.recorded": () => { loadEdits(); _artIfOpen(); }' in ui)
 check("D6 the hash deep-links the page",

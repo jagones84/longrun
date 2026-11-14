@@ -1348,6 +1348,100 @@
     .art-card { transition: none; }
     .art-card:active { transform: none; }
   }
+  /* v1002 — a first frame on the card. The poster and the label are ONE surface
+     (one border, one radius), and the poster is a SIBLING of the button, never a
+     child: an <iframe>/<video> inside a <button> is `nested-interactive` for the
+     a11y gate (v851). The poster is decoration + a mouse shortcut; the button
+     remains the named control. */
+  .art-item { display: flex; flex-direction: column; background: var(--panel);
+    border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden;
+    transition: border-color .12s, background .12s; }
+  .art-item:hover { border-color: var(--line-2); }
+  .art-item:focus-within { border-color: var(--acc); }
+  .art-item > .art-card { border: 0; border-radius: 0; background: transparent;
+    min-height: 0; flex: 1 1 auto; }
+  .art-item > .art-card:hover { background: transparent; border-color: transparent; }
+  .art-thumb { position: relative; aspect-ratio: 16 / 10; background: var(--bg-2);
+    border-bottom: 1px solid var(--line); overflow: hidden; cursor: pointer; }
+  .art-thumb:focus-visible { outline: 2px solid var(--acc); outline-offset: -2px; }
+  .art-thumb img, .art-thumb video { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .art-thumb video { pointer-events: none; }
+  .art-thumb iframe { position: absolute; top: 0; left: 0; width: 200%; height: 200%;
+    border: 0; transform: scale(.5); transform-origin: 0 0; pointer-events: none; background: #fff; }
+
+  /* ---- the preview window (v1002) -----------------------------------------
+     Clicking a file opens it HERE — a dedicated window, not the editor dock and
+     not a second browser tab. One bar (name, kind, size/age/session, ⋯, ✕), the
+     absolute path under it, then the render. Esc, ✕ and the backdrop all close
+     it. `max-height` divides by --zoom like #diffView (JAG-359). */
+  #pvBackdrop { position: fixed; inset: 0; z-index: 49; background: rgba(0,0,0,.62); }
+  #pvBackdrop[hidden] { display: none; }
+  #pvWin { position: fixed; z-index: 50; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    width: min(1180px, 94vw); height: calc(100dvh / var(--zoom, 1) - 28px);
+    display: flex; flex-direction: column; background: var(--menubg);
+    border: 1px solid var(--line); border-radius: var(--radius);
+    box-shadow: 0 24px 70px rgba(0,0,0,.55); }
+  #pvWin[hidden] { display: none; }
+  .pv-head { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 12px;
+    border-bottom: 1px solid var(--line); }
+  .pv-ic { flex: 0 0 auto; color: var(--acc); display: inline-flex; }
+  .pv-title { display: flex; align-items: baseline; gap: 8px; min-width: 0; flex: 1 1 auto; }
+  .pv-name { font-size: 13px; font-weight: 650; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; }
+  .pv-kind { font-size: 9px; letter-spacing: .07em; text-transform: uppercase;
+    color: var(--muted); font-weight: 700; flex: 0 0 auto; }
+  .pv-meta { font-size: 10.5px; color: var(--dim); font-variant-numeric: tabular-nums;
+    flex: 0 1 auto; max-width: 34%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Frameless icon controls (GENERAL rule 9): the state is the glyph, not a box. */
+  #pvWin .pv-btn { border: 0; background: transparent; color: var(--dim); width: 28px;
+    min-width: 28px; height: 28px; padding: 0; font-size: 15px; line-height: 1;
+    display: inline-flex; align-items: center; justify-content: center; border-radius: 7px; }
+  #pvWin .pv-btn:hover { color: var(--txt); background: var(--hover); }
+  #pvWin .pv-btn[aria-expanded="true"] { color: var(--txt); background: var(--hover); }
+  .pv-path { padding: 6px 12px; font-family: monospace; font-size: 10.5px; color: var(--muted);
+    border-bottom: 1px solid var(--line-2); overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; cursor: copy; }
+  .pv-path:hover { color: var(--txt); }
+  .pv-body { flex: 1 1 auto; min-height: 0; overflow: auto; display: flex;
+    flex-direction: column; align-items: stretch; }
+  .pv-body img.pv-img { max-width: 100%; max-height: 100%; margin: auto; display: block; }
+  .pv-body video, .pv-body audio { max-width: 100%; margin: auto; display: block; }
+  .pv-body iframe.pv-frame { flex: 1 1 auto; width: 100%; min-height: 0; border: 0; background: #fff; }
+  .pv-body pre.pv-text { margin: 0; padding: 12px 14px; font-family: monospace; font-size: 11.5px;
+    line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+  .pv-body .pv-md { padding: 14px 18px 26px; font-size: 13px; line-height: 1.55; }
+  .pv-note { margin: auto; padding: 26px 18px; text-align: center; color: var(--dim); font-size: 12px; }
+  .pv-table { border-collapse: collapse; font-size: 11.5px; margin: 0 0 14px; }
+  .pv-table th, .pv-table td { border: 1px solid var(--line); padding: 3px 8px;
+    text-align: left; white-space: nowrap; }
+  .pv-table th { background: var(--bg2); color: var(--dim); position: sticky; top: 0; }
+  .pv-sheets { padding: 8px 12px 0; font-size: 11px; color: var(--dim); }
+  /* One menu anatomy for the ⋯ menu and the right-click menu. */
+  .pv-menu, .art-ctx { position: fixed; z-index: 52; min-width: 212px; padding: 4px;
+    max-width: calc(100vw - 16px);
+    background: var(--menubg); border: 1px solid var(--line); border-radius: 10px;
+    box-shadow: 0 18px 48px rgba(0,0,0,.5); display: flex; flex-direction: column; gap: 1px; }
+  .pv-menu[hidden], .art-ctx[hidden] { display: none; }
+  .pv-menu button, .art-ctx button { display: flex; align-items: center; gap: 8px; width: 100%;
+    background: transparent; border: 0; color: var(--txt); font: inherit; font-size: 12px;
+    padding: 6px 9px; border-radius: 7px; cursor: pointer; text-align: left; }
+  .pv-menu button:hover, .art-ctx button:hover { background: var(--hover); }
+  .pv-menu button:disabled, .art-ctx button:disabled { color: var(--dim); cursor: default; }
+  .pv-menu .mi, .art-ctx .mi { flex: 0 0 16px; text-align: center; color: var(--muted); }
+  .art-ctx .cx-path { font-family: monospace; font-size: 10.5px; color: var(--dim);
+    padding: 5px 9px 6px; margin-bottom: 3px; border-bottom: 1px solid var(--line-2);
+    max-width: min(380px, 64vw); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  @media (max-width: 640px) {
+    /* Phone: the preview IS the screen — no 94vw window with 3vw of dead margin. */
+    #pvWin { top: 0; left: 0; transform: none; width: 100%;
+      height: calc(100dvh / var(--zoom, 1)); max-height: calc(100dvh / var(--zoom, 1));
+      border-radius: 0; border-left: 0; border-right: 0; }
+    .pv-meta { max-width: 22%; }
+    .pv-path { font-size: 10px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .art-item { transition: none; }
+  }
   #composer #inp { width: 100%; }
   #inp, .inp { background: var(--bg-2); border: 1px solid var(--line-2); color: var(--txt);
     border-radius: var(--r-sm); padding: 11px 14px; font: inherit; outline: none; }
@@ -4330,6 +4424,28 @@
   <img id="imgEl" alt="preview">
   <div class="cap" id="imgCap"></div>
 </div>
+<!-- v1002: the dedicated preview window. A file opens HERE (never the editor
+     dock, never a second browser tab): the bar names it, the second row is its
+     absolute path, ⋯ carries what the file can do, ✕/Esc/the backdrop close it. -->
+<div id="pvBackdrop" hidden data-call="closePreview"></div>
+<section id="pvWin" hidden role="dialog" aria-modal="true" aria-labelledby="pvName">
+  <div class="pv-head">
+    <span class="pv-ic" id="pvIc" aria-hidden="true"></span>
+    <div class="pv-title"><b class="pv-name" id="pvName">—</b><span class="pv-kind" id="pvKind"></span></div>
+    <span class="pv-meta" id="pvMeta"></span>
+    <button class="pv-btn" id="pvMore" type="button" aria-label="more actions"
+            aria-controls="pvMenu" aria-expanded="false" title="more actions">⋯</button>
+    <button class="pv-btn" id="pvClose" type="button" data-call="closePreview"
+            aria-label="close preview" title="close preview (Esc)">✕</button>
+  </div>
+  <div class="pv-path" id="pvPath" title="click to copy the absolute path"></div>
+  <div class="pv-body" id="pvBody"></div>
+</section>
+<!-- The two popups are regions, not ARIA menus: they carry no arrow-key roving,
+     so a `role="menu"` would promise a keyboard model they do not implement — and
+     a floating menu outside a landmark is the `region` violation axe measured. -->
+<div class="pv-menu" id="pvMenu" role="region" aria-label="preview actions" hidden></div>
+<div class="art-ctx" id="artCtx" role="region" aria-label="file actions" hidden></div>
 <script src="/assets/dragsort.js"></script>
 <script src="/assets/filtersort.js"></script>
 <script>
@@ -16846,8 +16962,8 @@ async function saveFile() { if (window.SparkEditor) window.SparkEditor.save(); }
    One card per file, newest first, read from the SAME edit journal the Workspace
    panel reads, so the two can never disagree. The kind glyph is decorative
    inside a named button; a card whose file is gone says "missing" instead of
-   pretending it is still there. Clicking a card is a door: it hands the row back
-   to Sessions and opens the file in the editor — never a second editor. */
+   pretending it is still there. Clicking a card opens the file in the DEDICATED
+   preview window (v1002) — never the editor dock, never a second browser tab. */
 const ART_ICONS = {
   document: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/>',
   sheet: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M3 15h18M9 4v16M15 4v16"/>',
@@ -16970,8 +17086,8 @@ function renderArtifacts() {
   }
   grid.innerHTML = shown.map(a => {
     const dir = a.path.slice(0, Math.max(0, a.path.length - a.name.length)).replace(/[\/\\]$/, "");
-    return '<button class="art-card" data-path="' + _attr(a.path) + '"'
-      + ' aria-label="open ' + _attr(a.name) + ' in the editor" title="' + _attr(a.path) + '">'
+    const card = '<button class="art-card" data-path="' + _attr(a.path) + '"'
+      + ' aria-label="preview ' + _attr(a.name) + '" title="' + _attr(a.path) + '">'
       + '<span class="art-row"><span class="art-ic">' + _artIcon(a.kind) + "</span>"
       + '<span class="art-kind">' + esc(ART_KIND_LABEL[a.kind] || a.kind) + "</span>"
       + (a.exists ? "" : '<span class="art-gone" title="the file is no longer on disk">missing</span>')
@@ -16985,15 +17101,371 @@ function renderArtifacts() {
       + '<span class="art-sess" title="' + _attr(a.session || "") + '">'
       + esc(a.session ? (_art.titles[a.session] || a.session) : "workspace") + "</span>"
       + "</span></button>";
+    if (!_pvHasPoster(a.kind, a.path)) return card;
+    // The poster is a SIBLING of the button (an iframe inside a button is
+    // `nested-interactive`); it is filled only while the card is on screen.
+    return '<div class="art-item">'
+      + '<div class="art-thumb" data-path="' + _attr(a.path) + '" data-kind="' + _attr(a.kind) + '"'
+      + ' aria-hidden="true" title="preview ' + _attr(a.name) + '"></div>' + card + "</div>";
   }).join("");
   grid.querySelectorAll(".art-card").forEach(c => {
-    c.onclick = () => openArtifact(c.dataset.path);
+    const row = _art.all.find(x => x.path === c.dataset.path) || { path: c.dataset.path };
+    c.onclick = () => openPreview(c.dataset.path, row);
+    // Right-click is the fast door to what a path is FOR: the absolute path is
+    // printed at the top, the copies are one click away.
+    c.oncontextmenu = e => {
+      e.preventDefault();
+      openFileCtx(e.clientX, e.clientY, row || { path: c.dataset.path });
+    };
   });
+  grid.querySelectorAll(".art-thumb").forEach(t => {
+    const row = _art.all.find(x => x.path === t.dataset.path) || { path: t.dataset.path };
+    t.onclick = () => openPreview(t.dataset.path, row);
+  });
+  _artObserveThumbs(grid);
 }
 
-function openArtifact(path) {
-  showSessions();
-  openFile(path);
+/* ---- the preview window (v1002) -----------------------------------------
+   A file opens in a DEDICATED window: not the editor dock (the operator asked
+   for a window), not a second browser tab. It renders by kind — an image, a
+   video, an audio player, a live HTML page in a sandboxed frame, the first rows
+   of a workbook, sanitized markdown, or the source — and everything else the
+   file can do lives in the ⋯ menu (editor, raw tab, source, copies, reload).
+   Esc, ✕ and the backdrop all close it. */
+const PV_TEXT_EXT = [".md", ".markdown", ".mdx", ".txt", ".rst", ".tex", ".py", ".js",
+  ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".css", ".scss", ".sass", ".less", ".html",
+  ".htm", ".xhtml", ".json", ".jsonl", ".ndjson", ".xml", ".yaml", ".yml", ".toml",
+  ".ini", ".cfg", ".conf", ".env", ".sh", ".bash", ".zsh", ".ps1", ".bat", ".sql",
+  ".c", ".h", ".cpp", ".hpp", ".cc", ".rs", ".go", ".java", ".rb", ".php", ".lua",
+  ".pl", ".r", ".swift", ".kt", ".cs", ".vue", ".svelte", ".csv", ".tsv", ".log"];
+let _pv = { row: null, path: "", src: false };
+
+function _pvExt(p) {
+  const m = /\.([A-Za-z0-9]+)$/.exec(String(p || ""));
+  return m ? "." + m[1].toLowerCase() : "";
+}
+function _pvIsPdf(p) { return _pvExt(p) === ".pdf"; }
+function _pvIsHtml(p) { return [".html", ".htm", ".xhtml", ".mhtml"].indexOf(_pvExt(p)) >= 0; }
+function _pvIsMd(p) { return [".md", ".markdown", ".mdx"].indexOf(_pvExt(p)) >= 0; }
+function _pvIsText(p) { return PV_TEXT_EXT.indexOf(_pvExt(p)) >= 0; }
+/* The media family of a path. The server's kind table owns the chip vocabulary;
+   this only decides how the WINDOW paints a file opened from a door that has no
+   row (a chat link, a Workspace row) — /api/fs/raw still enforces what is safety-
+   servable, so a wrong guess can only produce a message, never a script. */
+const PV_MEDIA = { ".png": "image", ".jpg": "image", ".jpeg": "image", ".gif": "image",
+  ".webp": "image", ".bmp": "image", ".ico": "image", ".avif": "image", ".tiff": "image",
+  ".mp4": "video", ".webm": "video", ".mov": "video", ".m4v": "video", ".ogv": "video",
+  ".mp3": "audio", ".wav": "audio", ".m4a": "audio", ".ogg": "audio", ".flac": "audio",
+  ".aac": "audio", ".opus": "audio" };
+function _pvMediaKind(p) { return PV_MEDIA[_pvExt(p)] || ""; }
+/* Only a kind with a first frame gets a poster on the card. */
+function _pvHasPoster(kind, path) {
+  return kind === "image" || kind === "video" || kind === "html" || _pvIsPdf(path);
+}
+/* A path relative to the listed workspace, so a "copy" is usable in a shell. */
+function _pvRel(p) {
+  const ws = _art.ws ? _art.ws.replace(/[\\/]+$/, "") : "";
+  const s = String(p || "");
+  return ws && s.indexOf(ws + "/") === 0 ? s.slice(ws.length + 1) : s;
+}
+function _pvCopy(text) {
+  copyText(String(text || "")).then(ok => toast(ok ? "copied" : "copy failed", ok ? "" : "err"));
+}
+
+async function openPreview(path, row) {
+  const r = row || _art.all.find(a => a.path === path) || { path: path };
+  _pv = { row: r, path: path, src: false };
+  const name = r.name || _short(path);
+  $("pvName").textContent = name;
+  $("pvName").title = name;
+  $("pvKind").textContent = r.kind ? (ART_KIND_LABEL[r.kind] || r.kind) : "";
+  $("pvIc").innerHTML = _artIcon(r.kind || "other");
+  $("pvPath").textContent = path;
+  const bits = [];
+  if (r.exists === false) bits.push("missing on disk");
+  else if (typeof r.size === "number") bits.push(_fmtSize(r.size));
+  if (r.ts) bits.push(_ago(r.ts));
+  if (r.session) bits.push(_art.titles[r.session] || r.session);
+  else if (_art.scope === "workspace") bits.push("not written by a session");
+  $("pvMeta").textContent = bits.join(" · ");
+  $("pvBackdrop").hidden = false; $("pvWin").hidden = false;
+  closePvMenu(); $("artCtx").hidden = true;
+  renderPreview();
+  const c = $("pvClose"); if (c) c.focus();
+}
+
+function closePreview() {
+  const w = $("pvWin"), b = $("pvBackdrop"), body = $("pvBody");
+  if (w) w.hidden = true;
+  if (b) b.hidden = true;
+  if (body) body.innerHTML = "";
+  closePvMenu();
+  _pv = { row: null, path: "", src: false };
+}
+
+async function renderPreview() {
+  const body = $("pvBody");
+  if (!body || !_pv.path) return;
+  body.innerHTML = "";
+  const path = _pv.path;
+  const kind = (_pv.row && _pv.row.kind) || _pvMediaKind(path);
+  const note = t => { body.innerHTML = '<div class="pv-note">' + esc(t) + "</div>"; };
+  if (_pv.row && _pv.row.exists === false) return note("the file is no longer on disk");
+  if (kind === "image") {
+    const img = document.createElement("img");
+    img.className = "pv-img";
+    img.alt = _pv.row.name || _short(path);
+    img.onerror = () => note("this image cannot be shown inline — .svg is refused by the preview route on purpose (a script container)");
+    img.src = _rawUrl(path);
+    body.appendChild(img);
+    return;
+  }
+  if (kind === "video") {
+    const v = document.createElement("video");
+    v.controls = true; v.preload = "metadata"; v.playsInline = true;
+    v.src = _rawUrl(path);
+    body.appendChild(v);
+    return;
+  }
+  if (kind === "audio") {
+    const a = document.createElement("audio");
+    a.controls = true; a.preload = "metadata";
+    a.src = _rawUrl(path);
+    body.appendChild(a);
+    return;
+  }
+  if (_pvIsHtml(path)) return _pvRenderHtml(body, note);
+  if (_pvIsPdf(path)) {
+    const f = document.createElement("iframe");
+    f.className = "pv-frame";
+    f.title = _pv.row.name || _short(path);
+    f.src = _rawUrl(path);
+    body.appendChild(f);
+    return;
+  }
+  if (/\.(xlsx|xlsm)$/i.test(path)) return _pvRenderSheet(body, note);
+  if (_pvIsText(path)) return _pvRenderText(body, note);
+  note("no inline preview for " + (_pvExt(path) || "this file") +
+       " — ⋯ › open in the editor, or open the raw file in a new tab");
+}
+
+async function _pvRenderHtml(body, note) {
+  let r = null;
+  try { r = await api("GET", "/api/fs/read?path=" + encodeURIComponent(_pv.path)); } catch (e) { r = null; }
+  if (!r || r.error) return note((r && r.error) || "cannot read this file");
+  if (r.binary) return note("binary file — no inline preview");
+  if (_pv.src) return _pvRenderText(body, note);
+  const f = document.createElement("iframe");
+  f.className = "pv-frame";
+  // Opaque origin (never allow-same-origin WITH allow-scripts): the page's own
+  // scripts and charts run, and this app's token/state stay out of its reach.
+  f.setAttribute("sandbox", "allow-scripts allow-popups");
+  f.setAttribute("referrerpolicy", "no-referrer");
+  f.title = _pv.row.name || _short(_pv.path);
+  f.srcdoc = r.text || "";
+  body.appendChild(f);
+  if (r.truncated) {
+    const n = document.createElement("div");
+    n.className = "pv-sheets";
+    n.textContent = "the file is larger than the server's text limit — this frame shows the first part";
+    body.appendChild(n);
+  }
+}
+
+async function _pvRenderText(body, note) {
+  let r = null;
+  try { r = await api("GET", "/api/fs/read?path=" + encodeURIComponent(_pv.path)); } catch (e) { r = null; }
+  if (!r || r.error) return note((r && r.error) || "cannot read this file");
+  if (r.binary) return note("binary file — no inline preview");
+  if (_pvIsMd(_pv.path) && !_pv.src) {
+    const d = document.createElement("div");
+    d.className = "pv-md md-content";
+    d.innerHTML = mdToHtml(r.text || "");
+    body.appendChild(d);
+  } else {
+    const pre = document.createElement("pre");
+    pre.className = "pv-text";
+    pre.textContent = r.text || "";
+    body.appendChild(pre);
+  }
+  if (r.truncated) {
+    const n = document.createElement("div");
+    n.className = "pv-sheets";
+    n.textContent = "the file is larger than the server's text limit — this is the first part";
+    body.appendChild(n);
+  }
+}
+
+async function _pvRenderSheet(body, note) {
+  let r = null;
+  try { r = await api("GET", "/api/fs/sheet?path=" + encodeURIComponent(_pv.path)); } catch (e) { r = null; }
+  if (!r || r.error) return note((r && r.error) || "cannot read this workbook");
+  const head = document.createElement("div");
+  head.className = "pv-sheets";
+  const sheets = r.sheets || [];
+  head.textContent = "sheet " + (r.sheet || "—") + (sheets.length > 1 ? " · workbook holds " + sheets.join(", ") : "")
+    + (r.truncated ? " · first 200 rows" : "");
+  body.appendChild(head);
+  const table = document.createElement("table");
+  table.className = "pv-table";
+  const tb = document.createElement("tbody");
+  (r.rows || []).forEach((cells, i) => {
+    const tr = document.createElement("tr");
+    (cells || []).forEach(c => {
+      const cell = document.createElement(i ? "td" : "th");
+      cell.textContent = c;
+      tr.appendChild(cell);
+    });
+    tb.appendChild(tr);
+  });
+  table.appendChild(tb);
+  body.appendChild(table);
+}
+
+/* One menu geometry for the ⋯ menu and the right-click menu, clamped to the
+   viewport so a card in the last row never opens a menu off-screen. */
+function _placeMenu(m, x, y, alignRight) {
+  m.style.left = "0px"; m.style.top = "0px";
+  const w = m.offsetWidth, h = m.offsetHeight;
+  let left = alignRight ? x - w : x;
+  left = Math.max(8, Math.min(left, window.innerWidth - w - 8));
+  let top = y;
+  if (top + h > window.innerHeight - 8) top = Math.max(8, y - h - 8);
+  m.style.left = left + "px";
+  m.style.top = top + "px";
+}
+
+function _pvMenuItems() {
+  const path = _pv.path, kind = (_pv.row && _pv.row.kind) || _pvMediaKind(path);
+  const items = [
+    { ic: "▤", label: "Open in the editor", act: () => { closePreview(); openInEditor(path); } }
+  ];
+  if (kind === "image" || kind === "video" || kind === "audio" || _pvIsPdf(path))
+    items.push({ ic: "↗", label: "Open raw in a new tab", act: () => window.open(_rawUrl(path), "_blank", "noopener") });
+  if (_pvIsHtml(path) || _pvIsMd(path))
+    items.push({ ic: "{ }", label: _pv.src ? "Show the rendered view" : "Show the source",
+                 act: () => { _pv.src = !_pv.src; renderPreview(); } });
+  items.push({ ic: "⧉", label: "Copy the absolute path", act: () => _pvCopy(path) });
+  items.push({ ic: "⧉", label: "Copy the path inside the workspace", act: () => _pvCopy(_pvRel(path)) });
+  items.push({ ic: "↻", label: "Reload", act: () => renderPreview() });
+  return items;
+}
+
+function closePvMenu() {
+  const m = $("pvMenu"), b = $("pvMore");
+  if (m) m.hidden = true;
+  if (b) b.setAttribute("aria-expanded", "false");
+}
+
+function openPvMenu() {
+  const m = $("pvMenu"), b = $("pvMore");
+  if (!m || !b || !_pv.path) return;
+  const items = _pvMenuItems();
+  m.innerHTML = items.map((it, i) =>
+    '<button type="button" data-i="' + i + '"><span class="mi">' + esc(it.ic)
+    + "</span>" + esc(it.label) + "</button>").join("");
+  m.querySelectorAll("button").forEach(btn => {
+    btn.onclick = () => { closePvMenu(); items[Number(btn.dataset.i)].act(); };
+  });
+  m.hidden = false;
+  const r = b.getBoundingClientRect();
+  _placeMenu(m, r.right, r.bottom + 4, true);
+  b.setAttribute("aria-expanded", "true");
+}
+
+/* Right-click on a file (a card or a Workspace row): the absolute path is the
+   first line of the menu, so "what is this file's path" costs no click. */
+function openFileCtx(x, y, row) {
+  const m = $("artCtx");
+  if (!m || !row || !row.path) return;
+  const path = row.path;
+  const items = [
+    { ic: "◧", label: "Preview", act: () => openPreview(path, row) },
+    { ic: "▤", label: "Open in the editor", act: () => { closePreview(); openInEditor(path); } },
+    { ic: "⧉", label: "Copy the absolute path", act: () => _pvCopy(path) },
+    { ic: "⧉", label: "Copy the path inside the workspace", act: () => _pvCopy(_pvRel(path)) },
+    { ic: "⧉", label: "Copy the file name", act: () => _pvCopy(row.name || _short(path)) }
+  ];
+  m.innerHTML = '<div class="cx-path" title="' + _attr(path) + '">' + esc(path) + "</div>"
+    + items.map((it, i) => '<button type="button" data-i="' + i + '"><span class="mi">'
+      + esc(it.ic) + "</span>" + esc(it.label) + "</button>").join("");
+  m.querySelectorAll("button").forEach(btn => {
+    btn.onclick = () => { m.hidden = true; items[Number(btn.dataset.i)].act(); };
+  });
+  m.hidden = false;
+  _placeMenu(m, x, y, false);
+}
+
+/* ---- posters on the cards -----------------------------------------------
+   A poster is created only while its card is on screen and dropped when it
+   leaves, so 500 cards never mean 500 live frames. An HTML/PDF poster is a whole
+   document, so those are capped at ART_THUMB_LIVE; images and videos are cheap. */
+const ART_THUMB_LIVE = 12;
+let _artObs = null, _artThumbLive = 0;
+
+function _artObserveThumbs(grid) {
+  if (_artObs) _artObs.disconnect();
+  _artThumbLive = 0;
+  const thumbs = grid.querySelectorAll(".art-thumb");
+  if (!thumbs.length) return;
+  _artObs = new IntersectionObserver(entries => {
+    entries.forEach(en => {
+      if (en.isIntersecting) _artThumbFill(en.target);
+      else _artThumbDrop(en.target);
+    });
+  }, { rootMargin: "160px 0px" });
+  thumbs.forEach(t => _artObs.observe(t));
+}
+
+function _artThumbFill(box) {
+  if (!box || box.dataset.on) return;
+  const path = box.dataset.path, kind = box.dataset.kind;
+  const pdf = _pvIsPdf(path);
+  const heavy = kind === "html" || pdf;
+  if (heavy && _artThumbLive >= ART_THUMB_LIVE) return;
+  box.dataset.on = "1";
+  if (heavy) { box.dataset.live = "1"; _artThumbLive += 1; }
+  if (kind === "image") {
+    const img = new Image();
+    img.alt = ""; img.decoding = "async";
+    img.onerror = () => _artThumbDrop(box);
+    img.src = _rawUrl(path);
+    box.appendChild(img);
+  } else if (kind === "video") {
+    const v = document.createElement("video");
+    v.preload = "metadata"; v.muted = true; v.playsInline = true;
+    v.src = _rawUrl(path) + "#t=0.1";
+    box.appendChild(v);
+  } else if (pdf) {
+    const f = document.createElement("iframe");
+    f.setAttribute("title", ""); f.setAttribute("tabindex", "-1");
+    f.setAttribute("aria-hidden", "true");
+    f.src = _rawUrl(path);
+    box.appendChild(f);
+  } else {
+    _artThumbHtml(box, path);
+  }
+}
+
+async function _artThumbHtml(box, path) {
+  let r = null;
+  try { r = await api("GET", "/api/fs/read?path=" + encodeURIComponent(path)); } catch (e) { r = null; }
+  if (!box.dataset.on) return;
+  if (!r || r.error || r.binary) { _artThumbDrop(box); return; }
+  const f = document.createElement("iframe");
+  f.setAttribute("sandbox", "");   // inert poster: no script, no same-origin, no popup
+  f.setAttribute("title", ""); f.setAttribute("tabindex", "-1");
+  f.setAttribute("aria-hidden", "true");
+  f.srcdoc = r.text || "";
+  box.innerHTML = "";
+  box.appendChild(f);
+}
+
+function _artThumbDrop(box) {
+  if (!box || !box.dataset.on) return;
+  delete box.dataset.on;
+  if (box.dataset.live) { delete box.dataset.live; _artThumbLive = Math.max(0, _artThumbLive - 1); }
+  box.innerHTML = "";
 }
 
 /* A write (agent or editor) while the page is up must repaint it — the same
@@ -17016,6 +17488,29 @@ function _artIfOpen() {
   if (sw) sw.onclick = () => setScope("workspace");
   const sj = $("artScopeJournal");
   if (sj) sj.onclick = () => setScope("journal");
+  const more = $("pvMore");
+  if (more) more.onclick = () => {
+    const m = $("pvMenu");
+    if (m && !m.hidden) { closePvMenu(); return; }
+    openPvMenu();
+  };
+  const pp = $("pvPath");
+  if (pp) pp.onclick = () => { if (_pv.path) _pvCopy(_pv.path); };
+  // Esc closes the topmost thing this page opened: a menu first, then the window.
+  document.addEventListener("keydown", e => {
+    if (e.key !== "Escape") return;
+    const m = $("artCtx"), pm = $("pvMenu");
+    if (m && !m.hidden) { m.hidden = true; return; }
+    if (pm && !pm.hidden) { closePvMenu(); return; }
+    if ($("pvWin") && !$("pvWin").hidden) closePreview();
+  });
+  // A click anywhere outside an open menu closes it (capture, so the click still
+  // reaches whatever the operator aimed at).
+  document.addEventListener("pointerdown", e => {
+    const m = $("artCtx"), pm = $("pvMenu"), more = $("pvMore");
+    if (m && !m.hidden && !m.contains(e.target)) m.hidden = true;
+    if (pm && !pm.hidden && !pm.contains(e.target) && !(more && more.contains(e.target))) closePvMenu();
+  }, true);
 })();
 
 /* ---- JAG-127: file-diff journal — change summary, side-by-side diff, undo ----
@@ -17188,6 +17683,13 @@ function _renderEditsList(cur) {
     row.querySelector(".edstat").onclick = () => showDiff(f.path);
     row.querySelector(".ed-ok").onclick = () => approveEdits(f.path);
     row.querySelector(".ed-no").onclick = () => rejectEdits(f.path);
+    // v1002: the same right-click menu as an artifact card — the absolute path is
+    // the first line, so the rail can answer "where is this file" without a click.
+    row.oncontextmenu = e => {
+      e.preventDefault();
+      openFileCtx(e.clientX, e.clientY,
+                  { path: f.path, name: _short(f.path), exists: f.disk !== "missing" });
+    };
     box.appendChild(row);
   });
 }
