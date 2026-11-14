@@ -1156,6 +1156,22 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
     rb = srv.rules_context(ws=workspace)  # JAG-114/115: standing rules for this run
     mx = srv.matrix_context(ws=workspace)  # JAG-497: …and the Matrix dynamic rules too
     from longrun.model import prompt as prompt_mod  # JAG-128A: prompt-map + capability in the agent loop too
+
+    def _record_metrics():
+        """S1: record the run trace for the local optimizer. Fail-safe.
+
+        Must run on EVERY exit path (finish, budget, no-progress, loop-cap,
+        max_steps, error) — the early `return`s below used to skip it, leaving
+        run_*.json stuck at outcome="running" so the optimizer saw no closed trace.
+        """
+        try:
+            from longrun.model import runmetrics as _rm
+            _key = session or st.id
+            _rm.finish(_key, tokens=getattr(st, 'tokens_spent', 0) or len(st.trace) * 500,
+                       steps=len(st.trace), outcome=st.status or "done", model=model)
+        except Exception:  # noqa: BLE001 — metrics are additive, never fail a run
+            pass
+
     try:
         for i in range(max_steps):
             checkpoint(st)
@@ -1283,6 +1299,7 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
                              budget=token_budget)
                     st.trace.append({"i": i + 1, "thought": thought, "action": "finish",
                                      "summary": summary, "budget_capped": True})
+                    _record_metrics()
                     return _result(st, goal, model)
 
             if action == "finish":
@@ -1308,6 +1325,7 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
                          acceptance=acc)
                 st.trace.append({"i": i + 1, "thought": thought, "action": "finish",
                                  "summary": summary})
+                _record_metrics()
                 return _result(st, goal, model)
 
             # JAG-58: no-progress guard. A small model can re-emit the identical
@@ -1345,6 +1363,7 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
                 _publish("agent.no_progress", run=st.id, action=action)
                 st.trace.append({"i": i + 1, "thought": thought, "action": "finish",
                                  "summary": summary})
+                _record_metrics()
                 return _result(st, goal, model)
 
             # M5: frequency guard. The identical-action trap above misses a model
@@ -1372,6 +1391,7 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
                                  count=_d["count"])
                         st.trace.append({"i": i + 1, "thought": thought, "action": "finish",
                                        "summary": summary, "loop_capped": True})
+                        _record_metrics()
                         return _result(st, goal, model)
 
             # M3a R3 intent fence (C1): note-only, never blocks. The
@@ -1467,14 +1487,7 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
         st.summary = "run error: %s" % e
         on_event("agent.error", run=st.id, error=str(e), termination=st.termination)
     # S1 (2026-11-15): record run finish for the local optimizer
-    try:
-        from longrun.model import runmetrics as _rm
-        _key = session or st.id
-        _rm.finish(_key, tokens=getattr(st, 'tokens_spent', 0) or len(st.trace) * 500,
-                   steps=len(st.trace), outcome=st.status or "done",
-                   model=model)
-    except Exception:  # noqa: BLE001
-        pass
+    _record_metrics()
     return _result(st, goal, model)
 
 

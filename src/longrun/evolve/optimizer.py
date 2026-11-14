@@ -170,7 +170,7 @@ def run(sid, jid=None):
     prompt = _build_analysis_prompt(trace, policy_hits, job_cost, feedback)
 
     # S1 (2026-11-16): the optimizer calls the model to produce a real proposal.
-    # It uses a synchronous HTTP call to the router's chat completions endpoint
+    # It uses a synchronous HTTP call to the resolved provider endpoint
     # with stream=false so it returns one JSON response. Fail-safe: any error
     # (router down, timeout, bad response) logs the prompt-only proposal and
     # continues — the optimizer never breaks the session.
@@ -178,18 +178,18 @@ def run(sid, jid=None):
     import urllib.request as _req
     proposal_text = None
     try:
-        from longrun.model.rllm import ROUTER_BASE, default_model as _def
+        from longrun.model.rllm import default_model as _def
+        from longrun.model import providers as _prov
         _model = os.environ.get("LONGRUN_OPTIMIZER_MODEL") or _def()
+        _url, _headers, _resolved_model = _prov.endpoint(_model)
         _body = _json.dumps({
-            "model": _model,
+            "model": _resolved_model,
             "messages": [{"role": "user", "content": prompt}],
             "max_tokens": 1024,
             "temperature": 0.3,
             "stream": False,
         }).encode("utf-8")
-        _r = _req.Request(ROUTER_BASE + "/v1/chat/completions",
-                          data=_body,
-                          headers={"Content-Type": "application/json"})
+        _r = _req.Request(_url, data=_body, headers=_headers)
         _resp = _req.urlopen(_r, timeout=30)
         _data = _json.loads(_resp.read().decode("utf-8"))
         proposal_text = (_data.get("choices", [{}])[0]
