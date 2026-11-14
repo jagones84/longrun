@@ -123,16 +123,21 @@
   #sbxPill.warn .sdot { background: var(--warn); opacity: 1; box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 16%, transparent); }
   /* JAG-113: custom model picker (no native <select>) */
   /* JAG-116: the selector must be legible — not the dim .pill default */
-  .model-btn { cursor: pointer; color: var(--txt); font-weight: 600; max-width: 340px;
+  .model-btn { cursor: pointer; color: var(--txt); font-weight: 600; min-width: 0;
     overflow: hidden; text-overflow: ellipsis; border-color: var(--accent);
     background: var(--hover); }
   .model-btn:hover { background: var(--sel); }
-  .model-btn .mc { color: var(--dim); margin-left: 2px; }
+  .model-btn .mc { color: var(--dim); margin-left: 2px; flex: 0 0 auto; }
   /* JAG-281: anchor the model menu ABOVE its own button (it was pinned to the
      bottom-right corner, detached from the trigger) and make it opaque so it
      reads as a real popover instead of a translucent slab. */
   .model-wrap { position: relative; display: inline-flex; }
-  #modelMenu { position: absolute; right: 0; bottom: calc(100% + 8px); width: 360px; max-height: 62vh;
+  /* v1014: the popover belongs to the COMPOSER, not to the narrow right-hand
+     group it used to be anchored to. 560px holds every catalogue id measured on
+     this host (widest 297px); the viewport cap divides by --zoom so the CSS zoom
+     cannot push it off-screen. */
+  #modelMenu { position: absolute; right: 0; bottom: calc(100% + 8px);
+    width: min(560px, calc(100vw / var(--zoom, 1) - 28px)); max-height: 62vh;
     overflow-y: auto; z-index: 30; padding: 6px; background: var(--menubg);
     border: 1px solid var(--line-2); border-radius: var(--r-sm);
     box-shadow: var(--shadow-2); }
@@ -1173,8 +1178,10 @@
   #composerBar .cb-left, #composerBar .cb-right { flex-wrap: nowrap; }
   #composerBar .cb-left { flex: 0 0 auto; }
   #composerBar .cb-right .model-wrap { flex: 0 1 auto; min-width: 0; }
-  #composerBar .cb-right .model-wrap > button { max-width: 160px; min-width: 34px; flex: 0 1 auto; padding: 0 8px; }
-  #composerBar .mname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #composerBar .cb-right .model-wrap > button { max-width: 100%; min-width: 34px;
+    flex: 0 1 auto; padding: 0 8px; }
+  #composerBar .mname { min-width: 0; flex: 0 1 auto;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* JAG-403j: the composer toolbar reads as ONE flat strip — the per-control frames
      (boxed ".ghost" borders) looked noisy. Only "send" keeps its button shape. */
   #composerBar .cb-left > button, #composerBar .qmode-wrap > button,
@@ -1212,16 +1219,13 @@
   #composerBar #sendBtn.hasqueue::after { content: ""; position: absolute; top: -2px; right: -2px;
     width: 9px; height: 9px; border-radius: 50%; background: var(--ok);
     border: 1px solid var(--panel); box-shadow: 0 0 0 1px rgba(0,0,0,.25); }
-  /* JAG-416: keep the composer toolbar on ONE line as the window narrows — shrink the
-     model label and tighten the gaps (stop · ⋯ · send) BEFORE anything wraps. */
-  @media (max-width: 1400px) { #composerBar .cb-right .model-wrap > button { max-width: 150px; } }
+  /* JAG-416 / v1013: keep one row, but do not pre-truncate the model name with
+     viewport-specific caps. Its own flex item yields only when fixed controls need room. */
   @media (max-width: 1200px) {
-    #composerBar .cb-right .model-wrap > button { max-width: 118px; min-width: 64px; }
     #composerBar { gap: 5px 6px; }
     #composerBar .cb-left, #composerBar .cb-right { gap: 4px; }
   }
   @media (max-width: 1040px) {
-    #composerBar .cb-right .model-wrap > button { max-width: 92px; min-width: 54px; }
     #composerBar .cb-left, #composerBar .cb-right { gap: 2px; }
   }
   /* 2026-11-07 (operator): the ⋯ and its menu LEFT the composer for the tool rail's
@@ -1551,10 +1555,13 @@
      instead of wrapping to a second floor. The model popover still re-anchors to the
      full-width right group so it always opens fully on screen. */
   @media (max-width: 920px) {
-    #composerBar .cb-right { flex-wrap: nowrap; justify-content: flex-end; position: relative; }
+    /* v1014: the popover anchors to the BAR (full composer width) instead of the
+       217px right group — that group's width cut 25 of 45 model names. */
+    #composerBar { position: relative; }
+    #composerBar .cb-right { flex-wrap: nowrap; justify-content: flex-end; position: static; }
     #composerBar .cb-right .model-wrap { position: static; min-width: 0; }
     #composerBar .cb-right .model-wrap > button { min-width: 34px; }
-    #modelMenu { left: 0; right: 0; width: auto; }
+    #modelMenu { left: auto; right: 0; width: min(560px, 100%); }
   }
 
   /* mobile: sidebar becomes a tabbed drawer */
@@ -3011,6 +3018,12 @@
     #topbar { gap: 4px; padding: 8px 8px; }
     .topTabs .ttab { padding: 0 6px; font-size: 11.5px; }
     #topbar #palette-open, #topbar #settingsBtn { width: 28px; min-width: 28px; height: 28px; }
+  }
+  /* v1014: the narrow phone's side room is the cheapest space the model name can
+     have — 16 px here, and no control is resized or covered. Declared LAST for the
+     same reason as the header rules above: the Graphite block re-states #composer. */
+  @media (max-width: 430px) and (min-height: 501px) {
+    #composer { margin: 10px 8px 12px; padding: 10px 8px; }
   }
 </style>
 <script>

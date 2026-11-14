@@ -61,8 +61,9 @@ check("floating menus are opaque (sessions / attach / overflow / slash)",
       and '#slashMenu, #qmodeMenu { background: var(--menubg); }' in ui)
 check("the compact action is an inline text action under the stats",
       'id="compactBtn" class="lnk"' in ui and ".ctxacts {" in ui)
-check("the composer keeps the model picker visible and shrinkable (never collapses it)",
-      '.cb-right .model-wrap > button { max-width: 160px; min-width: 34px;' in ui
+check("the composer keeps the model picker fluid and shrinkable (never overlaps controls)",
+      '.cb-right .model-wrap > button { max-width: 100%; min-width: 34px;' in ui
+      and '#composerBar .mname { min-width: 0; flex: 0 1 auto;' in ui
       and 'gap: 6px; flex-wrap: wrap; min-width: 0; }' in ui)
 
 # --- 2) Context: hide empty categories, explain when empty -------------------

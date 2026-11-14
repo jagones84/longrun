@@ -39,8 +39,12 @@ check("1a #composerBar is `flex-wrap: nowrap`",
       re.search(r"#composerBar \{ display: flex; align-items: center; flex-wrap: nowrap", HTML) is not None, "")
 check("1b no media query re-enables wrapping on #composerBar",
       re.search(r"#composerBar \{ flex-wrap: wrap; \}", HTML) is None, "")
-check("1c the model button can shrink toward a glyph (min-width small)",
-      re.search(r"#composerBar \.cb-right \.model-wrap > button \{ max-width: 160px; min-width: 34px", HTML) is not None, "")
+check("1c the model button uses available room and shrinks toward a glyph",
+      re.search(
+          r"#composerBar \.cb-right \.model-wrap > button \{ max-width: 100%;"
+          r" min-width: 34px;\s*flex: 0 1 auto;",
+          HTML,
+      ) is not None, "")
 check("1d the right group no longer wraps at <=920px",
       re.search(r"#composerBar \.cb-right \{ flex-wrap: nowrap; justify-content: flex-end", HTML) is not None, "")
 

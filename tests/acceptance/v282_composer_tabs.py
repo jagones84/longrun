@@ -44,9 +44,9 @@ check("the bar stays ONE row — never wraps to a second floor (JAG-427)",
 check("no media query re-enables wrapping on the composer bar",
       "#composerBar { flex-wrap: wrap; }" not in ui
       and "#composerBar { flex-wrap: nowrap; }" in ui)
-check("the model picker is the flexible element and truncates",
-      "#composerBar .cb-right .model-wrap > button { max-width: 160px" in ui
-      and "#composerBar .mname" in ui)
+check("the model picker uses available room and truncates only when squeezed",
+      "#composerBar .cb-right .model-wrap > button { max-width: 100%; min-width: 34px;" in ui
+      and "#composerBar .mname { min-width: 0; flex: 0 1 auto;" in ui)
 check("the model label targets .mname (robust, keeps the caret)",
       'b.querySelector(".mname")' in ui and 'class="mname"' in ui)
 # v637: the shortcut left the placeholder (it made the field look like a paragraph);
@@ -54,14 +54,15 @@ check("the model label targets .mname (robust, keeps the caret)",
 # v680: Enter itself sends now, so the tooltip documents Enter (+ Shift for a newline).
 check("the composer documents the send shortcut (button tooltip)",
       'title="send (Enter — Shift+Enter for a newline)"' in ui)
-# JAG-427: on a narrow width the RIGHT group stays ONE row and the model label shrinks
-# (min-width:34px) instead of wrapping; the popover still re-anchors full-width.
+# JAG-427 / v1014: on a narrow width the RIGHT group stays ONE row and the model
+# label shrinks (min-width:34px) instead of wrapping; the popover now anchors to the
+# full composer bar (the right group was only 217 px and cut 25 of 45 model names).
 check("the phone right group stays ONE row and lets the model shrink",
-      "#composerBar .cb-right { flex-wrap: nowrap; justify-content: flex-end; position: relative; }" in ui
+      "#composerBar .cb-right { flex-wrap: nowrap; justify-content: flex-end; position: static; }" in ui
       and "#composerBar .cb-right .model-wrap > button { min-width: 34px; }" in ui)
-check("the mobile model menu re-anchors to the full-width right group (stays on screen)",
+check("the mobile model menu re-anchors to the composer bar (wide, on screen)",
       "#composerBar .cb-right .model-wrap { position: static; min-width: 0; }" in ui
-      and "#modelMenu { left: 0; right: 0; width: auto; }" in ui)
+      and "#modelMenu { left: auto; right: 0; width: min(560px, 100%); }" in ui)
 
 # --- 2) editor tabs: path, copy-path menu, outside-workspace marker ----------
 check("a tab shows its full path on hover",
@@ -88,4 +89,3 @@ print("---")
 passed = sum(results)
 print("%d/%d PASS" % (passed, len(results)))
 sys.exit(0 if passed == len(results) else 1)
-
