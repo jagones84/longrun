@@ -109,7 +109,8 @@ check("C5 only the views a file really has (render/source, table/source)",
       and "if (views.length < 2)" in ui)
 check("C6 clicking a view re-renders (a different view is a different answer)",
       "_pv.view = b.dataset.view;" in ui and "renderPreview();" in ui
-      and 'const PV_VIEW_LABEL = { render: "Preview", source: "Source", table: "Table", tree: "Tree" };' in ui)
+      and 'const PV_VIEW_LABEL = { render: "Preview", source: "Source", table: "Table", tree: "Tree",' in ui
+      and 'slides: "Slides", outline: "Outline" };' in ui)
 check("C7 HTML keeps the sandboxed frame in Preview and the source in Source",
       'if (_pv.view === "source") return _pvRenderText(body, note);' in ui
       and 'f.setAttribute("sandbox", "allow-scripts allow-popups")' in ui)
@@ -123,7 +124,7 @@ check("C9 the code host fills the window and scrolls inside the editor",
 check("C10 CSV/TSV open as a TABLE first, with quoted cells and a cap",
       "function _pvCsvRows(text, delim)" in ui and "s[i + 1] === '\"'" in ui
       and "rows.length >= 500" in ui and "function _pvRenderCsv(body, note)" in ui
-      and 'table.className = "pv-table";' in ui)
+      and 'table.className = "pv-table pv-grid";' in ui)
 check("C11 SVG is TEXT (XML), so the window never asks the raw route for it",
       '".svg"' in ui and ui.index('if (_pvIsText(path)) return "text";')
       < ui.index('const k = String((row && row.kind) || "");'))

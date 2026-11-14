@@ -2299,6 +2299,11 @@ def handle(handler, method, path, qs, body):
             return _r(handler, 200, fs_structured(qs))
         if path == "/api/fs/sheet":  # EV-45: table preview for a spreadsheet
             return _r(handler, 200, fs_sheet(qs))
+        if path == "/api/fs/slides":  # v1016: slide canvas for a .pptx
+            try:
+                return _r(handler, 200, fs_slides(qs))
+            except Exception as e:  # noqa: BLE001 — a broken deck is a message
+                return _r(handler, 200, {"ok": False, "error": "%s: %s" % (type(e).__name__, e)})
         if path == "/api/fs/raw":  # JAG-150: raw bytes for inline image/pdf preview
             return _fs_raw(handler, qs)
         if path == "/api/term/poll":  # JAG-281: real terminal — new output since cursor
@@ -4023,7 +4028,11 @@ def _sheet_cell(v):
     import datetime as _dt
     if v is None:
         return ""
-    if isinstance(v, (_dt.datetime, _dt.date, _dt.time)):
+    if isinstance(v, _dt.datetime):
+        # a midnight timestamp is a DATE cell in every spreadsheet the operator
+        # sees; printing the zero time made 40 rows of "T00:00:00" noise.
+        return v.date().isoformat() if v.time() == _dt.time(0, 0) else v.isoformat()
+    if isinstance(v, (_dt.date, _dt.time)):
         return v.isoformat()
     if isinstance(v, float):
         if v != v or v in (float("inf"), float("-inf")):
@@ -4096,12 +4105,210 @@ def fs_sheet(qs=None) -> dict:
             rows.pop()
         return {"path": p, "sheets": names, "sheet": name, "rows": rows,
                 "truncated": bool(cut), "max_rows": SHEET_MAX_ROWS,
-                "max_cols": SHEET_MAX_COLS}
+                "max_cols": SHEET_MAX_COLS,
+                "dims": {"rows": int(ws.max_row or 0),
+                         "cols": int(ws.max_column or 0)}}
     finally:
         try:
             wb.close()
         except Exception:  # noqa: BLE001
             pass
+
+
+# v1016: a .pptx is a zip of XML — like a workbook, the text panel could only say
+# "binary file". python-pptx (already an optional dependency of this host) reads
+# the deck into slides/shapes with their REAL geometry, so the window can draw a
+# slide canvas (the approach browser viewers such as PPTXjs take, but the parse
+# stays on the server: no second PPTX parser is shipped to the browser).
+SLIDES_MAX = 60
+SLIDES_MAX_SHAPES = 80
+SLIDES_MAX_PARAS = 40
+SLIDES_MAX_TEXT = 1200
+SLIDES_MAX_TABLE_ROWS = 30
+SLIDES_MAX_TABLE_COLS = 12
+SLIDES_MAX_IMAGES = 40
+SLIDES_MAX_IMAGE_BYTES = 1500000
+SLIDE_STAGE_PX = 960
+
+
+def _slide_rgb(run, default="#24292f"):
+    try:
+        rgb = run.font.color.rgb
+        if rgb is not None:
+            return "#" + str(rgb)
+    except Exception:  # noqa: BLE001 — theme colours are not RGB
+        pass
+    return default
+
+
+def _slide_align(par):
+    try:
+        a = str(par.alignment or "").lower()
+    except Exception:  # noqa: BLE001
+        return "left"
+    if "center" in a:
+        return "center"
+    if "right" in a:
+        return "right"
+    if "justify" in a:
+        return "justify"
+    return "left"
+
+
+def _slide_fill(shape):
+    try:
+        rgb = shape.fill.fore_color.rgb
+        if rgb is not None:
+            return "#" + str(rgb)
+    except Exception:  # noqa: BLE001
+        pass
+    return ""
+
+
+def _slide_paras(tf):
+    out = []
+    for i, par in enumerate(getattr(tf, "paragraphs", []) or []):
+        if i >= SLIDES_MAX_PARAS:
+            break
+        text = "".join((r.text or "") for r in (par.runs or []))
+        if not text and not out:
+            continue                    # a leading empty paragraph is padding
+        size, bold, color = None, False, "#24292f"
+        for r in (par.runs or []):
+            try:
+                if r.font.size is not None and size is None:
+                    size = round(float(r.font.size.pt), 1)
+            except Exception:  # noqa: BLE001
+                pass
+            if r.font.bold:
+                bold = True
+            color = _slide_rgb(r, color)
+        out.append({"t": text[:SLIDES_MAX_TEXT], "lv": int(par.level or 0),
+                    "sz": size, "b": bold, "c": color, "al": _slide_align(par)})
+    return out
+
+
+def _slide_shape(shape, sw, shh, budget):
+    """One shape as fractions of the slide, or None when it carries no content."""
+    try:
+        l, t = float(shape.left or 0), float(shape.top or 0)
+        w, h = float(shape.width or 0), float(shape.height or 0)
+    except Exception:  # noqa: BLE001
+        return None
+    if w <= 0 or h <= 0 or sw <= 0 or shh <= 0:
+        return None
+    box = {"x": max(0.0, min(1.0, l / sw)), "y": max(0.0, min(1.0, t / shh)),
+           "w": max(0.0, min(1.0, w / sw)), "h": max(0.0, min(1.0, h / shh))}
+    if box["x"] >= 1 or box["y"] >= 1:
+        return None
+    if getattr(shape, "has_text_frame", False):
+        paras = _slide_paras(shape.text_frame)
+        if paras:
+            return dict(box, k="text", paras=paras, bg=_slide_fill(shape),
+                        va=str(getattr(shape.text_frame, "vertical_anchor", "") or "").lower())
+    if getattr(shape, "has_table", False):
+        rows = []
+        tbl = shape.table
+        for ri, r in enumerate(tbl.rows):
+            if ri >= SLIDES_MAX_TABLE_ROWS:
+                break
+            cells = []
+            for ci, c in enumerate(r.cells):
+                if ci >= SLIDES_MAX_TABLE_COLS:
+                    break
+                cells.append(str(c.text or "")[:400])
+            rows.append(cells)
+        if rows:
+            return dict(box, k="table", rows=rows)
+    try:
+        img = shape.image
+    except Exception:  # noqa: BLE001 — not a picture shape
+        img = None
+    if img is not None and budget["images"] < SLIDES_MAX_IMAGES:
+        blob = img.blob or b""
+        ctype = str(img.content_type or "").lower()
+        if (len(blob) <= SLIDES_MAX_IMAGE_BYTES
+                and ctype in ("image/png", "image/jpeg", "image/gif", "image/webp", "image/bmp")):
+            import base64
+            budget["images"] += 1
+            return dict(box, k="image", ctype=ctype,
+                        src="data:%s;base64,%s" % (ctype, base64.b64encode(blob).decode("ascii")))
+    return None
+
+
+def fs_slides(qs=None) -> dict:
+    """GET /api/fs/slides — a .pptx as slides with their real geometry.
+
+    Returns ``{ok, path, w, h, slides:[{n,title,notes,shapes:[…]}], truncated}``
+    where a shape's x/y/w/h are fractions of the slide and text carries its size,
+    weight, colour and alignment. Bounded so a 200-slide deck cannot freeze the
+    window. A parse failure (or a legacy `.ppt`) is a message, never a blank deck.
+    """
+    import os as _os
+    q = qs or {}
+    p = _safe_fs_path(_link_path(q.get("path"), q), _fs_allowed_roots(q))
+    if not p:
+        return {"ok": False, "error": "path outside allowed roots"}
+    if not _os.path.isfile(p):
+        return {"ok": False, "error": "not a file: %s" % p}
+    ext = _os.path.splitext(p)[1].lower()
+    if ext not in (".pptx", ".pptm"):
+        return {"ok": False, "path": p,
+                "error": "no slide view for %s (PowerPoint 97 .ppt needs a converter; "
+                         "save it as .pptx)" % (ext or "this file")}
+    try:
+        from pptx import Presentation
+    except Exception:  # noqa: BLE001 — a missing optional dep is a message
+        return {"ok": False, "path": p, "error": "python-pptx is not installed on the server"}
+    try:
+        prs = Presentation(p)
+    except Exception as e:  # noqa: BLE001 — a corrupt deck must not break the panel
+        return {"ok": False, "path": p, "error": "%s: %s" % (type(e).__name__, e)}
+    sw, sh = float(prs.slide_width or 0), float(prs.slide_height or 0)
+    budget = {"images": 0}
+    slides, cut = [], False
+    for idx, slide in enumerate(prs.slides):
+        if idx >= SLIDES_MAX:
+            cut = True
+            break
+        shapes = []
+        for shp in slide.shapes:
+            if len(shapes) >= SLIDES_MAX_SHAPES:
+                cut = True
+                break
+            try:
+                got = _slide_shape(shp, sw, sh, budget)
+            except Exception:  # noqa: BLE001 — one odd shape must not lose the deck
+                got = None
+            if got:
+                shapes.append(got)
+        title = ""
+        try:
+            if slide.shapes.title is not None:
+                title = str(slide.shapes.title.text or "").strip()
+        except Exception:  # noqa: BLE001
+            title = ""
+        if not title:
+            for sp in shapes:
+                if sp.get("k") == "text":
+                    for par in sp.get("paras") or []:
+                        if par.get("t", "").strip():
+                            title = par["t"].strip()
+                            break
+                if title:
+                    break
+        notes = ""
+        try:
+            if slide.has_notes_slide:
+                notes = str(slide.notes_slide.notes_text_frame.text or "").strip()
+        except Exception:  # noqa: BLE001
+            notes = ""
+        slides.append({"n": idx + 1, "title": title[:300], "notes": notes[:4000],
+                       "shapes": shapes})
+    return {"ok": True, "path": p, "w": sw, "h": sh,
+            "ratio": (sw / sh) if sh else 16 / 9,
+            "stage_px": SLIDE_STAGE_PX,
+            "slides": slides, "total": len(prs.slides), "truncated": cut}
 
 
 def _fs_raw(handler, qs=None):

@@ -1473,6 +1473,68 @@
     text-align: left; white-space: nowrap; }
   .pv-table th { background: var(--bg2); color: var(--dim); position: sticky; top: 0; }
   .pv-sheets { padding: 8px 12px 0; font-size: 11px; color: var(--dim); }
+  /* v1016: spreadsheet-like view — row numbers, column letters, sticky head,
+     horizontal scroll. */
+  .pv-table-wrap { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 6px 12px 24px; }
+  .pv-grid { border-collapse: separate; border-spacing: 0; margin: 0; }
+  .pv-grid th, .pv-grid td { border: 1px solid var(--line); padding: 3px 8px;
+    text-align: left; white-space: nowrap; background: transparent; }
+  .pv-grid th { position: static; }
+  .pv-grid .pv-colhead { position: sticky; top: 0; z-index: 2; background: var(--bg2);
+    color: var(--dim); font-size: 10px; font-weight: 500; }
+  .pv-grid .pv-rn { position: sticky; left: 0; z-index: 1; background: var(--bg2);
+    color: var(--dim); font-size: 10px; font-weight: 500; text-align: right; }
+  .pv-grid .pv-colhead.pv-rn { z-index: 3; }
+  .pv-grid tr.pv-headrow > * { position: sticky; top: 25px; z-index: 2;
+    background: var(--bg2); }
+  .pv-grid tr.pv-headrow > .pv-rn { left: 0; z-index: 3; }
+  .pv-sheet-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 6px 12px 8px; }
+  .pv-sheet-tabs { display: flex; gap: 3px; flex-wrap: wrap; }
+  .pv-sheet-tabs button { font: inherit; font-size: 11px; padding: 3px 9px;
+    border-radius: 7px; border: 1px solid var(--line); background: transparent;
+    color: var(--dim); cursor: pointer; }
+  .pv-sheet-tabs button.on { color: var(--txt); border-color: var(--acc);
+    background: var(--sel); font-weight: 600; }
+  .pv-sheet-info { margin-left: auto; font-size: 10.5px; color: var(--dim); }
+  /* v1016: the slide canvas — shapes positioned exactly where the deck puts them. */
+  .pv-slide-bar { display: flex; align-items: center; gap: 8px; padding: 6px 12px 8px; }
+  .pv-slide-bar button { font: inherit; font-size: 11px; padding: 3px 9px;
+    border-radius: 7px; border: 1px solid var(--line); background: transparent;
+    color: var(--txt); cursor: pointer; }
+  .pv-slide-bar button:disabled { opacity: .35; cursor: default; }
+  .pv-slide-count { font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums; }
+  .pv-slide-title { font-size: 11.5px; color: var(--dim); overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  .pv-slide-wrap { position: relative; margin: 0 14px 8px; overflow: hidden;
+    background: #fff; border-radius: 8px; box-shadow: 0 6px 22px rgba(0,0,0,.35); }
+  .pv-slide { position: absolute; top: 0; left: 0; transform-origin: top left;
+    background: #fff; color: #24292f; overflow: hidden; }
+  .pv-slide-shape { position: absolute; display: flex; flex-direction: column;
+    overflow: hidden; }
+  .pv-slide-shape img { width: 100%; height: 100%; object-fit: contain; }
+  .pv-slide-p { margin: 0 0 4px; line-height: 1.22; white-space: pre-wrap;
+    word-break: break-word; }
+  .pv-slide-table { border-collapse: collapse; width: 100%; height: 100%;
+    font-size: 11px; color: #24292f; }
+  .pv-slide-table th, .pv-slide-table td { border: 1px solid #b9c0cc;
+    padding: 3px 6px; text-align: left; }
+  .pv-slide-table th { background: #eef1f6; font-weight: 600; }
+  .pv-slide-notes { margin: 4px 16px 22px; font-size: 11px; color: var(--dim);
+    white-space: pre-wrap; }
+  .pv-outline { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 8px 14px 24px; }
+  .pv-outline-card { display: block; width: 100%; text-align: left; font: inherit;
+    background: var(--panel); color: var(--txt); border: 1px solid var(--line);
+    border-radius: 9px; padding: 8px 11px; margin: 0 0 8px; cursor: pointer; }
+  .pv-outline-card:hover { border-color: var(--acc); }
+  .pv-outline-h { display: block; font-weight: 600; font-size: 12px; margin-bottom: 3px; }
+  .pv-outline-p { display: block; font-size: 11.5px; color: var(--dim);
+    padding: 1px 0; }
+  .pv-outline-p.lv1 { padding-left: 12px; }
+  .pv-outline-p.lv2 { padding-left: 24px; }
+  .pv-outline-p.lv3 { padding-left: 36px; }
+  .pv-outline-notes { display: block; margin-top: 4px; font-size: 10.5px;
+    color: var(--dim); font-style: italic; }
   /* v1015: YAML/JSON/XML as a foldable tree. Text nodes only (never markup);
      the leaf colour says the TYPE, like the IDE colours a token. */
   .pv-tree { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 10px 14px 26px;
@@ -17344,7 +17406,8 @@ const PV_TEXT_EXT = [".md", ".markdown", ".mdx", ".txt", ".rst", ".tex", ".latex
   ".clj", ".cljs", ".hs", ".erl", ".hrl", ".jl", ".cr", ".d", ".elm", ".groovy",
   ".gradle", ".lhs", ".vb", ".pas", ".vhd", ".vhdl", ".sv", ".proto", ".cmake",
   ".mk", ".txt", ".log", ".patch", ".diff", ".csv", ".tsv"];
-const PV_VIEW_LABEL = { render: "Preview", source: "Source", table: "Table", tree: "Tree" };
+const PV_VIEW_LABEL = { render: "Preview", source: "Source", table: "Table", tree: "Tree",
+  slides: "Slides", outline: "Outline" };
 /* v1015: a document with a native structure earns a TREE next to its source.
    YAML/JSON parse on the SERVER (the same loader the harness uses); XML uses the
    browser's own DOMParser. SVG deliberately stays TEXT (a script container). */
@@ -17393,6 +17456,7 @@ function _pvKind(path, row) {
   if (_pvIsHtml(path)) return "html";
   if (_pvIsPdf(path)) return "pdf";
   if (/\.(xlsx|xlsm)$/i.test(path)) return "sheet";
+  if (/\.(pptx|pptm|ppt)$/i.test(path)) return "slides";
   if (/\.(csv|tsv)$/i.test(path)) return "csv";
   if (_pvIsMd(path)) return "markdown";
   if (_pvIsStruct(path)) return "structured";
@@ -17409,6 +17473,7 @@ function _pvKind(path, row) {
 function _pvViewsFor(path, kind) {
   if (kind === "markdown" || kind === "html") return ["render", "source"];
   if (kind === "csv") return ["table", "source"];
+  if (kind === "slides") return ["slides", "outline"];
   if (kind === "structured" || kind === "xmltree") return ["tree", "source"];
   if (kind === "text" || kind === "code" || kind === "data") return ["source"];
   return [];
@@ -17529,6 +17594,8 @@ async function renderPreview() {
     return;
   }
   if (kind === "sheet") return _pvRenderSheet(body, note);
+  if (kind === "slides" && _pv.view === "slides") return _pvRenderSlides(body, note);
+  if (kind === "slides" && _pv.view === "outline") return _pvRenderOutline(body, note);
   if (kind === "csv" && _pv.view === "table") return _pvRenderCsv(body, note);
   if (kind === "markdown" && _pv.view === "render") return _pvRenderMd(body, note);
   if (kind === "structured" && _pv.view === "tree") return _pvRenderStruct(body, note);
@@ -17752,59 +17819,294 @@ function _pvCsvRows(text, delim) {
   return rows.slice(0, 500).map(r => r.slice(0, 80));
 }
 
+/* v1016: one table renderer for a workbook sheet and a CSV — row numbers, a
+   column-letter header and a scroll box, so the panel reads like a spreadsheet
+   rather than a text dump. */
+function _pvColName(i) {
+  let s = "";
+  let n = i;
+  do { s = String.fromCharCode(65 + (n % 26)) + s; n = Math.floor(n / 26) - 1; } while (n >= 0);
+  return s;
+}
+function _pvSheetTable(rows, numbered) {
+  const wrap = document.createElement("div");
+  wrap.className = "pv-table-wrap";
+  const table = document.createElement("table");
+  table.className = "pv-table pv-grid";
+  const tb = document.createElement("tbody");
+  let cols = 0;
+  (rows || []).forEach(cells => { cols = Math.max(cols, (cells || []).length); });
+  if (numbered && cols) {
+    const hr = document.createElement("tr");
+    const corner = document.createElement("th");
+    corner.className = "pv-rn pv-colhead";
+    hr.appendChild(corner);
+    for (let c = 0; c < cols; c++) {
+      const th = document.createElement("th");
+      th.className = "pv-colhead";
+      th.textContent = _pvColName(c);
+      hr.appendChild(th);
+    }
+    tb.appendChild(hr);
+  }
+  (rows || []).forEach((cells, i) => {
+    const tr = document.createElement("tr");
+    if (i === 0) tr.className = "pv-headrow";
+    if (numbered) {
+      const rn = document.createElement("th");
+      rn.className = "pv-rn";
+      rn.textContent = String(i + 1);
+      tr.appendChild(rn);
+    }
+    (cells || []).forEach(c => {
+      const cell = document.createElement(i ? "td" : "th");
+      cell.textContent = c;
+      tr.appendChild(cell);
+    });
+    tb.appendChild(tr);
+  });
+  table.appendChild(tb);
+  wrap.appendChild(table);
+  return wrap;
+}
+
 async function _pvRenderCsv(body, note) {
   const r = await _pvRead();
   if (!r || r.error) return note((r && r.error) || "cannot read this file");
   if (r.binary) return note("binary file — no inline preview");
   const rows = _pvCsvRows(r.text || "", _pvExt(_pv.path) === ".tsv" ? "\t" : ",");
   if (!rows.length) return note("the table is empty");
+  body.innerHTML = "";
   const head = document.createElement("div");
   head.className = "pv-sheets";
   head.textContent = rows.length + " row" + (rows.length === 1 ? "" : "s") +
-    (r.truncated ? " · first part of the file" : "");
+    " · " + (rows[0] || []).length + " cols" + (r.truncated ? " · first part of the file" : "");
   body.appendChild(head);
-  const table = document.createElement("table");
-  table.className = "pv-table";
-  const tb = document.createElement("tbody");
-  rows.forEach((cells, i) => {
-    const tr = document.createElement("tr");
-    (cells || []).forEach(c => {
-      const cell = document.createElement(i ? "td" : "th");
-      cell.textContent = c;
-      tr.appendChild(cell);
-    });
-    tb.appendChild(tr);
-  });
-  table.appendChild(tb);
-  body.appendChild(table);
+  body.appendChild(_pvSheetTable(rows, true));
   if (r.truncated) _pvCut(body);
 }
 
-async function _pvRenderSheet(body, note) {
+/* v1016: the workbook is a real spreadsheet view — sheet TABS (the server reads
+   one sheet per request), a column-letter header, row numbers and the sheet's
+   declared dimensions. */
+async function _pvRenderSheet(body, note, sheetName) {
+  let url = "/api/fs/sheet?path=" + encodeURIComponent(_pv.path);
+  if (sheetName) url += "&sheet=" + encodeURIComponent(sheetName);
   let r = null;
-  try { r = await api("GET", "/api/fs/sheet?path=" + encodeURIComponent(_pv.path)); } catch (e) { r = null; }
+  try { r = await api("GET", url); } catch (e) { r = null; }
   if (!r || r.error) return note((r && r.error) || "cannot read this workbook");
-  const head = document.createElement("div");
-  head.className = "pv-sheets";
-  const sheets = r.sheets || [];
-  head.textContent = "sheet " + (r.sheet || "—") + (sheets.length > 1 ? " · workbook holds " + sheets.join(", ") : "")
-    + (r.truncated ? " · first 200 rows" : "");
-  body.appendChild(head);
-  const table = document.createElement("table");
-  table.className = "pv-table";
-  const tb = document.createElement("tbody");
-  (r.rows || []).forEach((cells, i) => {
-    const tr = document.createElement("tr");
-    (cells || []).forEach(c => {
-      const cell = document.createElement(i ? "td" : "th");
-      cell.textContent = c;
-      tr.appendChild(cell);
-    });
-    tb.appendChild(tr);
+  body.innerHTML = "";
+  const bar = document.createElement("div");
+  bar.className = "pv-sheet-bar";
+  const tabs = document.createElement("div");
+  tabs.className = "pv-sheet-tabs";
+  (r.sheets || []).forEach(name => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = name;
+    b.className = name === r.sheet ? "on" : "";
+    b.title = "show the sheet " + name;
+    b.onclick = () => { if (name !== r.sheet) _pvRenderSheet(body, note, name); };
+    tabs.appendChild(b);
   });
-  table.appendChild(tb);
-  body.appendChild(table);
+  bar.appendChild(tabs);
+  const info = document.createElement("span");
+  info.className = "pv-sheet-info";
+  const dims = r.dims || {};
+  info.textContent = (dims.rows ? dims.rows + " rows × " + dims.cols + " cols · " : "")
+    + "sheet " + (r.sheet || "—") + (r.truncated ? " · first " + r.max_rows + " rows" : "");
+  bar.appendChild(info);
+  body.appendChild(bar);
+  if (!(r.rows || []).length) { note("this sheet is empty"); return; }
+  body.appendChild(_pvSheetTable(r.rows, true));
 }
+
+/* v1016: a .pptx draws as SHAPES on a slide canvas — position, size, weight,
+   colour and alignment come from the server's python-pptx read, so a deck is not
+   flattened to a text outline. Slides ⇄ Outline, arrows and ←/→ navigate. */
+let _pvSlideCache = { path: "", data: null, idx: 0 };
+
+function _pvSlideFit(inner, wrap) {
+  const k = Math.max(0.05, wrap.clientWidth / 960);
+  inner.style.transform = "scale(" + k + ")";
+  wrap.style.height = Math.round(inner.offsetHeight * k) + "px";
+}
+function _pvSlidePaint(body, note) {
+  const d = _pvSlideCache.data;
+  body.innerHTML = "";
+  if (!d || !d.ok) return note((d && d.error) || "cannot read this deck");
+  const list = d.slides || [];
+  if (!list.length) return note("this deck has no slides");
+  const idx = Math.max(0, Math.min(_pvSlideCache.idx, list.length - 1));
+  _pvSlideCache.idx = idx;
+  const s = list[idx];
+  const bar = document.createElement("div");
+  bar.className = "pv-slide-bar";
+  const prev = document.createElement("button");
+  prev.type = "button"; prev.className = "ghost"; prev.textContent = "◀";
+  prev.title = "previous slide (←)"; prev.disabled = idx === 0;
+  const next = document.createElement("button");
+  next.type = "button"; next.className = "ghost"; next.textContent = "▶";
+  next.title = "next slide (→)"; next.disabled = idx >= list.length - 1;
+  const count = document.createElement("span");
+  count.className = "pv-slide-count";
+  count.textContent = (idx + 1) + " / " + list.length;
+  const title = document.createElement("span");
+  title.className = "pv-slide-title";
+  title.textContent = s.title || "";
+  title.title = s.title || "";
+  prev.onclick = () => { _pvSlideCache.idx = idx - 1; _pvSlidePaint(body, note); };
+  next.onclick = () => { _pvSlideCache.idx = idx + 1; _pvSlidePaint(body, note); };
+  bar.append(prev, count, next, title);
+  body.appendChild(bar);
+
+  const wrap = document.createElement("div");
+  wrap.className = "pv-slide-wrap";
+  const inner = document.createElement("div");
+  inner.className = "pv-slide";
+  const W = 960, H = Math.round(W / (d.ratio || 16 / 9));
+  inner.style.width = W + "px";
+  inner.style.height = H + "px";
+  const pt = W / ((d.w || 12192000) / 12700);   // design px per typographic pt
+  (s.shapes || []).forEach(sh => {
+    const el = document.createElement("div");
+    el.className = "pv-slide-shape";
+    el.style.left = (sh.x * 100) + "%";
+    el.style.top = (sh.y * 100) + "%";
+    el.style.width = (sh.w * 100) + "%";
+    el.style.height = (sh.h * 100) + "%";
+    if (sh.bg) el.style.background = sh.bg;
+    if (sh.k === "image") {
+      const im = document.createElement("img");
+      im.src = sh.src; im.alt = ""; im.loading = "lazy";
+      el.appendChild(im);
+    } else if (sh.k === "table") {
+      const tb = document.createElement("table");
+      tb.className = "pv-slide-table";
+      (sh.rows || []).forEach((cells, ri) => {
+        const tr = document.createElement("tr");
+        (cells || []).forEach(c => {
+          const td = document.createElement(ri ? "td" : "th");
+          td.textContent = c;
+          tr.appendChild(td);
+        });
+        tb.appendChild(tr);
+      });
+      el.appendChild(tb);
+    } else {
+      const va = String(sh.va || "");
+      if (va.indexOf("middle") >= 0) el.style.justifyContent = "center";
+      else if (va.indexOf("bottom") >= 0) el.style.justifyContent = "flex-end";
+      (sh.paras || []).forEach(pa => {
+        const p = document.createElement("div");
+        p.className = "pv-slide-p";
+        p.style.fontSize = Math.round((pa.sz || 18) * pt) + "px";
+        if (pa.b) p.style.fontWeight = "700";
+        if (pa.c) p.style.color = pa.c;
+        if (pa.al && pa.al !== "left") p.style.textAlign = pa.al;
+        if (pa.lv > 0) {
+          p.style.paddingLeft = (pa.lv * 18) + "px";
+          p.textContent = "• " + (pa.t || "");
+        } else {
+          p.textContent = pa.t || "";
+        }
+        el.appendChild(p);
+      });
+    }
+    inner.appendChild(el);
+  });
+  wrap.appendChild(inner);
+  body.appendChild(wrap);
+  const fit = () => _pvSlideFit(inner, wrap);
+  requestAnimationFrame(fit);
+  if (window.ResizeObserver) {
+    if (wrap._pvRO) wrap._pvRO.disconnect();
+    wrap._pvRO = new ResizeObserver(fit);
+    wrap._pvRO.observe(wrap);
+  }
+  if (s.notes) {
+    const n = document.createElement("div");
+    n.className = "pv-slide-notes";
+    n.textContent = "notes: " + s.notes;
+    body.appendChild(n);
+  }
+  if (d.truncated) {
+    const n = document.createElement("div");
+    n.className = "pv-sheets";
+    n.textContent = "the deck is larger than the slide limit — these are the first " + list.length;
+    body.appendChild(n);
+  }
+}
+async function _pvLoadSlides() {
+  if (_pvSlideCache.path === _pv.path && _pvSlideCache.data) return _pvSlideCache.data;
+  let d = null;
+  try { d = await api("GET", "/api/fs/slides?path=" + encodeURIComponent(_pv.path)); } catch (e) { d = null; }
+  _pvSlideCache = { path: _pv.path, data: d, idx: 0 };
+  return d;
+}
+async function _pvRenderSlides(body, note) {
+  await _pvLoadSlides();
+  _pvSlidePaint(body, note);
+}
+async function _pvRenderOutline(body, note) {
+  const d = await _pvLoadSlides();
+  body.innerHTML = "";
+  if (!d || !d.ok) return note((d && d.error) || "cannot read this deck");
+  const box = document.createElement("div");
+  box.className = "pv-outline";
+  (d.slides || []).forEach((s, i) => {
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "pv-outline-card";
+    card.title = "open slide " + (i + 1);
+    const h = document.createElement("span");
+    h.className = "pv-outline-h";
+    h.textContent = (i + 1) + " · " + (s.title || "(untitled)");
+    card.appendChild(h);
+    (s.shapes || []).forEach(sh => {
+      if (sh.k === "text") {
+        (sh.paras || []).forEach(pa => {
+          if (!pa.t) return;
+          const p = document.createElement("span");
+          p.className = "pv-outline-p lv" + Math.min(3, pa.lv || 0);
+          p.textContent = pa.t;
+          card.appendChild(p);
+        });
+      } else if (sh.k === "table") {
+        (sh.rows || []).slice(0, 8).forEach(row => {
+          const p = document.createElement("span");
+          p.className = "pv-outline-p lv2";
+          p.textContent = (row || []).join(" · ");
+          card.appendChild(p);
+        });
+      }
+    });
+    if (s.notes) {
+      const n = document.createElement("span");
+      n.className = "pv-outline-notes";
+      n.textContent = "notes: " + s.notes;
+      card.appendChild(n);
+    }
+    card.onclick = () => { _pvSlideCache.idx = i; _pv.view = "slides"; renderPreview(); };
+    box.appendChild(card);
+  });
+  body.appendChild(box);
+}
+document.addEventListener("keydown", e => {
+  if (!_pv || _pv.kind !== "slides" || _pv.view !== "slides") return;
+  const w = $("pvWin");
+  if (!w || w.hidden) return;
+  const t = e.target;
+  if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+  if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+  const list = ((_pvSlideCache.data || {}).slides || []);
+  if (!list.length) return;
+  e.preventDefault();
+  _pvSlideCache.idx = Math.max(0, Math.min(_pvSlideCache.idx + (e.key === "ArrowRight" ? 1 : -1),
+    list.length - 1));
+  const body = $("pvBody");
+  _pvSlidePaint(body, msg => { body.innerHTML = '<div class="pv-note">' + esc(msg) + "</div>"; });
+});
 
 /* One menu geometry for the ⋯ menu and the right-click menu, clamped to the
    viewport so a card in the last row never opens a menu off-screen.

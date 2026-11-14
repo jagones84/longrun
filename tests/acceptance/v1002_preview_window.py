@@ -150,9 +150,10 @@ check("U5b HTML renders in a sandboxed frame, never same-origin",
 check("U5c text is read through /api/fs/read and set as TEXT (no HTML injection)",
       '"/api/fs/read?path=" + encodeURIComponent(_pv.path)' in ui
       and "pre.textContent = r.text || \"\";" in ui)
-check("U5d a workbook renders its first rows through /api/fs/sheet",
+check("U5d a workbook renders its rows through /api/fs/sheet as a real grid",
       '"/api/fs/sheet?path=" + encodeURIComponent(_pv.path)' in ui
-      and 'table.className = "pv-table";' in ui)
+      and "function _pvSheetTable(rows, numbered)" in ui
+      and 'bar.className = "pv-sheet-bar";' in ui)
 check("U5e a markdown note renders through the sanitizer (mdToHtml)",
       "d.innerHTML = mdToHtml(r.text || \"\");" in ui and "mdToHtml(" in ui)
 

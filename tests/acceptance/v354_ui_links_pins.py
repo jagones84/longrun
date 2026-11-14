@@ -86,8 +86,9 @@ check("A4 every fs handler resolves the path argument",
       # with `scope=workspace` (it resolves the listed folder the same way)
       # + v1004 the same route's `scope=sessions` (it resolves every session's
       # folder through the SAME allow-list)
-      # + v1015 `/api/fs/structured` (the YAML/JSON tree view) = 8.
-      and API.count("_fs_allowed_roots(q)") == 8
+      # + v1015 `/api/fs/structured` (the YAML/JSON tree view)
+      # + v1016 `/api/fs/slides` (the .pptx slide canvas) = 9.
+      and API.count("_fs_allowed_roots(q)") == 9
       and "_fs_allowed_roots(b)" in API, "")
 
 # --- A4: the README is accurate (positioning + dependencies) -----------------
