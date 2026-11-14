@@ -92,11 +92,13 @@ See `integrations/paperclip/README.md` for the adapter install and configuration
 | `sessions rm ID` | `DELETE /api/sessions/<id>` |
 | `sessions history ID` | `GET /api/history?session=ID` |
 | `sessions graph ID` | `GET /api/sessions/<id>/graph` |
+| `sessions tree ID` | `GET /api/sessions/<id>/trace-tree` |
 | `sessions reset ID` | `POST /api/sessions/<id>/graph/reset` |
 
 ```bash
 python3 forge.py sessions ls
 python3 forge.py sessions history 4f503dc92a29
+python3 forge.py sessions tree 4f503dc92a29     # stage→step tree + the first failed step
 python3 forge.py sessions rm 4f503dc92a29
 python3 forge.py sessions reset my-session      # clears the persistent task list
 ```
@@ -378,6 +380,7 @@ Every HTTP route the server exposes has a CLI entry point:
 | GET | `/api/runs` | `runs summary` |
 | GET | `/api/runs/<id>/trace` | `runs trace` |
 | GET | `/api/sessions/<id>/graph` | `sessions graph` |
+| GET | `/api/sessions/<id>/trace-tree` | `sessions tree` |
 | GET | `/api/memory` | `memory search` |
 | GET | `/api/mcp/clients` | `acp list` |
 | GET | `/api/subagent` | `subagent status` |

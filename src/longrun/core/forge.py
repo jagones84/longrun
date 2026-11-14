@@ -11,7 +11,7 @@ Usage:
   python3 forge.py runs ls | runs show RUN_ID | runs summary | runs trace RUN_ID
                           | runs node RUN_ID '<json>' | control pause|resume|abort RUN_ID
   python3 forge.py sessions ls | sessions new "title" | sessions rm ID | sessions history ID
-                          | sessions graph ID | sessions reset ID | sessions clear ID
+                          | sessions tree ID | sessions graph ID | sessions reset ID | sessions clear ID
                           | sessions model "SID MODEL"
   python3 forge.py context show [--session ID] | context compact [--session ID]
                           | context preview "message" [--session ID] | context items [--session ID]
@@ -694,6 +694,31 @@ def cmd_sessions(args):
     elif args.action == "graph":
         print(json.dumps(req("GET", "/api/sessions/%s/graph" % args.value),
                          indent=2, ensure_ascii=False))
+    elif args.action == "tree":
+        # HD-2: the stage→step tree plus the first failure. The one-line verdict
+        # leads because that is the answer to "why did this turn go wrong"; the
+        # JSON is there when the operator (or an agent) needs the detail.
+        out = req("GET", "/api/sessions/%s/trace-tree" % args.value)
+        if out.get("error"):
+            print("error:", out["error"], file=sys.stderr)
+            sys.exit(1)
+        if out.get("verdict"):
+            print(out["verdict"])
+        else:
+            print("no failed step in %d step(s)" % (out.get("counts") or {}).get("steps", 0))
+        for st in out.get("stages") or []:
+            print("\n%s  [%s]  %d step(s)" % (st.get("id"), st.get("status"), st.get("n") or 0))
+            print("  %s" % st.get("label"))
+            for s in st.get("steps") or []:
+                print("    %2d %-4s %s%s" % (s.get("i"), "FAIL" if s.get("failed") else "ok",
+                                             s.get("tool"),
+                                             ("  " + s.get("reason", "")[:90])
+                                             if s.get("failed") else ""))
+        if out.get("open"):
+            print("\nplanned but never executed (no tool call): %d"
+                  % len(out["open"]))
+            for st in out["open"]:
+                print("  %s  [%s]  %s" % (st.get("id"), st.get("status"), st.get("label")))
     elif args.action == "reset":
         print(json.dumps(req("POST", "/api/sessions/%s/graph/reset" % args.value, {}),
                          indent=2, ensure_ascii=False))
@@ -1031,7 +1056,7 @@ def main():
     p = sub.add_parser("swarm"); p.add_argument("goal"); p.add_argument("--n-workers", type=int, default=3); \
         p.add_argument("--max-steps", type=int, default=None); p.set_defaults(fn=cmd_swarm)
     sub.add_parser("paperclip-bot").set_defaults(fn=cmd_paperclip_bot)
-    p = sub.add_parser("sessions"); p.add_argument("action", choices=["ls", "new", "rm", "history", "graph", "reset", "clear", "model"]); \
+    p = sub.add_parser("sessions"); p.add_argument("action", choices=["ls", "new", "rm", "history", "graph", "tree", "reset", "clear", "model"]); \
         p.add_argument("value", nargs="?"); p.set_defaults(fn=cmd_sessions)
     p = sub.add_parser("context"); p.add_argument("action", choices=["show", "compact", "preview", "items"]); \
         p.add_argument("value", nargs="?"); p.add_argument("--session"); p.set_defaults(fn=cmd_context)

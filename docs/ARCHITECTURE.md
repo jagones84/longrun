@@ -195,6 +195,31 @@ file whose mtime/size moved after `fs.read` (`force=true` overrides). The write 
 is atomic (`util/fswrite.write_text`) and keeps the file mode; a non-UTF-8 target is
 refused rather than silently re-encoded. `v828` pins all of it.
 
+### Diagnosing a failed turn — the trace tree (HD-2, 2026-11-14)
+
+A turn persists everything a post-mortem needs — one card per tool call (`ok`, `error`,
+`exit_code`, `node`, `after`) and the plan's steps as graph nodes — but the only reader was
+`_render_transcript`, a flat ordered log: "why did this turn go wrong" was answered by reading
+and guessing. `util/runtree.py` is the read model over those stores, and
+`GET /api/sessions/<id>/trace-tree` (`python3 forge.py sessions tree ID`) serves it.
+
+- **STAGE → STEP.** One stage per plan node that actually executed a tool call; its steps in
+  execution order (`ts`, then `after` — the same keys the transcript sorts by, so the two
+  readers never disagree). A plan node with no tool call is NOT an empty stage: it goes to
+  `open`, because "claimed done with zero calls" is a finding, not a tree node.
+- **A deleted todo does not delete evidence.** A card naming a node the graph no longer has (a
+  replan replaced it) keeps its own `orphan` stage.
+- **The onset verdict.** `onset` is the FIRST failed step — a bad `ok` OR a non-zero
+  `exit_code` — with the stage it belongs to, whether a later success of the same tool in the
+  same stage recovered it, and how many times that tool was retried. `verdict` is one
+  operator-readable line; it is empty when nothing failed, never an invented cause.
+- **One failure vocabulary.** The class comes from `selfevolve.error_class` (public since this
+  change), the same normalizer the miner ranks failures by — the tree and `failure_candidates`
+  cannot name the same failure two ways.
+- **Read-only.** No store is written and no model is called, so it is safe to ask about a
+  session that is running right now. It is not causal attribution: that is HD-1, and this tree
+  is its precondition.
+
 
 ## Components (`src/longrun/`, organised in subpackages)
 
@@ -208,7 +233,7 @@ refused rather than silently re-encoded. `v828` pins all of it.
 | `model/` | `providers.py`, `routing.py`, `context_engine.py`, `prompt.py`, `runmetrics.py`, `otel_tracing.py`, `rllm.py`, `keys.py`, `costs.py`, `embed.py`, `compaction_config.py`, `structured.py`, `vision.py`, `decision.py`, `rerank.py` |
 | `memory/` | `memory.py`, `skills.py`, `rules.py`, `checkpoints.py`, `stores.py`, `knowledge.py`, `codeindex.py`, `vectors.py`, `embedcfg.py`, `indexcfg.py`, `chunk.py`, `costlog.py`, `docio.py`, `autoidx.py`, `rewind.py`, `threads.py`, `sqlkit.py` |
 | `interop/` | `mcp.py`, `mcp_client.py`, `mcp_server.py`, `acp.py` |
-| `util/` | `osutil.py`, `paths.py`, `textkit.py`, `steering.py`, `tracing.py`, `voice.py`, `evals.py`, `meta.py`, `selfevolve.py`, `improve.py`, `dag.py`, `dataio.py`, `fswrite.py` |
+| `util/` | `osutil.py`, `paths.py`, `textkit.py`, `steering.py`, `tracing.py`, `runtree.py`, `voice.py`, `evals.py`, `meta.py`, `selfevolve.py`, `improve.py`, `dag.py`, `dataio.py`, `fswrite.py` |
 | `integrations/` | `paperclip_adapter.py`, `paperclip_bot.py` (Paperclip team-chat adapter + bot) |
 | `orbit/` | the **Control** deck at `/orbit`: `api.py`, `orchestrator.py`, `attention.py`, `decisions.py`, `registry.py`, `bay.py`, `web/orbit.html` |
 | `research/` | `research.py`, `executor.py`, `researchcfg.py` (web-grounded research agent) |

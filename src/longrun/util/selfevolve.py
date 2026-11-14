@@ -583,12 +583,16 @@ def retire_unused_skills(days=None, skills_dir=None, category=None, dry_run=True
             "candidates": [s["name"] for s in candidates], "removed": removed}
 
 
-def _error_class(text):
+def error_class(text):
     """Normalize an error line into a stable CLASS (paths and numbers abstract).
 
     "no such file: /a" and "no such file: /b" are the same failure; only the
     argument differs. Without this every occurrence is its own class and the
     ranking says nothing.
+
+    Public since 2026-11-14 (HD-2): `util/runtree` names a failure onset with the
+    SAME class this module ranks failures by — two normalizers would be two
+    truths.
     """
     s = " ".join(str(text or "").split())[:140]
     s = re.sub(r"/[^\s,;:]+", "<path>", s)
@@ -627,7 +631,7 @@ def failure_candidates(path=None, limit=10, min_count=1):
             if not isinstance(step, dict) or step.get("ok") is not False:
                 continue
             tool = str(step.get("tool") or "?")
-            head = _error_class(step.get("error"))
+            head = error_class(step.get("error"))
             row = buckets.setdefault((tool, head), {"count": 0, "runs": set()})
             row["count"] += 1
             row["runs"].add(fn[:-5])

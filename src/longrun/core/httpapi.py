@@ -2678,6 +2678,19 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(404, {"error": "session not found"})
             from longrun.agent import session_jobs as _sj
             return self._send(200, _sj.describe(sid, (qs or {}).get("job")))
+        if path.startswith("/api/sessions/") and path.endswith("/trace-tree"):
+            # HD-2 (2026-11-14): the turn's stage→step tree and the FIRST step
+            # that went wrong. A read model over the tool cards and the plan —
+            # it writes nothing and calls no model, so it is safe to ask a
+            # session that is running right now.
+            sid = path[len("/api/sessions/"):-len("/trace-tree")].strip("/")
+            if not sid or "/" in sid or ".." in sid:
+                return self._send(404, {"error": "session not found"})
+            from longrun.util import runtree as _runtree
+            body = _runtree.describe(sid)
+            if body.get("error"):
+                return self._send(404, body)
+            return self._send(200, body)
         if path == "/api/eval/tasks":
             return self._send(200, eval_list_tasks())
         if path == "/api/voice/status":
