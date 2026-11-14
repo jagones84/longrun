@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # battery_tmp.sh — the fix in flight. Overwritten every round; tests/battery.sh is the gate.
-# 2026-11-14 (round 2, diversified bug hunt): v983 action-case policy bypass, v984 shell-variable
-# workspace boundary, v985 stale session Stop killing the next run, v986 dead per-tool frequency
-# override. v556 pins the frequency guard, v941/v945 the alias+shell boundary, v264 arg repair,
-# v968 the subtool warning, v767 the workspace subtree, v983-v986 are new; the run-loop pair
-# (v464/v982) and the README badge (v354) close the gate.
+# 2026-11-14 (round 3, policy findings from the bug-hunt `policy` session): v987 pins the
+# broadened hard-deny list (every recursive+force root delete, /proc/*/environ reads,
+# mkfs.<fs>, dd writing a block device). The deny list is the only gate that survives
+# approvals.mode=full, so its neighbours are the gate: v802 (git push vs shell deny),
+# v618 (shell bypass ingredients), v801 (blocked reason), v805/v808 (permissions page
+# + restore), v941/v945 (alias + shell boundary), v984 (variable path). v354 is the badge.
 set -u
 cd /home/jagones/Repositories/longrun || exit 1
-LONGRUN_BATTERY_TESTS="v983_action_case_gate v984_shell_var_boundary v985_run_clears_stale_stop v986_loop_freq_override v556_tool_frequency v941_gate_alias_and_env_prefix v945_shell_workspace_boundary v264_normalize_throttle v968_subtool_action_not_ignored v767_agent_workspace_subtree v464_paperclip_run_outcome v982_run_acceptance v977_finish_summary_verbatim v354_ui_links_pins" \
+LONGRUN_BATTERY_TESTS="v987_deny_root_delete_and_proc_environ v802_git_push_allowed v618_permit_shell_bypass v801_blocked_reason v805_permissions_page v808_permissions_restore v941_gate_alias_and_env_prefix v945_shell_workspace_boundary v984_shell_var_boundary v983_action_case_gate v806_permissions_split v354_ui_links_pins" \
   bash tests/battery.sh

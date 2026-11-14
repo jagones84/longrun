@@ -77,8 +77,13 @@ check("A3 an unknown tool has no shipped entry",
 _row = row("shell.exec")
 check("A4 the catalogue carries the shipped defaults",
       (_row.get("deny_default") or []) == (_ship.get("deny") or []), _row.get("deny_default"))
+# 2026-11-14: this pin hardcoded `["^push(\\s|$)"]`, and the shipped list gained a
+# second rule on 2026-11-10 (`^(log|diff|show)\b.*--output`). The test's subject is
+# "the catalogue publishes the SHIPPED list and reset restores it", not its content,
+# so it reads the shipped list instead of a copy that goes stale.
+_asks = _git_ship.get("always_ask") or ["^push(\\s|$)"]
 check("A5 git.run publishes its always-ask default",
-      (_row_git := row("git.run")).get("always_ask_default") == ["^push(\\s|$)"], _row_git)
+      (_row_git := row("git.run")).get("always_ask_default") == _asks, _row_git)
 
 # ---- B: delete a shipped rule, then put it back --------------------------
 _first = _ship["deny"][0]
@@ -110,15 +115,14 @@ check("B8 the shipped file was never rewritten (the overlay is the operator's la
       os.path.getmtime(registry.CONFIG_YAML) == _CFG_MTIME and "^myblock$" not in CFG)
 
 # ---- B2: the same restore for the always-ask list ------------------------
-_ask = (_git_ship.get("always_ask") or ["^push(\\s|$)"])[0]
 api_v02.update_policy({"tool": "git.run", "always_ask": []})
 registry.load_config(reload=True)
 check("B9 always-ask can be emptied", (row("git.run").get("always_ask") or []) == [])
 check("B10 it is still listed as a default",
-      row("git.run").get("always_ask_default") == [_ask])
+      row("git.run").get("always_ask_default") == _asks)
 api_v02.update_policy({"tool": "git.run", "reset": ["always_ask"]})
 registry.load_config(reload=True)
-check("B11 reset brings it back", row("git.run").get("always_ask") == [_ask],
+check("B11 reset brings it back", row("git.run").get("always_ask") == _asks,
       row("git.run").get("always_ask"))
 
 # ---- C: the API refuses a nonsense field --------------------------------

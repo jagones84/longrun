@@ -425,9 +425,29 @@ tools:
       - "^stop$"
     # hard blocks — never executed, even with approval
     deny:
-      - "rm\\s+-rf\\s+/(\\s|$)"
-      - "\\bmkfs(\\s|$)"
+      # 2026-11-14 (bug hunt): the old `rm\s+-rf\s+/(\s|$)` matched only the
+      # literal flag order `-rf` followed by a bare `/`. `rm -fr /`, `rm -r -f /`,
+      # `rm -rf /*`, `rm -rf --no-preserve-root /` and `rm --recursive --force /`
+      # all reached the filesystem root and executed — and a hard deny is the ONLY
+      # gate that survives `approvals.mode=full`, so nothing else caught them.
+      # Two lookaheads require BOTH the recursive and the force flag (any order,
+      # split or long form), then a target that IS the root or a glob/`..` path
+      # that resolves there. Deliberately conservative: a recursive+force delete
+      # of an absolute path that still carries `..` is denied too — retry with the
+      # normalised path.
+      - "\\brm\\b(?=[^\\n]*\\s(?:-[a-zA-Z]*[rR][a-zA-Z]*\\s|--recursive\\b))(?=[^\\n]*\\s(?:-[a-zA-Z]*[fF][a-zA-Z]*\\s|--force\\b))[^\\n]*\\s/(?:\\*|\\S*\\.\\.)?/?(?=\\s|$)"
+      # 2026-11-14 (bug hunt): `/proc` is in `registry._SYSTEM_ROOTS`, so a read of
+      # `/proc/self/environ` counted as "inside the workspace" and `^cat`
+      # auto-approved it. The child shell inherits the service environment, which
+      # carries the API token — same family as the `LONGRUN_TOKEN` rule below.
+      - "/proc/[^\\s;|&<>'\"]*/(environ|mem)\\b"
+      # 2026-11-14: `\bmkfs(\s|$)` missed the real spelling `mkfs.ext4 /dev/sda1`
+      # (v987 D1); the optional filesystem suffix is part of the command name.
+      - "\\bmkfs(\\.[a-z0-9]+)?(\\s|$)"
       - "\\bdd\\s+if=/dev/(zero|random)"
+      # 2026-11-14: the rule above looks only at the SOURCE, so
+      # `dd if=/dev/urandom of=/dev/sda` wrote over the disk and passed.
+      - "\\bdd[^\\n]*\\bof=/dev/(sd|nvme|mmcblk|hd|vd|disk)"
       - ":\\s*\\(\\s*\\)\\s*\\{"
       # 2026-11-04 (operator: "remove that command from hard denial i need to
       # shutdown the machines"): `\b(shutdown|reboot|poweroff)\b` was REMOVED. A
