@@ -76,7 +76,7 @@ def modules():
 
 PATTERN = ["fs.read", "fs.edit", "shell.exec"]
 _old_mine, _old_pipe = SE.mine, SE.pipeline
-SE.mine = lambda hist, c: [{"pattern": list(PATTERN), "support": 4}]
+SE.mine = lambda hist, c, **kw: [{"pattern": list(PATTERN), "support": 4}]
 
 
 def _pipe(pattern, out, support=0, **kw):

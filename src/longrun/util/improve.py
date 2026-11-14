@@ -744,17 +744,21 @@ def evolve_once(note="", allow_code=None):
     c = selfevolve.cfg()
     out = DRAFT_DIR
     reports = []
-    # The INSTALL bound (v976): `forge_per_run` has bounded the code arm since
-    # EV-13, but the skill arm grew one installed skill per green pattern, so a
-    # single pass could fill `skills/created/` to its 25-skill cap (91 candidates
-    # measured live 2026-11-14). One pass now installs at most `promote_per_run`;
-    # the remaining candidates stay verified drafts for the next pass.
+    # The INSTALL bound (SE-3, `v975`): `forge_per_run` has bounded the code arm
+    # since EV-13, but the skill arm grew one installed skill per green pattern,
+    # so a single pass could fill `skills/created/` to its 25-skill cap (91
+    # candidates measured live 2026-11-14). One pass now installs at most
+    # `promote_per_run`; the remaining candidates stay verified drafts for the
+    # next pass.
     try:
         pcap = max(0, int(c.get("promote_per_run") or 0))
     except (TypeError, ValueError):
         pcap = 1
     installed = 0
-    for cand in selfevolve.mine(selfevolve.history(), c):
+    # OCM (2026-11-14): mine with the outcome and the purpose of the runs the
+    # sequences came from — one aligned split, never reconstructed here.
+    _seqs, _ocs, _pps = selfevolve.history_split()
+    for cand in selfevolve.mine(_seqs, c, outcomes=_ocs, purposes=_pps):
         if installed >= pcap:
             break
         # `promote_per_run: 0` means "keep mining, install nothing" — the same

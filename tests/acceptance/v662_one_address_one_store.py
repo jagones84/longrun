@@ -107,7 +107,7 @@ check("C2 the tool runs that flow instead of its own copy",
 
 _MINED = [{"pattern": ["fs.read", "fs.write"], "support": 3}]
 _old_mine, _old_pipe = selfevolve.mine, selfevolve.pipeline
-selfevolve.mine = lambda hist, c: [dict(m) for m in _MINED]
+selfevolve.mine = lambda hist, c, **kw: [dict(m) for m in _MINED]
 selfevolve.pipeline = lambda pattern, out, support, **kw: {
     "ok": True, "verify": {"green": True}, "archived": {"rel": "skills/created/probe"}}
 try:

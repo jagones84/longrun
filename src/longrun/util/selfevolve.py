@@ -46,16 +46,27 @@ def _ngrams(seq, k):
     return [tuple(seq[i:i + k]) for i in range(len(seq) - k + 1)]
 
 
-def mine(sequences, c=None):
+def mine(sequences, c=None, outcomes=None, purposes=None):
     """Find contiguous tool sequences repeated across different runs.
 
     Args:
         sequences: list of runs; each run is the list of NAMES of the tools used,
             in execution order.
+        outcomes: optional, aligned with `sequences`: how each run ended
+            ("ok" | "error" | "corrected" | "" for unknown).
+        purposes: optional, aligned with `sequences`: what each run was FOR.
     Returns:
-        list of {"pattern": [tool,...], "length": k, "support": n, "runs": [idx]}
+        list of {"pattern": [tool,...], "length": k, "support": n, "runs": [idx],
+                 "purpose": str, "support_ok": n, "support_bad": n, "unknown": n}
         sorted by (length*support) descending; the longer patterns with the
         same support win over their sub-patterns.
+
+    OCM (2026-11-14): a candidate made only of runs that FAILED is not a
+    procedure — it is a description of something that does not work — so it is
+    refused here, before a draft exists. A row with no outcome (everything mined
+    before this change, and any caller that passes no outcomes at all) counts as
+    `unknown` and is never treated as a success, so legacy history can neither
+    mint a false success nor be retroactively blocked.
     """
     c = c or cfg()
     mn = max(1, int(c.get("min_len") or 3))
@@ -65,9 +76,22 @@ def mine(sequences, c=None):
     # tool. Loop pseudo-actions (`batch`, `subagent`, `dispatch`) are dropped here
     # so neither old history nor a direct caller can mint an unverifiable draft.
     known = set(_known_tools())
-    seqs = [[str(x) for x in (s or []) if _dispatchable(x, known)]
-            for s in (sequences or [])]
-    seqs = [s for s in seqs if len(s) >= mn]
+    raw = list(sequences or [])
+    ocs = list(outcomes) if outcomes is not None else [""] * len(raw)
+    pps = list(purposes) if purposes is not None else [""] * len(raw)
+    if len(ocs) != len(raw):
+        ocs = [""] * len(raw)
+    if len(pps) != len(raw):
+        pps = [""] * len(raw)
+    # The run filter and the outcome filter are the SAME pass: `runs` below holds
+    # indices into `seqs`, so anything that drops a run must drop its outcome too.
+    seqs, kept_ocs, kept_pps = [], [], []
+    for s, o, p in zip(raw, ocs, pps):
+        clean = [str(x) for x in (s or []) if _dispatchable(x, known)]
+        if len(clean) >= mn:
+            seqs.append(clean)
+            kept_ocs.append(str(o or "").strip().lower())
+            kept_pps.append(" ".join(str(p or "").split()))
     found = {}
     for k in range(mn, mx + 1):
         for idx, s in enumerate(seqs):
@@ -93,6 +117,17 @@ def mine(sequences, c=None):
         rs = set(d["runs"])
         if any(set(o["runs"]) == rs and o["length"] > d["length"] for o in out):
             continue
+        d["support_ok"] = sum(1 for i in rs if kept_ocs[i] == "ok")
+        d["support_bad"] = sum(1 for i in rs if kept_ocs[i] in ("error", "corrected"))
+        d["unknown"] = len(rs) - d["support_ok"] - d["support_bad"]
+        seen = {}
+        for i in sorted(rs):
+            if kept_pps[i]:
+                seen[kept_pps[i]] = seen.get(kept_pps[i], 0) + 1
+        d["purpose"] = max(seen, key=lambda t: (seen[t], t)) if seen else ""
+        # OCM: every run we have an outcome for failed -> refuse the candidate.
+        if d["support_ok"] == 0 and d["support_bad"] > 0:
+            continue
         out.append(d)
     out.sort(key=lambda d: (d["length"] * d["support"], d["support"]), reverse=True)
     return out
@@ -108,10 +143,11 @@ def slug(pattern):
 def draft(pattern, support, out_dir, note="", purpose=""):
     """Write a skill DRAFT (proposal.json + SKILL.md). Executes nothing.
 
-    `purpose` is optional and empty by default: a mined pattern carries none, and
-    `promote` refuses an automatic install without one (the purpose gate). A
-    caller that already knows what the sequence is for states it here, and the
-    draft then records it.
+    `purpose` is optional and empty by default: a sequence mined from history has
+    none. A caller that already knows what the sequence is for states it here and
+    the draft records it (OCM, 2026-11-14) — it is INFORMATION, not a gate: an
+    automatic draft installs on the evidence gates alone, and a purpose is never
+    required (the attempt to make it one broke five pins and was withdrawn).
 
     Returns the path of the proposal folder, or None if the write fails.
     """
@@ -133,10 +169,15 @@ def draft(pattern, support, out_dir, note="", purpose=""):
         # v656: the draft must be readable by the operator who finds it in the
         # file tree — what was observed, why it matters, and the exact commands
         # that turn it into a real skill — instead of a two-line stub.
+        # OCM: when the runs behind the sequence said what they were FOR, that
+        # purpose is the first thing the reader needs, so it leads.
+        asks = ("## What it was for\n\n%s\n\n" % str(purpose)
+                if str(purpose or "").strip() else "")
         md = ("# Proposed skill: %s\n\n"
               "The harness observed this tool sequence **%d times** across "
               "distinct runs (JAG-133). A repeated sequence is a skill "
               "CANDIDATE.\n\n"
+              "%s"
               "## Sequence\n\n%s\n\n"
               "## What it is\n\n"
               "A deterministic pattern of tool calls: `%s`. A draft is "
@@ -152,7 +193,7 @@ def draft(pattern, support, out_dir, note="", purpose=""):
               "folder>`) moves it to `skills/created/%s/`.\n\n"
               "## Status\n\n"
               "DRAFT — not verified, not archived."
-              % (name, support, steps, " → ".join(pattern), name))
+              % (name, support, asks, steps, " → ".join(pattern), name))
         with open(os.path.join(d, "SKILL.md"), "w", encoding="utf-8") as f:
             f.write(md)
         return d
@@ -160,17 +201,33 @@ def draft(pattern, support, out_dir, note="", purpose=""):
         return None
 
 
-def scan(sequences, out_dir, c=None, note=""):
+def _split_note(cand):
+    """One line naming what the runs behind a candidate did (OCM). Empty when
+    no run carries an outcome, so a legacy store produces the same note as
+    before."""
+    ok = int(cand.get("support_ok") or 0)
+    bad = int(cand.get("support_bad") or 0)
+    unk = int(cand.get("unknown") or 0)
+    if not (ok or bad):
+        return ""
+    return ("runs behind this candidate: %d ok / %d failed / %d unknown"
+            % (ok, bad, unk))
+
+
+def scan(sequences, out_dir, c=None, note="", outcomes=None, purposes=None):
     """Mine the sequences and write a draft per pattern. Returns the paths."""
     c = c or cfg()
     paths = []
-    for cand in mine(sequences, c):
+    for cand in mine(sequences, c, outcomes=outcomes, purposes=purposes):
         # Self-maintenance: skip drafts that already exist — a re-mine
         # must not re-emit (and re-flood the chat with) the same patterns.
         name = slug(cand["pattern"])
         if os.path.isfile(os.path.join(out_dir, name, "proposal.json")):
             continue
-        p = draft(cand["pattern"], cand["support"], out_dir, note=note)
+        split = _split_note(cand)
+        full = ("%s | %s" % (note, split)) if (note and split) else (note or split)
+        p = draft(cand["pattern"], cand["support"], out_dir, note=full,
+                  purpose=cand.get("purpose") or "")
         if p:
             paths.append(p)
         # Flood cap: one mine run deposits at most 10 NEW drafts.
@@ -253,8 +310,13 @@ def _dispatchable(name, known=None):
     return bool(n) and n in (known if known is not None else set(_known_tools()))
 
 
-def record(key, tools, path=None):
+def record(key, tools, path=None, outcome="", purpose=""):
     """Record the tool sequence of a run (for later mining).
+
+    `outcome` is how the RUN ended ("ok" | "error" | "corrected") and `purpose`
+    is what the run was FOR (the turn's request). Both are additive: a row
+    written before OCM (2026-11-14) reads as unknown, and unknown is never read
+    as a success — see `mine()`.
 
     Keeps the latest 500 runs. Never blocking: a write error is ignored.
     """
@@ -266,6 +328,8 @@ def record(key, tools, path=None):
     seq = [t for t in seq if _dispatchable(t, known)]
     if not seq or not key:
         return False
+    oc = str(outcome or "").strip().lower()
+    pp = " ".join(str(purpose or "").split())[:160]
     p = path or _history_path()
     try:
         data = {}
@@ -274,7 +338,12 @@ def record(key, tools, path=None):
                 data = json.load(f) or {}
         if not isinstance(data, dict):
             data = {}
-        data[str(key)] = {"tools": seq, "ts": round(time.time(), 3)}
+        row = {"tools": seq, "ts": round(time.time(), 3)}
+        if oc in ("ok", "error", "corrected"):
+            row["outcome"] = oc
+        if pp:
+            row["purpose"] = pp
+        data[str(key)] = row
         if len(data) > 500:
             for k in sorted(data, key=lambda x: data[x].get("ts", 0))[:len(data) - 500]:
                 data.pop(k, None)
@@ -307,7 +376,7 @@ FORGE_MARK = "Matrix tool forged from a mined tool sequence"
 
 
 def history_rows(path=None):
-    """The recorded runs WITH their timestamps (needed for outcome attribution)."""
+    """The recorded runs WITH their timestamps, outcome and purpose."""
     p = path or _history_path()
     try:
         with open(p, encoding="utf-8") as f:
@@ -317,8 +386,23 @@ def history_rows(path=None):
     if not isinstance(data, dict):
         return []
     return [{"tools": [str(x) for x in (e.get("tools") or [])],
-             "ts": float(e.get("ts") or 0)}
+             "ts": float(e.get("ts") or 0),
+             "outcome": str(e.get("outcome") or ""),
+             "purpose": str(e.get("purpose") or "")}
             for e in data.values() if isinstance(e, dict)]
+
+
+def history_split(path=None):
+    """The store as three aligned lists: tools, outcome, purpose (OCM).
+
+    One owner for the row -> aligned-lists mapping: `mine` needs the outcome of
+    the SAME run its sequence came from, so a caller that built the lists itself
+    could silently misalign them after a row is dropped.
+    """
+    rows = history_rows(path)
+    return ([r["tools"] for r in rows],
+            [r.get("outcome") or "" for r in rows],
+            [r.get("purpose") or "" for r in rows])
 
 
 def _uses(seq, ns):
@@ -555,8 +639,14 @@ def failure_candidates(path=None, limit=10, min_count=1):
 
 
 def mine_history(out_dir, c=None, path=None, note=""):
-    """Mine the recorded history and write the drafts. Returns the paths."""
-    return scan(history(path), out_dir, c, note=note)
+    """Mine the recorded history and write the drafts. Returns the paths.
+
+    OCM: the outcome and the purpose travel WITH the sequence they belong to
+    (`history_split`), so a candidate can be ranked and refused by evidence
+    instead of by frequency.
+    """
+    seqs, ocs, pps = history_split(path)
+    return scan(seqs, out_dir, c, note=note, outcomes=ocs, purposes=pps)
 
 
 # ------------------------------------------------- stage 2: synth/verify/archive

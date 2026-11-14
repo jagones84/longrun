@@ -6837,7 +6837,14 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
         if used_tools:
             # per-TURN key (not per-session): so mining sees sequences
             # repeated across different runs instead of always overwriting the same record.
-            _se.record("%s#%.3f" % (sess["id"], time.time()), used_tools)
+            # OCM (2026-11-14): the row carries HOW the turn ended and WHAT it
+            # asked for, so a mined candidate can be ranked and refused by
+            # evidence instead of by frequency. Unknown (a row written before
+            # this) is never read as a success.
+            _se.record("%s#%.3f" % (sess["id"], time.time()), used_tools,
+                       outcome=("error" if (meta or {}).get("error")
+                                else ("corrected" if _is_correction(message) else "ok")),
+                       purpose=message)
     except Exception:  # noqa: BLE001 — history must never break a turn
         pass
     # JAG-447: EFFECTIVE end-of-turn self-improvement (importance-gated reflection

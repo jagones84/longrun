@@ -82,8 +82,8 @@ def _pipe(pattern, out, support=0, **kw):
             "archived": {"rel": "skills/created/x"}}
 
 
-SE.mine = lambda hist, c: [{"pattern": list(P1), "support": 3},
-                           {"pattern": list(P2), "support": 3}]
+SE.mine = lambda hist, c, **kw: [{"pattern": list(P1), "support": 3},
+                                 {"pattern": list(P2), "support": 3}]
 SE.pipeline = _pipe
 
 # ------------------------------------- A: one forge, reported ------------

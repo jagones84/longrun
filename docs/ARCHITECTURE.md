@@ -347,8 +347,8 @@ owners:
 
 | state | entry point | owner | what it means |
 |---|---|---|---|
-| tool sequence recorded | agent turn | `selfevolve.record/history` | raw material, not a skill; only a name the registry ACCEPTS is recorded (`_dispatchable`), because the loop's own pseudo-actions (`batch`, `subagent`, `dispatch`) can never be replayed |
-| mined draft (`proposals/skills/<name>`) | end-of-turn pass or `improve{mine}` | `improve.sweep_drafts` + `selfevolve.draft/synth` | material; needs a purpose; `prune_junk` drops drafts whose steps are not dispatchable |
+| tool sequence recorded | agent turn | `selfevolve.record/history_rows` | raw material, not a skill; only a name the registry ACCEPTS is recorded (`_dispatchable`), because the loop's own pseudo-actions (`batch`, `subagent`, `dispatch`) can never be replayed. The row also carries HOW the turn ended (`outcome`) and WHAT it asked for (`purpose`); a row without an outcome is UNKNOWN and is never read as a success |
+| mined draft (`proposals/skills/<name>`) | end-of-turn pass or `improve{mine}` | `improve.sweep_drafts` + `selfevolve.draft/synth` | material; `mine` annotates each candidate with the outcome split and the most common purpose of its runs, and refuses a pattern whose known runs ALL failed; `prune_junk` drops drafts whose steps are not dispatchable |
 | harness candidate (`skill` kind) | Harness² cycle editor | `harness/editors.propose` → `probe.stage` | material tested by a matched run |
 | verified | `improve{verify}` / `decide` | `selfevolve.ensure_check` + `verify` | the sandbox check went green |
 | proposal (`scope=skill`, bound to a draft OR to tested bytes) | mined draft or matched experiment | `improve.propose` | ONE decision object |
@@ -367,6 +367,23 @@ must not author the judge that certifies it. The judge reads only the candidate
 and its own allow-list — no repo import, no network, no model — and it can red: an
 undispatchable tool, a single repeated tool, a missing `SKILL.md`, one over the
 prompt-cost ceiling, or an approval-bypass instruction is refused by name.
+
+**A mined candidate carries the outcome and the purpose of its runs** (OCM,
+2026-11-14). The store used to hold `{tools, ts}` only, so the miner could rank a
+pattern by frequency and by nothing else — on this install that was 500 runs → 91
+candidates, all the same shape. Now the end-of-turn recorder stores how the turn
+ended (`ok` / `error` / `corrected`, from `meta.error` and `_is_correction`) and
+the turn's request as the row's `purpose`; `mine` annotates every candidate with
+`support_ok` / `support_bad` / `unknown` and the most common purpose, and refuses
+a pattern whose **known** runs all failed. `history_split()` is the one owner of
+the row→aligned-lists mapping (a run dropped for being too short drops its outcome
+with it — a misaligned split would attribute one run's failure to another's
+sequence). A row with no outcome is UNKNOWN: the 500 rows written before this
+change cannot mint a false success and are not blocked retroactively, so the
+refusal only ever fires on runs that recorded their outcome. `draft()` writes the
+purpose into `proposal.json` and as a `## What it was for` section of `SKILL.md`,
+and the outcome split into the draft note. No gate changed: the purpose is
+recorded, never required.
 
 **One evolve pass installs at most `selfevolve.promote_per_run` skills** (default
 1), the same bound the code arm has had since EV-13 (`forge_per_run`). Without it

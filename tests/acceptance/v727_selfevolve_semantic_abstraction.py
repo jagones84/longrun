@@ -177,8 +177,8 @@ def _pipe(pattern, out, support=0, **kw):
             "verify": {"green": True}, "archived": None}
 
 
-SE.mine = lambda hist, c: [{"pattern": list(P1), "support": 3},
-                           {"pattern": list(P2), "support": 3}]
+SE.mine = lambda hist, c, **kw: [{"pattern": list(P1), "support": 3},
+                                 {"pattern": list(P2), "support": 3}]
 SE.pipeline = _pipe
 _old_ss = improve.single_shot
 

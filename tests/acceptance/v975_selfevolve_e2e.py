@@ -247,7 +247,7 @@ def _cfg3(override=None):
     return base
 
 
-SE.mine = lambda seqs, c=None: [{"pattern": P2, "support": 9, "runs": [0, 1]},
+SE.mine = lambda seqs, c=None, **kw: [{"pattern": P2, "support": 9, "runs": [0, 1]},
                                 {"pattern": P3, "support": 8, "runs": [2, 3]},
                                 {"pattern": P4, "support": 7, "runs": [4, 5]}]
 SE.cfg = _cfg3
