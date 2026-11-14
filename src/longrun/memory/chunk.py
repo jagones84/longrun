@@ -276,6 +276,11 @@ def read_text(abspath, max_kb):
 
 # ----------------------------------------------------------------- chunkers ---
 def _emit_range(out, lines, s, e, name, chunk_lines, overlap):
+    # 2026-11-14 (bug hunt): clamp the WINDOW, not only the overlap. A
+    # `chunk_lines` of 0 (reachable: `int(cfg.get("chunk_lines") or 60)` turns a
+    # float like 0.5 into 0) made `end == s`, so `s = end - 0` never moved and the
+    # indexer spun forever at 100% CPU. One owner, every caller.
+    chunk_lines = max(1, int(chunk_lines))
     overlap = max(0, min(overlap, chunk_lines - 1))
     while s < e:
         end = min(s + chunk_lines, e)
