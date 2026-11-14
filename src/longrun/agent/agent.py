@@ -1511,6 +1511,26 @@ def _nudge_open_todos(sess, errors=None, changed=None):
             "give the final plain-text answer now; otherwise say what still needs doing.")
 
 
+def _close_todos_text(open_n, brief):
+    """JAG-402's forcing text — ONE owner for both stop paths (2026-11-15).
+
+    A prose answer and an explicit `finish` are the same claim ("the work is
+    done"), so they must face the same rejection wording; two copies would drift
+    and the model would be told two different things by the same harness.
+    """
+    return ("STOP — your final answer was REJECTED because your TASK LIST "
+            "still has %d open step(s). You MUST close every step BEFORE "
+            "you can answer the user. For each open step do ONE of: "
+            "(a) mark it 'done' with the concrete evidence (the command "
+            "you ran and its result); or (b) ONLY if it is PERMANENTLY "
+            "unneeded, mark it 'superseded' with a SPECIFIC reason saying "
+            "WHY. Use todo.update for EVERY open step — do not skip any. "
+            "When the list is fully closed (0 open), your next message will "
+            "be accepted as the final answer. If a step genuinely needs the "
+            "OPERATOR's decision, call human.ask instead of closing it on a "
+            "guess. Open now:\n%s" % (open_n, brief))
+
+
 def _goal_recovery_nudge(sess: dict, stale: bool = False) -> str:
     """Keep an explicit goal active until its current plan has evidence."""
     graph = taskgraph.load(sess["id"]) or {}
@@ -5236,7 +5256,19 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                   if n.get("status") in taskgraph.OPEN_STATUSES]
     except Exception:  # noqa: BLE001
         _open0 = []
-    _user_pivot = bool(_open0) and not goal_mode
+    # 2026-11-15 (operator): "resilience on any restart … task shall not be
+    # abandoned". A `[Harness restart]` continuation is NOT a pivot: it is the
+    # SAME task resuming, so it must not earn the stale-plan exception below —
+    # without this a turn interrupted by a restart came back, read "Leaving steps
+    # OPEN is fine and is the DEFAULT" and quietly dropped the work the restart
+    # had interrupted. The operator's own message is still hierarchically above
+    # the plan (JAG-189): only the harness's resume is excluded here.
+    try:
+        from longrun.core import inflight as _inflight_msg
+        _resume_turn = _inflight_msg.is_resume_text(message)
+    except Exception:  # noqa: BLE001 — a marker check never breaks a turn
+        _resume_turn = False
+    _user_pivot = bool(_open0) and not goal_mode and not _resume_turn
     _pivot_state = {"synced": False}  # JAG-266: exactly one pivot sync round per turn
     _kg_started = (float(goal_started) if goal_mode and goal_started is not None
                    else time.time())
@@ -6316,6 +6348,22 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 msgs.append({"role": "assistant", "content": answer})
                 _inject(_closure_check_prompt(message), "closure-check")
                 continue
+            if (_finish_gated(sess, goal_mode) and not _user_pivot
+                    and _close_todo_rounds < _close_todo_max
+                    and not _is_aborted(sess["id"])):
+                # 2026-11-15 (operator): "`finish` doesn't enforce the closing
+                # contract — a turn can be closed with unfinished bookkeeping".
+                # It could: once `_selfcheck_left` was spent, the finish branch
+                # broke out of the loop and the close-todos forcing every PROSE
+                # answer faces (JAG-402, its own budget) was never reached. The
+                # two paths now share that budget and that one wording; a pivot
+                # turn still escapes (the operator's request outranks the plan),
+                # and the carried record below keeps the steps visible.
+                _oc, _ob = _open_todo_brief(sess)
+                _close_todo_rounds += 1
+                msgs.append({"role": "assistant", "content": answer})
+                _inject(_close_todos_text(_oc, _ob), "continue")
+                continue
             if (_last_failed_err and not _last_tool_ok and not _failed_checked
                     and _selfcheck_left > 0 and not _is_aborted(sess["id"])):
                 # A finish that follows a FAILED call must face the failure once.
@@ -6656,18 +6704,8 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                     _inject(_goal_recovery_nudge(sess, stale=bool(_kg_stale)), "continue")
                 elif _dec.get("reason") == "close_todos":
                     _inject(
-                        "STOP — your final answer was REJECTED because your TASK LIST "
-                        "still has %d open step(s). You MUST close every step BEFORE "
-                        "you can answer the user. For each open step do ONE of: "
-                        "(a) mark it 'done' with the concrete evidence (the command "
-                        "you ran and its result); or (b) ONLY if it is PERMANENTLY "
-                        "unneeded, mark it 'superseded' with a SPECIFIC reason saying "
-                        "WHY. Use todo.update for EVERY open step — do not skip any. "
-                        "When the list is fully closed (0 open), your next message will "
-                        "be accepted as the final answer. If a step genuinely needs the "
-                        "OPERATOR's decision, call human.ask instead of closing it on a "
-                        "guess. Open now:\n%s"
-                        % (len(_open), _open_todo_brief(sess)[1]), "continue")
+                        _close_todos_text(len(_open), _open_todo_brief(sess)[1]),
+                        "continue")
                 else:
                     _inject(
                         "CONTINUE — your TASK LIST still has %d open step(s), and it is "
@@ -7047,6 +7085,18 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
         # also counted `superseded` (a CLOSED state), so a session whose every step
         # was closed still reported "N open" and re-nagged on the next turn.
         _open = [n for n in _nodes if n.get("status") in taskgraph.OPEN_STATUSES]
+        # 2026-11-15 (operator): "task shall not be abandoned (the plan can be
+        # modified, superseded but not forgotten) — even if restart". The record
+        # rides the GRAPH, so the next turn — or the first one after a restart —
+        # states WHY these steps are still here instead of inheriting them
+        # silently. Nothing is closed by this: it is bookkeeping, and it is
+        # cleared by the first turn that closes every step.
+        try:
+            taskgraph.note_turn_end(
+                _g, reason=(_kg_stop_reason
+                            or ("finish" if _finished_cleanly else "turn-end")))
+        except Exception:  # noqa: BLE001 — the record must never break a turn
+            pass
         if _open:
             publish("plan.incomplete", session=sess["id"], open=len(_open),
                     total=len(_nodes),

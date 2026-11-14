@@ -134,6 +134,26 @@ the plan owns the steps and their evidence, so completion is read from
 the tab and a service restart. Every step is published
 to the event bus and persisted, so a reload rebuilds the transcript and task graph.
 
+**A plan is never abandoned, and a turn cannot close on one** (2026-11-15). The
+closing contract is one rule for every way a turn can end: `finish`, a prose
+answer and a made-up "I am done" envelope all face the same close-todos forcing
+(`_close_todos_text`) paid from the same budget (`_close_todo_max`), so the
+explicit claim to be complete is not the cheapest way out. It is bounded — when
+the budget is spent the turn ends — but the steps it could not close are written
+ON the graph by `taskgraph.note_turn_end` (open ids + reason: `restart`, `finish`,
+`user_pivot`, or the typed stop), and `carry_line` renders one line into the
+always-on state block: *"still OPEN after the previous turn ended at … — restart.
+They were NOT closed and are not forgotten."* Because the record is a file, it
+survives compaction, a crash and a `systemctl restart`; `reconcile_orphan_turns`
+writes it where the killed turn cannot (it also demotes `doing` back to `todo`),
+and the first turn that closes every step clears it. Two exceptions keep the
+hierarchy the operator asked for: the operator's OWN message outranks the plan
+(a pivot turn answers without forced closure — the steps are carried, never
+silently closed, and a plan can be re-written or `superseded` with a reason), and
+a `[Harness restart]` continuation is **not** a pivot (`inflight.is_resume_text`),
+because it is the same task resuming and must not inherit the stale-plan
+exception. Locked by `v1008`.
+
 **The `harness → LLM` chat label is the wire** (2026-11-05). One chip exists per
 message actually appended to the outgoing list, its body is that message verbatim
 (role + `[harness] ` prefix), and a suppressed repeat is only a counter on the
@@ -545,12 +565,25 @@ operator-selected `none`). This is not whole-agent confinement. Hard-denied patt
   `<data home>/data/tls/`, `LONGRUN_TLS=0` to disable) so the page is a *secure context*
   and browser voice input works.
 
-## Diagrams (WIP — do not trust, do not regenerate yet)
+## Diagrams
 
 The generated architecture diagrams (`docs/diagrams/`, archify `.architecture.json`
-+ rendered HTML) are **gitignored local artifacts** and currently STALE. Per
-operator decision 2026-10-25: no regeneration pass now. The ASCII map and the
-tables above are the current reference until the WIP is lifted.
++ rendered HTML) are **gitignored local artifacts** — derived, regenerable, not
+committed. They were regenerated against `32f46c4` on 2026-11-15 and each passes the
+full archify gate set (`validate` → `deliver` → `check` → `browser-check`):
+
+- `longrun-architecture.html` — the system architecture, with five guided views
+  (end-to-end request, security, state and self-improvement, orchestration,
+  observability). `Matrix`, `Harness2` and the held-out judge appear in the
+  state/self-improvement material.
+- `longrun-turn-workflow.html` — one agent turn end to end: assemble → model →
+  parse → gate → tool → observe → keepgoing.
+
+They are a *rendering of this page*, not a second source of truth: a structural
+change updates the map above and the diagram is re-derived from it on demand. The
+regeneration command is `node <archify>/bin/archify.mjs finalize <type>
+<.archify/…/candidate.json> docs/diagrams/<name>.html --repo-root . --quality
+showcase --json`.
 
 ## Entry points
 

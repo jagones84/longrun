@@ -1518,6 +1518,13 @@ def reconcile_orphan_turns(session=None):
                     for n in list(g.get("nodes", [])):
                         if n.get("status") == "doing":
                             taskgraph.update_node(g, n["id"], status="todo")
+                    # 2026-11-15 (operator): "resilience on any restart … task
+                    # shall not be abandoned". The restart is the one case where
+                    # the turn never reaches its own end-of-turn bookkeeping, so
+                    # the record is written HERE: the next turn opens with the
+                    # exact steps the restart interrupted, and with the reason.
+                    taskgraph.note_turn_end(taskgraph.load(sid) or g,
+                                            reason="restart")
             except Exception:  # noqa: BLE001
                 pass
             publish("session.reconciled", session=sid, reason="orphan_user_turn")

@@ -107,6 +107,29 @@ All notable changes to Longrun are documented here. The format follows
   model. The approval ledger still stores the raw args of the call it recorded — not model-bound.)
 
 ### Fixed
+- **A plan is never abandoned: `finish` faces the closing contract, and a restart cannot drop open
+  steps (`v1008`).** Operator: *"i need resilience on any restart or any problem during the run. task
+  shall not be abandoned (the plan can be modified, superseded but not forgotten). even if restart."*
+  Three holes, one thread. (1) `finish` could END a turn with steps open: it earned the two bounded
+  closure-check rounds and then broke out of the loop, so the close-todos forcing every PROSE answer
+  faces (JAG-402, its own budget of 4) was never reached — the CLOSING CONTRACT held for prose and not
+  for the action that claims completion most explicitly. Both now share `_close_todos_text` and
+  `_close_todo_rounds`, so a finish with open steps is rejected with the same wording and the same
+  bound. (2) A `[Harness restart]` continuation counted as a PIVOT (`_user_pivot` = "the turn opened
+  with open steps"), so the resumed turn was told "leaving steps OPEN is fine and is the DEFAULT" and
+  the work the restart interrupted was quietly dropped; `inflight.is_resume_text` now owns the marker
+  and the resume turn is NOT a pivot. The operator's OWN message still outranks the plan (JAG-189): a
+  pivot turn answers without forced closure. (3) Nothing recorded WHY a turn had left steps open, so
+  the next turn could not tell an abandoned step from one nobody had started.
+  `taskgraph.note_turn_end` writes the carry ON the graph (file, not process memory) with the open ids
+  and the reason (`restart`, `finish`, `user_pivot`, a typed stop), `carry_line` renders one line into
+  the always-on state block, and the record is cleared by the first turn that closes every step (and
+  never rendered against a superseded plan or a step closed since). `reconcile_orphan_turns` writes it
+  where the killed turn cannot. (Locked by `v1008` 30/30 — including a scripted turn whose model only
+  emits `finish` with 2 open steps: 4 rejections naming the exact ids, the turn still ends, and the
+  steps are carried, never dropped — and a pivot turn that answers and carries the stale steps; plus
+  `v592` 11/11, `v584` 12/12, `v449` 14/14, `v999` 6/6, `v1005` 18/18, `v938` 17/17; targeted battery
+  35/35 GREEN with the 20 UI-guard tests.)
 - **A rail button is a two-way door, and the fold-all icon sits above the plan toggle (`v780`).** The
   two badged rail buttons (Workspace changes, Approvals) opened their Inspector section
   unconditionally, so a second click did nothing — the only rail controls that were one-way, while the

@@ -581,13 +581,18 @@ def render_todos(graph, limit=12, compact=False):
         if n.get("status") == "superseded" and n.get("reason"):
             extra = "  (superseded: %s)" % n.get("reason")
         lines.append("%s%s %s (%s)%s" % (indent, mark, n.get("label", ""), n.get("id"), extra))
+    carry = carry_line(graph) if open_n else ""
     if compact:
+        if carry:
+            lines.append(carry)
         if total_n > open_n:
             lines.append("  (+%d closed — call the `todo` tool for the full list)"
                          % (total_n - open_n))
         if not open_n:
             lines.append("  (no open steps — the plan is complete)")
         return "\n".join(lines)
+    if carry:
+        lines.append(carry)
     if open_n:
         lines.append("This list is YOURS: keep it current — set a step [>] 'doing' "
                      "before you start it, and [x] 'done' with evidence when it is "
@@ -595,6 +600,72 @@ def render_todos(graph, limit=12, compact=False):
                      "is no longer wanted, close it as [~] 'superseded' WITH a reason "
                      "(update_todos). Add a step if the goal grows.")
     return "\n".join(lines)
+
+
+def open_nodes(graph):
+    """The OPEN steps of the CURRENT plan (todo/doing/blocked)."""
+    return [n for n in plan_nodes(graph) if n.get("status") in OPEN_STATUSES]
+
+
+def note_turn_end(graph, reason=""):
+    """Record on the graph that a turn ENDED with steps still open (2026-11-15).
+
+    Operator: *"task shall not be abandoned (the plan can be modified, superseded
+    but not forgotten) — even if restart."* The plan already survives a restart
+    because it is a file, but nothing recorded WHY it was still open: the next
+    turn — or the one after a `systemctl restart` — inherited the steps with no
+    account of the turn that left them, so an abandoned step looked exactly like
+    a step nobody had started yet.
+
+    The record lives ON the graph (not in process memory, not in the transcript),
+    so it survives compaction, a crash and a restart. It is a SNAPSHOT, not a
+    queue: the next `note_turn_end` rewrites it, and a turn that closes every step
+    clears it. `superseded`/`cancelled` steps are closed states and are not
+    carried. Returns the record, or None when nothing is open (record cleared).
+    """
+    if not isinstance(graph, dict) or not graph.get("nodes"):
+        return None
+    opn = [str(n.get("id")) for n in open_nodes(graph)]
+    if not opn:
+        if graph.pop("carry", None) is not None:
+            save(graph)
+        return None
+    rec = {"at": round(time.time(), 3),
+           "reason": str(reason or "turn-end")[:120],
+           "open": opn,
+           "plan": graph.get("plan", 1)}
+    if graph.get("carry") == rec:
+        return rec
+    graph["carry"] = rec
+    save(graph)
+    return rec
+
+
+def carry_line(graph):
+    """One prompt line naming the turn that ended with work open ('' when none).
+
+    Rides the `state` block, so every user message re-states the fact instead of
+    re-deriving it; a stale record from a SUPERSEDED plan is never shown (the
+    plan id in the record must match the current one).
+    """
+    rec = (graph or {}).get("carry") or {}
+    if not rec or not rec.get("open"):
+        return ""
+    if rec.get("plan", 1) != (graph or {}).get("plan", 1):
+        return ""
+    # Only the ids that are STILL open may be described as open: a step closed
+    # after the record was written (and before the next turn end) is not work.
+    still = {str(n.get("id")) for n in open_nodes(graph)}
+    if not any(str(x) in still for x in rec.get("open") or []):
+        return ""
+    try:
+        when = time.strftime("%Y-%m-%d %H:%M",
+                             time.localtime(float(rec.get("at") or 0)))
+    except (TypeError, ValueError, OSError):
+        when = "an earlier turn"
+    return ("  (still OPEN after the previous turn ended at %s — %s. They were NOT "
+            "closed and are not forgotten: continue them, or close each with "
+            "evidence or a reason.)" % (when, rec.get("reason") or "turn-end"))
 
 
 def all_done(graph):

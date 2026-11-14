@@ -34,13 +34,27 @@ STOP_MARK = os.path.join(DATA_DIR, "last_stop.json")
 
 _LOCK = threading.Lock()
 
+RESUME_MARK = "[Harness restart]"
+
 RESUME_TEXT = (
-    "[Harness restart] The service was restarted while a turn was running in this "
+    RESUME_MARK + " The service was restarted while a turn was running in this "
     "session (interrupted at %s). Continue the task from where it stopped: read the "
     "conversation and the tool results above, do not repeat steps that already "
     "succeeded, and finish the work. If it was already finished, answer with the "
     "final result."
 )
+
+
+def is_resume_text(text):
+    """True when `text` is the continuation THIS module delivers (2026-11-15).
+
+    The chat loop treats an operator message that opens with a stale plan as a
+    PIVOT (JAG-189): the new request outranks the plan, so the old steps are not
+    forced. That exception was also swallowing our own restart continuation, and
+    an interrupted task then resumed as "leaving steps OPEN is fine". The module
+    that WRITES the marker owns reading it, so the two can never disagree.
+    """
+    return str(text or "").lstrip().startswith(RESUME_MARK)
 
 
 def _read(path):
