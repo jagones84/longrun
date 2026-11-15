@@ -81,8 +81,10 @@ check("C6 the + menu exposes plugins",
 check("D1 send() intercepts /plan and /spec before /goal",
       r"const _docCall = raw.match(/^\/(plan|spec)\b[ \t]*([\s\S]*)$/i);" in UI
       and UI.index(r"const _docCall = raw.match(/^\/(plan|spec)") < UI.index(r'if (/^\/goal\b/i.test(msg))'))
-check("D2 the queue path still owns a command sent while a turn runs",
-      UI.index("if (turnSSE[sessionId]) {") < UI.index(r"const _docCall = raw.match(/^\/(plan|spec)"))
+check("D2 the queue still owns a NON-document command sent while a turn runs",
+      # v1051b: /plan and /spec are decided FIRST — a live turn or a stuck
+      # Knowledge ingest swallowed them silently ("/spec does nothing").
+      UI.index("if (turnSSE[sessionId]) {") < UI.index(r'if (/^\/goal\b/i.test(msg))'))
 check("D3 an empty /plan keeps the text and says why",
       'toast("type the request after /" + _docKind, "warn"); return;' in UI)
 check("D4 the call goes to the document endpoint, never to the chat stream",
@@ -94,6 +96,11 @@ check("D5 a failure restores the request in the composer",
       'inp.value = "/" + kind + " " + ask;' in UI)
 check("D6 a real skill with the same name still wins",
       'String(s.name || "").toLowerCase() === _docCall[1].toLowerCase()' in UI)
+check("D7 the document command is decided BEFORE the attachment and queue guards",
+      # v1051b: a stuck Knowledge ingest or a live turn used to swallow /spec
+      # silently (no bubble, no card, no HTTP request).
+      UI.index("const _docCall = raw.match") < UI.index("if (_attachmentPending(sessionId))")
+      and UI.index("const _docCall = raw.match") < UI.index("if (turnSSE[sessionId])"))
 
 # --------------------------------------------------------------- E: doc bar
 check("E1 the bar is durable markup next to the goal bar",

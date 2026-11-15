@@ -8018,6 +8018,24 @@ function send(text, display, atts) {
   const inp = $("inp");
   let raw = (text !== undefined ? text : inp.value).trim();
   if (!raw) return;
+  // v1051b: `/plan <request>` and `/spec <request>` are DOCUMENT commands — they call
+  // the backend (which writes the file and locks the session) instead of shipping
+  // the token to the model as prose. This check sits FIRST, before the attachment
+  // guards and before the queue: a stuck Knowledge ingest or a live turn used to
+  // swallow the command silently ("/spec does nothing": no bubble, no card, no HTTP
+  // request — measured 2026-11-16). A document command touches no turn and no
+  // attachment, so nothing here may block it. A real skill with that name still wins.
+  const _docCall = raw.match(/^\/(plan|spec)\b[ \t]*([\s\S]*)$/i);
+  if (_docCall && !(_skillsCache || []).some(s =>
+        String(s.name || "").toLowerCase() === _docCall[1].toLowerCase())) {
+    const _docKind = _docCall[1].toLowerCase();
+    const _docAsk = ((_splitAttBlock(_docCall[2] || "").rest) || _docCall[2] || "").trim();
+    if (!_docAsk) { toast("type the request after /" + _docKind, "warn"); return; }
+    inp.value = ""; if (inp.style) inp.style.height = ""; _renderCmdChips();
+    _draftClear(sessionId);
+    _runDocCommand(_docKind, _docAsk);
+    return;
+  }
   if (_attachmentPending(sessionId)) {
     toast("Wait for Knowledge indexing to finish before sending.", "warn");
     return;
@@ -8089,21 +8107,6 @@ function send(text, display, atts) {
     inp.value = ""; if (inp.style) inp.style.height = ""; _renderCmdChips(); _draftClear(sessionId); return;
   }
   let msg = raw;
-  // v1051: `/plan <request>` and `/spec <request>` are DOCUMENT commands: they
-  // call the backend (which writes the file and locks the session) instead of
-  // shipping the token to the model as prose. A real skill with that name still
-  // wins — the server resolves `/plan` as a skill only when one exists.
-  const _docCall = raw.match(/^\/(plan|spec)\b[ \t]*([\s\S]*)$/i);
-  if (_docCall && !(_skillsCache || []).some(s =>
-        String(s.name || "").toLowerCase() === _docCall[1].toLowerCase())) {
-    const _docKind = _docCall[1].toLowerCase();
-    const _docAsk = ((_splitAttBlock(_docCall[2] || "").rest) || _docCall[2] || "").trim();
-    if (!_docAsk) { toast("type the request after /" + _docKind, "warn"); return; }
-    inp.value = ""; if (inp.style) inp.style.height = ""; _renderCmdChips();
-    _draftClear(sessionId);
-    _runDocCommand(_docKind, _docAsk);
-    return;
-  }
   // JAG-92: "/goal <..." runs the SAME chat loop in autonomous mode (JAG-78) —
   // the model plans (write_todos) then executes end-to-end without asking.
   let mode = "";
