@@ -11496,6 +11496,18 @@ async function loadApprovals() {
       .catch(e => { feedback.textContent = String(e); });
     row.children[1].onclick = () => decide(a.id, "deny")
       .catch(e => { feedback.textContent = String(e); });
+    // 2026-11-16 (operator): right-click on the request offers the same two decisions
+    // plus the id — the gesture never adds an action the card does not already own.
+    d.oncontextmenu = e => {
+      e.preventDefault();
+      const items = [];
+      if (a.can_approve !== false) items.push({ ic: "✓", label: "Approve",
+        act: () => decide(a.id, "approve").catch(err => { feedback.textContent = String(err); }) });
+      items.push({ ic: "✕", label: "Deny",
+        act: () => decide(a.id, "deny").catch(err => { feedback.textContent = String(err); }) });
+      items.push({ ic: "⧉", label: "Copy the id " + a.id, act: () => _pvCopy(a.id) });
+      _openCtx(e.clientX, e.clientY, kind + " · " + (a.tool || ""), items);
+    };
     d.appendChild(row); d.appendChild(feedback); box.appendChild(d);
   });
 }
@@ -12621,6 +12633,11 @@ function _runsRow(s, kind) {
     // reveal that chat in the sessions panel, expand its group and centre it.
     // One gesture, so it calls the existing door instead of copying it.
     revealActiveSession();
+  };
+  // 2026-11-16: right-click is the same session ⋮ the rail row has, at the pointer.
+  a.oncontextmenu = e => {
+    e.preventDefault();
+    openSessMenu(a, s, ag, e);
   };
   return a;
 }
@@ -20688,8 +20705,26 @@ function goMarket() { showMarket(); }
    sheet, switch to that session, open the Plan panel and reveal the task row. */
 window.addEventListener("message", (e) => {
   const d = e.data || {};
-  if (!d || d.type !== "longrun-open-task") return;
+  if (!d) return;
+  /* 2026-11-16 (operator): a hosted panel changed which panel it shows (org ▸
+     Constellation, a job ▸ its agent …). The HOST owns the tab strip, so move it —
+     without reloading the frame, which is already showing the right panel. */
+  if (d.type === "longrun-panel-request") {
+    const el = $("panelView"), panel = _DP_PANELS[d.panel] ? d.panel : null;
+    if (el && !el.hidden && panel && panel !== _DP.panel) {
+      _DP.panel = panel;
+      _dpPaint(panel); _dpRailState(panel); _dpScopeLabel();
+    }
+    return;
+  }
+  if (d.type !== "longrun-open-task") return;
   const sid = d.session || null;
+  // A menu that says "open in Sessions" must actually show the chat: when the click
+  // came from the hosted panel, the window is in the way — close it first.
+  try {
+    const f = $("panelFrame");
+    if (f && e.source && e.source === f.contentWindow) _closeDeckPanel(true);
+  } catch (_) {}
   try { showSessions(); } catch (_) {}
   const switched = !!(sid && sid !== sessionId);
   if (switched) {

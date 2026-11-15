@@ -1782,6 +1782,18 @@ class AgentsView {
       const a = this.agents.find(x => x.session === b.dataset.amore);
       if (a) this.openAgentMenu(ev, a, b.dataset.aid || "");
     }; });
+    // 2026-11-16 (operator): right-click on a row opens the SAME row menu, at the
+    // pointer — the table had one gesture (the ⋮) and every other list has two.
+    body.querySelectorAll("tr[data-sid]").forEach(tr => {
+      tr.oncontextmenu = (ev) => {
+        if (ev.target.closest && ev.target.closest("input, textarea, [contenteditable], a, button")) return;
+        ev.preventDefault();
+        const a = this.agents.find(x => x.session === tr.dataset.sid);
+        if (!a) return;
+        const aidEl = tr.querySelector("[data-org]");
+        this.openAgentMenu(ev, a, (aidEl && aidEl.textContent) || "");
+      };
+    });
     // JAG-2.9: the A-id is the row's handle — click it to select this agent in BOTH
     // the table (persistent .rowsel) and the org chart node (.sel, survives polling).
     // v615: select ONLY — neither camera moves (scroll defaults to false).
@@ -1814,6 +1826,16 @@ class AgentsView {
       ev.stopPropagation();
       this.openTeamMenu(ev, b.dataset.tmbulk);
     }; });
+    // 2026-11-16 (operator): right-click on the team header is the SAME menu, at the
+    // pointer — the header had a ⋮ and every other list has two gestures.
+    body.querySelectorAll("tr.grp-head").forEach(tr => {
+      tr.oncontextmenu = (ev) => {
+        if (ev.target.closest && ev.target.closest("input, textarea, a, button")) return;
+        ev.preventDefault();
+        const id = tr.getAttribute("data-grp");
+        if (id) this.openTeamMenu(ev, id);
+      };
+    });
     // JAG-2.3: the per-team assign picker — same stopPropagation rule (it sits in
     // the group header, which toggles the group on click).
     body.querySelectorAll("[data-tmadd]").forEach(b => { b.onclick = (ev) => {
@@ -2632,7 +2654,12 @@ class OrgChartView {
     let nodes = "", links = "";
     agents.forEach(a => { const p = pos[a.id]; if (!p) return;
       const cut = cutOf[a.id];
-      const tip = "click = preview this agent\u2019s constellation \u00b7 double-click = open its session in the Sessions tab \u00b7 right-click = more actions" +
+      // A hosted single-panel frame has no constellation beside the chart, so "click
+      // previews" would be a promise the window cannot keep; say what it really does.
+      const _one = document.documentElement.classList.contains("embed-panel");
+      const tip = (_one
+          ? "click = select this agent \u00b7 double-click = open its session \u00b7 right-click = actions (constellation, prompt, reset)"
+          : "click = preview this agent\u2019s constellation \u00b7 double-click = open its session in the Sessions tab \u00b7 right-click = more actions") +
         (cut ? "\nreports to " + cut + " — outside this scope, so the chain is cut here" : "");
       const tc = colorOf(a);
       nodes += '<div class="node' + (cut ? " cut" : "") + '" data-sid="' + esc(a.session) + '"' +
@@ -3227,6 +3254,20 @@ class Constellation {
         this._t = setTimeout(() => this.extract(agent, node, b.left - bb.left + 14, b.top - bb.top + 14), 210); });
       gEl.addEventListener("dblclick", ev => { ev.stopPropagation(); if (this._t) clearTimeout(this._t);
         this.gotoTask(agent, node); });
+      // 2026-11-16 (operator): every object answers a right-click. A task carries its
+      // agent, so the menu offers both destinations the double-click already has,
+      // plus "select" (no travel) — same callbacks, no second navigation path.
+      gEl.addEventListener("contextmenu", ev => {
+        ev.preventDefault(); ev.stopPropagation();
+        if (this._t) clearTimeout(this._t);
+        const m = openPopover(ev,
+          '<div data-cx="agent">\u2197 open ' + esc(agent ? agent.id : "agent") + ' in Sessions</div>' +
+          '<div data-cx="task">\u2197 open this task in Sessions</div>' +
+          '<div data-cx="select">\u25C9 select this agent</div>', {w: 232, h: 120});
+        m.querySelector('[data-cx="agent"]').onclick = () => { closePopover(); this.gotoAgent(agent); };
+        m.querySelector('[data-cx="task"]').onclick = () => { closePopover(); this.gotoTask(agent, node); };
+        m.querySelector('[data-cx="select"]').onclick = () => { closePopover(); if (this.onFocus) this.onFocus(agent); };
+      });
     });
     // JAG-424d: job + subjob pills are now clickable too (same pattern as a task):
     // click = metadata popover, double-click = open the related session.
@@ -3239,6 +3280,18 @@ class Constellation {
         this._t = setTimeout(() => this.extractJob(j, b.left - bb.left + 14, b.top - bb.top + 14), 210); });
       gEl.addEventListener("dblclick", ev => { ev.stopPropagation(); if (this._t) clearTimeout(this._t);
         this.gotoAgent(this.agentById(j.coordinator)); });
+      gEl.addEventListener("contextmenu", ev => {
+        ev.preventDefault(); ev.stopPropagation();
+        if (this._t) clearTimeout(this._t);
+        const ca = this.agentById(j.coordinator);
+        const m = openPopover(ev,
+          (ca ? '<div data-cx="agent">\u2197 open coordinator ' + esc(ca.id) + ' in Sessions</div>' : '') +
+          '<div data-cx="job">\u25C9 copy this job id</div>', {w: 240, h: 110});
+        const ag = m.querySelector('[data-cx="agent"]');
+        if (ag) ag.onclick = () => { closePopover(); this.gotoAgent(ca); };
+        m.querySelector('[data-cx="job"]').onclick = () => { closePopover();
+          try { navigator.clipboard.writeText(j.id); toast("copied " + j.id); } catch (e) {} };
+      });
     });
     svg.querySelectorAll(".csubg").forEach(gEl => {
       const s = this.subOf(gEl.dataset.sub);
@@ -3249,6 +3302,21 @@ class Constellation {
         this._t = setTimeout(() => this.extractSub(s, b.left - bb.left + 14, b.top - bb.top + 14), 210); });
       gEl.addEventListener("dblclick", ev => { ev.stopPropagation(); if (this._t) clearTimeout(this._t);
         this.gotoAgent(this.agentById(s.agent)); });
+      gEl.addEventListener("contextmenu", ev => {
+        ev.preventDefault(); ev.stopPropagation();
+        if (this._t) clearTimeout(this._t);
+        const sa = this.agentById(s.agent);
+        const m = openPopover(ev,
+          (sa ? '<div data-cx="agent">\u2197 open ' + esc(sa.id) + ' in Sessions</div>' +
+                '<div data-cx="select">\u25C9 select ' + esc(sa.id) + '</div>' : '') +
+          '<div data-cx="sub">\u25C9 copy this subjob id</div>', {w: 226, h: 120});
+        const ag = m.querySelector('[data-cx="agent"]');
+        if (ag) ag.onclick = () => { closePopover(); this.gotoAgent(sa); };
+        const sel = m.querySelector('[data-cx="select"]');
+        if (sel) sel.onclick = () => { closePopover(); if (this.onFocus) this.onFocus(sa); };
+        m.querySelector('[data-cx="sub"]').onclick = () => { closePopover();
+          try { navigator.clipboard.writeText(s.id); toast("copied " + s.id); } catch (e) {} };
+      });
     });
   }
   _pop(){ const p = document.querySelector("#constBody .cpop"); if (p) p.remove(); }
@@ -3398,6 +3466,29 @@ class JobsView {
       ' subagent job' + (jobs.length === 1 ? "" : "s") + ' · read-only</span></div>' + rows;
   }
   _coord(jid){ const j = this.jobs.find(x => x.id === jid); return (j && j.coordinator) || ""; }
+  /* 2026-11-16 (operator): ONE job menu — the row's ⋮ and a right-click open the same
+     items, and "open coordinator" actually travels (the same onOpenAgent the row's
+     double-click uses), so the menu never promises a panel it does not reach. */
+  openJobMenu(ev, jid, canRun){
+    const coord = this._coord(jid);
+    const m = openPopover(ev, '<div style="display:flex;flex-direction:column;gap:2px;min-width:190px">' +
+      (coord ? '<button type="button" class="btn ghost mi" data-jmenu="go">↗ open coordinator ' + esc(coord) + '</button>' : '') +
+      (canRun ? '<button type="button" class="btn ghost mi" data-jmenu="run">▶ run job</button>' : '') +
+      '<button type="button" class="btn ghost mi" data-jmenu="del">× delete job</button></div>',
+      {w: 210, h: 150});
+    const go = m.querySelector('[data-jmenu="go"]');
+    if (go) go.onclick = () => { closePopover(); if (this.onOpenAgent) this.onOpenAgent(coord); };
+    const run = m.querySelector('[data-jmenu="run"]');
+    if (run) run.onclick = () => { closePopover(); this.dispatch(jid); };
+    m.querySelector('[data-jmenu="del"]').onclick = async () => {
+      closePopover();
+      if (!(await uiConfirm("Delete job " + jid + "?", "",
+        {okLabel: "delete", danger: true}))) return;
+      const r = await this.api.del("/api/jobs/" + encodeURIComponent(jid));
+      if (!r || r.ok === false){ toast((r && r.error) || "delete failed", "err"); return; }
+      if (this.onChanged) this.onChanged();
+    };
+  }
   render(list, sj){
     this.allJobs = list || [];
     this.sj = sj || this.sj || [];
@@ -3460,22 +3551,17 @@ class JobsView {
         : "no jobs yet — write a goal and pick who to give it to.") + '</div>');
     $("jobs").querySelectorAll("[data-jmore]").forEach(b => { b.onclick = (e) => {
       e.stopPropagation();
-      const jid = b.dataset.jmore, canRun = b.dataset.canrun === "1";
-      const m = openPopover(e, '<div style="display:flex;flex-direction:column;gap:2px;min-width:170px">' +
-        (canRun ? '<button type="button" class="btn ghost mi" data-jmenu="run">▶ run job</button>' : '') +
-        '<button type="button" class="btn ghost mi" data-jmenu="del">× delete job</button></div>',
-        {w: 190, h: 120});
-      const run = m.querySelector('[data-jmenu="run"]');
-      if (run) run.onclick = () => { closePopover(); this.dispatch(jid); };
-      m.querySelector('[data-jmenu="del"]').onclick = async () => {
-        closePopover();
-        if (!(await uiConfirm("Delete job " + jid + "?", "",
-          {okLabel: "delete", danger: true}))) return;
-        const r = await this.api.del("/api/jobs/" + encodeURIComponent(jid));
-        if (!r || r.ok === false){ toast((r && r.error) || "delete failed", "err"); return; }
-        if (this.onChanged) this.onChanged();
-      };
+      this.openJobMenu(e, b.dataset.jmore, b.dataset.canrun === "1");
     }; });
+    // 2026-11-16 (operator): the same job menu on right-click, at the pointer.
+    $("jobs").querySelectorAll(".job[data-id]").forEach(el => {
+      el.oncontextmenu = (ev) => {
+        if (ev.target.closest && ev.target.closest("input, textarea, a, button")) return;
+        ev.preventDefault();
+        const rb = el.querySelector("[data-jmore]");
+        this.openJobMenu(ev, el.dataset.id, !!(rb && rb.dataset.canrun === "1"));
+      };
+    });
     // JAG-335 / JAG-484: a subjob row is NOT a second "open the agent" click (that
     // is the ORG chart's job) — it only swallows the click so it cannot collapse the
     // job. The explicit "\u2197 session" button on the right does the navigation and
@@ -3561,7 +3647,7 @@ class RoutinesView {
     const now = Date.now() / 1000;
     $("routines").innerHTML = this.rows.map(r => {
       const nxt = r.next_run ? Math.max(0, Math.round(r.next_run - now)) : 0;
-      return '<div class="orgrow"><span class="aid">' + esc(r.id) + '</span>' +
+      return '<div class="orgrow" data-rid="' + esc(r.id) + '"><span class="aid">' + esc(r.id) + '</span>' +
         '<span class="nm" title="' + esc(r.goal) + '">' + esc(short(r.goal, 34)) + '</span>' +
         '<span class="rl">' + esc(r.agent) + '</span>' +
         '<span class="rl" title="every ' + esc(r.every_seconds) + 's · next in ' + nxt + 's">' + esc(r.every_seconds) + 's</span>' +
@@ -3572,6 +3658,23 @@ class RoutinesView {
     $("routines").querySelectorAll("[data-tog]").forEach(b => { b.onclick = () => this.toggle(b.dataset.tog, b.dataset.on === "1"); });
     $("routines").querySelectorAll("[data-edit]").forEach(b => { b.onclick = (ev) => this.edit(ev, b.dataset.edit); });
     $("routines").querySelectorAll("[data-del]").forEach(b => { b.onclick = () => this.del(b.dataset.del); });
+    // 2026-11-16 (operator): the routine row answers a right-click with the SAME three
+    // controls it shows, so no list in the deck is right-click-deaf.
+    $("routines").querySelectorAll("[data-rid]").forEach(el => {
+      el.oncontextmenu = (ev) => {
+        if (ev.target.closest && ev.target.closest("input, textarea, a, button")) return;
+        ev.preventDefault();
+        const rid = el.dataset.rid;
+        const r = this.rows.find(x => x.id === rid); if (!r) return;
+        const m = openPopover(ev,
+          '<div data-rx="edit">\u270E edit goal / cadence</div>' +
+          '<div data-rx="tog">' + (r.enabled ? "\u23F8 pause" : "\u25B6 start") + '</div>' +
+          '<div data-rx="del">\u2715 delete routine</div>', {w: 210, h: 120});
+        m.querySelector('[data-rx="edit"]').onclick = () => { closePopover(); this.edit(ev, rid); };
+        m.querySelector('[data-rx="tog"]').onclick = () => { closePopover(); this.toggle(rid, !!r.enabled); };
+        m.querySelector('[data-rx="del"]').onclick = () => { closePopover(); this.del(rid); };
+      };
+    });
   }
   /* JAG-536: a routine was create-and-forget — the goal and the cadence were frozen
      at birth. The server now accepts POST /api/routines/<rid>; this form is its door. */
@@ -3674,7 +3777,19 @@ class OrbitApp {
     this.team = "ALL";        // JAG-339: the selected team scopes the whole board
     this.teams = [];
     this.tac = new Constellation(this.api);
-    this.org = new OrgChartView((a) => { this.tac.open(a, "agent"); if (this.agents && a) this.agents.focusAgent(a.session); }, (a) => this.tac.gotoAgent(a), (a) => this.agents.openPrompt(a));
+    // 2026-11-16 (operator): a constellation right-click may SELECT without travelling;
+    // it reuses the one selection the Agents table and the org chart share.
+    this.tac.onFocus = (a) => { if (a) this.focusAgentSession(a.session); };
+    this.org = new OrgChartView(
+      (a) => {
+        this.tac.open(a, "agent");
+        if (this.agents && a) this.agents.focusAgent(a.session);
+        // A single-panel guest has no constellation beside the org chart: "preview"
+        // must actually SHOW it, or the menu promises a panel the operator cannot see.
+        if (this.embedPanel) this.applyView("const");
+      },
+      (a) => this.tac.gotoAgent(a),
+      (a) => this.agents.openPrompt(a));
     // JAG-2.9: picking a row's A-id selects the matching node in the organigram, and
     // the selection is REMEMBERED (org.selSid) so the 5s poll cannot drop it.
     // 2026-11-01: the SAME selection also focuses the constellation — the operator
@@ -4190,7 +4305,15 @@ class OrbitApp {
     if (view.indexOf("view:") === 0) v = this.findView(view.slice(5));
     if (v){ view = "view:" + v.id; }
     else if (!this.PANELS.includes(view)){ view = "view:" + this.views[0].id; v = this.views[0]; }
+    const _prev = this.view;
     this.view = view;
+    /* 2026-11-16 (operator): hosted as ONE panel, the HOST owns the tab strip. A menu
+       that switches the visible panel here (org ▸ Constellation, an agent ▸ Jobs …) must
+       move the host's tabs too, or the window keeps naming the panel it no longer shows.
+       Only a real change is announced, so the boot switch never fights the host. */
+    if (this.embedPanel && _prev && view !== _prev && /^(agents|jobs|org|const)$/.test(view)){
+      try { window.parent.postMessage({ type: "longrun-panel-request", panel: view }, "*"); } catch (e) {}
+    }
     const cols = !!v;
     const main = document.querySelector("main");
     if (main){ main.classList.toggle("view-one", !cols); main.classList.toggle("view-cols", cols); }
