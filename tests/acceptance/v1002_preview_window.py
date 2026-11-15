@@ -107,7 +107,9 @@ check("U2a the ⋯ menu is a named icon button with expanded state",
       and 'aria-controls="pvMenu"' in ui and 'aria-expanded="false"' in ui)
 check("U2a2 both popups are named regions (a floating role=menu outside a landmark is axe's `region`)",
       'id="pvMenu" role="region" aria-label="preview actions"' in ui
-      and 'id="artCtx" role="region" aria-label="file actions"' in ui
+      # 2026-11-16: the one context menu now serves every object (right-click rollout),
+      # so its name is `object actions`; same region contract.
+      and 'id="artCtx" role="region" aria-label="object actions"' in ui
       and 'role="menuitem"' not in ui)
 check("U2b the ⋯ menu carries the real actions",
       all(s in ui for s in ('"Open in the editor"', '"Open raw in a new tab"',

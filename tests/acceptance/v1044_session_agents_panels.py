@@ -54,8 +54,10 @@ check("A2 the four buttons are bound to the one opener",
       in UI and "b.onclick = () => _openDeckPanel(panel)" in UI)
 
 # ---- B: team headers ------------------------------------------------------------
-check("B1 the real-team header renders the assign control",
-      'class="gassign" aria-label="assign agents to' in UI and "openTeamAssign(head, g)" in UI)
+check("B1 assign + new agent are items of the team kebab (no separate icon)",
+      'data-a="assign">＋ Assign agents…' in UI
+      and 'data-a="newagent">＋ New agent…' in UI
+      and 'class="gassign"' not in UI and "openTeamAssign" not in UI)
 check("B2 every real team also gets the kebab",
       'g.key === "__none__" ? \'<button class="gkebab"' in UI
       and ': (g.id ? `<button class="gkebab" aria-label="team actions"' in UI)
@@ -67,6 +69,13 @@ check("B4 a real team's menu offers edit/policy/delete without a second engine",
       'data-a="edit"' in UI and 'data-a="policy"' in UI and 'data-a="del"' in UI
       and '"/api/teams/" + encodeURIComponent(tid) + "/models"' in UI
       and '"/api/teams/" + encodeURIComponent(tid) + "/" + action' in UI)
+check("B5 create/automate in the team kebab run the deck's OWN controls",
+      'data-a="newjob">＋ New job…' in UI
+      and 'data-a="architect">✨ Automate with Architect…' in UI
+      and '_dpPostAgentsAction("new-job")' in UI
+      and '_dpPostAgentsAction("architect")' in UI
+      and 'applyView(_act === "new-job" ? "jobs" : "agents")' in ORBIT
+      and 'if (action === "new-job")' in ORBIT)
 
 # ---- C: row menu + delegated editors -------------------------------------------
 check("C1 the row menu carries the AGENTS actions",
@@ -82,9 +91,17 @@ check("C3 release uses the existing agent DELETE route",
 check("C4 the rail shows the AGENTS row truth (empty ROLE.md + model)",
       'api("GET", "/api/orbit/sessions")' in UI and "_sessMeta" in UI
       and "EMPTY ROLE.md - this agent runs on the bare system prompt" in UI
-      and 'd.title = [_model' in UI)
+      and '"model: " + _model' in UI and '"ROLE.md: " + _meta.prompt_chars' in UI)
 check("C5 the A-id opens the organigram like the AGENTS table",
       'class="jid" role="button" tabindex="0"' in UI and "_showAgentInOrganigram(s.id)" in UI)
+check("C6 right-click opens the SAME menus on sessions and teams",
+      "d.oncontextmenu" in UI and "openSessMenu(d, s, ag, e)" in UI
+      and "head.oncontextmenu" in UI and "openTeamMenu(head, g, e)" in UI
+      and ".sess-menu { position: fixed;" in UI and "max-height: calc(100dvh" in UI)
+check("C7 every other object has a right-click too (one dispatcher, no per-widget copies)",
+      "function _wireObjectContextMenu()" in UI and "_wireObjectContextMenu();" in UI
+      and "if (e.defaultPrevented) return;" in UI and "function _openCtx(" in UI
+      and "Copy this text" in UI)
 
 # ---- D: one reusable window -----------------------------------------------------
 check("D1 there is exactly one panel window and one iframe",

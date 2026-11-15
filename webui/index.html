@@ -465,7 +465,7 @@
   /* 2026-11-16 (operator): the menu is a BODY-level fixed popover. As an absolutely
      positioned child of the row it was clipped by the scrolling rail and painted
      under the rows below it ("not visible because beyond the other webui objects"). */
-  .sess-menu { position: fixed; z-index: 53; background: var(--menubg); border: 1px solid var(--line-2); border-radius: 10px; padding: 4px; min-width: 150px; box-shadow: 0 8px 24px rgba(0,0,0,.4); }
+  .sess-menu { position: fixed; z-index: 53; background: var(--menubg); border: 1px solid var(--line-2); border-radius: 10px; padding: 4px; min-width: 150px; box-shadow: 0 8px 24px rgba(0,0,0,.4); max-height: calc(100dvh / var(--zoom, 1) - 16px); overflow-y: auto; overscroll-behavior: contain; }
   .sess-menu button { display: block; width: 100%; text-align: left; background: none; border: 0; color: var(--txt); padding: 7px 10px; border-radius: 7px; font-size: 12px; cursor: pointer; }
   .sess-menu button:hover { background: var(--hover); }
   .sess-menu button.danger { color: var(--err); }
@@ -487,10 +487,9 @@
   .sgroup-h:hover { background: var(--hover); color: var(--txt); }
   /* v910: the No-team header carries the SAME bulk kebab as the Control deck's
      team headers — glyph control, no frame (rule 9), named for a11y (rule 2). */
-  .sgroup-h .gkebab, .sgroup-h .gassign { border: 0; background: none; color: var(--dim);
+  .sgroup-h .gkebab { border: 0; background: none; color: var(--dim);
     cursor: pointer; font-size: 13px; line-height: 1; padding: 1px 4px; border-radius: 6px; flex: none; }
-  .sgroup-h .gkebab:hover, .sgroup-h .gassign:hover { background: var(--hover); color: var(--txt); }
-  .sgroup-h .gassign { font-size: 12px; opacity: .9; }
+  .sgroup-h .gkebab:hover { background: var(--hover); color: var(--txt); }
   .sgroup-h .chev { font-size: 11px; width: 11px; text-align: center; opacity: .75; }
   .sgroup-h .gsym { font-size: 13px; line-height: 1; color: var(--tcol, var(--dim)); }
   .sgroup-h .gname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -4926,7 +4925,7 @@
      so a `role="menu"` would promise a keyboard model they do not implement — and
      a floating menu outside a landmark is the `region` violation axe measured. -->
 <div class="pv-menu" id="pvMenu" role="region" aria-label="preview actions" hidden></div>
-<div class="art-ctx" id="artCtx" role="region" aria-label="file actions" hidden></div>
+<div class="art-ctx" id="artCtx" role="region" aria-label="object actions" hidden></div>
 <script src="/assets/dragsort.js"></script>
 <script src="/assets/filtersort.js"></script>
 <script>
@@ -7907,7 +7906,7 @@ function _wireSessMenuClose() {
     closeSessMenu();
   });
 }
-async function openSessMenu(row, s, ag) {
+async function openSessMenu(row, s, ag, ev) {
   // 2026-11-16 (operator): the ⋮ is a TOGGLE — a second click on the row that owns the
   // open menu closes it (rebuilding the same menu read as "it does not close").
   if (_sessMenuFor === row && document.querySelector(".sess-menu")) { closeSessMenu(); return; }
@@ -7943,7 +7942,10 @@ async function openSessMenu(row, s, ag) {
   document.body.appendChild(m);
   const _mb = row.querySelector(".menu-btn");
   const _mr = (_mb || row).getBoundingClientRect();
-  _placeMenu(m, _mr.right, _mr.bottom + 4, true);
+  // 2026-11-16 (operator): right-click is the same menu as the ⋮, opened at the
+  // pointer. Left-click still anchors to the kebab so it never jumps around.
+  if (ev && typeof ev.clientX === "number") _placeMenu(m, ev.clientX, ev.clientY, false);
+  else _placeMenu(m, _mr.right, _mr.bottom + 4, true);
   m.onclick = async (e) => {
     const a = e.target.dataset && e.target.dataset.a;
     if (!a) return;
@@ -7995,7 +7997,7 @@ async function openSessMenu(row, s, ag) {
    AGENTS-panel parity). Real teams add edit/policy/delete; the four bulk actions
    and their copy are the SAME strings the Control deck uses, and the server walks
    the cascade — no per-session loop here. */
-function openTeamMenu(head, g) {
+function openTeamMenu(head, g, ev) {
   // 2026-11-16: the kebab is a TOGGLE too (same gesture as the session ⋮).
   if (_sessMenuFor === head && document.querySelector(".sess-menu")) { closeSessMenu(); return; }
   closeSessMenu();
@@ -8006,12 +8008,19 @@ function openTeamMenu(head, g) {
   const name = none ? "the No-team bucket" : (g.name || tid);
   const m = document.createElement("div");
   m.className = "sess-menu";
-  m.innerHTML = (none ? "" : '<button data-a="edit">✎ Edit team…</button>')
+  // The team kebab is the ONE team control. Assign agents and new-agent live here
+  // (operator: no separate ⊕ icon), with the + at the left like every create item.
+  m.innerHTML = (none ? "" : '<button data-a="assign">＋ Assign agents…</button>'
+                      + '<button data-a="newagent">＋ New agent…</button>')
+    + '<button data-a="newjob">＋ New job…</button>'
+    + (none ? "" : '<button data-a="architect">✨ Automate with Architect…</button>')
+    + (none ? "" : '<button data-a="edit">✎ Edit team…</button>')
     + '<button data-a="reset">↺ Reset all sessions…</button>'
     + '<button data-a="compact">≡ Compact all sessions…</button>'
     + '<button data-a="dropold">✕ Drop OLD plans…</button>'
     // The Control AGENTS team kebab also owns the model policy and the team itself.
     + (none ? "" : '<button data-a="policy">⚙ Apply model policy</button>')
+    + (none ? "" : '<button data-a="copy">⧉ Copy team id</button>')
     + (none ? "" : '<button data-a="del" class="danger">✖ Delete team…</button>')
     + '<button data-a="delall" class="danger">✖ Delete ALL sessions…</button>';
   // 2026-11-16: a BODY-level fixed popover, like the session ⋮ — the rail scrolls
@@ -8020,14 +8029,20 @@ function openTeamMenu(head, g) {
   document.body.appendChild(m);
   const _kb = head.querySelector(".gkebab") || head;
   const _kr = _kb.getBoundingClientRect();
-  _placeMenu(m, _kr.right, _kr.bottom + 4, true);
+  if (ev && typeof ev.clientX === "number") _placeMenu(m, ev.clientX, ev.clientY, false);
+  else _placeMenu(m, _kr.right, _kr.bottom + 4, true);
   m.onclick = async (e) => {
     const a = e.target.dataset && e.target.dataset.a;
     if (!a) return;
     closeSessMenu();
     // The deck owns the two AGENTS-panel forms: open its Agents panel and hand it
     // the team action. No second team editor/picker in this file.
+    if (a === "assign") { _ensureDeckPanel("agents"); _dpPostTeam(tid, "assign"); return; }
+    if (a === "newagent") { _ensureDeckPanel("agents"); _dpPostAgentsAction("new-agent"); return; }
+    if (a === "newjob") { _ensureDeckPanel("jobs"); _dpPostAgentsAction("new-job"); return; }
+    if (a === "architect") { _ensureDeckPanel("agents"); _dpPostAgentsAction("architect"); return; }
     if (a === "edit") { _ensureDeckPanel("agents"); _dpPostTeam(tid, "edit"); return; }
+    if (a === "copy") { _pvCopy(tid); return; }
     if (a === "policy") {
       const r = await api("POST", "/api/teams/" + encodeURIComponent(tid) + "/models", {});
       if (!r || r.ok === false) { toast((r && r.error) || "model policy failed", "err"); return; }
@@ -8072,14 +8087,6 @@ function openTeamMenu(head, g) {
       await (none ? _noTeamBulk("delete-sessions") : _teamBulk(tid, "delete-sessions"));
     }
   };
-}
-/* The ⊕ on a real team header opens the deck's own assign picker (same route,
-   same pool as the AGENTS table). */
-function openTeamAssign(head, g) {
-  if (!g || !g.id) return;
-  closeSessMenu();
-  _ensureDeckPanel("agents");
-  _dpPostTeam(g.id, "assign");
 }
 async function _teamBulk(tid, action) {
   const r = await api("POST", "/api/teams/" + encodeURIComponent(tid) + "/" + action, {});
@@ -8243,15 +8250,17 @@ function _sessRowEl(s, pinnedIds, ag, groupKey, orderContainer) {
     if (e.target.closest && e.target.closest(".sess-menu")) return;
     selectSession(s);
   };
+  // JAG-395 + 2026-11-16 (operator): right-click on an agent/session opens THIS
+  // row's ⋮ menu, at the pointer. It used to be assigned twice (the second handler
+  // silently replaced the pointer placement) — one handler owns the gesture.
+  d.oncontextmenu = e => {
+    if (e.target.closest && e.target.closest("input, textarea, [contenteditable], a, .sess-menu")) return;
+    e.preventDefault(); e.stopPropagation();
+    openSessMenu(d, s, ag, e);
+  };
   const jidEl = d.querySelector(".jid");
   if (jidEl) jidEl.onkeydown = (e) => {
     if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); _showAgentInOrganigram(s.id); }
-  };
-  // JAG-395: right-click opens THIS row's ⋯ menu — the session under the cursor.
-  d.oncontextmenu = e => {
-    if (e.target.closest && e.target.closest(".sess-menu")) return;
-    e.preventDefault(); e.stopPropagation();
-    openSessMenu(d, s, ag);
   };
   return d;
 }
@@ -8502,19 +8511,23 @@ async function loadSessions() {
         + `<span class="gsym">${esc(g.symbol)}</span>`
         + `<span class="gname">${esc(g.name)}${g.id ? ` <span class="gid">${esc(g.id)}</span>` : ""}</span>`
         + `<span class="gcount">${g.sessions.length}</span>`
-        // AGENTS-panel parity: every real team gets the assign control and the
-        // SAME three-dot bulk menu the Control deck's team header carries.
-        + (g.id ? `<button class="gassign" aria-label="assign agents to ${esc(g.name)}" title="assign agents to ${esc(g.name)}">⊕</button>` : "")
         // v910: the No-team bucket carries the SAME bulk menu as the Control
         // deck's team headers — one route (/api/teams/__none__/…), no second engine.
+        // The team ⋮ is the ONE team control: assign and new-agent live inside it.
         + (g.key === "__none__" ? '<button class="gkebab" aria-label="no-team actions" aria-haspopup="menu" title="no-team actions — every session without a team">⋮</button>'
-          : (g.id ? `<button class="gkebab" aria-label="team actions" aria-haspopup="menu" title="team actions — all sessions of ${esc(g.name)}">⋮</button>` : ""));
+          : (g.id ? `<button class="gkebab" aria-label="team actions" aria-haspopup="menu" title="team actions — assign, new agent, edit, bulk, delete">⋮</button>` : ""));
       head.onclick = e => {
         if (DragSort.consumeClick(e)) return;
-        // The header icons own their clicks — they must not toggle the group.
-        if (e.target.closest && e.target.closest(".gassign")) { openTeamAssign(head, g); return; }
+        // The header kebab owns its click — it must not toggle the group.
         if (e.target.closest && e.target.closest(".gkebab")) { openTeamMenu(head, g); return; }
         _toggleGroup(g.key);
+      };
+      // 2026-11-16 (operator): right-click on the team header opens the SAME ⋮ menu.
+      head.oncontextmenu = e => {
+        if (e.target.closest && e.target.closest("input, textarea, [contenteditable], a")) return;
+        e.preventDefault();
+        openTeamMenu(head, g, e);
+        return false;
       };
       sec.appendChild(head);
       // Bind AFTER the header is attached: `_bindSidebarDrag` resolves its source
@@ -19123,11 +19136,26 @@ function openPvMenu() {
   b.setAttribute("aria-expanded", "true");
 }
 
+/* The ONE context menu (file cards, workspace rows, and every object the global
+   right-click dispatcher fills in). `head` is the object's identity line — a path,
+   an id — so "what is this" is answered without a click. */
+function _openCtx(x, y, head, items) {
+  const m = $("artCtx");
+  if (!m || !items || !items.length) return;
+  m.innerHTML = (head ? '<div class="cx-path" title="' + _attr(head) + '">' + esc(head) + "</div>" : "")
+    + items.map((it, i) => '<button type="button" data-i="' + i + '"><span class="mi">'
+      + esc(it.ic) + "</span>" + esc(it.label) + "</button>").join("");
+  m.querySelectorAll("button").forEach(btn => {
+    btn.onclick = () => { m.hidden = true; items[Number(btn.dataset.i)].act(); };
+  });
+  m.hidden = false;
+  _placeMenu(m, x, y, false);
+}
+
 /* Right-click on a file (a card or a Workspace row): the absolute path is the
    first line of the menu, so "what is this file's path" costs no click. */
 function openFileCtx(x, y, row) {
-  const m = $("artCtx");
-  if (!m || !row || !row.path) return;
+  if (!row || !row.path) return;
   const path = row.path;
   const items = [
     { ic: "◧", label: "Preview", act: () => openPreview(path, row) },
@@ -19136,14 +19164,52 @@ function openFileCtx(x, y, row) {
     { ic: "⧉", label: "Copy the path inside the workspace", act: () => _pvCopy(_pvRel(path)) },
     { ic: "⧉", label: "Copy the file name", act: () => _pvCopy(row.name || _short(path)) }
   ];
-  m.innerHTML = '<div class="cx-path" title="' + _attr(path) + '">' + esc(path) + "</div>"
-    + items.map((it, i) => '<button type="button" data-i="' + i + '"><span class="mi">'
-      + esc(it.ic) + "</span>" + esc(it.label) + "</button>").join("");
-  m.querySelectorAll("button").forEach(btn => {
-    btn.onclick = () => { m.hidden = true; items[Number(btn.dataset.i)].act(); };
+  _openCtx(x, y, path, items);
+}
+
+/* 2026-11-16 (operator): "right mouse click shall do something when pressed on
+   different objects … in all webui objects". The objects that own a real menu
+   (agent row, team header, plan step, artifact/file card) answer first and stop the
+   event; this ONE listener fills every other object with the actions that are always
+   true there — copy its identity, copy its text, and jump to the object it names.
+   Text fields, editors and code blocks keep the browser's own menu (copy/paste). */
+function _sessOfAgentLabel(label) {
+  const want = String(label || "").toUpperCase();
+  for (const sid in _agents) {
+    const a = _agents[sid];
+    if (!a) continue;
+    if (("A" + (a.n || String(a.id || "").replace(/\D+/g, ""))).toUpperCase() === want) return sid;
+  }
+  return null;
+}
+function _wireObjectContextMenu() {
+  document.addEventListener("contextmenu", e => {
+    if (e.defaultPrevented) return;
+    const t = e.target;
+    if (!t || !t.closest) return;
+    if (t.closest("input, textarea, select, [contenteditable='true'], pre, code, .cm-editor, .monaco-editor, #artCtx, #pvMenu, .sess-menu, .pv-menu")) return;
+    const host = t.closest("[data-path],[data-sid],[data-id],[data-job]")
+              || t.closest(".card, .msg, .ev, .art-item, .edrow, .tool-card, .insp-row");
+    const ds = (host && host.dataset) || {};
+    const id = ds.sid || ds.id || ds.job || "";
+    const sel = String((window.getSelection && window.getSelection()) || "").trim();
+    const text = host ? String(host.innerText || host.textContent || "").replace(/\s+/g, " ").trim() : "";
+    const items = [];
+    if (sel) items.push({ ic: "⧉", label: "Copy the selection", act: () => _pvCopy(sel) });
+    if (id) items.push({ ic: "⧉", label: "Copy the id " + id, act: () => _pvCopy(id) });
+    if (ds.path) items.push({ ic: "⧉", label: "Copy the path", act: () => _pvCopy(ds.path) });
+    if (text && text !== sel) items.push({ ic: "⧉", label: "Copy this text", act: () => _pvCopy(text) });
+    const aid = (id + " " + text).match(/\bA\d+\b/);
+    const asid = aid ? _sessOfAgentLabel(aid[0]) : null;
+    if (asid) items.push({ ic: "⬢", label: "Show " + aid[0] + " in the organigram",
+                           act: () => _showAgentInOrganigram(asid) });
+    const jid = (id + " " + text).match(/\bJ\d+\b/);
+    if (jid) items.push({ ic: "▦", label: "Show " + jid[0] + " in the Control deck",
+                          act: () => _showJobInControl(jid[0]) });
+    if (!items.length) return;   // nothing to offer: leave the native menu alone
+    e.preventDefault();
+    _openCtx(e.clientX, e.clientY, id || ds.path || "", items);
   });
-  m.hidden = false;
-  _placeMenu(m, x, y, false);
 }
 
 /* ---- posters on the cards -----------------------------------------------
@@ -20311,6 +20377,11 @@ function _dpPostAgent(sid, kind) {
   if (!sid) return;
   _dpPostReady([{ type: "longrun-agent-editor", session: sid, kind: kind }]);
 }
+/* Run one of the Agents panel's own create/automate controls (same code, no copy). */
+function _dpPostAgentsAction(action) {
+  if (!action) return;
+  _dpPostReady([{ type: "longrun-agents-action", action: action }]);
+}
 function _openDeckPanel(panel) {
   const el = $("panelView"); if (!el) return;
   panel = _DP_PANELS[panel] ? panel : "agents";
@@ -20931,6 +21002,7 @@ $("session-search").addEventListener("input", loadSessions);
 { const _cfgText = $("cfgFileText"); if (_cfgText) _cfgText.addEventListener("input", _syncConfigFileSaveState); }
 _wireRunsPanel();   // JAG-479: the running/unread popover reads real state and follows it
 _wireSessMenuClose();   // 2026-11-16: one listener closes the session ⋮ menu (reopens cleanly)
+_wireObjectContextMenu();   // 2026-11-16: right-click means something on every object
 { const _chc = $("chatHeadCopy"); if (_chc) _chc.onclick = _copySessionName; }   // JAG-480
 $("chatSearchToggle").onclick = toggleChatSearch;
 $("chatSearchClose").onclick = closeChatSearch;

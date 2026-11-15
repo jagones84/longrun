@@ -4837,11 +4837,15 @@ window.addEventListener("message", (e) => {
   }
   if (d && d.type === "longrun-agents-action" && app) {
     try {
-      app.applyView("agents");
+      const _act = String(d.action || "");
+      // "new-job" lives in the Jobs panel; every other action lives in Agents.
+      app.applyView(_act === "new-job" ? "jobs" : "agents");
       setTimeout(() => {
         try {
-          const action = String(d.action || "");
-          if (action === "new-agent") {
+          const action = _act;
+          if (action === "new-job") {
+            if ($("jobGoal")) $("jobGoal").focus();
+          } else if (action === "new-agent") {
             if ($("agAddBar") && $("agAddBar").hidden) $("agNewBtn").click();
             if ($("agNewName")) $("agNewName").focus();
           } else if (action === "new-team") {
