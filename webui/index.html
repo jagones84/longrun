@@ -521,6 +521,20 @@
      and the eye gains a slash while the reasoning is hidden. */
   .fold-tg svg { display: block; transition: transform .15s ease; }
   .fold-tg.is-open svg { transform: rotate(180deg); }
+  /* 2026-11-16 (operator): "the collapse icons shall be put in a position that is
+     clear and visible … always used". The fold control now sits NEXT TO the section
+     name — not lost among the panel icons — and reads as a button: bordered, full
+     contrast and a 26px target. It is the same control in both rails. */
+  .hd-left { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
+  aside .rail-head h2 .fold-tg, #inspector .insp-tools h2 .fold-tg {
+    width: 26px; height: 26px; padding: 0; flex: 0 0 auto;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid var(--line-2); border-radius: 7px;
+    background: var(--hover); color: var(--txt); cursor: pointer; }
+  aside .rail-head h2 .fold-tg:hover, #inspector .insp-tools h2 .fold-tg:hover {
+    border-color: var(--acc); color: var(--acc); }
+  aside .rail-head h2 .fold-tg.is-open, #inspector .insp-tools h2 .fold-tg.is-open {
+    border-color: var(--acc); color: var(--txt); }
   #toolsBar button .ic-slash { opacity: 0; transition: opacity .12s; }
   #toolsBar button.is-off .ic-slash { opacity: 1; }
   @media (prefers-reduced-motion: reduce) {
@@ -3498,7 +3512,7 @@
   <aside id="aside" data-col="sessions" aria-label="sessions rail">
     <section class="rail">
       <header class="rail-head">
-        <h2>Sessions<span class="srail-tools"><button type="button" id="railAgents" class="rail-panel" title="open the agents panel" aria-label="open the agents panel"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M3.5 19a4.5 4.5 0 0 1 9 0"/><path d="M15 7h5M15 11h5M15 15h5"/></svg></button><button type="button" id="railJobs" class="rail-panel" title="open the jobs panel for this session" aria-label="open the jobs panel for this session"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 6h10M10 12h10M10 18h10"/><path d="m3.6 6 1.3 1.3L7.4 4.7"/><path d="m3.6 12 1.3 1.3 2.5-2.6"/><path d="m3.6 18 1.3 1.3 2.5-2.6"/></svg></button><button type="button" id="railOrg" class="rail-panel" title="open the org chart" aria-label="open the org chart"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="4" rx="1"/><rect x="3" y="16" width="6" height="4" rx="1"/><rect x="15" y="16" width="6" height="4" rx="1"/><path d="M12 7v4M6 16v-3h12v3"/></svg></button><button type="button" id="railConst" class="rail-panel" title="open the constellation" aria-label="open the constellation"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="5" r="2"/><circle cx="5" cy="18" r="2"/><circle cx="19" cy="18" r="2"/><path d="m12 7-6 9M12 7l6 9M7 18h10"/></svg></button><button type="button" id="railToggleAll" class="fold-tg" title="expand all groups" aria-label="expand all groups"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.5 9.5 12 5l4.5 4.5"/><path d="m7.5 14.5 4.5 4.5 4.5-4.5"/></svg></button></span></h2>
+        <h2><span class="hd-left"><span class="hd-name">Sessions</span><button type="button" id="railToggleAll" class="fold-tg" title="expand all groups" aria-label="expand all groups"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.5 9.5 12 5l4.5 4.5"/><path d="m7.5 14.5 4.5 4.5 4.5-4.5"/></svg></button></span><span class="srail-tools"><button type="button" id="railAgents" class="rail-panel" title="open the agents panel" aria-label="open the agents panel"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M3.5 19a4.5 4.5 0 0 1 9 0"/><path d="M15 7h5M15 11h5M15 15h5"/></svg></button><button type="button" id="railJobs" class="rail-panel" title="open the jobs panel for this session" aria-label="open the jobs panel for this session"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 6h10M10 12h10M10 18h10"/><path d="m3.6 6 1.3 1.3L7.4 4.7"/><path d="m3.6 12 1.3 1.3 2.5-2.6"/><path d="m3.6 18 1.3 1.3 2.5-2.6"/></svg></button><button type="button" id="railOrg" class="rail-panel" title="open the org chart" aria-label="open the org chart"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="4" rx="1"/><rect x="3" y="16" width="6" height="4" rx="1"/><rect x="15" y="16" width="6" height="4" rx="1"/><path d="M12 7v4M6 16v-3h12v3"/></svg></button><button type="button" id="railConst" class="rail-panel" title="open the constellation" aria-label="open the constellation"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="5" r="2"/><circle cx="5" cy="18" r="2"/><circle cx="19" cy="18" r="2"/><path d="m12 7-6 9M12 7l6 9M7 18h10"/></svg></button></span></h2>
       </header>
       <div class="rail-tools" role="toolbar" aria-label="session tools">
         <button type="button" class="rail-btn" id="railNew" data-call="newSession"
@@ -3754,11 +3768,8 @@
   <aside id="rail" data-col="context" aria-label="context">
     <div id="inspector">
       <div class="insp-tools">
-        <h2>Inspector</h2>
-        <span class="srail-tools">
-          <button type="button" id="inspToggleAll" class="fold-tg" title="expand all inspector sections"
-                  aria-label="expand all inspector sections"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.5 9.5 12 5l4.5 4.5"/><path d="m7.5 14.5 4.5 4.5 4.5-4.5"/></svg></button>
-        </span>
+        <h2><span class="hd-left"><span class="hd-name">Inspector</span><button type="button" id="inspToggleAll" class="fold-tg" title="expand all inspector sections"
+                  aria-label="expand all inspector sections"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.5 9.5 12 5l4.5 4.5"/><path d="m7.5 14.5 4.5 4.5 4.5-4.5"/></svg></button></span></h2>
       </div>
       <!-- RH-1: the ONE scrolling list of the inspector — the head above stays put.
            Same anatomy as the sessions rail (fixed head + scrolling list). -->

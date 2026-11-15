@@ -57,7 +57,11 @@ check("A1 the rail is a named block (rail-head / rail-tools / rail-list)",
       '<section class="rail">' in UI and 'class="rail-head"' in UI
       and 'class="rail-tools" role="toolbar"' in UI and 'class="card rail-list"' in UI)
 check("A2 the ▲/▼ tools are INSIDE the Sessions h2 (one header row)",
-      '<h2>Sessions<span class="srail-tools">' in UI)
+      # 2026-11-16 (operator): the fold control moved NEXT TO the section name
+      # (`.hd-left`) so it is always visible; the icon strip keeps the right edge.
+      '<h2><span class="hd-left"><span class="hd-name">Sessions</span>' in UI
+      and 'id="railToggleAll"' in UI
+      and UI.index('id="railToggleAll"') < UI.index('class="srail-tools"'))
 check("A3 .srail-tools no longer pushes itself to the far edge",
       "margin-left: auto" not in UI.split(".srail-tools {")[1].split("}")[0]
       if ".srail-tools {" in UI else False,
@@ -212,8 +216,11 @@ check("E17 the Plan panel chip accepts/prints a full dotted id at any depth",
 
 # ---- F. jobs -> session centers the rail --------------------------------------
 check("F1 the bridge handler reaches the SAME reveal procedure (no duplicate)",
-      'if (!d || d.type !== "longrun-open-task") return;' in UI
-      and "revealActiveSession();" in UI.split('d.type !== "longrun-open-task"')[1][:900])
+      # 2026-11-16: the same listener now also answers `longrun-panel-request` first,
+      # so the guard is matched without the `!d ||` prefix; the reveal call is the
+      # pinned part (one implementation, reached by the bridge).
+      'if (d.type !== "longrun-open-task") return;' in UI
+      and "revealActiveSession();" in UI.split('d.type !== "longrun-open-task"')[1][:1200])
 check("F2 revealActiveSession is the one centering implementation",
       UI.count("function revealActiveSession()") == 1
       and UI.count("function _centerActiveRow()") == 1)
