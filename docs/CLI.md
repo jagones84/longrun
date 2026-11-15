@@ -1,6 +1,6 @@
 # Longrun CLI — `forge.py`
 
-> Verified 2026-10-25: structure current (thin stdlib client over `/api/*`,
+> Verified 2026-11-15: structure current (thin stdlib client over `/api/*`,
 > same surface as WebUI). If a command 404s, §3 is stale — fix it same-commit.
 
 Command the harness from the terminal. `forge.py` is a thin, **stdlib-only** client
@@ -157,6 +157,7 @@ python3 forge.py tasks set t_42 done
 | `tools call <tool> '<json-args>'` | `POST /api/tools/call` |
 | `tools running` | `GET /api/tools/running` |
 | `tools cancel JOB` | `POST /api/tools/cancel` |
+| `tools runtime\|verifier\|bestofn\|difficulty\|selfevolve\|reasoning\|approvals` | `POST /api/tools` (the global policy presets the Settings panel writes) |
 | `tools policy TOOL [--enable\|--disable] [--approval MODE]` | `POST /api/tools` |
 | `approvals ls` | `GET /api/approvals` |
 | `approvals show ID` | `GET /api/approvals/<id>` |
@@ -183,7 +184,7 @@ python3 forge.py sandbox          # sandbox backend + isolation state (force pro
 | `runs summary` | `GET /api/runs` |
 | `runs trace RUN_ID` | `GET /api/runs/<id>/trace` |
 | `runs node RUN_ID '<json>'` | `POST /api/runs/<id>/graph/nodes` |
-| `events [--since N] [--limit N]` | `GET /api/feed/recent` |
+| `events [--since N] [--limit N]` | `GET /api/events` |
 | `feed` | `SSE /api/feed` (loopback tail, live) |
 | `status` | `GET /api/status` |
 | `self` / `selfcheck` | `GET /api/self` / `GET /api/selfcheck` |
@@ -221,6 +222,8 @@ python3 forge.py providers
 |---|---|
 | `memory store <kind> <content>` | `POST /api/memory` |
 | `memory search "q" [--kind K] [--semantic] [--limit N]` | `GET /api/memory` |
+| `memory forget <target>` | `DELETE /api/memory?target=` |
+| `memory purge` | `POST /api/memory` (`{"action": "purge"}`) |
 | `blackboard post <topic> <content> [--tags a,b]` | `POST /api/blackboard` |
 | `blackboard get [--id I] [--topic T] [--limit N]` | `GET /api/blackboard` |
 | `blackboard search "q" [--limit N]` | `GET /api/blackboard?query=` |
@@ -247,7 +250,7 @@ python3 forge.py blackboard post idea "usare SQLite per i checkpoint" --tags db,
 | `knowledge research "q" [--notebook NB] [--depth shallow\|medium\|deep] [--limit N] [--max-rounds M]` | `POST /api/knowledge/research` | auto agent: search + fetch + summarise + import |
 | `research ls` / `research active` / `research set <id>` | `GET`/`POST /api/research/model` | pick the research LLM |
 | `index status` / `index build [--force]` / `index search "q"` | `GET /api/codebase/status`, `POST /api/codebase/build`, `GET /api/codebase/search` | the workspace code index |
-| `embedding models` / `active` / `set <id>` | `GET /api/embedding/*`, `POST /api/embedding/active` | embedding model + cost log |
+| `embedding models` / `active` / `set <id>` / `add '<json>'` / `remove <id>` / `costs` / `cost-test` | `GET`/`POST /api/embedding/*` | embedding model catalogue + cost log (`cost-test` probes in-process) |
 
 ```bash
 python3 forge.py knowledge notebooks
@@ -320,6 +323,8 @@ python3 forge.py roles set --session A25 --text "You are the docs lead."
 | `checkpoints create "label" [--session ID]` | `POST /api/checkpoints` |
 | `checkpoints show CP_ID` | `GET /api/checkpoints/<id>` |
 | `checkpoints rollback CP_ID` | `POST /api/checkpoints/<id>/rollback` |
+| `checkpoints rm CP_ID` | `DELETE /api/checkpoints/<id>` |
+| `checkpoints prune` | `DELETE /api/checkpoints` (the store's own pruning policy) |
 | `routing show` | `GET /api/routing` |
 | `routing update '<json>'` | `POST /api/routing` |
 | `eval tasks` | `GET /api/eval/tasks` |
@@ -345,11 +350,43 @@ python3 forge.py mcp tools        # tools the harness itself exposes over MCP
 python3 forge.py acp list         # ACP/MCP clients as the server sees them
 ```
 
+### Marketplace
+
+| Command | Endpoint | Notes |
+|---|---|---|
+| `market ls [--kind K] [--category C] [--source S] [--q TEXT] [--limit N] [--offset N]` | `GET /api/market/catalog` | `source` is a catalogue ORIGIN (`bundled`, `local`, `imported:mcp-registry`, `imported:clawhub`); a trailing `:` is a prefix. Prints area, origin and `matched N` |
+| `market sources` | `GET /api/market/sources` | each adapter with its age, its item count, its cost wording and the running job |
+| `market status` | `GET /api/market/sync/status` | the ONE background job: pages, rows_seen, items, skipped, capped, error |
+| `market sync [--source S] [--limit N] [--wait]` | `POST /api/market/sync` | starts the job; `--wait` follows it to the end (a full registry pass is minutes) |
+| `market remote <query> [--source S] [--limit N]` | `GET /api/market/remote` | live search; the rows are PREVIEWS and carry no digest |
+| `market import <source> <slug>` | `POST /api/market/import-remote` | pins one row's digest, writes it into that source's group, then installs it |
+| `market install <id> [--overwrite]` | `POST /api/market/install` | the same digest-gated install the page uses |
+| `market installed` | `GET /api/market/installed` | the install RECORD with its catalogue label |
+| `market rm <id> [--files]` | `DELETE /api/market/installed/<id>` (`?files=1`) | removes the record, and the skill files when asked |
+
+```bash
+python3 forge.py market sources                                   # is the mirror current?
+python3 forge.py market ls --category "Research & Analysis" --limit 15
+python3 forge.py market sync --source mcp-registry --wait         # full registry mirror
+python3 forge.py market remote research --limit 10                # live ClawHub search
+python3 forge.py market import clawhub research-helper            # pin that one, then install
+python3 forge.py market installed
+```
+
+A remote row is **not** installable until it is pinned: `market install skill/<slug>` answers
+`unknown item` for a row that was only searched.
+
 ---
 
 ## 3. Full endpoint coverage
 
-Every HTTP route the server exposes has a CLI entry point:
+Every route `forge.py` calls is listed below, and `v588` pins that each one exists on the server
+under the same HTTP method — a renamed route fails the battery, not the first terminal run.
+Coverage is **not** total: of the 182 `/api/*` route literals in the four route files, the CLI calls
+94. The rest are WebUI-only surfaces (the config editors, the artifact and filesystem browsers, the
+architect / improvement / cost panels, and the marketplace's single-item plus `/api/skills` and
+`/api/connectors/*` views). The marketplace's operator actions ARE covered (see §2). Adding a verb
+for a WebUI-only route is a deliberate change with its own test, not a missing line in this table.
 
 | HTTP | Path | CLI |
 |---|---|---|
@@ -364,7 +401,7 @@ Every HTTP route the server exposes has a CLI entry point:
 | GET | `/api/plan` | `plan show` |
 | GET | `/api/tasks` | `tasks ls` |
 | GET | `/api/sessions` | `sessions ls` |
-| GET | `/api/sessions/new` | `sessions new` |
+| GET | `/api/sessions/new` | (WebUI first-open only — the CLI creates with `POST /api/sessions`) |
 | GET | `/api/history` | `sessions history` |
 | GET | `/api/eval/tasks` | `eval tasks` |
 | GET | `/api/voice/status` | `voice status` |
@@ -374,7 +411,7 @@ Every HTTP route the server exposes has a CLI entry point:
 | GET | `/api/sandbox` | `sandbox` |
 | GET | `/api/approvals` | `approvals ls` |
 | GET | `/api/approvals/<id>` | `approvals show` |
-| GET | `/api/feed/recent` | `events` |
+| GET | `/api/events` | `events` |
 | GET | `/api/agent/runs` | `runs ls` |
 | GET | `/api/agent/runs/<id>` | `runs show` |
 | GET | `/api/runs` | `runs summary` |
@@ -452,6 +489,15 @@ Every HTTP route the server exposes has a CLI entry point:
 | GET | `/api/roles?session=` | `roles show` |
 | POST | `/api/roles` | `roles set` / `roles clear` |
 | DELETE | `/api/roles?session=` | `roles reset` |
+| GET | `/api/market/catalog` | `market ls` |
+| GET | `/api/market/sources` | `market sources` |
+| GET | `/api/market/sync/status` | `market status` |
+| POST | `/api/market/sync` | `market sync` |
+| GET | `/api/market/remote` | `market remote` |
+| POST | `/api/market/import-remote` | `market import` |
+| POST | `/api/market/install` | `market install` |
+| GET | `/api/market/installed` | `market installed` |
+| DELETE | `/api/market/installed/<id>` | `market rm` |
 
 ---
 

@@ -62,9 +62,18 @@ check("JAG-240 the CoT is no longer appended below the answer in loadHistory",
 # turn's card (ABOVE the question it answered). JAG-274 replaced the drawnIdx
 # heuristic with the open-at-bottom rule: a node's section is MOVED back to the
 # bottom and REUSED (a second copy used to duplicate the whole todo tree).
+# 2026-11-15: the move is now conditional — a USER message (or a free group) right
+# after the section is a TURN BOUNDARY, and moving past it would drag the section
+# below the operator's own message (operator: "il messaggio non appare nella chat").
+# The rule this pin owns is unchanged: one section per node, reused, never a copy.
 check("JAG-274 _openSection reuses the node's section instead of duplicating it",
       'last.isConnected && last.parentNode === lg' in ui
-      and "if (last.nextElementSibling) lg.appendChild(last);" in ui)
+      and "const _next = last.nextElementSibling;" in ui
+      and "if (_next) lg.appendChild(last);" in ui)
+check("JAG-274 a user message after the section is a turn boundary, not a move target",
+      "const _boundary = _next && _next.classList" in ui
+      and 'contains("msg")' in ui and 'contains("fgroup")' in ui
+      and "if (_boundary) {" in ui)
 check("JAG-274 a fresh section opens only when the node has none yet",
       'const det = _mkSection(_nodeById(nid)' in ui)
 check("JAG-274 loadHistory drives placement through the node id",

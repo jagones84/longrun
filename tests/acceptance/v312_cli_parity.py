@@ -12,6 +12,8 @@ locks the command surface added to close the known gaps:
   * `providers ls|add|rm|default|rm-model` (CRUD, not only a read)
   * `tools runtime|verifier|bestofn|difficulty|selfevolve|reasoning|approvals`
     (the global policy presets the Settings panel writes)
+  * `market ls|sources|status|sync|remote|import|install|installed|rm` (the
+    Marketplace page: catalogue filters, the background import job, one-row import)
 
 Static: parses the argparse surface + asserts the handler functions exist.
 Deterministic, no server. Run: python3 tests/acceptance/v312_cli_parity.py
@@ -35,7 +37,7 @@ def check(name, ok, detail=""):
 tree = ast.parse(SRC)
 funcs = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
 for fn in ("cmd_sessions", "cmd_context", "cmd_routines", "cmd_jobs", "cmd_mcp",
-           "cmd_providers", "cmd_tools"):
+           "cmd_providers", "cmd_tools", "cmd_market"):
     check("handler %s exists" % fn, fn in funcs)
 
 # --- action choices actually wired (read the real literals) ------------------
@@ -78,14 +80,30 @@ check("tools accepts the preset actions",
       all(a in tools for a in ('"runtime"', '"verifier"', '"bestofn"', '"difficulty"',
                                '"selfevolve"', '"reasoning"', '"approvals"')))
 
+mark = choices_for("market")
+check("market accepts ls/sources/status/sync/remote/import/install/installed/rm",
+      all(a in mark for a in ('"ls"', '"sources"', '"status"', '"sync"', '"remote"',
+                              '"import"', '"install"', '"installed"', '"rm"')))
+check("market ls filters by catalogue origin and by area",
+      '"--source"' in mark and '"--category"' in mark and '"--offset"' in mark)
+check("market sync can follow the job to the end", '"--wait"' in mark)
+
 # --- HTTP routes the CLI calls must exist server-side ------------------------
 srv = open(os.path.join(REPO, "src", "longrun", "core/server.py"), encoding="utf-8").read()
 srv += open(os.path.join(REPO, "src", "longrun", "core/httpapi.py"), encoding="utf-8").read()
 orch = open(os.path.join(REPO, "src", "longrun", "orchestrate/orchestration.py"), encoding="utf-8").read()
+api = open(os.path.join(REPO, "src", "longrun", "core/api_v02.py"), encoding="utf-8").read()
 check("server serves /api/sessions/<sid>/clear", 'path.endswith("/clear")' in srv)
 check("server serves /api/sessions/<sid>/model", 'path.endswith("/model")' in srv)
 check("orchestration serves /api/routines", '_is(path, "/api/routines")' in orch)
 check("orchestration serves DELETE /api/jobs/<id>", 'method == "DELETE" and path.startswith("/api/jobs/")' in orch)
+check("the marketplace routes the CLI calls exist",
+      all(('"%s"' % p) in api for p in ("/api/market/catalog", "/api/market/sources",
+                                       "/api/market/sync/status", "/api/market/sync",
+                                       "/api/market/remote", "/api/market/import-remote",
+                                       "/api/market/install", "/api/market/installed")))
+check("the installed record is removable with its files",
+      'path.startswith("/api/market/installed/")' in api and 'qs.get("files")' in api)
 
 # --- test infra: pytest must be able to import the package -------------------
 conf = os.path.join(REPO, "tests", "conftest.py")

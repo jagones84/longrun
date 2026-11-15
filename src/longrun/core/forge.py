@@ -29,6 +29,9 @@ Usage:
                           | jobs run JN | jobs wake | jobs get JN
   python3 forge.py routines ls | routines new "goal" --agent AX [--every N]
                           | routines enable|disable|rm RID
+  python3 forge.py market [ls|sources|status|installed] | market sync [--source S] [--wait]
+                          | market remote <query> [--source S] | market import <source> <slug>
+                          | market install <id> [--overwrite] | market rm <id> [--files]
   python3 forge.py roles show|set|clear|reset --session SID_OR_AX
   python3 forge.py index [status|build|search] | knowledge [status|notebooks|create|add|search|discover|import|research]
                           | research [ls|set|active] | embedding [models|active|set|add|remove|costs|cost-test]
@@ -50,6 +53,7 @@ import json
 import os
 import re
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -479,6 +483,134 @@ def cmd_mcp(args):
                          indent=2, ensure_ascii=False))
         return
     print("unknown mcp action", file=sys.stderr); sys.exit(2)
+
+
+def cmd_market(args):
+    """Marketplace: the catalogue, the sync job, live search and one-row import.
+
+    A thin mirror of the Marketplace page: the catalogue is data, an import writes
+    a catalogue file (nothing installs by itself), and a full registry pass is ONE
+    background job — `market sync --wait` is how a terminal follows it.
+    """
+    action = getattr(args, "action", None) or "ls"
+
+    def _age(src):
+        sec = src.get("age_seconds")
+        if sec is None:
+            return "never synced"
+        text = "synced %ds ago" % int(sec) if sec < 3600 else "synced %dh ago" % (sec // 3600)
+        return text + (" (stale)" if src.get("stale") else "")
+
+    if action == "ls":
+        qs = ["limit=%d" % int(args.limit or 20), "offset=%d" % int(args.offset or 0)]
+        if args.kind:
+            qs.append("kind=" + _q(args.kind))
+        if args.category:
+            qs.append("category=" + _q(args.category))
+        if args.source:
+            qs.append("source=" + _q(args.source))
+        if args.value:
+            qs.append("q=" + _q(args.value))
+        out = req("GET", "/api/market/catalog?" + "&".join(qs))
+        items = out.get("items") or []
+        for it in items:
+            print("%-40s %-9s %-18s %-14s %s"
+                  % (str(it.get("id"))[:40], it.get("kind"),
+                     str(it.get("category") or "")[:18],
+                     str(it.get("origin_label") or "")[:14],
+                     str(it.get("title") or "")[:44]))
+        stats = out.get("stats") or {}
+        print('matched %s \u00b7 showing %d \u00b7 by kind %s'
+              % (stats.get("matched"), len(items), json.dumps(stats.get("by_kind") or {})))
+        for err in (out.get("errors") or [])[:5]:
+            print("  !", err)
+        return
+    if action == "sources":
+        out = req("GET", "/api/market/sources")
+        for s in out.get("sources") or []:
+            print("%-14s %6s items  %-26s %s"
+                  % (s.get("id"), s.get("items"), _age(s), s.get("cost") or ""))
+        print("allow_hosts:", ", ".join(out.get("allow_hosts") or []))
+        print("job:", json.dumps(out.get("job") or {}))
+        return
+    if action == "status":
+        print(json.dumps(req("GET", "/api/market/sync/status").get("job") or {}, indent=2))
+        return
+    if action == "installed":
+        out = req("GET", "/api/market/installed")
+        for r in out.get("installed") or []:
+            print("%-40s %-9s %-14s %-10s %s"
+                  % (str(r.get("id"))[:40], r.get("kind"),
+                     str(r.get("origin_label") or "")[:14],
+                     str(r.get("installed") or "")[:10], r.get("target") or ""))
+        print("installed:", out.get("count"))
+        return
+    if action == "sync":
+        source = args.source or "mcp-registry"
+        body = {"source": source}
+        if args.limit:
+            body["limit"] = int(args.limit)
+        res = req("POST", "/api/market/sync", body)
+        if not res.get("ok"):
+            print(json.dumps(res, indent=2))
+            return
+        print("started:", json.dumps(res.get("job") or {}))
+        if not args.wait:
+            print("poll with: python3 forge.py market status")
+            return
+        job = res.get("job") or {}
+        while job.get("running"):
+            time.sleep(3)
+            job = req("GET", "/api/market/sync/status").get("job") or {}
+            print("pages=%s rows=%s items=%s skipped=%s"
+                  % (job.get("pages"), job.get("rows_seen"), job.get("items"),
+                     job.get("skipped")), flush=True)
+        print("done:", json.dumps({k: job.get(k) for k in
+                                   ("items", "skipped", "capped", "error", "path")}))
+        return
+    if action == "remote":
+        if not args.value:
+            print("usage: forge.py market remote <query> [--source clawhub]", file=sys.stderr)
+            sys.exit(2)
+        out = req("GET", "/api/market/remote?source=" + _q(args.source or "clawhub")
+                  + "&q=" + _q(args.value) + "&limit=%d" % int(args.limit or 20))
+        if not out.get("ok"):
+            print(json.dumps(out, indent=2))
+            return
+        for it in out.get("items") or []:
+            print("%-28s %-18s %s" % (str(it.get("name"))[:28],
+                                      str(it.get("category") or "")[:18],
+                                      str(it.get("title") or "")[:48]))
+        print("online %d \u00b7 import with: python3 forge.py market import %s <slug>"
+              % (len(out.get("items") or []), out.get("source")))
+        return
+    if action == "import":
+        if not (args.value and args.value2):
+            print("usage: forge.py market import <source> <slug>", file=sys.stderr)
+            sys.exit(2)
+        print(json.dumps(req("POST", "/api/market/import-remote",
+                             {"source": args.value, "slug": args.value2}),
+                         indent=2, ensure_ascii=False))
+        return
+    if action == "install":
+        if not args.value:
+            print("usage: forge.py market install <id> [--overwrite]", file=sys.stderr)
+            sys.exit(2)
+        print(json.dumps(req("POST", "/api/market/install",
+                             {"id": args.value, "overwrite": bool(args.overwrite)}),
+                         indent=2, ensure_ascii=False))
+        return
+    if action == "rm":
+        if not args.value:
+            print("usage: forge.py market rm <id> [--files]", file=sys.stderr)
+            sys.exit(2)
+        path = "/api/market/installed/" + _q(args.value)
+        if args.files:
+            path += "?files=1"
+        print(json.dumps(req("DELETE", path), indent=2, ensure_ascii=False))
+        return
+    print("unknown market action", file=sys.stderr)
+    sys.exit(2)
 
 
 def cmd_models(args):
@@ -1021,6 +1153,13 @@ def main():
     sub.add_parser("sandbox").set_defaults(fn=cmd_sandbox)
     p = sub.add_parser("mcp"); p.add_argument("action", nargs="?", default="tools", choices=["tools", "ls", "add", "remove", "reload", "local-file"]); \
         p.add_argument("value", nargs="?"); p.add_argument("--json"); p.set_defaults(fn=cmd_mcp)
+    p = sub.add_parser("market"); p.add_argument("action", nargs="?", default="ls",
+        choices=["ls", "sources", "status", "sync", "remote", "import", "install", "installed", "rm"]); \
+        p.add_argument("value", nargs="?"); p.add_argument("value2", nargs="?"); \
+        p.add_argument("--kind"); p.add_argument("--category"); p.add_argument("--source"); \
+        p.add_argument("--limit", type=int, default=20); p.add_argument("--offset", type=int, default=0); \
+        p.add_argument("--wait", action="store_true"); p.add_argument("--overwrite", action="store_true"); \
+        p.add_argument("--files", action="store_true"); p.set_defaults(fn=cmd_market)
     sub.add_parser("status").set_defaults(fn=cmd_status)
     p = sub.add_parser("models"); p.add_argument("action", nargs="?", default="ls", choices=["ls", "ensure"]); \
         p.add_argument("value", nargs="?"); p.set_defaults(fn=cmd_models)
