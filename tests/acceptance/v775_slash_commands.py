@@ -44,16 +44,19 @@ def check(name, ok, detail=""):
 
 
 # ---- A: ONE registry ---------------------------------------------------------
-check("A1 the registry is declared once, keyed by id, with the three commands",
-      "const SLASH_COMMANDS = [" in UI
-      and '{ id: "goal", icon: "◎", insert: "/goal ",' in UI
-      and '{ id: "skills", aliases: ["skill"], icon: "🧩", insert: "/",' in UI
-      and '{ id: "compact", icon: "🗜", insert: "",' in UI)
+# v1051: the backend catalogue is the owner; the frontend array is the first-paint
+# fallback (`let`, replaced on boot). The BEHAVIOUR pinned here is unchanged.
+check("A1 the registry is declared once, keyed by id, with the built-in commands",
+      "let SLASH_COMMANDS = [" in UI
+      and '{ id: "goal", aliases: [], icon: "◎", kind: "goal", insert: "/goal ",' in UI
+      and '{ id: "skills", aliases: ["skill"], icon: "🧩", kind: "menu", menu: "skills", insert: "/",' in UI
+      and '{ id: "compact", aliases: [], icon: "🗜", kind: "ui", insert: "",' in UI)
 check("A2 an id/alias index is built from that ONE table",
-      "const SLASH_BY_ID = (() => {" in UI
-      and "(c.aliases || []).forEach(a => { m[a] = c; })" in UI)
+      "const SLASH_BY_ID = {};" in UI
+      and "function _indexSlash() {" in UI
+      and "(c.aliases || []).forEach(a => { SLASH_BY_ID[a] = c; });" in UI)
 check("A3 the registry sits BEFORE send() (no boot-order/temporal-dead-zone miss)",
-      UI.index("const SLASH_COMMANDS = [") < UI.index("function send(text, display, atts) {"))
+      UI.index("let SLASH_COMMANDS = [") < UI.index("function send(text, display, atts) {"))
 
 # ---- B: /skills RUNS ---------------------------------------------------------
 check("B1 /skills carries a real action: the ONE inline skill menu",
@@ -80,10 +83,10 @@ check("C1 an EMPTY query matches every command (the submenu opener)",
       and "const all = SLASH_COMMANDS.concat(USER_COMMANDS);" in UI
       and "if (!q) return all.slice();" in UI)
 check("C2 with no query the SKILL catalogue is not ranked at all",
-      "const _matched = q ? _rankSkills(_skills, q)" in UI
-      and ": (_slashSkillsOnly ? _skills.map(s => ({ s })) : []);" in UI)
+      "_matched = _rankSkills(_skills, q);" in UI
+      and "_matched = _slashSkillsOnly ? _skills.map(s => ({ s })) : [];" in UI)
 check("C2b the catalogue is shown only when a command opened it in skills mode",
-      "const cmds = _slashSkillsOnly ? [] : _slashCmdHits(q);" in UI)
+      "const cmds = _skillsMode ? [] : _slashCmdHits(q);" in UI)
 check("C3 a non-empty query still searches the WHOLE catalogue (JAG-465 kept)",
       "const _SLASH_CAP = 60;" in UI and "const hits = _matched.slice(0, _SLASH_CAP).map(x => x.s);" in UI)
 
@@ -93,7 +96,7 @@ check("D1 Tab completes the highlighted row without running it",
       'if (it && it.complete) it.complete(); return; }' in UI)
 check("D2 every row carries a complete() (commands complete to /<id> )",
       "_slashItems.push({ el: li, pick: onPick, complete: onComplete || onPick });" in UI
-      and '() => _apply("/" + c.id + " ")));' in UI)
+      and '() => _apply("/" + c.id + " "), "↵"));' in UI)
 check("D3 the skill rank is exact > prefix > contains",
       "if (name === query) return 5;" in UI and "if (name.startsWith(query)) return 4;" in UI
       and "if (name.includes(query)) return 3;" in UI)
@@ -132,17 +135,18 @@ check("G1 the skills command opens the SAME inline menu, no modal",
       "function openSkillMenu()" in UI and "openSkillPicker" not in UI
       and "openPick(\"🧩 Skill\"" not in UI)
 check("G2 /skills seeds the slash token and switches the menu to skills mode",
-      'id: "skills", aliases: ["skill"], icon: "🧩", insert: "/",' in UI
+      'id: "skills", aliases: ["skill"], icon: "🧩", kind: "menu", menu: "skills", insert: "/",' in UI
       and "_slashSkillsOnly = true;" in UI)
 check("G3 skills mode lists the catalogue with no query (the submenu opener)",
-      "const cmds = _slashSkillsOnly ? [] : _slashCmdHits(q);" in UI
-      and ": (_slashSkillsOnly ? _skills.map(s => ({ s })) : []);" in UI)
+      "const cmds = _skillsMode ? [] : _slashCmdHits(q);" in UI
+      and "_matched = _slashSkillsOnly ? _skills.map(s => ({ s })) : [];" in UI)
 check("G4 the server resolves /<name> ANYWHERE in the message, not only at 0",
       "_SKILL_SLASH_RE = re.compile(" in AGENT
       and "rest = _SKILL_SLASH_RE.sub(_resolve, message)" in AGENT
       and "if not message or \"/\" not in message:" in AGENT)
 check("G5 a UI command is never mistaken for a skill",
-      '_UI_SLASH_TOKENS = {"goal", "skills", "skill", "compact"}' in AGENT)
+      '_UI_SLASH_TOKENS = {"goal", "skills", "skill", "compact", "plan", "spec",' in AGENT
+      and '"plugins", "plugin"}' in AGENT)
 check("G6 the skill lookup is case-insensitive",
       'wanted = str(name or "").strip().lower()' in SKILLS
       and 'if str(s["name"]).lower() == wanted:' in SKILLS)

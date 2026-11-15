@@ -3324,8 +3324,9 @@ def _improvement_pass(sess, message, answer, used_tools, work_steps, model, meta
 #: the operator had just picked (live: "… with the /scientist-world , then propose"
 #: reached the model as plain prose). A UI command is not a skill and stays as
 #: written; an unknown token is prose and is never touched.
-_SKILL_SLASH_RE = re.compile(r"(^|\s)/([A-Za-z0-9_.\-]+)")
-_UI_SLASH_TOKENS = {"goal", "skills", "skill", "compact"}
+_SKILL_SLASH_RE = re.compile(r"(^|\s)/([A-Za-z0-9_.\-:]+)")
+_UI_SLASH_TOKENS = {"goal", "skills", "skill", "compact", "plan", "spec",
+                    "plugins", "plugin"}
 
 
 def _apply_skill_slash(message):
@@ -3335,6 +3336,10 @@ def _apply_skill_slash(message):
     transient and applies only to this turn. Every resolved token is consumed
     inside the user text while its activation block is prepended, so a skill named
     mid-message works exactly like a leading one.
+
+    v1051: `/plugin:<name>` resolves to the installed plugin's bounded manifest
+    (name, description, members and paths), so the whole plugin can be called
+    without flooding the context with every member SKILL.md.
     """
     if not message or "/" not in message:
         return message
@@ -3342,12 +3347,27 @@ def _apply_skill_slash(message):
         from longrun.memory import skills as skills_mod
     except Exception:  # noqa: BLE001 — the injection must never break a turn
         return message
-    found, seen = [], set()
+    found, seen, plug_blocks = [], set(), set()
 
     def _resolve(m):
         token = m.group(2)
-        if token.lower() in _UI_SLASH_TOKENS:
+        low = token.lower()
+        if low in _UI_SLASH_TOKENS:
             return m.group(0)              # a UI command, not a skill
+        if low.startswith("plugin:"):
+            name = token.split(":", 1)[1].strip()
+            try:
+                from longrun.core import slash as _slash
+                block = _slash.plugin_block(name)
+            except Exception:  # noqa: BLE001 — an unknown plugin is prose
+                block = ""
+            if not block:
+                return m.group(0)
+            key = "plugin:" + name.lower()
+            if key not in plug_blocks:
+                plug_blocks.add(key)
+                found.append({"plugin_block": block})   # ordered with skills
+            return "\n" if m.group(1) == "\n" else ""
         try:
             sk = skills_mod.get_skill(token)   # case-insensitive (SL-6)
         except Exception:  # noqa: BLE001
@@ -3367,6 +3387,9 @@ def _apply_skill_slash(message):
         return message
     blocks = []
     for sk in found:
+        if sk.get("plugin_block"):
+            blocks.append(sk["plugin_block"])
+            continue
         body = (sk.get("content") or "")[:20000]
         rel = sk.get("path") or ""
         skill_dir = (os.path.dirname(os.path.abspath(os.path.join(REPO, rel)))
@@ -7212,6 +7235,148 @@ def generate_plan(goal, model=None):
     publish("plan.update", goal=goal, steps=steps, generated=True)
     trace.finish("done")
     return plan, answer, think, trace.id
+
+
+# ---------------------------------------------------------------------------
+# v1051: `/plan` and `/spec` write a REVIEWED DOCUMENT. This is deliberately NOT
+# `generate_plan()` above (that one writes data/plan.json steps, i.e. the todo
+# side) and NOT the `plan_only` turn (the coordinator decomposition, which may not
+# write files). These calls have no tools: they receive a bounded context block
+# from `plan/docs.py` and return markdown only, so the document is written by the
+# backend and the session gate is never bypassed.
+# ---------------------------------------------------------------------------
+
+PLAN_DOC_PROMPT = """You are the PLANNING phase of the Longrun harness. You have NO tools and you have NOT read the repository. Produce ONE markdown plan document that the operator will review and approve before any code is changed.
+
+Return ONLY the markdown, no code fence around the whole document, no preamble. Use exactly these sections:
+
+# Plan — <short title>
+Status: proposed · Created: <YYYY-MM-DD>
+
+## Request
+<the operator's request, verbatim>
+
+## Grounding
+- Workspace: <from the supplied context>
+- Facts: <what the supplied context actually says>
+- Assumptions: <one bullet per assumption, each prefixed ASSUMPTION:>
+
+## Approach
+<the chosen route and why; the alternatives you rejected>
+
+## Steps
+1. <imperative step> — evidence of done: <command/file/check>
+2. ...
+
+## Verification
+- <deterministic command or check>
+- <live check / UI state>
+
+## Risks & rollback
+- <risk → mitigation / how to undo>
+
+Rules: never invent a file path you were not given; when a path is unknown, name the area instead and mark it ASSUMPTION. Keep it under 1200 words. No implementation code longer than 15 lines."""
+
+SPEC_DOC_PROMPT = """You are the SPECIFICATION phase of the Longrun harness. You have NO tools and you have NOT read the repository. Produce ONLY the markdown for `spec.md`, with this shape:
+
+# <title> — Spec
+
+## Why
+## What Changes
+## Impact
+- Affected specs / code / stores / UI / config ...
+## ADDED Requirements
+### Requirement: <name>
+The system SHALL ...
+#### Scenario: <name>
+- **WHEN** ...
+- **THEN** ...
+## REMOVED Requirements
+## Open Questions
+
+Rules: describe WHAT and WHY, behaviour-focused and testable (`WHEN`/`THEN`), and do not prescribe implementation unless an ambiguity would change the outcome. Never invent a file path you were not given; mark unknowns ASSUMPTION. No preamble, no code fence around the whole document."""
+
+TASKS_DOC_PROMPT = """You are the TASK-BREAKDOWN phase of the Longrun harness. Given the spec below, produce ONLY the markdown for `tasks.md`:
+
+# Tasks — <title>
+
+<one sentence: the execution order and why>
+
+1. <imperative step>
+   - [ ] Subtask 1.1: <specific change>
+   - [ ] Subtask 1.2: <test or verification>
+2. <imperative step>
+# Task Dependencies
+- Task 2 depends on Task 1 (<one-line reason>)
+
+Rules: one task per reviewable change, each with a test id placeholder (`vNNN`), no task that merely restates the spec, no implementation code. Mark unknowns ASSUMPTION. No preamble, no code fence around the whole document."""
+
+CHECKLIST_DOC_PROMPT = """You are the ACCEPTANCE phase of the Longrun harness. Given the spec and tasks below, produce ONLY the markdown for `checklist.md`:
+
+# Checklist — <title>
+
+## <task or requirement group>
+- [ ] <observable acceptance item>
+- [ ] <the command/test that proves it>
+
+## Final verification
+- [ ] Deterministic gate: <command>
+- [ ] Service restart + `ActiveEnterTimestamp` newer than the touched files
+- [ ] One live check of the surface the operator touches
+- [ ] No file outside the stated perimeter changed
+
+Rules: every item is observable and testable, no restatement of the spec, no implementation detail. Mark unknowns ASSUMPTION. No preamble, no code fence around the whole document."""
+
+
+def _doc_completion(system, user, model, kind, phase):
+    """One markdown-only planner call; raises when no model or an empty answer."""
+    model = routing.turn_model(None, model) or default_model()
+    if not model:
+        raise RuntimeError("no model available for document generation")
+    try:
+        publish("docs.thinking", kind=kind, phase=phase, model=model)
+    except Exception:  # noqa: BLE001 — progress must not break the call
+        pass
+    msgs = [{"role": "system", "content": system},
+            {"role": "user", "content": user}]
+    answer, _think = _router_stream(msgs, model, lambda ch, t: None)
+    text = (answer or "").strip()
+    if text.startswith("```") and text.rstrip().endswith("```"):
+        lines = text.splitlines()
+        if len(lines) >= 3:
+            text = "\n".join(lines[1:-1]).strip()
+    if not text:
+        raise RuntimeError("the planner returned an empty document")
+    return text, model
+
+
+def generate_plan_doc(goal, model=None, context=""):
+    """`(markdown, model)` for `/plan`; one call, no tools, no task-graph write."""
+    system = "\n\n".join(x for x in (system_prompt(), matrix_context(), PLAN_DOC_PROMPT) if x)
+    user = "REQUEST:\n%s\n\n%s" % (str(goal or "").strip(), context or "")
+    return _doc_completion(system, user, model, "plan", "plan")
+
+
+def generate_spec_docs(goal, model=None, context=""):
+    """`({'spec.md','tasks.md','checklist.md'}, model)` for `/spec`.
+
+    Three sequential markdown-only calls: separate artifacts are more reliable
+    than one JSON blob, and a failure on any phase leaves no folder behind
+    (`plan/docs.py` writes into a temp directory and only renames on success).
+    """
+    base = "\n\n".join(x for x in (system_prompt(), matrix_context()) if x)
+    ask = "REQUEST:\n%s\n\n%s" % (str(goal or "").strip(), context or "")
+    spec, used = _doc_completion(base + "\n\n" + SPEC_DOC_PROMPT, ask,
+                                 model, "spec", "spec")
+    tasks, used = _doc_completion(
+        base + "\n\n" + TASKS_DOC_PROMPT,
+        "%s\n\nSPEC (the source of truth):\n%s" % (ask, spec[:12000]),
+        model, "spec", "tasks")
+    checklist, used = _doc_completion(
+        base + "\n\n" + CHECKLIST_DOC_PROMPT,
+        "%s\n\nSPEC:\n%s\n\nTASKS:\n%s" % (ask, spec[:12000], tasks[:12000]),
+        model, "spec", "checklist")
+    return {"spec.md": spec, "tasks.md": tasks, "checklist.md": checklist}, used
 
 
 AGENT_ACTIONS = ("todo.write", "plan_step", "complete_plan_step", "add_task",

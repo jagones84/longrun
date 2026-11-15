@@ -494,9 +494,11 @@
   .sgroup-h .gsym { font-size: 13px; line-height: 1; color: var(--tcol, var(--dim)); }
   .sgroup-h .gname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sgroup-h .gid { color: var(--dim); font-weight: 500; text-transform: none; letter-spacing: 0; }
-  .sgroup-h .gcount { color: var(--dim); font-weight: 600; background: var(--hover);
-    border-radius: 999px; padding: 0 7px; min-width: 16px; text-align: center;
-    text-transform: none; letter-spacing: 0; }
+  /* 2026-11-16 (operator): "i don't like the agent number in the sessions left panel —
+     remove the frame and make it smaller" — a bare numeral: no pill, no border. */
+  .sgroup-h .gcount { color: var(--dim); font-weight: 500; background: transparent;
+    border: 0; border-radius: 0; padding: 0 2px; min-width: 0; text-align: right;
+    font-size: 10.5px; opacity: .75; text-transform: none; letter-spacing: 0; }
   .sgroup-b { padding-left: 6px; margin-left: 4px; border-left: 1px solid color-mix(in srgb, var(--tcol, var(--line)) 55%, transparent); }
   .sgroup.collapsed .sgroup-b { display: none; }
   .sess .t, .sgroup-h .gname { cursor: grab; }
@@ -1189,6 +1191,49 @@
   #goalBar > button { flex: 0 0 auto; height: 24px; min-height: 24px; padding: 0 7px;
     border-radius: 8px; font-size: 12px; line-height: 1; }
   #goalBar > button:disabled { opacity: .45; cursor: default; }
+  /* v1051: the plan/spec bar. Same anatomy as the goal bar (one line: icon ·
+     title · meta · badge · actions), because the operator already learned it. */
+  #docBar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; padding: 6px 10px;
+    border: 1px solid var(--line); border-left: 2px solid var(--acc); border-radius: 10px;
+    background: color-mix(in srgb, var(--acc) 7%, transparent); font-size: 12px;
+    min-width: 0; max-width: 100%; overflow: hidden; }
+  #docBar[hidden] { display: none; }
+  #docBar.approved { border-left-color: var(--ok); background: color-mix(in srgb, var(--ok) 6%, transparent); }
+  #docBar.rejected, #docBar.stale { border-left-color: var(--warn); background: color-mix(in srgb, var(--warn) 6%, transparent); }
+  #docBar .gb-ico { flex: 0 0 auto; color: var(--acc); }
+  #docBar.approved .gb-ico { color: var(--ok); }
+  #docBar.rejected .gb-ico, #docBar.stale .gb-ico { color: var(--warn); }
+  #docBar .gb-text { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; color: var(--txt); }
+  #docBar button.gb-text.gb-expand { flex: 1 1 0; min-width: 0; text-align: left;
+    background: none; border: none; padding: 0; margin: 0; font: inherit; color: var(--txt);
+    cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    height: auto; min-height: 0; }
+  #docBar button.gb-text.gb-expand:hover { color: var(--acc); }
+  #docBar .gb-meta { flex: 0 1 auto; min-width: 0; color: var(--dim); white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; }
+  #docBar > button { flex: 0 0 auto; height: 24px; min-height: 24px; padding: 0 7px;
+    border-radius: 8px; font-size: 12px; line-height: 1; }
+  #docBar > button.gb-act { width: 24px; padding: 0; text-align: center; }
+  #docBar > button:disabled { opacity: .45; cursor: default; }
+  /* v1051: the one-shot document card in the transcript (the bar is durable). */
+  .docCard { border: 1px solid var(--line); border-left: 2px solid var(--acc);
+    border-radius: 10px; padding: 8px 10px; margin: 6px 0;
+    background: color-mix(in srgb, var(--acc) 5%, transparent); }
+  .docCard.pending { opacity: .85; }
+  .docCard .dc-head { display: flex; align-items: center; gap: 7px; font-size: 12px; }
+  .docCard .dc-ico { flex: 0 0 auto; }
+  .docCard .dc-badge { margin-left: auto; font-size: 10px; text-transform: uppercase;
+    color: var(--acc); border: 1px solid color-mix(in srgb, var(--acc) 50%, transparent);
+    border-radius: 999px; padding: 0 6px; }
+  .docCard .dc-meta { margin-top: 3px; font-size: 11px; color: var(--dim);
+    word-break: break-all; }
+  .docCard .dc-body { margin: 6px 0; max-height: 160px; overflow: auto; font-size: 11px;
+    line-height: 1.4; white-space: pre-wrap; color: var(--txt); }
+  .docCard .dc-acts { display: flex; gap: 6px; }
+  .docCard .dc-acts button { height: 24px; min-height: 24px; padding: 0 9px;
+    border-radius: 8px; font-size: 11px; }
+  .docCard.pending .dc-body, .docCard.pending .dc-acts { display: none; }
   /* JAG-282 / JAG-427: a compact toolbar in two groups (left = attach/queue, right
      = model + actions). It is ALWAYS one row: the model button is the only flexible
      control and shrinks to a tiny glyph, so the bar NEVER grows a second "floor"
@@ -1285,7 +1330,30 @@
   #slashMenu { max-height: 46vh; overflow-y: auto; }
   .msg .xlink { margin-left: auto; }
   .msg .xlink + .copy { margin-left: 6px; }
-  #slashMenu .slashrow.hl { background: var(--hl); outline: 1px solid var(--acc); }
+  /* v1051: the `/` menu is a real PANEL, not a list of inline-styled lines:
+     plugins · commands · skills sections, an icon slot, a one-line hint and a
+     sticky key footer. Theme tokens only; the row anatomy matches the rail. */
+  #slashMenu { padding: 0; border-radius: 10px; }
+  #slashMenu .slashsec { position: sticky; top: 0; z-index: 1; padding: 6px 10px 3px;
+    font-size: 10px; letter-spacing: .04em; text-transform: uppercase; color: var(--dim);
+    background: var(--menubg); border-bottom: 1px solid var(--line); }
+  #slashMenu .slashrow { display: flex; align-items: center; gap: 9px; min-height: 34px;
+    padding: 5px 10px; cursor: pointer; border-left: 2px solid transparent; }
+  #slashMenu .slashrow:hover { background: var(--hover); }
+  #slashMenu .slashrow.hl { background: var(--hl); border-left-color: var(--acc); outline: 0; }
+  #slashMenu .slashico { flex: 0 0 18px; width: 18px; text-align: center; font-size: 14px;
+    line-height: 1; }
+  #slashMenu .slashmain { flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline;
+    gap: 8px; overflow: hidden; }
+  #slashMenu .slashmain b { flex: 0 0 auto; font-size: 12px; color: var(--txt); font-weight: 600; }
+  #slashMenu .slashhint { min-width: 0; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; font-size: 11px; color: var(--dim); }
+  #slashMenu .slashkey { flex: 0 0 auto; font-size: 10px; color: var(--dim); opacity: .8; }
+  #slashMenu .slashrow.muted { opacity: .45; cursor: not-allowed; }
+  #slashMenu .slashfoot { position: sticky; bottom: 0; padding: 5px 10px;
+    border-top: 1px solid var(--line); background: var(--menubg); font-size: 10px;
+    color: var(--dim); }
+  #slashMenu .slashempty { padding: 12px 10px; font-size: 11px; color: var(--dim); }
   #moreMenu .mi, #qmodeMenu .mi { display: flex; align-items: center; gap: 8px; width: 100%;
     height: auto; min-height: 0; text-align: left; padding: 8px 10px; border: 0;
     border-radius: 8px; background: transparent; color: var(--txt); font-size: 12px;
@@ -2868,7 +2936,6 @@
   .sgroup { margin: 6px 0 4px; }
   .sgroup-h { padding: 5px 6px; border-radius: 6px; font-size: 10.5px;
     letter-spacing: .08em; color: var(--dim); }
-  .sgroup-h .gcount { background: transparent; border: 1px solid var(--line); color: var(--dim); }
   .runs-panel, .sess-menu { border-radius: var(--r-sm); border-color: var(--line-2); box-shadow: var(--shadow-2); }
   .runs-panel { padding: 6px; }
   .rp-row { border-radius: 6px; }
@@ -3128,23 +3195,60 @@
      category labels at three different weights, and a legend crammed into the
      window head. Same grammar as the inspector now: an 11px spaced label, then a
      bordered card, 18px between categories, and the LIVE/save legend as a chip. */
-  /* 2026-11-01 (second pass): the operator read Settings as "full of useless spacing".
-     Measured: a card holding ONE control was 61px tall and each category added 20px of
-     air above it. Same grammar, tighter rhythm — 8/11 padding, 14px between categories. */
-  #settingsWin .sw-main { padding: 14px 16px 20px; }
+  /* ===== 2026-11-16 — SETTINGS: ONE design layer for EVERY subsheet =========
+     Operator: "do you think that style is state of the art of front end UIs? …
+     apply the style to all the settings subsheets". The grammar lives on the SHARED
+     classes (h2 / .card / .inp / .ghost / .keycard), so a sheet added tomorrow
+     inherits it — no per-category block:
+       micro-label headings over a hairline · one flat surface per block (9px) ·
+       14/8 rhythm · 28px controls · mono for identifiers · the active nav item is an
+       accent BAR + soft fill, not a heavy pill. */
+  #settingsWin { border-radius: 14px; }
+  #settingsWin .sw-head { padding: 12px 16px; gap: 10px;
+    border-bottom: 1px solid var(--line); }
+  #settingsWin .sw-head .sw-title { font-size: 13px; letter-spacing: .01em; }
+  #settingsWin .set-chip { font-size: 9px; letter-spacing: .1em; padding: 2px 8px;
+    border-radius: 999px; }
+  #settingsWin .sw-nav { flex-basis: 204px; padding: 10px; }
+  #settingsWin .sw-nav button { padding: 7px 10px; margin-bottom: 1px; font-size: 12px;
+    border-radius: 7px; border-left: 2px solid transparent; }
+  #settingsWin .sw-nav button.active { border-left-color: var(--acc); }
+  #settingsWin .sw-main { padding: 16px 18px 24px; overflow-x: hidden; }
   #settingsWin .sw-main .sw-cat h2 {
-    margin: 14px 0 6px; font-size: 11px; font-weight: 600; letter-spacing: .09em;
-    color: var(--dim); text-transform: uppercase; }
+    margin: 20px 0 8px; padding-bottom: 6px; border-bottom: 1px solid var(--line);
+    font-size: 10.5px; font-weight: 600; letter-spacing: .14em; color: var(--dim);
+    text-transform: uppercase; }
   #settingsWin .sw-main .sw-cat h2:first-child { margin-top: 0; }
   #settingsWin .sw-main .card {
-    background: var(--bg-2); border: 1px solid var(--line);
-    border-radius: 10px; padding: 8px 11px; }
-  #settingsWin .sw-main .card + h2 { margin-top: 14px; }
-  #settingsWin .sw-main .remaining { font-size: 10.5px; }
-  #settingsWin .sw-nav { padding: 10px; }
-  #settingsWin .sw-nav button { padding: 7px 10px; margin-bottom: 2px; font-size: 12px; }
-  #settingsWin .set-chip { font-size: 9px; letter-spacing: .08em; padding: 1px 7px; border-radius: 999px; }
-  #settingsWin .sw-head { padding: 11px 14px; gap: 8px; }
+    background: var(--bg-2); border: 1px solid var(--line); border-radius: 9px;
+    padding: 10px 12px; margin-bottom: 8px; box-shadow: none; }
+  #settingsWin .sw-main .card:hover { border-color: var(--line-2); }
+  #settingsWin .sw-main .card + h2 { margin-top: 16px; }
+  #settingsWin .sw-main .remaining { font-size: 10.5px; line-height: 1.45; }
+  #settingsWin .sw-main .inp { height: 28px; padding: 0 10px; border-radius: 7px;
+    font-size: 12px; }
+  /* the blackboard note is a textarea: full width, wraps, grows with the text
+     (resize is off — the grower owns the height). */
+  #settingsWin .sw-main textarea.inp { display: block; width: 100%; height: auto;
+    min-height: 34px; padding: 8px 10px; line-height: 1.45; resize: none; }
+  #settingsWin button.ghost { height: 28px; padding: 0 10px; border-radius: 7px;
+    font-size: 11.5px; }
+  #settingsWin .sw-main code { font-family: var(--mono); font-size: 11px; }
+  /* The key rows are the same card grammar — no per-row inline styles. */
+  #settingsWin .keycard { display: grid; gap: 8px; }
+  #settingsWin .keycard .kc-h { display: flex; align-items: center; gap: 8px; }
+  #settingsWin .keycard .kc-info { flex: 1; min-width: 0; }
+  #settingsWin .keycard .kc-name { font-family: var(--mono); font-size: 11.5px;
+    letter-spacing: .02em; color: var(--txt); }
+  #settingsWin .keycard .kc-state { flex: none; font-size: 10px; letter-spacing: .07em;
+    text-transform: uppercase; color: var(--dim); }
+  #settingsWin .keycard .kc-state.on { color: var(--ok); }
+  #settingsWin .keycard .kc-dot { width: 6px; height: 6px; border-radius: 50%;
+    background: var(--line-2); flex: none; }
+  #settingsWin .keycard.on .kc-dot { background: var(--ok); }
+  #settingsWin .keycard .kc-edit { display: flex; flex-wrap: wrap; gap: 6px;
+    align-items: center; }
+  #settingsWin .keycard .kc-edit .inp { flex: 1 1 200px; min-width: 0; }
 
   /* ---- RH-19: PHONE IN LANDSCAPE — the room goes to the CHAT ----------------
      Measured on a real landscape viewport (844x390, zoom .9) BEFORE this block:
@@ -3212,9 +3316,16 @@
     /* the composer: same controls, tighter rows */
     #composer { padding-top: 4px; padding-bottom: 4px; gap: 4px; }
     #goalBar { height: 26px; min-height: 26px; }
+    #docBar { height: 26px; min-height: 26px; }
     #inp { min-height: 32px; padding: 7px 11px; }
     #composerBar { height: 32px; min-height: 32px; }
     #log { padding: 10px 12px; }
+  }
+
+  /* v1051: the slash panel on a phone: full composer width, taller rows. */
+  @media (max-width: 560px) {
+    #slashMenu { left: 8px !important; right: 8px !important; }
+    #slashMenu .slashrow { min-height: 38px; }
   }
 
   /* RH-21 (operator, 2026-11-03): *"nella visione orizzontale ruotata mobile i tasti
@@ -3588,7 +3699,7 @@
     <div id="compactBar" hidden role="status" aria-live="polite"></div>
     <div id="nowbar" hidden></div>
     <div id="composer">
-      <div id="slashMenu" class="card" hidden style="position:absolute;bottom:100%;left:22px;right:22px;max-height:220px;overflow-y:auto;padding:4px 0;margin-bottom:4px"></div>
+      <div id="slashMenu" class="card" role="listbox" aria-label="commands" hidden style="position:absolute;bottom:100%;left:22px;right:22px;margin-bottom:4px"></div>
       <div id="plusMenu" hidden></div>
       <div id="attachRow" hidden></div>
       <div id="cmdChips" hidden style="flex-wrap:wrap;gap:6px;padding:0 2px 6px 2px"></div>
@@ -3601,6 +3712,24 @@
                 aria-label="show the harness verification detail"></button>
         <button class="ghost gb-act" id="goalMore" data-call="goalMenuToggle"
                 title="goal actions: verify · pause · edit · delete" aria-label="goal actions">⋯</button>
+      </div>
+      <!-- v1051: the durable plan/spec bar — same anatomy as the goal bar. It is
+           read from GET /api/docs, so it survives a reload and a session switch. -->
+      <div id="docBar" class="card" hidden>
+        <span class="gb-ico" id="docIcon" aria-hidden="true">🗺</span>
+        <button class="gb-text gb-expand" id="docTitle" data-call="docOpen"
+                title="open the plan/spec document" aria-label="open the document">plan</button>
+        <span class="gb-meta" id="docMeta"></span>
+        <span class="gb-badge" id="docBadge" hidden></span>
+        <button class="ghost gb-act" id="docApprove" data-call="docApprove"
+                title="approve — unlock the session and switch to act"
+                aria-label="approve the document">✓</button>
+        <button class="ghost gb-act" id="docReject" data-call="docReject"
+                title="reject — keep the document, release the lock"
+                aria-label="reject the document">✕</button>
+        <button class="ghost gb-act" id="docUnlock" data-call="docUnlock" hidden
+                title="unlock plan mode without deciding"
+                aria-label="unlock plan mode">⏏</button>
       </div>
       <div id="goalMenu" class="gb-menu" hidden>
         <button class="ghost" id="goalVerify" data-call="goalVerify"
@@ -4653,8 +4782,8 @@
       <div class="sw-cat" data-cat="orchestrate" hidden>
         <!-- v641/v642: three prose cards explained what the tab is; the operator
              still could not tell what a blackboard entry IS or whether entries can
-             be deleted. Now: the explanation is a tooltip, the board has a real
-             `clear all` (DELETE /api/blackboard), and the panel is two blocks. -->
+             be deleted. Now: every row has its own `delete`, the fields carry their
+             own visible labels (topic, tags), no explanatory text overlay. -->
         <h2 title="Not the subagent engine — the model, the parallel limit and the roles live in Settings ▸ Subagents. This tab RUNS that engine: a swarm splits one goal across N throwaway subagents, and the blackboard is the shared notebook the run writes to (also readable from the longrun_blackboard tool and `forge blackboard`).">Swarm &amp; blackboard</h2>
         <div class="card">
           <div class="u-df u-g6 u-aic u-fww">
@@ -4664,12 +4793,12 @@
                  is a tooltip now). -->
             <button class="lnk" data-call="gotoSubagents" title="the engine behind the swarm: model, parallel limit, roles">subagents</button>
             <button class="lnk" data-call="loadBlackboard" title="re-read the entries">refresh</button>
-            <button class="lnk" data-call="bbClearAll" title="delete every entry (versions restart at #1); one topic can be cleared from the API with ?topic=">clear all</button>
+            <button class="lnk" data-call="bbClearAll" title="delete every entry (versions restart at #1)">clear all</button>
           </div>
-          <div class="u-df u-g6 u-mt6 u-fww">
-            <input aria-label="blackboard topic" id="bbTopic" class="inp u-p610 u-fs12" style="width:110px" placeholder="topic" value="general">
-            <input aria-label="blackboard entry" id="bbContent" class="inp u-f1 u-p610 u-fs12" placeholder="post an entry to the blackboard…">
-            <input aria-label="blackboard tags" id="bbTags" class="inp u-p610 u-fs12" style="width:110px" placeholder="tags,comma">
+          <textarea aria-label="blackboard entry" id="bbContent" class="inp u-mt6" rows="2" placeholder="write a note — it wraps and the box grows with the text…"></textarea>
+          <div class="u-df u-g6 u-aic u-mt6 u-fww">
+            <label class="remaining u-df u-g6 u-aic">topic<input aria-label="blackboard topic" id="bbTopic" class="inp u-p610 u-fs12" style="width:110px" value="general"></label>
+            <label class="remaining u-df u-g6 u-aic u-f1">tags<input aria-label="blackboard tags" id="bbTags" class="inp u-p610 u-fs12" style="flex:1;min-width:0" placeholder="comma,separated"></label>
             <button class="ghost" data-call="bbPost" title="POST /api/blackboard as author=human">post</button>
           </div>
           <div class="remaining u-mt4" id="bbMsg" role="status" aria-live="polite"></div>
@@ -4680,7 +4809,7 @@
           <div class="u-df u-g6 u-aic u-mt6 u-fww">
             <input aria-label="goal to decompose" id="swGoal" class="inp u-f1 u-p610 u-fs12" placeholder="the goal to decompose…">
             <label class="remaining u-df u-g6 u-aic">workers<input id="swWorkers" type="number" min="1" max="8" value="3" class="inp u-p610 u-fs12" style="width:56px"></label>
-            <label class="remaining u-df u-g6 u-aic">max steps<input id="swSteps" type="number" min="1" max="12" placeholder="auto" class="inp u-p610 u-fs12" style="width:56px"></label>
+            <label class="remaining u-df u-g6 u-aic" title="blank = the subagent step budget from config/subagents.yaml">max steps<input id="swSteps" type="number" min="1" max="12" placeholder="auto" class="inp u-p610 u-fs12" style="width:56px"></label>
             <button class="ghost" id="swRun" data-call="runSwarm" title="POST /api/swarm/run — spawns real subagents">▶ run</button>
             <span class="remaining">costs N+1 model calls</span>
           </div>
@@ -6950,6 +7079,7 @@ function togglePlus() {
     '<div class="sep"></div>' +
     '<div class="mh">insert</div>' +
     '<div class="mi" data-a="commands">⌘ Commands<span class="k">/</span></div>' +
+    '<div class="mi" data-a="plugins">🧱 Plugins…<span class="k">/plugins</span></div>' +
     '<div class="mi" data-a="skills">🧩 Skills…<span class="k">/skills</span></div>';
   m.hidden = false;
   m.querySelectorAll(".mi").forEach(it => it.onclick =
@@ -6968,6 +7098,8 @@ function _plusAction(a) {
     // JAG-513: the menu now reads the token at the CARET, so park it after the "/".
     try { inp.setSelectionRange(inp.value.length, inp.value.length); } catch (_) {}
     inp.focus(); inp.dispatchEvent(new Event("input"));
+  } else if (a === "plugins") {
+    openPluginMenu();
   } else if (a === "skills") {
     openSkillMenu();
   }
@@ -7113,7 +7245,9 @@ async function openFsPicker(path) {
    leaves a bare `/` token in the composer and opens THIS menu in skills mode, so
    the anatomy, the keys (↑/↓/Tab/Enter/Esc) and the insertion are one object. */
 let _slashSkillsOnly = false;
-function openSkillMenu() {
+let _slashPluginsOnly = false;
+let _slashPluginOnly = null;   // a plugin id: the menu shows that plugin's members
+function _seedSlashToken() {
   const inp = $("inp"); if (!inp) return;
   const v = inp.value || "";
   const caret = (inp.selectionStart == null) ? v.length : inp.selectionStart;
@@ -7128,7 +7262,25 @@ function openSkillMenu() {
     inp.value = before + sep + "/" + v.slice(caret);
     try { inp.setSelectionRange(caret + sep.length + 1, caret + sep.length + 1); } catch (_) {}
   }
+}
+function openSkillMenu() {
+  const inp = $("inp"); if (!inp) return;
+  _seedSlashToken();
   _slashSkillsOnly = true;
+  _slashPluginsOnly = false;
+  _slashPluginOnly = null;
+  inp.focus();
+  skillsAutocomplete();
+  _renderCmdChips();
+}
+/* v1051: `/plugins` opens the SAME inline menu restricted to installed plugin
+   bundles. Picking one opens its member submenu instead of inserting a token. */
+function openPluginMenu() {
+  const inp = $("inp"); if (!inp) return;
+  _seedSlashToken();
+  _slashPluginsOnly = true;
+  _slashSkillsOnly = false;
+  _slashPluginOnly = null;
   inp.focus();
   skillsAutocomplete();
   _renderCmdChips();
@@ -7349,29 +7501,44 @@ function _bindAttachmentChips(root) {
   });
 }
 
-/* SL-3: ONE registry for the `/` commands — the menu, the composer chips and the
-   send-time interception all read THIS table, so a command can never work in one
-   place and be a no-op in another. `run` = a UI action (it RUNS, the token is not a
-   message); `insert` = what the token becomes when picked; `aliases` = the frontier
-   alias pattern (Claude Code's `/desktop` with alias `/app`); `hint` is the ONE
-   description, rendered in the menu AND in the chip tooltip.
-   It lives next to the composer on purpose: it is declared before `send()`, so no
-   boot-order (temporal dead zone) can make the interception miss it. */
-const SLASH_COMMANDS = [
-  { id: "goal", icon: "◎", insert: "/goal ",
+/* SL-3 / v1051: ONE registry for the `/` commands. The BACKEND (`GET /api/slash`,
+   `src/longrun/core/slash.py`) is the owner; this array is the FIRST-PAINT fallback
+   and is replaced by the catalogue on boot. `run` = a UI action (it RUNS, the token
+   is not a message); `insert` = what the token becomes when picked; `kind`/`doc`/
+   `menu` tell the menu and `send()` who executes the row; `aliases` = the frontier
+   alias pattern; `hint` is the ONE description, rendered in the menu AND in the
+   chip tooltip. It lives next to the composer on purpose: it is declared before
+   `send()`, so no boot-order (temporal dead zone) can make the interception miss it. */
+let SLASH_COMMANDS = [
+  { id: "goal", aliases: [], icon: "◎", kind: "goal", insert: "/goal ",
     hint: "run until evidence-backed completion; pauses on blocker, error, Stop, or a configured safety/policy stop" },
-  { id: "skills", aliases: ["skill"], icon: "🧩", insert: "/",
+  { id: "plan", aliases: [], icon: "🗺", kind: "doc", doc: "plan", insert: "/plan ",
+    hint: "write a reviewed plan document and lock the session until you approve it" },
+  { id: "spec", aliases: [], icon: "📐", kind: "doc", doc: "spec", insert: "/spec ",
+    hint: "write spec.md + tasks.md + checklist.md under .longrun/documents/specs" },
+  { id: "plugins", aliases: ["plugin"], icon: "🧱", kind: "menu", menu: "plugins", insert: "/",
+    hint: "browse installed plugin bundles and the skills they carry" },
+  { id: "skills", aliases: ["skill"], icon: "🧩", kind: "menu", menu: "skills", insert: "/",
     hint: "list the skills in this menu — the choice lands as /<name> in the message",
     run: () => openSkillMenu() },
-  { id: "compact", icon: "🗜", insert: "",
+  { id: "compact", aliases: [], icon: "🗜", kind: "ui", insert: "",
     hint: "compact this session's context now",
     run: () => compactNow() },
 ];
-const SLASH_BY_ID = (() => {
-  const m = {};
-  SLASH_COMMANDS.forEach(c => { m[c.id] = c; (c.aliases || []).forEach(a => { m[a] = c; }); });
-  return m;
-})();
+const SLASH_BY_ID = {};
+function _indexSlash() {
+  Object.keys(SLASH_BY_ID).forEach(k => { delete SLASH_BY_ID[k]; });
+  (SLASH_COMMANDS || []).forEach(c => {
+    if (!c || !c.id) return;
+    SLASH_BY_ID[c.id] = c;
+    (c.aliases || []).forEach(a => { SLASH_BY_ID[a] = c; });
+  });
+}
+_indexSlash();
+/* v1051: the backend catalogue's session-scoped payloads (installed plugins and
+   the documents folders). The commands themselves land in `SLASH_COMMANDS`. */
+let _SLASH_PLUGINS = [];
+let _DOCS = null;
 /* USER-DEFINED `/` commands (data/commands.yaml, GET /api/commands).
    They join the SAME menu and the SAME send-time interception as the built-ins,
    but a BUILT-IN always wins its token: a user command can add, never shadow.
@@ -7413,6 +7580,38 @@ function _expandUserCommand(raw) {
   return { text: rest ? (u.prompt + "\n\n" + rest) : u.prompt, display: "/" + u.id };
 }
 loadUserCommands();   // first paint can offer them; a failure leaves the built-ins
+/* v1051: the backend owns the catalogue; this fallback only covers the first
+   paint and a failed fetch. The command rows replace `SLASH_COMMANDS`, so the
+   menu, the chips and `send()` keep reading ONE table. */
+/* v1051: the backend catalogue carries DATA (id/icon/hint/kind/insert), never a
+   JS callback. These three built-ins still execute LOCALLY, so the local action
+   is re-attached by id after the catalogue replaces the fallback — otherwise
+   `/skills` would open nothing and `/compact` would be a no-op. */
+const _SLASH_RUN = {
+  skills: () => openSkillMenu(),
+  plugins: () => openPluginMenu(),
+  compact: () => compactNow(),
+};
+function _applySlashCatalog(r) {
+  if (!r || r.ok === false) return;
+  if (Array.isArray(r.commands) && r.commands.length) {
+    SLASH_COMMANDS = r.commands.map(c => Object.assign({}, c,
+      _SLASH_RUN[c.id] ? { run: _SLASH_RUN[c.id] } : {}));
+    _indexSlash();
+  }
+  _SLASH_PLUGINS = Array.isArray(r.plugins) ? r.plugins : [];
+  _DOCS = (r.docs && typeof r.docs === "object") ? r.docs : null;
+  if (Array.isArray(r.user_commands)) _applyUserCommands(r.user_commands);
+  _renderCmdChips();
+}
+async function loadSlashCatalog() {
+  let r = {};
+  try {
+    r = await api("GET", "/api/slash" + (sessionId ? "?session=" + encodeURIComponent(sessionId) : ""));
+  } catch (_) { r = {}; }
+  _applySlashCatalog(r);
+}
+loadSlashCatalog();
 /* SL-2: the commands a query matches, in declared order. An EMPTY query matches them
    all — that is the "submenu opener" the operator asked for: a bare "/" opens the
    COMMAND menu (the frontier pattern: Claude Code's /agents, /config open their own
@@ -7501,6 +7700,21 @@ function send(text, display, atts) {
     inp.value = ""; if (inp.style) inp.style.height = ""; _renderCmdChips(); _draftClear(sessionId); return;
   }
   let msg = raw;
+  // v1051: `/plan <request>` and `/spec <request>` are DOCUMENT commands: they
+  // call the backend (which writes the file and locks the session) instead of
+  // shipping the token to the model as prose. A real skill with that name still
+  // wins — the server resolves `/plan` as a skill only when one exists.
+  const _docCall = raw.match(/^\/(plan|spec)\b[ \t]*([\s\S]*)$/i);
+  if (_docCall && !(_skillsCache || []).some(s =>
+        String(s.name || "").toLowerCase() === _docCall[1].toLowerCase())) {
+    const _docKind = _docCall[1].toLowerCase();
+    const _docAsk = ((_splitAttBlock(_docCall[2] || "").rest) || _docCall[2] || "").trim();
+    if (!_docAsk) { toast("type the request after /" + _docKind, "warn"); return; }
+    inp.value = ""; if (inp.style) inp.style.height = ""; _renderCmdChips();
+    _draftClear(sessionId);
+    _runDocCommand(_docKind, _docAsk);
+    return;
+  }
   // JAG-92: "/goal <..." runs the SAME chat loop in autonomous mode (JAG-78) —
   // the model plans (write_todos) then executes end-to-end without asking.
   let mode = "";
@@ -7564,7 +7778,7 @@ function send(text, display, atts) {
       // A tool that needed approval during the turn is decided in the Inspector;
       // refresh its count at the end so a pending request is never invisible.
       if (typeof loadApprovals === "function") loadApprovals();
-      if (reload) { loadPlan(); loadGraph(); loadCtx(); loadRole(); refreshEdits(); linkifyAll(); loadCosts();
+      if (reload) { loadPlan(); loadGraph(); loadCtx(); loadRole(); refreshEdits(); linkifyAll(); loadCosts(); loadDocBar();
         // JAG-506: the Files panel carries no tree anymore; the pending-changes
         // list refreshes through refreshEdits() above.
         // JAG-431j/431p: a finished turn may have added/renamed Free.* groups — refresh
@@ -7749,6 +7963,8 @@ function selectSession(s) {
   refreshSendBtn();   // JAG-424: the button mirrors THIS session's running state
   _goalVerdictOpen = false;   // JAG-2: another session's open detail must not carry over
   loadGoal();         // G-1: the Active-goal bar follows the session, from the backend
+  loadSlashCatalog(); // v1051: plugins/docs are session-scoped
+  loadDocBar();       // v1051: the plan/spec bar follows the session, from the backend
   // 2026-11-11: a message left in this session's queue while it was busy is
   // delivered as soon as the operator is back on an IDLE session — it used to
   // wait for some future turn to end, which looked like the queue had swallowed
@@ -10404,6 +10620,146 @@ async function loadGoal(attempt) {
   return goalRec;
 }
 
+/* ---- v1051: `/plan` and `/spec` documents -------------------------------
+   The bar is the DURABLE surface (GET /api/docs, like the goal bar); the card in
+   the transcript is a one-shot view of the same record. The backend writes the
+   file and locks the session; approve/reject are the only ways to release it. */
+let _docState = null;
+function _docPendingCard(kind) {
+  const d = document.createElement("div");
+  d.className = "docCard pending";
+  d.innerHTML = '<div class="dc-head"><span class="dc-ico">' +
+    (kind === "spec" ? "📐" : "🗺") + '</span><b>generating ' + esc(kind) + '…</b></div>' +
+    '<div class="dc-meta">the planner writes the document; the session stays read-only</div>';
+  _logAppend(d); scroll();
+  return d;
+}
+function _renderDocCard(r) {
+  const kind = r.kind === "spec" ? "spec" : "plan";
+  const files = (kind === "spec" && Array.isArray(r.documents))
+    ? r.documents.map(x => x.name).join(" · ")
+    : (r.rel_path || r.path || "");
+  const d = document.createElement("div");
+  d.className = "docCard";
+  d.innerHTML = '<div class="dc-head"><span class="dc-ico">' +
+    (kind === "spec" ? "📐" : "🗺") + '</span><b>' + esc(r.title || (kind + " document")) +
+    '</b><span class="dc-badge">proposed</span></div>' +
+    '<div class="dc-meta">' + esc(files) + '</div>' +
+    '<pre class="dc-body">' + esc(String(r.excerpt || "").split("\n").slice(0, 12).join("\n")) +
+    '</pre><div class="dc-acts">' +
+    '<button type="button" class="ghost dc-open">open</button>' +
+    '<button type="button" class="ghost dc-approve">approve</button>' +
+    '<button type="button" class="ghost dc-reject">reject</button></div>';
+  d.querySelector(".dc-open").onclick = () => openInEditor(r.path, { mode: "code" });
+  d.querySelector(".dc-approve").onclick = () => docApprove();
+  d.querySelector(".dc-reject").onclick = () => docReject();
+  _logAppend(d); scroll();
+  return d;
+}
+async function _runDocCommand(kind, ask) {
+  const sid = sessionId;
+  who("user", "/" + kind + " " + ask);
+  const pending = _docPendingCard(kind);
+  let r = {};
+  try { r = await api("POST", "/api/docs/" + kind, { session: sid, prompt: ask }); }
+  catch (e) { r = { ok: false, error: String(e) }; }
+  if (pending && pending.parentNode) pending.remove();
+  if (!r || r.ok === false || r.error) {
+    toast((r && r.error) || "document generation failed", "err");
+    if (sid === sessionId) {
+      const inp = $("inp");
+      if (inp && !(inp.value || "").trim()) {
+        inp.value = "/" + kind + " " + ask;
+        try { inp.setSelectionRange(inp.value.length, inp.value.length); } catch (_) {}
+        _renderCmdChips();
+      }
+    }
+    return;
+  }
+  _renderDocCard(r);
+  loadDocBar();
+  toast(kind + " written — " + (r.rel_path || r.path || ""), "ok");
+}
+async function loadDocBar() {
+  const bar = $("docBar"); if (!bar) return null;
+  const sid = sessionId;
+  if (!sid) { bar.hidden = true; _docState = null; return null; }
+  let r = {};
+  try { r = await api("GET", "/api/docs?session=" + encodeURIComponent(sid)); }
+  catch (_) { r = {}; }
+  if (sid !== sessionId) return _docState;   // a slower answer for the session we left
+  _docState = r || null;
+  const a = (r && r.active) || null;
+  if (!a && !(r && r.plan_mode)) { bar.hidden = true; return _docState; }
+  bar.hidden = false;
+  const kind = a ? (a.kind === "spec" ? "spec" : "plan") : "plan";
+  $("docIcon").textContent = kind === "spec" ? "📐" : "🗺";
+  $("docTitle").textContent = a ? (a.title || (kind + " document")) : "plan mode · no document";
+  $("docTitle").disabled = !a || !!a.stale;
+  $("docMeta").textContent = a
+    ? ((a.rel_path || a.path || "") + (a.status ? " · " + a.status : ""))
+    : "the session is locked until you unlock it";
+  const badge = $("docBadge");
+  badge.hidden = !a;
+  if (a) {
+    badge.textContent = a.stale ? "file missing" : (a.status || "");
+    badge.className = "gb-badge " + (a.status === "approved" && !a.stale ? "ok"
+      : (a.status === "rejected" || a.stale ? "bad" : ""));
+  }
+  bar.classList.toggle("approved", !!a && a.status === "approved" && !a.stale);
+  bar.classList.toggle("rejected", !!a && a.status === "rejected");
+  bar.classList.toggle("stale", !!a && !!a.stale);
+  const busy = !!turnSSE[sid];
+  const proposed = !!a && a.status === "proposed" && !a.stale;
+  $("docApprove").hidden = !proposed;
+  $("docApprove").disabled = busy;
+  $("docReject").hidden = !proposed;
+  $("docReject").disabled = busy;
+  $("docUnlock").hidden = !(r && r.plan_mode) || proposed;
+  return _docState;
+}
+function docOpen() {
+  const a = _docState && _docState.active;
+  if (!a || !a.path || a.stale) { toast("no document to open", "warn"); return; }
+  openInEditor(a.path, { mode: "code" });
+}
+async function docApprove() {
+  if (!sessionId) return null;
+  const r = await api("POST", "/api/docs/approve", { session: sessionId });
+  if (!r || r.error || r.ok === false) {
+    toast("approve: " + ((r && r.error) || "failed"), "err"); return null;
+  }
+  toast("approved — the session is unlocked", "ok");
+  await loadDocBar();
+  return r;
+}
+async function docReject() {
+  if (!sessionId) return null;
+  if (typeof uiConfirm === "function"
+      && !(await uiConfirm("reject this document and release the lock?",
+                           "The file stays on disk; plan mode is unlocked."))) return null;
+  const r = await api("POST", "/api/docs/reject", { session: sessionId });
+  if (!r || r.error || r.ok === false) {
+    toast("reject: " + ((r && r.error) || "failed"), "err"); return null;
+  }
+  toast("rejected — the lock is released, the file stays", "ok");
+  await loadDocBar();
+  return r;
+}
+async function docUnlock() {
+  if (!sessionId) return null;
+  if (typeof uiConfirm === "function"
+      && !(await uiConfirm("unlock plan mode without approving?",
+                           "The document stays on disk; you can run /plan again."))) return null;
+  const r = await api("POST", "/api/docs/unlock", { session: sessionId });
+  if (!r || r.error || r.ok === false) {
+    toast("unlock: " + ((r && r.error) || "failed"), "err"); return null;
+  }
+  toast("plan mode unlocked", "ok");
+  await loadDocBar();
+  return r;
+}
+
 async function goalAct(action, extra) {
   if (!sessionId) return null;
   const body = Object.assign({ session: sessionId, action: action }, extra || {});
@@ -12763,7 +13119,7 @@ function attachTurn(sid, since) {
     if (live() && reload) {
       endStream();
       $("log").innerHTML = ""; _resetChatTree();
-      loadHistory(); loadPlan(); loadGraph(); loadCtx(); refreshEdits(); linkifyAll();
+      loadHistory(); loadPlan(); loadGraph(); loadCtx(); refreshEdits(); linkifyAll(); loadDocBar();
       // JAG-431r4b: drain the queue when an ATTACHED (re-followed) turn finishes.
       // Without this, a message queued while following a re-attached turn sat in the
       // bar forever (flushQueue only ran in send()'s own end()).
@@ -12905,6 +13261,10 @@ const _FEED_REFRESH = {
   "workspace.update": () => loadIndexCfg(),
   "graph.reset": () => { loadPlan(); loadGraph(); },
   "graph.plan_dropped": () => loadPlan(),
+  "docs.created": () => loadDocBar(),
+  "docs.approved": () => loadDocBar(),
+  "docs.rejected": () => loadDocBar(),
+  "docs.unlocked": () => loadDocBar(),
   "subagent.start": () => loadPlan(),
   "subagent.done": () => loadPlan(),
   "sj.created": () => loadPlan(),
@@ -15244,27 +15604,30 @@ async function loadKeys() {
     });
     rows.forEach(k => {
       const row = document.createElement("div");
-      row.className = "card";
-      row.style.cssText = "padding:6px 8px;margin-bottom:6px";
+      // 2026-11-16 (operator): the key rows use the settings design layer's classes —
+      // no per-row inline styles (they were the reason this sheet looked unlike the
+      // rest). Every subsheet shares the same card/controls grammar.
+      row.className = "card keycard" + (k.set ? " on" : "");
       const head = document.createElement("div");
-      head.style.cssText = "display:flex;gap:8px;align-items:center";
-      const dot = document.createElement("span"); dot.textContent = k.set ? "●" : "◐";
-      const info = document.createElement("div"); info.style.cssText = "flex:1;min-width:0";
-      const t = document.createElement("div"); t.style.fontWeight = "600"; t.textContent = k.env;
+      head.className = "kc-h";
+      const dot = document.createElement("span");
+      dot.className = "kc-dot"; dot.setAttribute("aria-hidden", "true");
+      const info = document.createElement("div"); info.className = "kc-info";
+      const t = document.createElement("div"); t.className = "kc-name"; t.textContent = k.env;
       const sub = document.createElement("div"); sub.className = "remaining";
       sub.textContent = descriptions[k.env] || k.description || "Custom environment variable";
       info.append(t, sub);
-      const st = document.createElement("span"); st.className = "remaining";
+      const st = document.createElement("span");
+      st.className = "kc-state" + (k.set ? " on" : "");
       st.textContent = k.set ? "set" : "missing";
       head.append(dot, info, st);
       const edit = document.createElement("form");
-      edit.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px";
+      edit.className = "kc-edit";
       const inp = document.createElement("input");
       inp.type = "password"; inp.className = "inp";
       inp.name = k.env;
       inp.setAttribute("aria-label", "Value for " + k.env);
       inp.placeholder = k.set ? "•••••••• (stored — 👁 to reveal)" : "new value…";
-      inp.style.cssText = "flex:1 1 180px;min-width:0;padding:6px 10px;font-size:12px";
       inp.addEventListener("keydown", (e) => { if (e.key === "Enter") setKey(k.env, inp.value, saveBtn); });
       const saveBtn = document.createElement("button");
       saveBtn.className = "ghost"; saveBtn.type = "submit"; saveBtn.textContent = "set";
@@ -15457,9 +15820,43 @@ function _afterWorkspaceChange() {
    menu, the composer chips and the send-time interception all read that ONE table. */
 let _slashItems = [], _slashHi = 0;   // JAG-398: keyboard-navigable slash menu
 function _paintSlashHi() {
-  _slashItems.forEach((it, i) => it.el.classList.toggle("hl", i === _slashHi));
+  _slashItems.forEach((it, i) => {
+    it.el.classList.toggle("hl", i === _slashHi);
+    try { it.el.setAttribute("aria-selected", i === _slashHi ? "true" : "false"); } catch (_) {}
+  });
   const cur = _slashItems[_slashHi];
   if (cur && cur.el.scrollIntoView) cur.el.scrollIntoView({ block: "nearest" });
+}
+/* v1051: installed plugin bundles, filtered like a command row. */
+function _slashPluginHits(q) {
+  const all = _SLASH_PLUGINS || [];
+  if (!q) return all.slice();
+  return all.filter(p => [p.id, p.name, p.title, p.description]
+    .some(v => String(v || "").toLowerCase().includes(q)));
+}
+function _slashPluginById(id) {
+  return (_SLASH_PLUGINS || []).find(p => String(p.id || "") === String(id || "")) || null;
+}
+/* A plugin row opens its MEMBER SUBMENU: replace the current token with "/" and
+   re-render the same menu in plugin mode (no modal, no second surface). */
+function _openPluginMenu(p) {
+  const inp = $("inp"); if (!inp || !p) return;
+  const v = inp.value || "";
+  const caret = (inp.selectionStart == null) ? v.length : inp.selectionStart;
+  const upto = v.slice(0, caret);
+  const hit = Math.max(upto.lastIndexOf(" /"), upto.lastIndexOf("\n/"),
+                       upto.startsWith("/") ? 0 : -1);
+  const tokenStart = hit < 0 ? -1 : (upto.charAt(hit) === "/" ? hit : hit + 1);
+  if (tokenStart >= 0) {
+    inp.value = v.slice(0, tokenStart) + "/" + v.slice(caret);
+    try { inp.setSelectionRange(tokenStart + 1, tokenStart + 1); } catch (_) {}
+  }
+  _slashPluginOnly = p.id;
+  _slashPluginsOnly = true;
+  _slashSkillsOnly = false;
+  inp.focus();
+  skillsAutocomplete();
+  _renderCmdChips();
 }
 function skillsAutocomplete() {
   const inp = $("inp"); if (!inp) return;
@@ -15477,7 +15874,11 @@ function skillsAutocomplete() {
                        upto.startsWith("/") ? 0 : -1);
   const tokenStart = hit < 0 ? -1 : (upto.charAt(hit) === "/" ? hit : hit + 1);
   const raw = tokenStart < 0 ? "" : upto.slice(tokenStart + 1);
-  if (tokenStart < 0 || /[\s]/.test(raw)) { box.hidden = true; _slashSkillsOnly = false; return; }
+  if (tokenStart < 0 || /[\s]/.test(raw)) {
+    box.hidden = true;
+    _slashSkillsOnly = false; _slashPluginsOnly = false; _slashPluginOnly = null;
+    return;
+  }
   // Replacing the TOKEN (not the whole input) keeps the rest of the message.
   const _apply = (text) => {
     const before = v.slice(0, tokenStart), after = v.slice(caret);
@@ -15485,16 +15886,19 @@ function skillsAutocomplete() {
     const pos = (before + text).length;
     try { inp.setSelectionRange(pos, pos); } catch (_) {}
     box.hidden = true; inp.focus();
-    _slashItems = []; _slashHi = 0; _slashSkillsOnly = false;
+    _slashItems = []; _slashHi = 0;
+    _slashSkillsOnly = false; _slashPluginsOnly = false; _slashPluginOnly = null;
     // the value changed WITHOUT an input event, so the composer chips would keep
     // showing the token that was just replaced (a stale "/sk" pill).
     _renderCmdChips(); refreshSendBtn();
   };
   const q = raw.toLowerCase();
-  // SL-6: `/skills` opens the SAME menu restricted to the catalogue (the "submenu
-  // opener"), so with no query yet the skills ARE listed — that is what the command
-  // promises; a plain "/" still opens the COMMAND menu only (SL-2).
-  const cmds = _slashSkillsOnly ? [] : _slashCmdHits(q);
+  const _plugin = _slashPluginOnly ? _slashPluginById(_slashPluginOnly) : null;
+  const _skillsMode = _slashSkillsOnly || !!_plugin;
+  // v1051: the sections, in the frontier order the operator asked for:
+  // plugins -> commands -> skills. `/skills` and `/plugins` are submenu openers.
+  const cmds = _skillsMode ? [] : _slashCmdHits(q);
+  const plugs = (_slashSkillsOnly || _plugin) ? [] : _slashPluginHits(q);
   // JAG-465: the picker only ever offered the first EIGHT skills whose NAME started
   // with the query, so with 174 installed skills most of them were unreachable from
   // `/` (the operator counted 30 shown out of 174). Search the WHOLE catalogue — by
@@ -15503,47 +15907,115 @@ function skillsAutocomplete() {
   // SL-2: with NO query the catalogue is NOT dumped — "/" alone opens the COMMAND
   // menu (the submenu opener); skills appear the moment the query filters them.
   const _skills = _skillsCache || [];
-  const _matched = q ? _rankSkills(_skills, q)
-                     : (_slashSkillsOnly ? _skills.map(s => ({ s })) : []);
+  let _matched;
+  if (_plugin) {
+    _matched = (_plugin.members || []).filter(m => m && m.kind === "skill")
+      .filter(m => !q || [m.name, m.title, m.description]
+        .some(x => String(x || "").toLowerCase().includes(q)))
+      .map(m => ({ s: { name: m.name, title: m.title, description: m.description,
+                         missing: !!m.missing, fromPlugin: _plugin.name } }));
+  } else if (q) {
+    _matched = _rankSkills(_skills, q);
+  } else {
+    _matched = _slashSkillsOnly ? _skills.map(s => ({ s })) : [];
+  }
   const _SLASH_CAP = 60;
   const hits = _matched.slice(0, _SLASH_CAP).map(x => x.s);
   const _more = Math.max(0, _matched.length - hits.length);
-  if (!cmds.length && !hits.length) { box.hidden = true; _slashSkillsOnly = false; return; }
+  const _members = _plugin ? (_plugin.members || []).filter(m => m && m.kind !== "skill") : [];
+  if (!plugs.length && !cmds.length && !hits.length && !_plugin) {
+    if (q) {
+      box.innerHTML = '<div class="slashempty">no command, plugin or skill matches “' +
+        esc(raw) + '”</div>';
+      box.hidden = false;
+    } else if (_slashPluginsOnly) {
+      box.innerHTML = '<div class="slashempty">no installed plugins — open the Marketplace to add one</div>';
+      box.hidden = false;
+    } else if (_slashSkillsOnly) {
+      box.innerHTML = '<div class="slashempty">no skills installed</div>';
+      box.hidden = false;
+    } else {
+      box.hidden = true;
+    }
+    _slashSkillsOnly = false; _slashPluginsOnly = false; _slashPluginOnly = null;
+    return;
+  }
   box.innerHTML = "";
-  const addRow = (label, hint, onPick, onComplete) => {
+  const addRow = (label, hint, icon, onPick, onComplete, key, cls) => {
     const li = document.createElement("div");
-    li.className = "slashrow";
-    li.style.cssText = "padding:6px 10px;cursor:pointer;font-size:12px";
-    li.innerHTML = esc(label) + (hint ? ' <span class="remaining">· ' + esc(hint) + "</span>" : "");
-    li.onclick = onPick;
+    li.className = "slashrow" + (cls ? " " + cls : "");
+    li.setAttribute("role", "option");
+    li.setAttribute("aria-selected", "false");
+    li.innerHTML = '<span class="slashico" aria-hidden="true">' + esc(icon || "/") + "</span>" +
+      '<span class="slashmain"><b>' + esc(label) + "</b>" +
+      (hint ? '<span class="slashhint">' + esc(hint) + "</span>" : "") + "</span>" +
+      '<span class="slashkey">' + esc(key || "") + "</span>";
+    if (cls && cls.indexOf("muted") >= 0) {
+      li.onclick = null;
+    } else {
+      li.onclick = onPick;
+    }
     li.onmouseenter = () => { _slashHi = _slashItems.findIndex(x => x.el === li); _paintSlashHi(); };
     box.appendChild(li);
     _slashItems.push({ el: li, pick: onPick, complete: onComplete || onPick });
   };
-  if (cmds.length) {
+  const addSection = (label) => {
     const h = document.createElement("div");
-    h.className = "remaining"; h.style.cssText = "padding:4px 10px;font-size:10px;text-transform:uppercase";
-    h.textContent = "commands"; box.appendChild(h);
-    // SL-1: a UI command RUNS — it is not a message. `/skills` opens the real skill
-    // picker; it used to call openPanel("skills"), which resolved to a
-    // `#inspector section[data-insp="skills"]` that DOES NOT EXIST: a silent no-op,
-    // which is exactly why the operator reported "/skill does nothing".
-    // SL-4: Tab completes the token (`/<id> `) without running the command.
-    // NOTE: `insert` is `""` for a command that CONSUMES its token (`/skills` opens a
-    // picker — the token must vanish), so it can never be tested with `||`: an empty
-    // insert is a real value, not a missing one.
-    cmds.forEach(c => addRow("/" + c.id, c.hint,
-      () => { _apply(c.insert === undefined ? "/" + c.id + " " : c.insert); if (c.run) c.run(); },
-      () => _apply("/" + c.id + " ")));
+    h.className = "slashsec"; h.textContent = label; box.appendChild(h);
+  };
+  if (_plugin) {
+    addSection("plugin · " + (_plugin.title || _plugin.name));
+    addRow("/plugin:" + _plugin.name,
+      "use the whole plugin — its member manifest goes to the model",
+      _plugin.icon || "🧱", () => _apply("/plugin:" + _plugin.name + " "),
+      () => _apply("/plugin:" + _plugin.name + " "), "↵");
+    if (hits.length) {
+      addSection("skills");
+      hits.forEach(s => {
+        const _missing = !!s.missing;
+        addRow("/" + s.name, (s.title || s.description || "") + (_missing ? " · missing" : ""),
+          "🧩", () => { if (!_missing) _apply("/" + s.name + " "); },
+          () => { if (!_missing) _apply("/" + s.name + " "); }, "↵",
+          _missing ? "muted" : "");
+      });
+    }
+    if (_members.length) {
+      addSection("other members");
+      _members.forEach(m => addRow(m.name,
+        (m.kind || "member") + " · open it in Settings",
+        "🔌", null, null, "", "muted"));
+    }
+  } else {
+    if (plugs.length) {
+      addSection("plugins");
+      plugs.forEach(p => addRow(p.title || p.name, p.description || "", p.icon || "🧱",
+        () => _openPluginMenu(p), () => _apply("/plugin:" + p.name + " "), "plugin"));
+    }
+    if (cmds.length) {
+      addSection("commands");
+      // SL-1: a UI command RUNS — it is not a message. `/skills` opens the real skill
+      // picker; it used to call openPanel("skills"), which resolved to a
+      // `#inspector section[data-insp="skills"]` that DOES NOT EXIST: a silent no-op,
+      // which is exactly why the operator reported "/skill does nothing".
+      // SL-4: Tab completes the token (`/<id> `) without running the command.
+      // NOTE: `insert` is `""` for a command that CONSUMES its token (`/skills` opens a
+      // picker — the token must vanish), so it can never be tested with `||`: an empty
+      // insert is a real value, not a missing one.
+      cmds.forEach(c => addRow("/" + c.id, c.hint, c.icon,
+        () => { _apply(c.insert === undefined ? "/" + c.id + " " : c.insert); if (c.run) c.run(); },
+        () => _apply("/" + c.id + " "), "↵"));
+    }
+    if (hits.length) {
+      addSection("skills · " + hits.length + (_more ? " of " + _matched.length : ""));
+      hits.forEach(s => addRow("/" + s.name, s.title || s.description || "", "🧩", () => {
+        _apply("/" + s.name + " ");
+      }, null, "↵"));
+    }
   }
-  if (hits.length) {
-    const h = document.createElement("div");
-    h.className = "remaining"; h.style.cssText = "padding:4px 10px;font-size:10px;text-transform:uppercase";
-    h.textContent = "skills · " + hits.length + (_more ? " of " + _matched.length : ""); box.appendChild(h);
-    hits.forEach(s => addRow("/" + s.name, s.title || s.description || "", () => {
-      _apply("/" + s.name + " ");
-    }));
-  }
+  const foot = document.createElement("div");
+  foot.className = "slashfoot";
+  foot.textContent = "↑↓ move · ⇥ complete · ↵ run · esc close";
+  box.appendChild(foot);
   _slashHi = Math.min(_slashHi, Math.max(0, _slashItems.length - 1));
   _paintSlashHi();
   box.hidden = false;
@@ -16697,7 +17169,6 @@ async function mountStaticSparkles() {
     ["plan.input", "#planInp", "#planActs", null,
      "reorganize this step — same intent, one concrete checkable action"],
     ["memory.content", "#memContent", null, null, ""],
-    ["blackboard.topic", "#bbContent", null, null, ""],
     ["kb.notebook", "#kbNewName", null, null, ""],
   ];
   for (const [sid, fsel, hsel, bsel, filledTitle, emptyTitle] of pairs) {
@@ -16715,6 +17186,7 @@ async function mountStaticSparkles() {
 async function loadBlackboard() {
   const box = $("bbList"), st = $("bbStat");
   if (!box) return;
+  _growField($("bbContent"), 120);
   let d = {};
   try { d = await api("GET", "/api/blackboard?limit=30"); } catch (e) { d = {}; }
   if (d && d.error) { box.innerHTML = '<div class="remaining">✕ ' + esc(String(d.error)) + "</div>"; return; }
@@ -16735,11 +17207,20 @@ async function loadBlackboard() {
     const row = document.createElement("div");
     row.className = "card u-mt6"; row.style.fontSize = "11px";
     const head = document.createElement("div");
-    head.className = "remaining";
-    head.textContent = "#" + (e.version != null ? e.version : "?") + " · " + (e.topic || "?")
+    head.className = "remaining u-df u-g6 u-aic";
+    const meta = document.createElement("span");
+    meta.className = "u-f1";
+    meta.textContent = "#" + (e.version != null ? e.version : "?") + " · " + (e.topic || "?")
       + " · " + (e.author || "?")
       + " · " + new Date((e.ts || 0) * 1000).toLocaleTimeString()
       + ((e.tags || []).length ? " · " + e.tags.join(", ") : "");
+    // the operator: "i cant delete things 1 2 etcetera" — every row gets its door.
+    const del = document.createElement("button");
+    del.className = "lnk";
+    del.textContent = "delete";
+    del.dataset.call = "bbDeleteEntry";
+    del.dataset.args = JSON.stringify([e.id, e.version]);
+    head.append(meta, del);
     const body = document.createElement("div");
     body.style.cssText = "white-space:pre-wrap;word-break:break-word;margin-top:4px";
     body.textContent = String(e.content || "").slice(0, 800);
@@ -16760,8 +17241,21 @@ async function bbPost() {
   } catch (e) { r = { error: String(e) }; }
   if (r && r.error) { if (msg) msg.textContent = "✕ " + r.error; return; }
   if (inp) inp.value = "";
+  if (inp) _growField(inp, 120);
   // v642: a toast, not a line that stays on the panel forever.
   if (typeof toast === "function") toast("posted #" + (r.version != null ? r.version : "?") + " to " + (r.topic || "general"), "ok");
+  loadBlackboard();
+}
+async function bbDeleteEntry(id, version) {
+  const msg = $("bbMsg");
+  if (!id) return;
+  if (!await confirmDelete("delete blackboard entry #" + (version != null ? version : "?")
+      + "? this cannot be undone")) return;
+  let r = {};
+  try { r = await api("DELETE", "/api/blackboard?id=" + encodeURIComponent(id)); }
+  catch (e) { r = { error: String(e) }; }
+  if (r && r.error) { if (msg) msg.textContent = "✕ " + r.error; return; }
+  if (typeof toast === "function") toast("entry deleted", "ok");
   loadBlackboard();
 }
 /* v642: the blackboard is durable by design and had NO door to be emptied — every
@@ -21365,7 +21859,7 @@ function _renderCmdChips() {
   const _goalCmd = SLASH_BY_ID.goal;
   const leadGoal = /^\s*\/goal\b/i.test(v);
   if (leadGoal) push(_goalCmd.icon, _goalCmd.id, _goalCmd.hint, true);
-  const re = /(^|\s)\/([A-Za-z0-9_.\-]+)/g;
+  const re = /(^|\s)\/([A-Za-z0-9_.\-:]+)/g;
   while ((m = re.exec(v))) {
     const t = m[2].toLowerCase();
     if (t === "goal" || seen[t]) continue;
@@ -21377,6 +21871,8 @@ function _renderCmdChips() {
     const _cmd = _slashEntry(t);
     if (names[t]) push("📖", names[t], "open the skill in the editor — /" + t
                             + " rides along with the message", true, true);
+    else if (t.indexOf("plugin:") === 0) push("🧱", "/" + t,
+      "whole plugin — the model receives its member manifest", false);
     else if (_cmd) push(_cmd.icon, _cmd.id, _cmd.hint, false);
     else push("/", m[2], "unknown command — sent as plain text", false);
   }
@@ -21451,9 +21947,12 @@ $("inp").addEventListener("keydown", e => {
     // While the menu is open it OWNS Enter (with or without Ctrl/Cmd): it picks the
     // highlighted command. The send listener returns early in exactly this state, so
     // the keystroke can never both pick and send. Shift+Enter still inserts a newline.
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); const it = _slashItems[_slashHi]; if (it) it.pick(); return; }
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); const it = _slashItems[_slashHi]; if (it && it.pick) it.pick(); return; }
   }
-  if (e.key === "Escape" && menu) { menu.hidden = true; _slashSkillsOnly = false; }
+  if (e.key === "Escape" && menu) {
+    menu.hidden = true;
+    _slashSkillsOnly = false; _slashPluginsOnly = false; _slashPluginOnly = null;
+  }
 });
 /* JAG-415: the composer textarea auto-grows with its content up to 160px, then
    scrolls. Reset to auto first so it can also SHRINK when text is deleted.
@@ -21471,6 +21970,8 @@ $("inp").addEventListener("input", _growInp);
    to be a one-line <input>, so a long step was invisible past the first words). */
 function _growPlan() { _growField($("planInp"), 132); }
 function _growGoalEdit() { _growField($("goalEditBox"), Math.round(window.innerHeight * 0.42)); }
+/* the blackboard note: full-width textarea that wraps and grows to 120px, then scrolls */
+if ($("bbContent")) $("bbContent").addEventListener("input", () => _growField($("bbContent"), 120));
 ["planInp", "goalEditBox"].forEach(id => {
   const el = $(id);
   if (el) el.addEventListener("input", id === "planInp" ? _growPlan : _growGoalEdit);
@@ -21565,7 +22066,7 @@ ensureToken().then(() => {
       setTimeout(() => { try { micToggle(); } catch (e) {} }, 350);
     },
     () => {
-      loadSessions(); loadPlan(); loadGraph(); loadStatus(); loadModels(); loadApprovals(); loadImprovement(); loadCtx(); loadRole(); loadHistory(); connectFeed(); loadSkills(); loadCompactionRef(); loadCosts(); loadRules(); cbStatus(); loadIndexCfg(); loadDiagnostics(); _syncAttachmentBusyUI(); refreshSendBtn(); _draftRestore(sessionId);
+      loadSessions(); loadPlan(); loadGraph(); loadStatus(); loadModels(); loadApprovals(); loadImprovement(); loadCtx(); loadRole(); loadHistory(); connectFeed(); loadSkills(); loadCompactionRef(); loadCosts(); loadRules(); cbStatus(); loadIndexCfg(); loadDiagnostics(); _syncAttachmentBusyUI(); refreshSendBtn(); _draftRestore(sessionId); loadSlashCatalog(); loadDocBar();
     },
   ];
   for (const step of _boot) {

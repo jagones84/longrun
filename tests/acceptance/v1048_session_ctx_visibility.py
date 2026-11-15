@@ -162,10 +162,22 @@ check("C4 the deck's AGENTS row paints it beside the role",
       and "ctxChip" in ORBIT and 'ctxChip + \'<span class="arole">' in ORBIT, "")
 
 # --- D) the ⋮ menus re-open after a close ---------------------------------
-_i_open = HTML.find("async function openSessMenu(")
-_open = HTML[_i_open:HTML.find("/* The ONE rail team menu", _i_open)]
-_i_team = HTML.find("function openTeamMenu(")
-_team = HTML[_i_team:HTML.find("/* The ⊕ on a real team header", _i_team)]
+def _fn(text, name):
+    """The function's own body, bounded by the NEXT top-level `function` line.
+
+    A comment sentinel is brittle: another stream edited these openers (pointer
+    placement) and removed the marker the slice used to end on, which silently
+    stretched the body to the end of the file.
+    """
+    i = text.find(name)
+    if i < 0:
+        return ""
+    j = text.find("\nfunction ", i + len(name))
+    return text[i:(j if j > 0 else i + 6000)]
+
+
+_open = _fn(HTML, "async function openSessMenu(")
+_team = _fn(HTML, "function openTeamMenu(")
 check("D1 the ⋮ menus close from ONE persistent listener (they re-open after a close)",
       "closeSessMenu, { once: true }" not in HTML
       and "function _wireSessMenuClose(" in HTML

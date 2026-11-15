@@ -1,0 +1,146 @@
+#!/usr/bin/env python3
+"""v1053 (RED) — the composer `/` menu is grouped and the doc bar is graphical.
+
+Pins the frontend contract of v1051/v1052: the backend catalogue is applied on
+boot, the menu renders plugins -> commands -> skills with an icon/hint/key footer,
+plugin rows open a member submenu, `/plan` and `/spec` are intercepted before
+`/goal`, and the durable plan bar mirrors the goal bar. Deterministic: source
+contracts only, no browser, no server, no model.
+"""
+import os
+import sys
+
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+UI = open(os.path.join(REPO, "webui", "index.html"), encoding="utf-8").read()
+AGENT = open(os.path.join(REPO, "src", "longrun", "agent", "agent.py"), encoding="utf-8").read()
+SLASH = open(os.path.join(REPO, "src", "longrun", "core", "slash.py"), encoding="utf-8").read()
+
+results = []
+
+
+def check(name, ok, detail=""):
+    results.append(bool(ok))
+    print(("PASS " if ok else "FAIL ") + name + ((" :: " + str(detail)[:300]) if detail and not ok else ""))
+
+
+# ------------------------------------------------------------- A: catalogue
+check("A1 the frontend keeps only a first-paint FALLBACK (let, replaced on boot)",
+      "let SLASH_COMMANDS = [" in UI and "SLASH_COMMANDS = r.commands.map(c => Object.assign({}, c," in UI)
+check("A2 the index is rebuilt from ONE function",
+      "const SLASH_BY_ID = {};" in UI and "function _indexSlash() {" in UI
+      and "Object.keys(SLASH_BY_ID).forEach(k => { delete SLASH_BY_ID[k]; });" in UI)
+check("A3 the loader reads the backend route",
+      "async function loadSlashCatalog() {" in UI
+      and 'api("GET", "/api/slash" + (sessionId ? "?session="' in UI)
+check("A4 the loader applies plugins and docs too",
+      "_SLASH_PLUGINS = Array.isArray(r.plugins) ? r.plugins : [];" in UI
+      and "_DOCS = (r.docs && typeof r.docs === \"object\") ? r.docs : null;" in UI)
+check("A5 the fallback carries all six commands",
+      all(('id: "%s"' % cid) in UI for cid in ("goal", "plan", "spec", "plugins", "skills", "compact")))
+check("A6 the backend catalogue keeps the LOCAL actions for skills/plugins/compact",
+      "const _SLASH_RUN = {" in UI
+      and "skills: () => openSkillMenu()," in UI
+      and "plugins: () => openPluginMenu()," in UI
+      and "compact: () => compactNow()," in UI
+      and "_SLASH_RUN[c.id] ? { run: _SLASH_RUN[c.id] } : {}" in UI)
+
+# --------------------------------------------------------------- B: menu UI
+check("B1 the menu is a listbox with named sections",
+      'role="listbox" aria-label="commands"' in UI and 'h.className = "slashsec"' in UI)
+check("B2 the sections are rendered in the frontier order",
+      "addSection(\"plugins\")" in UI and "addSection(\"commands\")" in UI
+      and 'addSection("skills · "' in UI)
+check("B3 a row has an icon slot, a label, a hint and a key",
+      'class="slashico"' in UI and 'class="slashmain"' in UI
+      and 'class="slashhint"' in UI and 'class="slashkey"' in UI)
+check("B4 the footer names the keys and the empty state is explicit",
+      'foot.className = "slashfoot";' in UI and "⇥ complete · ↵ run · esc close" in UI
+      and 'box.innerHTML = \'<div class="slashempty">' in UI)
+check("B5 rows are styled by the stylesheet, not inline",
+      'li.style.cssText = "padding:6px 10px' not in UI)
+check("B6 the highlight is exposed to assistive tech",
+      "it.el.setAttribute(\"aria-selected\"" in UI)
+
+# ----------------------------------------------------------- C: plugin menu
+check("C1 a plugin row opens the SAME menu in plugin mode",
+      "function _openPluginMenu(p) {" in UI and "_slashPluginOnly = p.id;" in UI)
+check("C2 `/plugins` is a submenu opener",
+      "function openPluginMenu() {" in UI and "_slashPluginsOnly = true;" in UI)
+check("C3 the submenu offers the whole plugin and its members",
+      'addRow("/plugin:" + _plugin.name,' in UI
+      and 'addSection("other members")' in UI)
+check("C4 a plugin member is inserted as a normal skill token",
+      'addRow("/" + s.name,' in UI
+      and 'if (!_missing) _apply("/" + s.name + " ");' in UI)
+check("C5 a missing member is listed but not runnable",
+      '_missing ? "muted" : ""' in UI and "if (!_missing) _apply" in UI)
+check("C6 the + menu exposes plugins",
+      'data-a="plugins"' in UI and '/plugins</span>' in UI)
+
+# ------------------------------------------------------- D: /plan and /spec
+check("D1 send() intercepts /plan and /spec before /goal",
+      r"const _docCall = raw.match(/^\/(plan|spec)\b[ \t]*([\s\S]*)$/i);" in UI
+      and UI.index(r"const _docCall = raw.match(/^\/(plan|spec)") < UI.index(r'if (/^\/goal\b/i.test(msg))'))
+check("D2 the queue path still owns a command sent while a turn runs",
+      UI.index("if (turnSSE[sessionId]) {") < UI.index(r"const _docCall = raw.match(/^\/(plan|spec)"))
+check("D3 an empty /plan keeps the text and says why",
+      'toast("type the request after /" + _docKind, "warn"); return;' in UI)
+check("D4 the call goes to the document endpoint, never to the chat stream",
+      'api("POST", "/api/docs/" + kind, { session: sid, prompt: ask })' in UI)
+check("D5 a failure restores the request in the composer",
+      'inp.value = "/" + kind + " " + ask;' in UI)
+check("D6 a real skill with the same name still wins",
+      'String(s.name || "").toLowerCase() === _docCall[1].toLowerCase()' in UI)
+
+# --------------------------------------------------------------- E: doc bar
+check("E1 the bar is durable markup next to the goal bar",
+      'id="docBar"' in UI and 'id="docTitle"' in UI and 'id="docBadge"' in UI)
+check("E2 approve/reject/unlock are named controls",
+      'data-call="docApprove"' in UI and 'data-call="docReject"' in UI
+      and 'data-call="docUnlock"' in UI
+      and 'aria-label="approve the document"' in UI
+      and 'aria-label="reject the document"' in UI
+      and 'aria-label="unlock plan mode"' in UI)
+check("E3 the bar reads the backend, not a local guess",
+      "async function loadDocBar() {" in UI
+      and 'api("GET", "/api/docs?session=" + encodeURIComponent(sid))' in UI)
+check("E4 the bar follows a session switch, a reload and a finished turn",
+      "loadDocBar();       // v1051: the plan/spec bar follows the session" in UI
+      and "loadCosts(); loadDocBar();" in UI
+      and "linkifyAll(); loadDocBar();" in UI)
+check("E5 approve/reject are disabled while a turn is streaming",
+      "const busy = !!turnSSE[sid];" in UI and '$("docApprove").disabled = busy;' in UI)
+check("E6 a stale file is never presented as usable",
+      'badge.textContent = a.stale ? "file missing"' in UI and '$("docTitle").disabled = !a || !!a.stale;' in UI)
+check("E7 the transcript card is a view of the same record",
+      "function _renderDocCard(r) {" in UI
+      and 'd.querySelector(".dc-approve").onclick = () => docApprove();' in UI)
+check("E8 every decision is an SSE event",
+      '"docs.created": () => loadDocBar(),' in UI and '"docs.approved": () => loadDocBar(),' in UI
+      and '"docs.rejected": () => loadDocBar(),' in UI and '"docs.unlocked": () => loadDocBar(),' in UI)
+
+# ---------------------------------------------------------------- F: styling
+check("F1 the bar reuses the goal-bar anatomy and theme tokens",
+      "#docBar {" in UI and "#docBar.approved" in UI and "#docBar.stale" in UI
+      and "var(--acc)" in UI.split("#docBar {")[1][:600])
+check("F2 the menu panel has sections, a sticky footer and a muted row",
+      "#slashMenu .slashsec {" in UI and "#slashMenu .slashfoot {" in UI
+      and "#slashMenu .slashrow.muted {" in UI)
+check("F3 the phone rule gives the panel the composer width",
+      "@media (max-width: 560px) {" in UI and "#slashMenu { left: 8px !important; right: 8px !important; }" in UI)
+check("F4 the card is styled from the same vocabulary",
+      ".docCard {" in UI and ".docCard .dc-acts {" in UI)
+
+# ------------------------------------------------------- G: server agreement
+check("G1 the server resolves plugin: tokens",
+      r'_SKILL_SLASH_RE = re.compile(r"(^|\s)/([A-Za-z0-9_.\-:]+)")' in AGENT
+      and 'low.startswith("plugin:")' in AGENT and "_slash.plugin_block(name)" in AGENT)
+check("G2 a UI command is never mistaken for a skill",
+      '"plan", "spec",\n                    "plugins", "plugin"}' in AGENT)
+check("G3 the backend catalogue owns plan/spec/plugins",
+      '{"id": "plan"' in SLASH and '{"id": "spec"' in SLASH and '{"id": "plugins"' in SLASH)
+check("G4 the chips understand the plugin token",
+      't.indexOf("plugin:") === 0' in UI)
+
+print("\n---\nv1053: %d/%d PASS" % (sum(results), len(results)))
+sys.exit(0 if all(results) else 1)

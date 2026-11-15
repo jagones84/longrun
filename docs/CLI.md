@@ -396,6 +396,12 @@ architect / improvement / cost panels, and the marketplace's single-item plus `/
 `/api/connectors/*` views). The marketplace's operator actions ARE covered (see §2). Adding a verb
 for a WebUI-only route is a deliberate change with its own test, not a missing line in this table.
 
+**v1051 WebUI-only document surface** (no `forge.py` verb; the plan bar is the operator
+surface): `GET /api/slash` (the `/` catalogue), `GET /api/docs` (the active plan/spec
+document), `POST /api/docs/plan`, `POST /api/docs/spec`, `POST /api/docs/approve`,
+`POST /api/docs/reject`, `POST /api/docs/unlock`. The CLI can call them with `curl` when
+scripting, but the document lifecycle is intentionally a reviewed UI gesture.
+
 | HTTP | Path | CLI |
 |---|---|---|
 | GET | `/` `/index.html` | (WebUI) |

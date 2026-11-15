@@ -45,7 +45,8 @@ check("A2 the store lives under the data home (operator-owned, not shipped confi
       os.path.join("data", "commands.yaml") in lst["path"]
       or commands.path().startswith(os.environ["LONGRUN_DATA_DIR"]), commands.path())
 check("A3 the built-in tokens are declared as reserved",
-      set(commands.RESERVED) == {"goal", "skills", "skill", "compact"}, commands.RESERVED)
+      set(commands.RESERVED) == {"goal", "skills", "skill", "compact",
+                                 "plan", "spec", "plugins", "plugin"}, commands.RESERVED)
 
 # ── B: round-trip ───────────────────────────────────────────────────────────
 res = save()

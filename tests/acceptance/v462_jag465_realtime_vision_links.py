@@ -184,7 +184,7 @@ check("D5 another session's turn end no longer rebuilds THIS Context panel",
 # --------------------------------------------------------------- E: skills ---
 check("E1 the picker searches the WHOLE catalogue, not 8 name prefixes",
       ".slice(0, 8)" not in HTML.split("function skillsAutocomplete")[1][:2200]
-      and "_SLASH_CAP" in HTML and "const _matched" in HTML)
+      and "_SLASH_CAP" in HTML and "let _matched" in HTML and "_rankSkills(_skills, q)" in HTML)
 check("E2 the popup scrolls instead of clipping the results",
       "#slashMenu { max-height: 46vh; overflow-y: auto; }" in HTML)
 

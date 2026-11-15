@@ -1,0 +1,18 @@
+# v1051 — where `/plan` and `/spec` write their documents.
+#
+# `root` is resolved against the SESSION WORKSPACE (the project the operator is
+# working in). It must stay inside that workspace: an absolute path outside it is
+# refused, because a document is a deliverable the operator reviews, not a second
+# state store. `documents/` is the one `.longrun` entry that
+# `util/paths.workspace_state_dir` never moves into the data home.
+#
+# Layout:
+#   <root>/plans/<slug>-<YYYY-MM-DD>.md
+#   <root>/specs/<slug>/spec.md · tasks.md · checklist.md
+documents:
+  root: .longrun/documents
+  plans: plans
+  specs: specs
+  # Per-file ceiling. The generator refuses an output above it instead of
+  # truncating a plan/spec mid-sentence.
+  max_bytes: 262144

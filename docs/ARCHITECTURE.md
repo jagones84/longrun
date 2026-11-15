@@ -263,10 +263,10 @@ and guessing. `util/runtree.py` is the read model over those stores, and
 
 | Subpackage | Modules |
 |---|---|
-| `core/` | `server.py`, `api_v02.py`, `httpapi.py`, `sse.py`, `events.py`, `forge.py`, `settings.py`, `diagnostics.py`, `configfiles.py`, `sidebar_order.py`, `matrix.py`, `homemove.py`, `market.py` (catalogue: skills · MCP · plugins · connectors, digest-gated, origin persisted with each install), `market_sync.py` (bulk import of the official MCP Registry and ClawHub into `data/market/imported.json`, as one background job the page polls; live remote search + import-one), `market_taxonomy.py` (the curated macro-area vocabulary in `config/market_taxonomy.yaml`: a deterministic keyword classifier applied at sync time, no model, no network), `commands.py` (the operator's own `/` commands), `connectors.py` (an MCP preset plus the key NAMES it needs) |
+| `core/` | `server.py`, `api_v02.py`, `httpapi.py`, `sse.py`, `events.py`, `forge.py`, `settings.py`, `diagnostics.py`, `configfiles.py`, `sidebar_order.py`, `matrix.py`, `homemove.py`, `market.py` (catalogue: skills · MCP · plugins · connectors, digest-gated, origin persisted with each install), `market_sync.py` (bulk import of the official MCP Registry and ClawHub into `data/market/imported.json`, as one background job the page polls; live remote search + import-one), `market_taxonomy.py` (the curated macro-area vocabulary in `config/market_taxonomy.yaml`: a deterministic keyword classifier applied at sync time, no model, no network), `commands.py` (the operator's own `/` commands), `slash.py` (the ONE `/` catalogue: built-ins, user commands, installed plugins and the documents folders, served by `GET /api/slash`), `connectors.py` (an MCP preset plus the key NAMES it needs) |
 | `agent/` | `agent.py`, `agents.py`, `subagent.py`, `bridge.py`, `agency.py`, `swarm.py`, `session_jobs.py`, `architect.py`, `acceptance.py`, `trace_policy.py` |
 | `orchestrate/` | `jobs.py`, `orchestration.py`, `teams.py`, `routines.py`, `roles.py` |
-| `plan/` | `taskgraph.py`, `keepgoing.py`, `goal.py`, `difficulty.py`, `bestofn.py`, `prm.py`, `heldout.py`, `verify.py` |
+| `plan/` | `taskgraph.py`, `keepgoing.py`, `goal.py`, `difficulty.py`, `bestofn.py`, `prm.py`, `heldout.py`, `verify.py`, `docs.py` (the `/plan` and `/spec` markdown documents under `<workspace>/.longrun/documents/`, with the plan-mode gate) |
 | `tools/` | `tools.py`, `registry.py`, `approvals.py`, `sandbox.py`, `hooks.py`, `edits.py`, `term.py`, `bgjobs.py` (detached shell jobs: start/status/stop), `diag.py`, `matrix_guard.py` |
 | `model/` | `providers.py`, `routing.py`, `context_engine.py`, `prompt.py`, `runmetrics.py`, `otel_tracing.py`, `rllm.py`, `keys.py`, `costs.py`, `embed.py`, `compaction_config.py`, `structured.py`, `vision.py`, `decision.py`, `rerank.py` |
 | `memory/` | `memory.py`, `anchors.py`, `skills.py`, `rules.py`, `checkpoints.py`, `stores.py`, `knowledge.py`, `codeindex.py`, `vectors.py`, `embedcfg.py`, `indexcfg.py`, `chunk.py`, `costlog.py`, `docio.py`, `autoidx.py`, `rewind.py`, `threads.py`, `sqlkit.py` |
@@ -518,6 +518,18 @@ notebook index + its cost log) · `costs/` (per-session model-call ledger) · `p
 prompt.d/). Writes are atomic (`tmp` + `os.replace`). The root is resolved by
 `util/paths.py` (`LONGRUN_DATA_HOME` → `data_home` in `~/.longrun/config/config.json`
 → platform default) and can be moved from Settings ▸ Info.
+
+**One deliberate exception, the documents area (v1051).** `/plan` and `/spec` write
+markdown deliverables under `<workspace>/.longrun/documents/` (`plans/` and `specs/`),
+because the operator must be able to review and commit them with the project. They are
+NOT harness state: `workspace_state_dir()` adopts every other legacy `<ws>/.longrun`
+entry into `projects/<slug>-<sha8>/` and leaves `documents/` in place. The layout is
+configured in `config/documents.yaml`; the planner has no tools, receives a bounded
+workspace context and must mark assumptions. `POST /api/docs/plan|spec` writes the file
+and calls `stores.set_plan_mode` — `registry.classify` then denies mutating tools until
+`POST /api/docs/approve` (or `reject`/`unlock`). The task graph (`/api/plan`, todos) is
+a DIFFERENT object and is never touched: the document is the intent/decision truth, the
+graph is execution state.
 
 Lifecycle and retention — every store has an owner and an end:
 

@@ -7,6 +7,20 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **The `/` menu is a real command surface, and `/plan` / `/spec` write reviewed documents.** The
+  composer menu was three hardcoded rows; it now renders the TRAE-style groups **plugins · commands ·
+  skills** from one backend catalogue (`GET /api/slash`, `core/slash.py`), with icons, one-line hints,
+  a sticky key footer and an installed-plugin submenu. `/plan <request>` writes
+  `.longrun/documents/plans/<slug>-<date>.md` and `/spec <request>` writes
+  `.longrun/documents/specs/<slug>/{spec,tasks,checklist}.md`; both use the existing
+  `stores.set_plan_mode` lock (mutating tools are denied) and a durable bar with
+  `open · approve · reject` that mirrors the goal bar. `/plugin:<name>` injects a bounded member
+  manifest. The task graph is untouched: the document is the intent truth, the todo graph the
+  execution truth. `config/documents.yaml` owns the folders; `workspace_state_dir()` now leaves
+  `documents/` in the workspace while adopting every other legacy `.longrun` entry. (Locked by
+  `v1051` 18/18, `v1052` 28/28, `v1053` 39/39; `v775`, `v1020`, `v597`, `v863`, `v934` green.)
+
+### Changed
 - **Every chat shows its context saturation, and a manager sees its team's.** Operator: *"each chat
   context status shall be visible in the sessions webui even if not the active one selected at the
   moment … and the boss team of an agent (report to) shall know the status of its sub agents teams (the
@@ -21,6 +35,17 @@ All notable changes to Longrun are documented here. The format follows
   `ctx NN%` chip beside the role. In the rail the meter is a bare 13px ring + 9px number — no padding,
   border or background — placed before the ⋮, so it fits the row instead of wrapping to a second line
   (the exact token counts live in the tooltip). (Locked by `v1048` 12/12.)
+
+### Changed
+- **The Settings window has ONE design layer, shared by every subsheet.** Operator: *"do you think
+  that style is state of the art of front end UIs? … apply the style to all the settings subsheets,
+  not only the shown."* The grammar moved onto the shared classes instead of per-category blocks:
+  micro-label headings (10.5px, .14em) over a hairline rule, one flat 9px card surface, a 14/8 rhythm,
+  28px controls with 7px radii, mono for identifiers, and an active nav item marked by an accent bar +
+  soft fill rather than a heavy pill. The key rows stopped carrying per-row inline styles and use the
+  same `.card`/`.inp`/`.ghost` grammar (`.keycard` + `kc-*`), so a sheet added tomorrow inherits it.
+  The rail's group count lost its pill/border and dropped to 10.5px. (Locked by `v762` C5/C6, 14/14;
+  `v359`, `v765`, `v851`, `v352`, `v508`, `v403`, `v806`, `v364`, `v890` green.)
 
 ### Security
 - **The bearer token no longer lands in the systemd journal (`v940`).** `main()` printed

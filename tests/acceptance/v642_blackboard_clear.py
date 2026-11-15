@@ -64,11 +64,27 @@ e = S.post("t", "after the clear")
 check("A4 versions restart from #1 (ids follow the surviving entries)",
       e.get("version") == 1, e.get("version"))
 
+# --- one entry at a time (operator: "i cant delete things 1 2 etcetera") ------
+d1 = S.post("dl", "keep one")
+d2 = S.post("dl", "delete me")
+d3 = S.post("dl", "keep two")
+rd = S.delete(d2["id"])
+check("A5 delete(id) removes ONE entry and only that one",
+      rd.get("ok") and [x["id"] for x in S.get(limit=10)] == [d3["id"], d1["id"], e["id"]], rd)
+check("A6 the versions of the survivors are NOT renumbered",
+      [x["version"] for x in S.get(limit=10)] == [4, 2, 1], S.get(limit=10))
+check("A7 a deleted version is never minted again",
+      S.post("dl", "after the delete").get("version") == 5)
+check("A8 deleting an unknown id is a clean refusal, not a crash",
+      S.delete("nope").get("ok") is False)
+
 # ---- B. the route ------------------------------------------------------------
 del_section = API[API.find('if method == "DELETE":'):]
 check("B1 DELETE /api/blackboard exists", 'if path == "/api/blackboard":' in del_section)
 check("B2 it calls swarm.clear with the topic filter", "_SWARM.clear(qs.get(\"topic\"))" in del_section)
 check("B3 the store has the function", "def clear(topic=None):" in src("src", "longrun", "agent", "swarm.py"))
+check("B4 ?id= removes ONE entry through swarm.delete",
+      'qs.get("id")' in del_section and "_SWARM.delete(eid)" in del_section)
 
 # ---- C. the panel ------------------------------------------------------------
 check("C1 the panel offers a real clear-all", 'data-call="bbClearAll"' in UI)
@@ -80,6 +96,13 @@ check("C5 what the tab is survives as a tooltip",
       'title="Not the subagent engine — the model, the parallel limit' in UI)
 check("C6 the spend warning is still on screen", "costs N+1 model calls" in UI)
 check("C7 the Subagents cross-link survives (JAG-536)", 'data-call="gotoSubagents"' in UI)
+check("C8 every row has its own delete control",
+      '"bbDeleteEntry"' in UI
+      and "del.dataset.args = JSON.stringify([e.id, e.version])" in UI
+      and "async function bbDeleteEntry(id, version)" in UI)
+check("C9 the post field is a wrapping textarea and has no auto-reformat ✨",
+      '<textarea aria-label="blackboard entry" id="bbContent"' in UI
+      and '["blackboard.topic", "#bbContent"' not in UI)
 
 # ---- D. the floating editor over Control -------------------------------------
 check("D1 the settle helper exists", "function _dockControlSettle()" in UI)

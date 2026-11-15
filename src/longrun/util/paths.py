@@ -267,10 +267,30 @@ def workspace_state_dir(ws):
     dest = os.path.join(PROJECTS_DIR, "%s-%s" % (
         safe or "workspace", hashlib.sha1(root.encode("utf-8")).hexdigest()[:8]))
     legacy = os.path.join(root, ".longrun")
-    if os.path.isdir(legacy) and not os.path.exists(dest):
+    if os.path.isdir(legacy):
+        # v1051: `documents/` is the operator's deliverable area (plans/specs),
+        # not harness state — it stays in the workspace. Every other entry is
+        # adopted into the data home, one at a time: a legacy state file is
+        # never lost, and a second call retries anything a failed move left
+        # behind. `dest` existing no longer stops the adoption.
         try:
             os.makedirs(PROJECTS_DIR, exist_ok=True)
-            os.replace(legacy, dest)
+            os.makedirs(dest, exist_ok=True)
+            for entry in os.listdir(legacy):
+                if entry == "documents":
+                    continue
+                src = os.path.join(legacy, entry)
+                dst = os.path.join(dest, entry)
+                if os.path.exists(dst):
+                    continue          # never clobber state already adopted
+                try:
+                    os.replace(src, dst)
+                except OSError:
+                    continue
+            try:
+                os.rmdir(legacy)      # succeeds only when `documents/` is absent
+            except OSError:
+                pass
         except OSError:
             pass
     return dest

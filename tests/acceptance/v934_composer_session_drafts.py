@@ -84,11 +84,12 @@ check("C3 the boot path restores the stored draft",
 
 # ---- D: the text left the box -> the entry is gone ---------------------------
 # v1020 added the FOURTH site: a user-defined `/name` command empties the composer
-# (it expands to its prompt) and must clear the draft like every other exit. The
-# invariant is unchanged — every path that empties the box clears its draft — the
-# count is how it is pinned.
+# (it expands to its prompt) and must clear the draft like every other exit.
+# v1051 adds the FIFTH: `/plan` and `/spec` empty the box and call the document
+# endpoint. The invariant is unchanged — every path that empties the box clears
+# its draft — the count is how it is pinned.
 check("D1 every place that empties the composer clears its draft",
-      UI.count("_draftClear(sessionId)") == 4, "%d sites" % UI.count("_draftClear(sessionId)"))
+      UI.count("_draftClear(sessionId)") == 5, "%d sites" % UI.count("_draftClear(sessionId)"))
 check("D2 only a send FROM the box clears it (a flushed queue item must not delete the draft)",
       "if (text === undefined) _draftClear(sessionId);" in UI)
 

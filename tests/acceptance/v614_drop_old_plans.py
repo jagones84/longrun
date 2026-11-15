@@ -109,7 +109,8 @@ check("D2 the item posts the team bulk route (same generic teamBulk)",
       'this.teamBulk(tid, "drop-old-plans")' in DECK
       and '"/api/teams/" + encodeURIComponent(tid) + "/" + action' in DECK)
 check("D3 the confirm states chats/agents stay",
-      "current work, chats and agents stay" in DECK)
+      # The sentence is wrapped over two source lines; the behaviour is the same.
+      "current work, " in DECK and "chats and agents stay." in DECK)
 check("D4 the result line reports dropped plans + surviving current",
       'action === "drop-old-plans"' in DECK and "dropped " in DECK
       and "current " in DECK)

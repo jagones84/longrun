@@ -1158,11 +1158,14 @@ def set_plan_mode(sid, on):
     return True
 
 
-def propose_plan(sid, steps):
+def propose_plan(sid, steps, doc=None, lock=False):
     """Record the agent's proposed plan for a session (status `proposed`).
 
-    Empty step lists raise (a plan with no steps approves nothing).
-    Returns True on success.
+    v1051: `doc` optionally carries the plan/spec document metadata
+    (`{kind, title, path, documents, ...}`) on the SAME `plan` object — one state
+    machine, one writer. `lock=True` sets `plan_mode` in the SAME write, so a
+    document and its gate can never land separately. Empty step lists raise (a
+    plan with no steps approves nothing). Returns True on success.
     """
     s = load_session(sid)
     if not s:
@@ -1170,7 +1173,12 @@ def propose_plan(sid, steps):
     clean = [str(x).strip() for x in (steps or []) if str(x).strip()]
     if not clean:
         raise ValueError("propose_plan: steps must be a non-empty list of strings")
-    s["plan"] = {"steps": clean, "status": "proposed"}
+    plan = {"steps": clean, "status": "proposed"}
+    if isinstance(doc, dict):
+        plan["doc"] = dict(doc)
+    s["plan"] = plan
+    if lock:
+        s["plan_mode"] = True
     save_session(s)
     return True
 
@@ -1189,6 +1197,8 @@ def approve_plan(sid):
     if plan.get("status") != "proposed":
         raise ValueError("approve_plan: no proposed plan for session %r" % (sid,))
     plan["status"] = "approved"
+    if isinstance(plan.get("doc"), dict):
+        plan["doc"] = dict(plan["doc"], status="approved")
     s["plan"] = plan
     s["plan_mode"] = False
     save_session(s)
@@ -1207,6 +1217,8 @@ def reject_plan(sid):
     if plan.get("status") != "proposed":
         raise ValueError("reject_plan: no proposed plan for session %r" % (sid,))
     plan["status"] = "rejected"
+    if isinstance(plan.get("doc"), dict):
+        plan["doc"] = dict(plan["doc"], status="rejected")
     s["plan"] = plan
     save_session(s)
     return True

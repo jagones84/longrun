@@ -102,7 +102,10 @@ def post(topic, content, tags=None, parent=None, author=None, run_id=None):
         entry = {
             "id": uuid.uuid4().hex[:10],
             "ts": round(time.time(), 3),
-            "version": len(entries) + 1,
+            # max+1, not len+1: a single delete leaves a hole, and len+1 would mint
+            # a SECOND entry with an existing version (the SSE `since` cursor and
+            # the thread refs both key on version).
+            "version": max((e.get("version", 0) for e in entries), default=0) + 1,
             "topic": topic,
             "content": content if isinstance(content, str) else json.dumps(content, indent=2),
             "tags": tags or [],
@@ -150,6 +153,28 @@ def clear(topic=None):
         _entries = list(keep)
         _save()
     return {"ok": True, "removed": removed}
+
+
+def delete(entry_id):
+    """Delete ONE entry by id; the surviving entries keep their versions.
+
+    `clear()` empties the board (versions restart at #1); this removes a single
+    note the operator no longer wants to see. Versions are log positions, so the
+    rest are NOT renumbered — `post()` continues from the highest one.
+    """
+    global _entries
+    with _lock:
+        entries = _load()
+        keep = [e for e in entries if e.get("id") != entry_id]
+        if len(keep) == len(entries):
+            return {"ok": False, "removed": 0}
+        for e in keep:
+            ch = e.get("children") or []
+            if entry_id in ch:
+                e["children"] = [c for c in ch if c != entry_id]
+        _entries = keep
+        _save()
+    return {"ok": True, "removed": 1}
 
 
 def get(entry_id=None, topic=None, tags=None, limit=50):

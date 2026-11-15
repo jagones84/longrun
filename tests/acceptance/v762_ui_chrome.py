@@ -84,9 +84,17 @@ check("C3 a dragged spot is respected",
       "if (pos && (Number(pos.x) || Number(pos.y))) {" in UI)
 check("C4 the dead first-build-only positioning block is gone",
       '} else { w.style.left = Math.max(20, (innerWidth - 760) / 2) + "px"; w.style.top = "70px"; }' not in UI)
-check("C5 the density pass is in (8/11 padding, 14px between categories)",
-      "#settingsWin .sw-main .card {\n    background: var(--bg-2); border: 1px solid var(--line);\n    border-radius: 10px; padding: 8px 11px; }" in UI
-      and "#settingsWin .sw-main .card + h2 { margin-top: 14px; }" in UI)
+check("C5 the density pass is in (one flat card surface, 16px between categories)",
+      # 2026-11-16 (operator): Settings gained ONE design layer for every subsheet —
+      # the card is a 9px flat surface and the gap above a following h2 is 16px.
+      "#settingsWin .sw-main .card {\n    background: var(--bg-2); border: 1px solid var(--line); border-radius: 9px;\n    padding: 10px 12px; margin-bottom: 8px; box-shadow: none; }" in UI
+      and "#settingsWin .sw-main .card + h2 { margin-top: 16px; }" in UI)
+
+check("C6 the settings layer is SHARED by every subsheet (nav bar, heading rule, key rows)",
+      "#settingsWin .sw-nav button.active { border-left-color: var(--acc); }" in UI
+      and "margin: 20px 0 8px; padding-bottom: 6px; border-bottom: 1px solid var(--line);" in UI
+      and "#settingsWin .keycard .kc-name" in UI
+      and 'row.className = "card keycard"' in UI)
 
 print("\nv762: %d/%d PASS" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

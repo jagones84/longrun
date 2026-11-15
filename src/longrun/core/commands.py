@@ -20,7 +20,7 @@ from longrun.util import paths, fswrite
 
 # The built-in tokens the composer and `agent.py` already own. A user command
 # with one of these names would be a second truth for the same token.
-RESERVED = ("goal", "skills", "skill", "compact")
+RESERVED = ("goal", "skills", "skill", "compact", "plan", "spec", "plugins", "plugin")
 SLUG = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
 MODES = ("send", "insert")
 MAX_PROMPT = 8192

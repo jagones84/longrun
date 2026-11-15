@@ -2055,6 +2055,20 @@ def handle(handler, method, path, qs, body):
         if path == "/api/commands":
             from longrun.core import commands as _cmds
             return _r(handler, 200, _cmds.list_commands())
+        # v1051: the ONE catalogue behind the composer's `/` menu — built-ins,
+        # the operator's commands, installed plugin bundles and the documents
+        # folders. The WebUI keeps a first-paint fallback and replaces it here.
+        if path == "/api/slash":
+            from longrun.core import slash as _slash
+            return _r(handler, 200, _slash.catalog(qs.get("session") or ""))
+        # v1051: the durable plan/spec document behind the plan bar. It is the
+        # SESSION's plan object (`stores.propose_plan`), never the task graph.
+        if path == "/api/docs":
+            from longrun.plan import docs as _docs
+            try:
+                return _r(handler, 200, _docs.status(qs.get("session") or ""))
+            except ValueError as exc:
+                return _r(handler, 404, {"ok": False, "error": str(exc)})
         if path == "/api/connectors":
             from longrun.core import connectors as _conn
             return _r(handler, 200, _conn.available())
@@ -2496,6 +2510,46 @@ def handle(handler, method, path, qs, body):
         if path == "/api/goal":
             # G-1: pause / resume / edit / delete / start the durable goal.
             return _r(handler, *_goal_action(body or {}))
+        # v1051: `/plan` and `/spec` write a reviewed document and lock the
+        # session (`stores.set_plan_mode`). The document is written by the
+        # backend, so the gate cannot be bypassed by a tool call.
+        if path in ("/api/docs/plan", "/api/docs/spec"):
+            from longrun.plan import docs as _docs
+            b = body or {}
+            make = _docs.create_plan if path.endswith("/plan") else _docs.create_spec
+            try:
+                res = make(b.get("session") or "", b.get("prompt") or "",
+                           b.get("model"))
+            except ValueError as exc:
+                return _r(handler, 400, {"ok": False, "error": str(exc)})
+            except RuntimeError as exc:
+                text = str(exc)
+                return _r(handler, 503 if "no model" in text.lower() else 502,
+                          {"ok": False, "error": text})
+            except Exception as exc:  # noqa: BLE001 — report, never drop the connection
+                return _r(handler, 502, {"ok": False,
+                                         "error": "document generation failed: %s" % exc})
+            _publish("docs.created", session=b.get("session"), kind=res.get("kind"),
+                     path=res.get("path"))
+            return _r(handler, 200, res)
+        if path in ("/api/docs/approve", "/api/docs/reject", "/api/docs/unlock"):
+            from longrun.plan import docs as _docs
+            b = body or {}
+            sid = b.get("session") or ""
+            try:
+                if path.endswith("/approve"):
+                    res = _docs.approve(sid)
+                elif path.endswith("/reject"):
+                    res = _docs.reject(sid, unlock=b.get("unlock", True) is not False)
+                else:
+                    res = _docs.unlock(sid)
+            except ValueError as exc:
+                return _r(handler, 400, {"ok": False, "error": str(exc)})
+            event = ("docs.approved" if path.endswith("/approve")
+                     else "docs.rejected" if path.endswith("/reject")
+                     else "docs.unlocked")
+            _publish(event, session=sid, plan_mode=res.get("plan_mode"))
+            return _r(handler, 200, res)
         if path == "/api/fs/write":  # JAG-124: save the editor buffer to disk
             return _r(handler, 200, fs_write(body))
         if path == "/api/edits/undo":  # JAG-127: restore files to their pre-image (REJECT)
@@ -3178,12 +3232,19 @@ def handle(handler, method, path, qs, body):
             return _r(handler, 200 if res.get("ok") else 400, res)
 
         # JAG-536 follow-up: the blackboard is durable by design, but it had no
-        # door to be emptied — the panel kept every run forever. ?topic= clears
-        # one topic; no query clears the whole board.
+        # door to be emptied — the panel kept every run forever. ?id= removes one
+        # entry, ?topic= clears one topic; no query clears the whole board.
         if path == "/api/blackboard":
             _lazy('swarm')
-            res = _SWARM.clear(qs.get("topic"))
-            _publish("blackboard.clear", ok=bool(res.get("ok")), removed=res.get("removed"))
+            eid = qs.get("id")
+            if eid:
+                res = _SWARM.delete(eid)
+                _publish("blackboard.delete", ok=bool(res.get("ok")),
+                         removed=res.get("removed"))
+            else:
+                res = _SWARM.clear(qs.get("topic"))
+                _publish("blackboard.clear", ok=bool(res.get("ok")),
+                         removed=res.get("removed"))
             return _r(handler, 200 if res.get("ok") else 400, res)
 
         # JAG-317: a TRUE delete for a stored memory (?target=<mid>), not a tombstone.
