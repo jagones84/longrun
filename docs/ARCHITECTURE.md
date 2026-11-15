@@ -1,35 +1,27 @@
 # Longrun Architecture
 
-*Living map — Harness2 ownership updated against `src/longrun` 2026-10-28. The code is the source
-of truth; this is the map. Update it in the same commit as any structural change
-(freshness rule, 2026-10-25).*
+*Living map. The code is the source of truth; this is the map. Update it in the
+same commit as any structural change (freshness rule, 2026-10-25). The component
+diagram under [`diagrams/`](diagrams/architecture.svg) is the visual half of this
+page and is generated from a checked spec, so the two cannot drift apart.*
 
 Longrun is a **Python agent harness using stdlib plus PyYAML**. It drives one LLM with disciplined
 context and a real tool loop, then composes that harness into **meta-agents organised in
 teams**. It serves a single-file WebUI, a mission-control deck (Orbit), a CLI and a
 mobile-ready HTTP API — all from one process on `:8790`.
 
-```
-        WebUI (webui/index.html)   Orbit (src/longrun/orbit)   CLI (forge.py)   Mobile
-              │  SSE  ▲  │ HTTP          │  SSE ▲                │ SSE ▲         │
-              ▼       │  ▼               ▼      │                ▼     │         ▼
-        ┌───────────────────────────────────────────────────────────────────────────┐
-        │                  server.py  (:8790 http · :8791 https)                      │
-        │   chat (stream)   │   agent loop   │   jobs/orchestration   │   teams         │
-        │   ────────────────┼────────────────┼────────────────────────┼──────────────   │
-        │   taskgraph       │   tools+registry│  providers/routing    │   memory         │
-        │   keepgoing loop  │   approvals    │   sandbox             │   skills         │
-        │   ────────────────┴────────────────┴────────────────────────┴──────────────   │
-        │   EVENT BUS  publish() → /api/feed   (SSE, monotonic ids + replay backlog)     │
-        │   STORES     data/… (atomic JSON + SQLite events.db)                           │
-        └───────────────────────────────────┬───────────────────────────────────────────┘
-                                            │ OpenAI-compatible, stream
-                        ┌───────────────────┼───────────────────────┐
-                        ▼                   ▼                       ▼
-                 llama.cpp router      vLLM router            cloud providers
-                 (Linux x86_64/arm64   (local)      OpenRouter · DeepSeek · OpenAI · Anthropic · Google
-                  · Windows)
-```
+![Longrun architecture](diagrams/architecture.svg)
+
+The diagram is the component view: what exists, and what actually moves between
+the blocks. Two facts it deliberately leaves out, because they are properties of
+the process rather than of a component:
+
+- **One process, four clients.** `server.py` serves the WebUI, the Orbit deck,
+  the CLI and the mobile client on `:8790` (HTTP) and `:8791` (HTTPS). The event
+  feed is a second SSE channel with monotonic ids and a replay backlog.
+- **One outbound contract.** Every provider call is OpenAI-compatible and
+  streamed — `llama.cpp` and vLLM locally, OpenRouter / DeepSeek / OpenAI /
+  Anthropic / Google over the network.
 
 ## The object model (five levels)
 
@@ -257,9 +249,13 @@ and guessing. `util/runtree.py` is the read model over those stores, and
 | `integrations/` | `paperclip_adapter.py`, `paperclip_bot.py` (Paperclip team-chat adapter + bot) |
 | `orbit/` | the **Control** deck at `/orbit`: `api.py`, `orchestrator.py`, `attention.py`, `decisions.py`, `registry.py`, `bay.py`, `web/orbit.html` |
 | `research/` | `research.py`, `executor.py`, `researchcfg.py` (web-grounded research agent) |
-| `harness/` | `record.py`, `contrast.py`, `library.py`, `editors.py`, `probe.py`, `runner.py`, `compose.py`, `cycle.py`, `snapshot.py`, `whole.py`, `gateway.py`, `unixshim.py` (bounded Harness2 evidence workflow) |
+| `harness/` | `record.py`, `contrast.py`, `library.py`, `editors.py`, `probe.py`, `runner.py`, `compose.py`, `cycle.py`, `snapshot.py`, `whole.py`, `gateway.py`, `unixshim.py` (bounded evidence workflow) |
 
-## Harness2 evidence workflow
+## Harness evidence workflow
+
+This is Longrun's own `src/longrun/harness/` package. It is not the external
+Harness² upstream (arXiv:2610.14224): that is only a comparison arm in
+`benchmarks/jobbench_compare.py`, and none of its code runs here.
 
 `GET /api/harness/cycle` reports the effective enable flag, whole-run readiness,
 canonical library counts and last cycle. `POST` defaults to a dry run: build a
@@ -394,7 +390,7 @@ owners:
 |---|---|---|---|
 | tool sequence recorded | agent turn | `selfevolve.record/history_rows` | raw material, not a skill; only a name the registry ACCEPTS is recorded (`_dispatchable`), because the loop's own pseudo-actions (`batch`, `subagent`, `dispatch`) can never be replayed. The row also carries HOW the turn ended (`outcome`) and WHAT it asked for (`purpose`); a row without an outcome is UNKNOWN and is never read as a success |
 | mined draft (`proposals/skills/<name>`) | end-of-turn pass or `improve{mine}` | `improve.sweep_drafts` + `selfevolve.draft/synth` | material; `mine` annotates each candidate with the outcome split and the most common purpose of its runs, and refuses a pattern whose known runs ALL failed; `prune_junk` drops drafts whose steps are not dispatchable |
-| harness candidate (`skill` kind) | Harness² cycle editor | `harness/editors.propose` → `probe.stage` | material tested by a matched run |
+| harness candidate (`skill` kind) | harness cycle editor | `harness/editors.propose` → `probe.stage` | material tested by a matched run |
 | verified | `improve{verify}` / `decide` | `selfevolve.ensure_check` + `verify` | the sandbox check went green |
 | proposal (`scope=skill`, bound to a draft OR to tested bytes) | mined draft or matched experiment | `improve.propose` | ONE decision object |
 | installed skill | approval, or `evolve` when `approvals.kinds.skills=auto` **and** the sealed held-out suite is installed | `selfevolve.promote` (draft) / `skills.install_skill_file` (harness bytes) | never clobbers an existing skill — it supersedes it (retire + swap); one ledger `promote` row per install |
@@ -567,23 +563,28 @@ operator-selected `none`). This is not whole-agent confinement. Hard-denied patt
 
 ## Diagrams
 
-The generated architecture diagrams (`docs/diagrams/`, archify `.architecture.json`
-+ rendered HTML) are **gitignored local artifacts** — derived, regenerable, not
-committed. They were regenerated against `32f46c4` on 2026-11-15 and each passes the
-full archify gate set (`validate` → `deliver` → `check` → `browser-check`):
+`diagrams/` holds the rendered architecture. It is derived — never a second source
+of truth — so a structural change updates this page first and the picture is
+re-derived from it afterwards.
 
-- `longrun-architecture.html` — the system architecture, with five guided views
-  (end-to-end request, security, state and self-improvement, orchestration,
-  observability). `Matrix`, `Harness2` and the held-out judge appear in the
-  state/self-improvement material.
-- `longrun-turn-workflow.html` — one agent turn end to end: assemble → model →
-  parse → gate → tool → observe → keepgoing.
+| File | Ships | What it is |
+|---|---|---|
+| `architecture.svg` | **yes** | the figure the README embeds; one self-theming file (light and dark from the reader's own preference) |
+| `longrun-architecture.architecture.json` | no | the checked spec — components, relationships, boundaries, card text |
+| `longrun-architecture.html` | no | the interactive build: five focus views (request path, test-time control, security, state and evidence, orchestration), route probe, zoom |
+| `longrun-turn-workflow.html` | no | one agent turn end to end: assemble → model → parse → gate → tool → observe → keepgoing |
 
-They are a *rendering of this page*, not a second source of truth: a structural
-change updates the map above and the diagram is re-derived from it on demand. The
-regeneration command is `node <archify>/bin/archify.mjs finalize <type>
+Everything except the image is gitignored on purpose (`.gitignore`), because a
+bundle is regenerable in seconds and would otherwise churn the repository. Both
+pages were regenerated against `32f46c4` on 2026-11-15 and pass the full gate set
+(`validate` → `deliver` → `check` → `browser-check`) with no composition
+diagnostics: 23 components, 38 labelled relationships, every block both entered
+and leaving a trace.
+
+Regenerate with `node <archify>/bin/archify.mjs finalize <type>
 <.archify/…/candidate.json> docs/diagrams/<name>.html --repo-root . --quality
-showcase --json`.
+showcase --json`, then re-export `architecture.svg` from the page's own Export ▸
+SVG (the default variant, which self-themes).
 
 ## Entry points
 

@@ -118,7 +118,7 @@ See [Architecture](docs/ARCHITECTURE.md) for system behavior and
 ## Architecture at a glance
 
 <p align="center">
-  <img src="assets/architecture.svg" alt="Longrun architecture: clients reach the HTTP/SSE gateway, which drives the agent loop through harness control, the tool registry, the executor and its sandbox; prompt assembly and the LLM router sit above, state and self-evolution below, and orchestration, research and generated surfaces underneath." width="100%">
+  <img src="docs/diagrams/architecture.svg" alt="Longrun architecture: clients reach the HTTP/SSE gateway, which drives the agent loop through harness control, the tool registry, the executor and its sandbox; prompt assembly and the LLM router sit above, state and self-evolution below, and orchestration, research and generated surfaces underneath." width="100%">
 </p>
 
 Every arrow carries the thing that actually moves across it. The request path is

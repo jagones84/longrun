@@ -113,9 +113,12 @@ docs/archive/
 tests/legacy/
 
 # Design/research workspaces and generated diagram bundles are local artifacts:
-# keep them on disk for reference, never in the shipped repository.
+# keep them on disk for reference, never in the shipped repository. The one
+# exception is the architecture figure the README embeds: that IMAGE (not the
+# bundle) is a deliverable, so it ships from docs/diagrams/ next to its spec.
 docs/superpowers/
-docs/diagrams/
+docs/diagrams/*
+!docs/diagrams/architecture.svg
 
 # Hypothesis property-test database (tests/properties).
 .hypothesis/
