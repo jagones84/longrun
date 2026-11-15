@@ -20559,7 +20559,9 @@ if ($("pvControl")) $("pvControl").onclick = () => { _closeDeckPanel(true); show
   if (!el || !head) return;
   head.addEventListener("pointerdown", (e) => {
     if (e.button !== 0) return;
-    if (e.target.closest && e.target.closest("button, a, input, select, textarea, nav")) return;
+    // The tab strip's BUTTONS are excluded, not the strip itself: a press between
+    // two tabs is a drag, a press on a tab still switches the panel.
+    if (e.target.closest && e.target.closest("button, a, input, select, textarea")) return;
     if (window.matchMedia && window.matchMedia("(max-width: 900px)").matches) return;
     const z = _dpZoom();
     const r = el.getBoundingClientRect();

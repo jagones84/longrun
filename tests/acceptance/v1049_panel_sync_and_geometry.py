@@ -98,7 +98,7 @@ check("B3 the active session is what rings agents and the org chart",
 # ---- C: movable + resizable panel, remembered --------------------------------
 check("C1 the window is dragged by its head, never through its controls",
       "function _dpDrag()" in UI
-      and 'e.target.closest("button, a, input, select, textarea, nav")' in UI
+      and 'e.target.closest("button, a, input, select, textarea")' in UI
       and 'head.classList.add("dragging")' in UI)
 check("C2 a corner grip resizes width AND height",
       'id="pvGrip" class="pv-grip"' in UI
