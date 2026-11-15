@@ -2871,10 +2871,12 @@ def _apply_chat_batch(sess, act, on_event, av02, node=None, after=None, hist=Non
         # and was read as complete. `_fit_batch_observations` now owns the budget.
         obs = str(obs)[:CHAT_OBS_FULL]
         on_event("tool.result", session=sess["id"], tool=tool, ok=ok, args=args,
-                 output=obs, summary="%s: %s" % (tool, "ok" if ok else (status or "error")))
+                 output=obs, data=sub.get("data"),
+                 summary="%s: %s" % (tool, "ok" if ok else (status or "error")))
         try:
             persist_tool_card(sess, tool, ok, args=args, result=obs,
-                              exit_code=0 if ok else 1, node=node, after=after)
+                              exit_code=0 if ok else 1, node=node, after=after,
+                              data=sub.get("data"))
         except Exception:  # noqa: BLE001
             pass
         return {"tool": tool, "ok": ok, "obs": obs}
@@ -5621,7 +5623,21 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     _review_known = ""
     _goal_close_used = False  # JAG-504: one goal-closure round per /goal turn
     _empty_streak = 0         # bounded retries for an EMPTY model message (max 2)
+    # 2026-11-16: the streak alone was NOT a bound. A CONTINUE park resets it, and
+    # any non-empty-but-useless reply resets it too, so one turn produced SEVEN
+    # harness nudges (measured session b7329cccf94c, 22:21:29–22:21:53: six
+    # "last message was EMPTY" retries + one CONTINUE, then chat.error). `_empty_total`
+    # is the per-TURN ceiling: at most 2 empty retries, then at most ONE continue
+    # park, then the turn closes honestly.
+    _empty_total = 0
     _empty_parks = 0          # bounded CONTINUE rounds when the model keeps going blank
+    # 2026-11-16: a REASONING-ONLY reply (long chain-of-thought, no content, no tool
+    # call) must not become a text-retry loop against the SAME model. Measured
+    # session b7329cccf94c (22:32–22:33): each turn sent four "EMPTY" retries plus
+    # closure chatter while deepseek-v4.1-flash reasoned and stopped. The FIRST such
+    # reply now fails over to the next model (no harness message at all).
+    _reasoning_failover = False
+    _reasoning_failover_used = False
     _think_action_used = False  # one round when the action hides in the reasoning
     _timeout_retried = False   # one retry when the MODEL CALL itself times out
     # HA-6 (lot H): the third correction on the SAME point becomes advice — one
@@ -5677,7 +5693,15 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                               goal_complete=(taskgraph.goal_complete(_g)
                                              if goal_mode else None))
             if not goal_mode:
-                _dec = _pivot_decide(_user_pivot, _dec, len(_open), _pivot_state)
+                # 2026-11-16: a STALE plan only earns a continuation when the turn
+                # actually touched it. A one-line request answered with zero tools
+                # (measured: session b7329cccf94c, "Reply with exactly: OK") used to
+                # be dragged into a 7-task pivot and a chain of empty retries — the
+                # answer was complete, the plan was not part of the request.
+                if _user_pivot and not used_tools:
+                    _dec = {"continue": False, "reason": "user_pivot"}
+                else:
+                    _dec = _pivot_decide(_user_pivot, _dec, len(_open), _pivot_state)
             if not _dec["continue"]:
                 # DELIVERY FLOOR: one extra round, ONCE, when a hard stop leaves
                 # open steps and an empty workspace (see `_stop_floor_text`).
@@ -5767,10 +5791,14 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
         _t_model = time.time()
         _phase(on_event, sess["id"], "model", model=model)
         _requested_model = model
+        _advance_from = model if _reasoning_failover else None
         try:
             answer, think, model = server.stream_with_fallback(
                 msgs, model, "chat", _capture, timeout=_model_call_timeout(),
-                usage=chat_usage, cancel=_abort_now)
+                usage=chat_usage, cancel=_abort_now,
+                reasoning_only_is_blank=_reasoning_failover,
+                advance_from=_advance_from)
+            _reasoning_failover = False
             _note_fallback(_requested_model, model)
         except Exception as _e:  # noqa: BLE001 — record the attempt, then surface it
             _record_usage(latency_ms=int((time.time() - _t_model) * 1000),
@@ -5817,8 +5845,20 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             # message on the reasoning block, `strip_think` left nothing, and the
             # harness persisted the empty string as the turn's reply to the user.
             # Ask again, bounded, instead of closing on nothing.
+            #
+            # 2026-11-16: a REASONING-ONLY reply is escalated to a MODEL failover,
+            # not to another text nudge — the model that just reasoned and stopped
+            # will do it again, and each nudge costs a full-context call while the
+            # chat fills with harness rows (measured session b7329cccf94c). No
+            # message is appended: `stream_with_fallback` walks to the next model.
+            if (str(think or "").strip() and not _reasoning_failover_used
+                    and not _is_aborted(sess["id"])):
+                _reasoning_failover_used = True
+                _reasoning_failover = True
+                continue
             _empty_streak += 1
-            if _empty_streak <= 2:
+            _empty_total += 1
+            if _empty_streak <= 2 and _empty_total <= 2:
                 _inject("Your last message was EMPTY — it carried no answer text and "
                         "no tool call (only reasoning, or it hit the output limit). "
                         "Continue: emit the next tool call, or write the answer as "
@@ -5830,8 +5870,8 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             # forbids tools and asks for prose, while the work needs a tool call
             # (measured 2026-11-14: the resumed Architect answered "the restart
             # message forced a plain-text answer … tool calls were off the table").
-            # Bounded: 2 CONTINUE rounds with a fresh tool budget, interactive only.
-            if (_empty_parks < 2 and not autonomous and not plan_only
+            # Bounded: ONE CONTINUE round with a fresh tool budget, interactive only.
+            if (_empty_parks < 1 and not autonomous and not plan_only
                     and not _is_aborted(sess["id"])):
                 _on, _brief = _open_todo_brief(sess)
                 if _on:
@@ -5844,7 +5884,8 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                     continue
             _kg_stop_reason = "empty_reply"
             on_event("chat.error", session=sess["id"],
-                     error="the model returned an empty message three times")
+                     error="the model returned an empty message %d time(s) — no answer, "
+                           "no tool call" % _empty_total)
             break
         # 2026-11-15: the cap above bounds CONSECUTIVE empty messages. Any reply
         # that carries something ends the streak — measured 2026-11-14 (the
@@ -6310,12 +6351,12 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                                   exit_code=sub.get("exit_code"),
                                   backend=sub.get("backend") or "harness",
                                   node=_cur_node(), think=_think_buf["t"].strip(),
-                                  after=_after())
+                                  after=_after(), data=sub.get("data"))
                 _think_buf["t"] = ""   # JAG-170: fresh CoT for the next action
                 on_event("tool.result", session=sess["id"], **_tool_event(
                     tool, ok, args=args, output=(sub.get("stdout") or obs or ""),
                     exit_code=sub.get("exit_code"),
-                    backend=sub.get("backend") or "harness",
+                    backend=sub.get("backend") or "harness", data=sub.get("data"),
                     inline=True, summary=("error" if not ok else "")))
             except Exception as e:  # noqa: BLE001 — a tool failure must not kill chat
                 obs, ok = "tool error: %s" % e, False
@@ -6718,8 +6759,13 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                                          if goal_mode else None))
             # JAG-266: on a pivot, grant ONE sync round (remind the model it left
             # todos open) instead of stopping silently; after it, stop as user_pivot.
+            # 2026-11-16: same guard as the budget branch — a stale plan the turn
+            # never touched cannot extend the turn.
             if not goal_mode:
-                _dec = _pivot_decide(_user_pivot, _dec, len(_open), _pivot_state)
+                if _user_pivot and not used_tools:
+                    _dec = {"continue": False, "reason": "user_pivot"}
+                else:
+                    _dec = _pivot_decide(_user_pivot, _dec, len(_open), _pivot_state)
             # JAG-171: with autocontinue OFF the harness does not insist — the
             # first stop with OPEN todos goes straight to the human gate.
             # JAG-266: but never suppress the single pivot sync round.
@@ -6881,7 +6927,12 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             "Answer the user now in plain text. Do not emit JSON, and do NOT "
             "announce future work: report the RESULT you already have (what "
             "you did, what you found, what is still missing).", "final")
-        for _try in range(3):
+        # 2026-11-16: a turn that just failed with `empty_reply` gets ONE forced
+        # answer, not three. The model already produced nothing four times; three
+        # more "give me the RESULT" rounds only added rows to the chat (measured
+        # session b7329cccf94c: three `final` injections after every failed turn).
+        _final_tries = 1 if _kg_stop_reason == "empty_reply" else 3
+        for _try in range(_final_tries):
             forced = []
 
             def _cap_final(ch, t, _c=forced):

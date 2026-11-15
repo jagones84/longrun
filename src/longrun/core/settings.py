@@ -321,6 +321,11 @@ DEDICATED = {
     # panel exactly like embedding.yaml — never to the generic Config form.
     "prices.yaml": {"*": "Settings ▸ Models"},
     "subagents.yaml": {"*": "Settings ▸ Subagents"},
+    # v1052: the `/plan` and `/spec` document area is four structural folder
+    # names, so it has NO form on purpose — the live absolute paths are shown by
+    # the composer's document bar (`GET /api/docs`, `plan/docs.config_view`) and
+    # the raw editor is Settings ▸ Config. A second form would be a second truth.
+    "documents.yaml": {"*": "the document bar (GET /api/docs) + Settings ▸ Config"},
     "mcp_clients.yaml": {"clients": "Settings ▸ MCP"},
     "index.yaml": {
         "embed_model": "Settings ▸ Models",

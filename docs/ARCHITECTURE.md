@@ -233,6 +233,23 @@ file whose mtime/size moved after `fs.read` (`force=true` overrides). The write 
 is atomic (`util/fswrite.write_text`) and keeps the file mode; a non-UTF-8 target is
 refused rather than silently re-encoded. `v828` pins all of it.
 
+### Bounded nudges (2026-11-16)
+
+The turn loop may inject a harness→LLM nudge, but never without a per-turn ceiling: an EMPTY model
+message earns at most **two** retries, then at most **one** `CONTINUE` park, then the turn closes
+with `chat.error` naming the real count (`_empty_total`). The old `_empty_streak` alone was not a
+bound — the park and any non-empty-but-useless reply reset it, and one measured turn produced six
+identical retries (session `b7329cccf94c`, 22:21:29–22:21:53). A **stale plan** (`_user_pivot`)
+only earns a continuation when the turn actually ran a tool: a one-line request answered with zero
+tools stops as `user_pivot` instead of being dragged into a pivot round (measured: "Reply with
+exactly: OK" plus seven open steps produced a second retry chain).
+
+A **reasoning-only** reply (long chain-of-thought, no content, no tool call) is not retried against
+the same model: the loop asks `stream_with_fallback` to treat it as blank and to advance past that
+model, so the next candidate answers with no harness message; a turn that still ends `empty_reply`
+gets one forced answer, not three (measured: four identical retries plus three closure rounds per
+turn while the model reasoned and stopped).
+
 ### Diagnosing a failed turn — the trace tree (HD-2, 2026-11-14)
 
 A turn persists everything a post-mortem needs — one card per tool call (`ok`, `error`,
@@ -502,6 +519,35 @@ Re-rankers are ordinary entries in `config/providers.yaml` flagged `rerank: true
 `providers.rerank_endpoint` resolves a ref to `POST <base>/rerank`. Settings live in
 `config/rerank.yaml` (Settings ▸ Models) with a sparse `data/rerank.overlay.yaml`. The stage is
 **fail-open**: disabled, unreachable, slow, non-200 or empty leaves the caller's order untouched.
+
+## Web search, and how a turn shows its work (2026-11-16)
+
+The public-internet tool is `web` with two actions: `web.search` runs one query **or 2–4 `queries`
+in one call** (parallel fan-out capped at 4 workers, URL de-duplication by host+path, `max_total`
+15, 25 s wall clock, `partial` when the clock cuts a query) and `web.fetch` reads one URL or up to
+five. Both accept `days`, `include_domains`/`exclude_domains`, `search_depth` (Tavily) and a 16 KB
+fetch default (`tools.py:_web_search_many`, `_web_open`). The provider chain stays
+Tavily → Brave → DuckDuckGo → Bing, but each miss is now **named** with its reason
+(`tavily(missing TAVILY_API_KEY)`), because a swallowed key used to look exactly like "no results".
+
+Every hit gets a **session-monotonic `[wN]` id** (`_web_ids(run_id, …)`: the tool has no turn
+context, so a per-call `w1…wN` would collide across two calls in the same turn). The tool returns
+the model-facing numbered text unchanged PLUS a structured `data` payload (engine, timings, host,
+snippet, published, ids). `persist_tool_card` stores `data` **inside the card**, capped at 6 KB —
+`tool_cards` never reach the model prompt (`model/context_engine.build` reads `messages` only), so
+this costs no context; `tool.result` carries the same object (the `**extra` path), so the live card
+and the reloaded card render through one function.
+
+The WebUI reads that one payload for everything the operator sees: hit rows (favicon with an offline
+letter fallback, escaped title/host/snippet, external links), a per-turn header
+(`Worked for 4m 12s · 3 files read · 2 web searches`) inserted above the first work item and frozen
+on the persisted `duration_s`, a **Sources** block between the answer and `.turnfoot` (fetched pages
+weigh more than search hits; a row is marked *cited* only when its `[wN]` appears in the answer), and
+`[wN]` links resolved by walking the rendered answer's text nodes (unknown ids stay plain text). The
+same pass gives every tool row a human label and an inline SVG icon (`_toolUI`), keyed on the
+**canonical** name (`web.search`, `fs.read`, …) with a raw-name fallback so a new Matrix tool never
+breaks the row. Nothing here is live-DOM only: a reload rebuilds it from `tool_cards` + message meta,
+which is the rule that keeps the chat and the transcript the same object.
 
 ## Data stores (the data home — `~/.longrun/data`, never the checkout)
 

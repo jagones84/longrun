@@ -943,11 +943,63 @@
   .toolcard.pending { opacity: .7; }
   /* 2026-11-01: the tool-card verdict is a PIP, not a colour emoji. The card already
      carries `ok`/`err`, so the class paints the dot — no per-update text write. */
-  .toolcard .tc-ic { width: 8px; height: 8px; border-radius: 50%; background: var(--dim);
-    flex: 0 0 auto; }
-  .toolcard.ok .tc-ic { background: var(--ok); }
-  .toolcard.err .tc-ic { background: var(--err); }
+  .toolcard .tc-ic { width: 14px; height: 14px; border-radius: 0; background: none;
+    display: inline-flex; align-items: center; justify-content: center;
+    color: var(--dim); flex: 0 0 auto; }
+  .toolcard .tc-ic svg { width: 14px; height: 14px; fill: none; stroke: currentColor;
+    stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+  .toolcard.ok .tc-ic { color: var(--ok); }
+  .toolcard.err .tc-ic { color: var(--err); }
   .toolcard.err { border-color: rgba(255,119,119,.5); }
+  /* 2026-11-16: web cards, turn header, sources — the Trae-shaped surface.
+     Everything here renders values the card already persists (`data`), so a
+     reload and the live stream share one look. */
+  .webhits { display: flex; flex-direction: column; gap: 1px; margin-top: 4px; }
+  .webhit { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 8px;
+    padding: 4px 2px; border-radius: 6px; text-decoration: none; color: inherit; }
+  .webhit:hover { background: var(--panel2); }
+  .webhit .fav { width: 16px; height: 16px; border-radius: 4px; display: inline-flex;
+    align-items: center; justify-content: center; font-size: 9px; font-weight: 700;
+    background: var(--panel2); color: var(--dim); overflow: hidden; }
+  .webhit .fav img { width: 16px; height: 16px; display: block; }
+  .webhit .wtitle { color: var(--txt); font-size: 12px; line-height: 1.35; overflow: hidden;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .webhit .whost { color: var(--dim); font-size: 10.5px; display: block; }
+  .webhit .wsnip { color: var(--dim); font-size: 11px; line-height: 1.35; overflow: hidden;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .webhit .wid { color: var(--dim); font-family: ui-monospace, monospace; font-size: 9.5px; }
+  .webmore { background: none; border: 0; color: var(--acc); font-size: 11px;
+    cursor: pointer; padding: 3px 2px; text-align: left; }
+  .turnhead { display: flex; align-items: center; gap: 8px; margin: 2px 0 8px;
+    font-size: 11.5px; color: var(--dim); letter-spacing: .02em; }
+  .turnhead .tdot { width: 7px; height: 7px; border-radius: 50%; background: var(--acc);
+    flex: 0 0 auto; }
+  .turnhead.frozen .tdot { background: var(--ok); }
+  .turnhead .twork { color: var(--txt); font-weight: 600; }
+  .sources { margin: 6px 0 4px; }
+  .sources > summary { cursor: pointer; font-size: 11px; color: var(--acc);
+    letter-spacing: .08em; list-style: none; }
+  .sources > summary::-webkit-details-marker { display: none; }
+  .sources .srcrow { display: flex; gap: 8px; align-items: baseline; padding: 3px 0;
+    font-size: 12px; }
+  .sources .srcrow .sid { color: var(--dim); font-family: ui-monospace, monospace;
+    font-size: 10px; flex: 0 0 auto; }
+  .sources .srcrow.cited .sid { color: var(--acc); }
+  .sources .srcrow a { color: var(--txt); text-decoration: none; overflow-wrap: anywhere; }
+  .sources .srcrow a:hover { text-decoration: underline; }
+  .sources .srcrow .shost { color: var(--dim); font-size: 10.5px; }
+  a.cite { color: var(--acc); text-decoration: none; font-size: 10px;
+    vertical-align: super; padding: 0 1px; }
+  a.cite:hover { text-decoration: underline; }
+  .msg .retry { background: transparent; border: 1px solid var(--line); color: var(--dim);
+    font-size: 10px; border-radius: 6px; padding: 2px 8px; cursor: pointer; }
+  .msg .retry:hover { color: var(--txt); border-color: var(--acc); }
+  /* the vertical activity rail inside a step (screenshot 1) */
+  .tctree .tc-kids > .toolcard, .tctree .tc-kids > .msg { position: relative; }
+  .tctree .tc-kids > .toolcard::before { content: ""; position: absolute; left: -14px;
+    top: 13px; width: 5px; height: 5px; border-radius: 50%; background: var(--line-2); }
+  .tctree .tc-kids > .toolcard.ok::before { background: var(--ok); }
+  .tctree .tc-kids > .toolcard.err::before { background: var(--err); }
   /* JAG-166: in-chat task tree + visible harness→LLM injections */
   .tctree { margin: 4px 0; position: relative; }
   .tctree > summary { cursor: pointer; font-size: 12px; font-weight: 600; list-style: none;
@@ -5403,6 +5455,7 @@ function _openSection(nid) {
   return _activeScope;
 }
 function _logAppend(el, chapter) {
+  _turnHeadPing();   // 2026-11-16: the turn header lands above the first work item
   _openSection(_activeNodeId);
   if (_activeScope) { _activeScope.appendChild(el); return; }
   // JAG-431r3: only USER messages create a new Free.N group. Assistant/system
@@ -5950,7 +6003,7 @@ function _aiLabel() {
     return id ? (id + " · LONGRUN") : "LONGRUN";
   } catch (e) { return "LONGRUN"; }
 }
-function who(role, text, ts, sender, subjob, chapter, senderSession) {
+function who(role, text, ts, sender, subjob, chapter, senderSession, rawText) {
   const d = document.createElement("div");
   d.className = "msg " + (role === "user" ? "user" : "ai") + (sender ? " deleg" : "");
   // v1.6.3 (JAG-55): per-message copy button — the transcript is selectable too,
@@ -5962,6 +6015,18 @@ function who(role, text, ts, sender, subjob, chapter, senderSession) {
                         : (role === "user" ? "YOU" : _aiLabel());
   d.innerHTML = `<div class="who">${esc(_label)}` +
     _tsSpan(ts) + `<button class="copy" title="copy message">⧉</button></div><div class="bubble"></div>`;
+  // 2026-11-16: ↻ re-runs THIS request. It sends the model-facing text (the stored
+  // raw, attachments included) and keeps the clean text as the bubble, so a retry
+  // never dumps the attachment preamble into the chat. Only a REAL request gets
+  // the button: a UI notice ("copy failed") is not re-runnable.
+  if (role === "user" && rawText != null) {
+    const rb = document.createElement("button");
+    rb.type = "button"; rb.className = "retry"; rb.textContent = "\u21bb";
+    rb.title = "re-run this request";
+    rb.onclick = (ev) => { ev.stopPropagation(); _retryTurn(rawText, text); };
+    const _wh = d.querySelector(".who");
+    if (_wh) _wh.insertBefore(rb, _wh.querySelector(".copy"));
+  }
   const b = d.querySelector(".bubble");
   if (role === "user") { b.textContent = text; }
   else { b.dataset.raw = (text == null ? "" : String(text)); renderAnswerBubble(b); }
@@ -5978,22 +6043,307 @@ function who(role, text, ts, sender, subjob, chapter, senderSession) {
   if (role === "user") {
     _activeNodeId = null; _activeScope = null;
     _freeClose(); _freeAppend(d, chapter);
+    // 2026-11-16: a new turn header starts at a real request, not at a UI notice
+    // (`rawText` is only set by the send path and by the history replay).
+    if (rawText != null) _turnStart(d);
     buildDotRail();
   } else { _logAppend(d, chapter); }
   _chatSearchScheduleRefresh();
   scroll(); return d;
 }
+function _retryTurn(raw, display) {
+  const txt = String(raw == null ? "" : raw).trim();
+  if (!txt) return;
+  if (sessionId && runningSessions[sessionId]) {
+    toast("this turn is still running — stop it before retrying", "warn");
+    return;
+  }
+  send(txt, String(display == null ? txt : display));
+}
+/* 2026-11-16: tool labels/icons — the Trae-shaped rows. Keys are the CANONICAL
+   names the dispatcher hands the UI (`web.search`, not `web`), plus the legacy
+   namespace spellings so an old card still renders. An unknown tool falls back
+   to its raw name and a dot, so a new Matrix tool never breaks the row. */
+const TOOL_SVG = {
+  read: '<svg viewBox="0 0 20 20"><path d="M11.5 2.75H5.75a1 1 0 0 0-1 1v12.5a1 1 0 0 0 1 1h8.5a1 1 0 0 0 1-1V6.5z"/><path d="M11.5 2.75V6.5h3.75"/></svg>',
+  edit: '<svg viewBox="0 0 20 20"><path d="M11.5 2.75H5.75a1 1 0 0 0-1 1v12.5a1 1 0 0 0 1 1h8.5a1 1 0 0 0 1-1V6.5z"/><path d="M11.5 2.75V6.5h3.75M9 14.5l4.5-4.5 1.75 1.75-4.5 4.5L8.5 17z"/></svg>',
+  folder: '<svg viewBox="0 0 20 20"><path d="M2.75 5.75h5l1.5 2h7.5v7.5a1 1 0 0 1-1 1h-12a1 1 0 0 1-1-1z"/></svg>',
+  search: '<svg viewBox="0 0 20 20"><circle cx="9" cy="9" r="5.25"/><path d="M12.75 12.75L17 17"/></svg>',
+  globe: '<svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="7"/><path d="M3 10h14M10 3c2.2 2.2 2.2 11.8 0 14M10 3c-2.2 2.2-2.2 11.8 0 14"/></svg>',
+  page: '<svg viewBox="0 0 20 20"><path d="M11.5 2.75H5.75a1 1 0 0 0-1 1v12.5a1 1 0 0 0 1 1h8.5a1 1 0 0 0 1-1V6.5z"/><path d="M11.5 2.75V6.5h3.75M7.5 10.5h5M7.5 13.5h5"/></svg>',
+  term: '<svg viewBox="0 0 20 20"><rect x="2.75" y="3.75" width="14.5" height="12.5" rx="1.5"/><path d="M6 8l2.25 2L6 12M10 12.5h4"/></svg>',
+  branch: '<svg viewBox="0 0 20 20"><circle cx="5.5" cy="4.5" r="1.75"/><circle cx="5.5" cy="15.5" r="1.75"/><circle cx="14.5" cy="7.5" r="1.75"/><path d="M5.5 6.25v7.5M14.5 9.25c0 3-3 2.5-6 4"/></svg>',
+  grid: '<svg viewBox="0 0 20 20"><rect x="3" y="3" width="5.5" height="5.5" rx="1"/><rect x="11.5" y="3" width="5.5" height="5.5" rx="1"/><rect x="3" y="11.5" width="5.5" height="5.5" rx="1"/><rect x="11.5" y="11.5" width="5.5" height="5.5" rx="1"/></svg>',
+  task: '<svg viewBox="0 0 20 20"><path d="M4 10.5l3 3 9-8"/></svg>',
+  dot: '<svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="3.25"/></svg>'
+};
+function _baseName(p) {
+  p = String(p || "").replace(/\\/g, "/");
+  return p.split("/").filter(Boolean).pop() || p;
+}
+function _hostOf(u) {
+  try { return new URL(String(u || "")).hostname.replace(/^www\./, ""); }
+  catch (e) { return String(u || "").replace(/^https?:\/\//, "").split("/")[0].replace(/^www\./, ""); }
+}
+function _argsObj(args) {
+  if (typeof args === "string") { try { return JSON.parse(args) || {}; } catch (e) { return {}; } }
+  return (args && typeof args === "object") ? args : {};
+}
+function _toolUI(tool, args) {
+  const t = String(tool || "tool");
+  const a = _argsObj(args);
+  if (t === "web" || t.startsWith("web.")) {
+    const isOpen = t === "web.fetch" || a.action === "fetch" || a.url || a.urls;
+    if (isOpen) {
+      const u = a.url || (Array.isArray(a.urls) ? a.urls[0] : "");
+      return { icon: TOOL_SVG.page, label: "Opened " + (_hostOf(u) || "page") };
+    }
+    const q = a.query || (Array.isArray(a.queries) ? a.queries[0] : "");
+    const n = Array.isArray(a.queries) ? a.queries.length : 0;
+    return { icon: TOOL_SVG.globe,
+             label: "Searched Web" + (q ? ' "' + q + '"' : "") + (n > 1 ? " (+" + (n - 1) + ")" : "") };
+  }
+  if (t === "fs.read") return { icon: TOOL_SVG.read, label: "Read " + _baseName(a.path) };
+  if (t === "fs.write" || t === "fs.edit") return { icon: TOOL_SVG.edit, label: "Edited " + _baseName(a.path) };
+  if (t === "glob" || t === "glob.list") return { icon: TOOL_SVG.folder, label: "Listed " + (_baseName(a.path || a.pattern) || ".") };
+  if (/^(grep|search)/.test(t)) return { icon: TOOL_SVG.search, label: "Searched files" + (a.query || a.pattern ? ' "' + (a.query || a.pattern) + '"' : "") };
+  if (t === "shell" || t === "shell.exec") return { icon: TOOL_SVG.term, label: "Command executed" };
+  if (t === "dispatch" || t === "subagent") return { icon: TOOL_SVG.branch, label: "Delegated" + (a.agent ? " to " + a.agent : "") };
+  if (t.startsWith("matrix")) return { icon: TOOL_SVG.grid, label: "Matrix · " + t.split(".").pop() };
+  if (t.startsWith("todo.")) return { icon: TOOL_SVG.task, label: t };
+  return { icon: TOOL_SVG.dot, label: t };
+}
+/* --- turn header, tally, sources, citations (2026-11-16) -------------------- */
+let _turnT0 = 0, _turnElapsed = 0, _turnTimer = null, _turnHeadEl = null;
+let _turnCounts = {}, _turnCards = [], _citeIndex = {};
+const _TALLY_LABEL = {
+  read: ["file read", "files read"], edit: ["file edited", "files edited"],
+  list: ["folder listed", "folders listed"], search: ["search", "searches"],
+  cmd: ["command", "commands"], web: ["web search", "web searches"],
+  open: ["page opened", "pages opened"], delegate: ["delegation", "delegations"],
+  other: ["step", "steps"]
+};
+function _toolClass(t) {
+  t = String(t || "");
+  if (t === "fs.read") return "read";
+  if (t === "fs.write" || t === "fs.edit") return "edit";
+  if (t === "glob" || t === "glob.list") return "list";
+  if (/^(grep|search)/.test(t)) return "search";
+  if (t === "shell" || t === "shell.exec") return "cmd";
+  if (t === "web" || t === "web.search") return "web";
+  if (t.startsWith("web.")) return "open";
+  if (t === "dispatch" || t === "subagent") return "delegate";
+  return "other";
+}
+function _turnStart(anchor) {
+  _turnT0 = Date.now(); _turnElapsed = 0; _turnCounts = {}; _turnCards = [];
+  // Citations are resolved per TURN: a turn's cards are rendered before its
+  // answer, and reusing one session-wide index would let an old answer resolve
+  // `[w1]` to a newer hit after a process restart (the tool counter restarts too).
+  _citeIndex = {};
+  _turnHeadEl = null; _turnAnchor = anchor || null;
+  if (_turnTimer) { clearInterval(_turnTimer); _turnTimer = null; }
+}
+let _turnAnchor = null;
+function _turnHeadPing() {
+  if (_turnHeadEl || !_turnT0 || !_turnAnchor) return;
+  const head = document.createElement("div");
+  head.className = "turnhead";
+  head.innerHTML = '<span class="tdot"></span><span class="twork"></span><span class="tally"></span>';
+  if (_turnAnchor.parentNode) _turnAnchor.after(head);
+  else $("log").appendChild(head);
+  _turnHeadEl = head;
+  if (_turnTimer) clearInterval(_turnTimer);
+  _turnTimer = setInterval(_turnPaint, 1000);
+  _turnPaint();
+}
+function _turnTallyText() {
+  return Object.keys(_turnCounts).map(k => {
+    const n = _turnCounts[k], L = _TALLY_LABEL[k] || _TALLY_LABEL.other;
+    return n + " " + (n === 1 ? L[0] : L[1]);
+  }).join(" · ");
+}
+function _turnPaint() {
+  if (!_turnHeadEl) return;
+  const secs = _turnT0 ? ((_turnElapsed || (Date.now() - _turnT0) / 1000)) : _turnElapsed;
+  const tw = _turnHeadEl.querySelector(".twork");
+  if (tw) tw.textContent = "Worked for " + (_turnDurLabel(secs) || "0s");
+  const tl = _turnHeadEl.querySelector(".tally");
+  const txt = _turnTallyText();
+  if (tl) tl.textContent = txt ? "· " + txt : "";
+}
+function _turnBump(tool) {
+  if (!tool) return;
+  const t = String(tool);
+  if (t.startsWith("todo.")) return;   // plan bookkeeping, not work
+  const k = _toolClass(t);
+  _turnCounts[k] = (_turnCounts[k] || 0) + 1;
+  if (_turnHeadEl) _turnPaint();
+}
+function _turnEnd(seconds, fromClock) {
+  if (_turnTimer) { clearInterval(_turnTimer); _turnTimer = null; }
+  const n = Number(seconds);
+  if (isFinite(n) && n > 0) _turnElapsed = n;
+  else if (fromClock !== false && _turnT0) _turnElapsed = (Date.now() - _turnT0) / 1000;
+  // A turn we cannot time AND that ran no counted tool is not a "worked for" —
+  // hide it instead of printing "Worked for 0s" on an old replay.
+  if (_turnHeadEl && !(_turnElapsed > 0) && !_turnTallyText()) {
+    _turnHeadEl.remove(); _turnHeadEl = null;
+  } else {
+    _turnPaint();
+    if (_turnHeadEl) _turnHeadEl.classList.add("frozen");
+  }
+  _turnT0 = 0;
+}
+function _turnAddPayload(payload) {
+  if (!payload || typeof payload !== "object") return;
+  if (_turnCards.indexOf(payload) < 0) _turnCards.push(payload);
+}
+function _fav(host) {
+  const h = String(host || "").replace(/^www\./, "");
+  const ch = (h[0] || "?").toUpperCase();
+  let hue = 7;
+  for (const c of h) hue = (hue * 31 + c.charCodeAt(0)) % 360;
+  const style = "background:hsl(" + hue + ",35%,22%);color:hsl(" + hue + ",70%,78%)";
+  return '<span class="fav" style="' + style + '">' + esc(ch) +
+    (h ? '<img loading="lazy" referrerpolicy="no-referrer" alt="" src="https://icons.duckduckgo.com/ip3/' +
+         encodeURIComponent(h) + '.ico" onerror="this.remove()">' : "") + '</span>';
+}
+function _webBody(card, payload) {
+  const box = card && card.querySelector(".webhits");
+  if (!box || !payload) return;
+  const rows = [];
+  (payload.groups || []).forEach(g => (g.results || []).forEach(r => rows.push(r)));
+  (payload.pages || []).forEach(pg => { if (pg && pg.ok) rows.push(pg); });
+  if (!rows.length) return;
+  box.innerHTML = "";
+  rows.forEach((r, i) => {
+    const host = r.host || _hostOf(r.url);
+    if (r.id) _citeIndex[r.id] = { title: r.title || r.url, url: r.url, host: host };
+    const a = document.createElement("a");
+    a.className = "webhit"; a.href = String(r.url || ""); a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    a.title = String(r.snippet || r.url || "");
+    a.innerHTML = _fav(host) + "<span>" +
+      '<span class="wtitle">' + esc(r.title || r.url || "") + "</span>" +
+      '<span class="whost">' + esc(host) + (r.id ? ' <span class="wid">' + esc(r.id) + "</span>" : "") +
+        (r.via ? " · " + esc(r.via) : "") + "</span>" +
+      (r.snippet ? '<span class="wsnip">' + esc(r.snippet) + "</span>" : "") + "</span>";
+    if (i >= 5) a.hidden = true;
+    box.appendChild(a);
+  });
+  if (rows.length > 5) {
+    const more = document.createElement("button");
+    more.type = "button"; more.className = "webmore";
+    more.textContent = "show all " + rows.length + " results";
+    more.onclick = (e) => {
+      e.stopPropagation();
+      const hid = [...box.querySelectorAll(".webhit")].some(x => x.hidden);
+      box.querySelectorAll(".webhit").forEach(x => { x.hidden = !hid; });
+      more.textContent = hid ? "show fewer" : "show all " + rows.length + " results";
+    };
+    box.appendChild(more);
+  }
+}
+function _sourcesRows(payloads) {
+  const seen = {}, rows = [];
+  (payloads || []).forEach(p => {
+    if (!p) return;
+    (p.pages || []).forEach(pg => {
+      if (!pg || !pg.ok || !pg.url || seen[pg.url]) return;
+      seen[pg.url] = 1;
+      rows.push({ id: "", title: pg.url, url: pg.url,
+                  host: pg.host || _hostOf(pg.url), weight: 2 });
+    });
+    (p.groups || []).forEach(g => (g.results || []).forEach(r => {
+      if (!r || !r.url || seen[r.url]) return;
+      seen[r.url] = 1;
+      rows.push({ id: r.id || "", title: r.title || r.url, url: r.url,
+                  host: r.host || _hostOf(r.url), weight: 1 });
+    }));
+  });
+  return rows;
+}
+function _sourcesEl(rows, answerText) {
+  if (!rows || !rows.length) return null;
+  const cited = {};
+  String(answerText || "").replace(/\[(w\d+)\]/g, (_, id) => { cited[id] = 1; return ""; });
+  rows.forEach(r => { r.cited = !!(r.id && cited[r.id]); });
+  rows.sort((a, b) => (b.cited - a.cited) || (b.weight - a.weight));
+  const det = document.createElement("details");
+  det.className = "sources";
+  det.innerHTML = "<summary>Sources · " + rows.length + "</summary><div class=\"srclist\"></div>";
+  const list = det.querySelector(".srclist");
+  rows.slice(0, 8).forEach(r => {
+    const row = document.createElement("div");
+    row.className = "srcrow" + (r.cited ? " cited" : "");
+    row.innerHTML = '<span class="sid">' + esc(r.id || "\u00b7") + "</span>" +
+      '<a href="' + esc(r.url) + '" target="_blank" rel="noopener noreferrer">' +
+      esc(r.title || r.url) + "</a>" +
+      '<span class="shost">' + esc(r.host || "") + "</span>";
+    list.appendChild(row);
+  });
+  if (rows.length > 8) {
+    const m = document.createElement("div");
+    m.className = "webmore"; m.textContent = "+" + (rows.length - 8) + " more";
+    list.appendChild(m);
+  }
+  return det;
+}
+function _attachSources(msgEl, answerText) {
+  if (!msgEl || msgEl.querySelector(":scope > .sources")) return;
+  // Only the turn this tab actually watched owns `_turnCards`; a feed echo of a
+  // turn streamed elsewhere must not borrow the previous turn's hits (its own
+  // reload rebuilds the block from the persisted cards).
+  if (!_turnT0 && !_turnHeadEl) return;
+  const el = _sourcesEl(_sourcesRows(_turnCards), answerText);
+  if (!el) return;
+  const foot = msgEl.querySelector(":scope > .turnfoot");
+  if (foot) msgEl.insertBefore(el, foot); else msgEl.appendChild(el);
+}
+function _resolveCitations(root) {
+  if (!root || !Object.keys(_citeIndex).length) return;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(n) {
+      const p = n.parentElement;
+      if (p && p.closest("a, pre, code")) return NodeFilter.FILTER_REJECT;
+      return /\[w\d+\]/.test(n.nodeValue) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+    }
+  });
+  const nodes = []; let n;
+  while ((n = walker.nextNode())) nodes.push(n);
+  nodes.forEach(node => {
+    const txt = node.nodeValue, frag = document.createDocumentFragment();
+    const re = /\[(w\d+)\]/g; let m, last = 0;
+    while ((m = re.exec(txt))) {
+      const hit = _citeIndex[m[1]];
+      if (!hit) continue;
+      frag.appendChild(document.createTextNode(txt.slice(last, m.index)));
+      const a = document.createElement("a");
+      a.className = "cite"; a.href = hit.url; a.target = "_blank";
+      a.rel = "noopener noreferrer"; a.textContent = m[1];
+      a.title = hit.title || hit.url;
+      frag.appendChild(a);
+      last = m.index + m[0].length;
+    }
+    if (!last) return;
+    frag.appendChild(document.createTextNode(txt.slice(last)));
+    node.parentNode.replaceChild(frag, node);
+  });
+}
 /* v1.6.3 (JAG-55): inline tool-call mini-card, coherent with the run graph nodes */
 /* v0.8: expandable card (head + args/output body) */
 function toolCard(tool, args, ts) {
   const name = tool || "tool";
+  const ui = _toolUI(name, args);
+  _turnBump(name);
   const id = "tc" + Math.random().toString(36).slice(2, 8);
   const wrap = document.createElement("div");
   wrap.innerHTML = `<div class="toolcard" data-tool="${esc(name)}">` +
     `<div class="toolcard-head"><button type="button" class="tc-toggle" aria-expanded="false" aria-controls="${id}">` +
-    `<span class="tc-ic" aria-hidden="true"></span>` +
-    `<span class="tc-name">${esc(name)}</span>${_tsSpan(ts)}<span class="tc-meta">running…</span><span class="tc-chev" aria-hidden="true">▾</span></button></div>` +
-    `<div class="toolcard-body" id="${id}"><pre class="tc-args"></pre><pre class="tc-out"></pre></div></div>`;
+    `<span class="tc-ic" aria-hidden="true">${ui.icon}</span>` +
+    `<span class="tc-name">${esc(ui.label)}</span>${_tsSpan(ts)}<span class="tc-meta">running…</span><span class="tc-chev" aria-hidden="true">▾</span></button></div>` +
+    `<div class="toolcard-body" id="${id}"><div class="webhits"></div><pre class="tc-args"></pre><pre class="tc-out"></pre></div></div>`;
   const d = wrap.firstElementChild;
   // JAG-425 (#1): the header toggles the card — make it a real keyboard-accessible
   // disclosure (Enter/Space) instead of a click-only <div>.
@@ -6033,6 +6383,15 @@ function updateToolCard(data) {
   const card = cards.reverse().find(c => c.dataset.tool === tool) || toolCard(tool);
   card.classList.remove("pending");
   card.classList.add(data.ok ? "ok" : "err");
+  // 2026-11-16: the label follows the ARGS (a live `tool.call` may not have
+  // carried them), and a web card renders its structured hits.
+  const _ui = _toolUI(tool, data.args);
+  const _nm = card.querySelector(".tc-name"); if (_nm) _nm.textContent = _ui.label;
+  const _ic = card.querySelector(".tc-ic"); if (_ic) _ic.innerHTML = _ui.icon;
+  if (data.data && typeof data.data === "object") {
+    _webBody(card, data.data);
+    _turnAddPayload(data.data);
+  }
   // 2026-11-01: no text write — `ok`/`err` above already paints the .tc-ic pip.
   // JAG-465: a `dispatch` card remembers the TEAMMATE's session — one click opens
   // their chat at the delegated message (the other half of the cross-chat link).
@@ -6071,15 +6430,39 @@ function updateToolCard(data) {
     card.querySelector(".toolcard-head").appendChild(_o);
   }
   const isMtx = data.origin === "matrix" || data.backend === "matrix" || tool === "matrix" || String(tool).startsWith("matrix.");
-  const meta = [(isMtx ? "[MATRIX]" : ""), (data.exit_code != null ? "exit " + data.exit_code : ""), (data.backend || ""),
-                (data.summary || "")].filter(Boolean).join(" · ");
+  let meta;
+  if (data.data && typeof data.data === "object" && (tool === "web" || String(tool).startsWith("web."))) {
+    const _d = data.data;
+    const _okPages = (_d.pages || []).filter(p => p && p.ok).length;
+    const _n = (_d.action === "fetch")
+      ? (_okPages + " page" + (_okPages === 1 ? "" : "s"))
+      : (((_d.groups || []).reduce((a, g) => a + ((g && g.results) || []).length, 0)) + " results");
+    meta = [_n, _d.engine || "", (_d.duration_ms != null ? Math.round(_d.duration_ms) + "ms" : ""),
+            (_d.partial ? "partial" : "")].filter(Boolean).join(" · ");
+  } else {
+    meta = [(isMtx ? "[MATRIX]" : ""), (data.exit_code != null ? "exit " + data.exit_code : ""), (data.backend || ""),
+            (data.summary || "")].filter(Boolean).join(" · ");
+  }
   card.querySelector(".tc-meta").textContent = meta;
   const argsEl = card.querySelector(".tc-args");
   if (argsEl && data.args) argsEl.textContent = "input: " + (typeof data.args === "string" ? data.args : JSON.stringify(data.args));
   const outEl = card.querySelector(".tc-out");
   const body = data.output || data.stdout || data.result || "";
-  if (outEl) outEl.textContent = body ? ("output: " + String(body)) : "";
+  const _hasWeb = !!card.querySelector(".webhits .webhit");
+  if (outEl) {
+    // A web card already shows the hits as rows; the raw text stays available
+    // behind the ✕/args toggle but must not duplicate the list.
+    outEl.hidden = _hasWeb;
+    outEl.textContent = (body && !_hasWeb) ? ("output: " + String(body)) : "";
+  }
+  // A failed web call is exactly the card the operator must SEE, so it opens.
+  if (_hasWeb && data.ok === false) {
+    card.classList.add("expanded");
+    const _tg = card.querySelector(".tc-toggle");
+    if (_tg) _tg.setAttribute("aria-expanded", "true");
+  }
   scroll();
+  card.classList.add("tc-rendered");
 }
 /* JAG-1: a running tool streams its output into its own card as it arrives.
    The collapsed header shows the LAST line (so activity and content are visible
@@ -6464,7 +6847,7 @@ function _applyFinalReply(d) {
   const t = String(d.text || "");
   if (!t.trim()) return;
   // 2026-11-15: the frame also carries the turn summary — pin it to the answer.
-  const _foot = el => _turnFoot(el, d);
+  const _foot = el => { _attachSources(el, t); _turnFoot(el, d); _turnEnd(d.duration_s); };
   if (curAns) {
     const b = curAns.querySelector(".bubble");
     if (b) { b.dataset.raw = t; renderAnswerBubble(b); _foot(curAns); return; }
@@ -6475,7 +6858,7 @@ function _applyFinalReply(d) {
   if (last && String(last.dataset.raw || "").trim() === t.trim()) return;
   _foot(who("ai", t, d.ts || null));
 }
-function _resetChatTree() { _chatNodes = {}; _chatSections = {}; _activeScope = null; _activeNodeId = null; _sysInjectEl = null; _freeGroup = null; _freeN = 0; _nowLast = ""; _updateNowBar(); buildDotRail(); }
+function _resetChatTree() { _chatNodes = {}; _chatSections = {}; _activeScope = null; _activeNodeId = null; _sysInjectEl = null; _freeGroup = null; _freeN = 0; _nowLast = ""; _turnHeadEl = null; _turnT0 = 0; _turnElapsed = 0; _turnCounts = {}; _turnCards = []; _citeIndex = {}; if (_turnTimer) { clearInterval(_turnTimer); _turnTimer = null; } _updateNowBar(); buildDotRail(); }
 function _nodeDepth(id, d) {
   // JAG-170: depth from the GRAPH hierarchy, independent of draw order, so the
   // indentation stays aligned even when the parent has not been rendered yet.
@@ -7741,7 +8124,10 @@ function send(text, display, atts) {
   // 2026-11-11: this bubble must survive a transcript repaint whose snapshot was
   // taken before the server appended the message (see `_pendingUser`).
   _pendingUserAdd(sessionId, (_splitAttBlock(msg).rest || "").trim());
-  const _uNode = who("user", (mode ? "🎯 /goal " : "") + _disp + _attNote);
+  // 2026-11-16: the 8th arg is the MODEL-FACING text — the ↻ retry re-sends it
+  // verbatim (attachments included) while the bubble keeps the clean display.
+  const _uNode = who("user", (mode ? "🎯 /goal " : "") + _disp + _attNote, null, null, null, null, null,
+                     (mode ? "/goal " : "") + msg);
   if (_attSnap.length) {
     const _bub = _uNode && _uNode.querySelector(".bubble");
     if (_bub) { _bub.insertAdjacentHTML("beforeend", _attachmentChips(_attSnap)); _bindAttachmentChips(_bub); }
@@ -9167,14 +9553,14 @@ async function loadHistory() {
         // own words vanished from the chat. It is now a normal user message and
         // is labelled so it is clear it was delivered INTO the running turn.
         const _txt = m.steer ? "🎯 steer: " + _sp.rest : _sp.rest;
-        const _un = who("user", _txt, m.ts, m.sender, m.subjob, m.chapter, m.sender_session);
+        const _un = who("user", _txt, m.ts, m.sender, m.subjob, m.chapter, m.sender_session, m.content);
         if (_sp.atts.length) {
           const _ub = _un && _un.querySelector(".bubble");
           if (_ub) { _ub.insertAdjacentHTML("beforeend", _attachmentChips(_sp.atts)); _bindAttachmentChips(_ub); }
         }
         return;
       }
-      if (m.role === "user") { who("user", m.content, m.ts, m.sender, m.subjob, m.chapter, m.sender_session); return; }
+      if (m.role === "user") { who("user", m.content, m.ts, m.sender, m.subjob, m.chapter, m.sender_session, m.content); return; }
       // v1.6.3 (JAG-55): some models inline their chain-of-thought in `content` as a
       // trailing "think: …" tail. The reply must stay the primary text.
       _activeNodeId = _nid(m.node); _activeScope = null;
@@ -9189,6 +9575,11 @@ async function loadHistory() {
                   question: m.question || "", options: m.options || []});
       } else {
         d = who("ai", reply, m.ts, null, null, m.chapter);
+        // 2026-11-16: the Sources block sits between the answer and the turn
+        // summary, and the header freezes on the PERSISTED duration so a reload
+        // shows the same number the live turn showed.
+        _attachSources(d, m.content);
+        _turnEnd(m.duration_s, false);
         // 2026-11-15: the persisted turn summary (same shape chat.final paints live)
         _turnFoot(d, m);
       }
@@ -9227,7 +9618,7 @@ async function loadHistory() {
       toolCard(v.tool, undefined, v.ts);
       updateToolCard({ tool: v.tool, ok: v.ok, exit_code: v.exit_code,
                        backend: v.backend, result: v.result, error: v.error,
-                       args: v.args, summary: v.error ? "error" : "" });
+                       args: v.args, data: v.data, summary: v.error ? "error" : "" });
     } else {
       harnessInject({ inject_kind: v.kind || "inject", text: v.text, ts: v.ts });
     }
@@ -13560,6 +13951,7 @@ function connectFeed() {
   });
   es.addEventListener("chat.done", e => {
     let d = {}; try { d = JSON.parse(e.data) || {}; } catch (_) {}
+    if (d.session && d.session === sessionId) _turnEnd(d.duration_s);
     setRunning(d.session, false);   // JAG-323: any session's turn ended -> clear its busy marker
     // G-1: a goal turn may have completed (the plan decides) — re-read the bar.
     if (d.session && d.session === sessionId) loadGoal();
@@ -14887,7 +15279,8 @@ async function testMcpClient(name, spec) {
     const r = await api("POST", "/api/mcp/clients/test", Object.assign({ name: name }, spec || {}));
     if (r && r.ok) {
       const names = r.tools || [];
-      box.textContent = "✓ " + name + " — " + (r.count || 0) + " tool(s)"
+      box.textContent = "✓ " + name + " — " + (r.count || 0) + " tool(s), connection only "
+        + "(tools not executed)"
         + (names.length ? ": " + names.slice(0, 8).join(", ") + (names.length > 8 ? " …" : "") : "");
     } else {
       box.textContent = "✗ " + name + " — " + ((r && r.error) || "test failed");
@@ -20246,6 +20639,7 @@ function renderAnswerBubble(b) {
   b.innerHTML = mdToHtml(b.dataset.raw || "");
   decorateHtmlPreviews(b);
   linkifyNodes(b);
+  _resolveCitations(b);   // 2026-11-16: [wN] markers become links to the hit
   b.querySelectorAll('a[href^="http"]').forEach(a => { a.target = "_blank"; a.rel = "noopener noreferrer"; });
   if (cursorEl && curAns && b === curAns.querySelector(".bubble")) b.appendChild(cursorEl);
 }

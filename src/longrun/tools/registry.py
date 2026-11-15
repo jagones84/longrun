@@ -663,20 +663,43 @@ _LEGACY_SCHEMAS = {
     },
     "web": {
         "description": ("Public-internet access (JAG-83). action=search runs a web "
-                        "search and returns titles/urls/snippets (Tavily or Brave "
-                        "when a key is configured, else keyless DuckDuckGo); "
-                        "action=fetch downloads a URL and returns readable text "
-                        "(via r.jina.ai, else direct HTML->text). Read-only: use it "
-                        "for news, docs and facts, then cite the URLs you used."),
+                        "search and returns hits with stable [wN] ids (Tavily or "
+                        "Brave when a key is configured, else keyless DuckDuckGo, "
+                        "then Bing). Pass `queries` (2–4) to run several queries in "
+                        "parallel in ONE call for a broad question; optional `days`, "
+                        "`include_domains`, `exclude_domains`, "
+                        "`search_depth=advanced` (Tavily). action=fetch downloads a "
+                        "URL (or `urls`, up to 5, in one call) and returns readable "
+                        "text via r.jina.ai, else direct HTML->text. Read-only: cite "
+                        "the [wN] ids you actually used."),
         "type": "object",
         "properties": {
             "action": {"type": "string", "enum": ["search", "fetch"], "default": "search"},
             "query": {"type": "string", "description": "search query (action=search)"},
+            "queries": {"type": "array", "items": {"type": "string"},
+                        "description": ("2–4 search queries run in ONE call, in parallel "
+                                        "(action=search)")},
             "url": {"type": "string", "description": "page URL (action=fetch)"},
+            "urls": {"type": "array", "items": {"type": "string"},
+                     "description": ("up to 5 page URLs fetched in ONE call "
+                                     "(action=fetch)")},
             "max_results": {"type": "integer", "default": 5,
-                            "description": "number of hits to return (action=search, default 5)"},
-            "max_bytes": {"type": "integer", "default": 8192,
-                          "description": "cap on returned page text (action=fetch, default 8192)"},
+                            "description": "hits per query (action=search, 1–10, default 5)"},
+            "max_total": {"type": "integer", "default": 15,
+                          "description": ("cap on merged hits across queries "
+                                          "(action=search, 1–30, default 15)")},
+            "days": {"type": "integer",
+                     "description": "only results from the last N days (action=search)"},
+            "include_domains": {"type": "array", "items": {"type": "string"},
+                                "description": "restrict to these domains (action=search)"},
+            "exclude_domains": {"type": "array", "items": {"type": "string"},
+                                "description": "drop these domains (action=search)"},
+            "search_depth": {"type": "string", "enum": ["basic", "advanced"],
+                             "description": ("Tavily depth; advanced is slower and "
+                                             "costs more (action=search)")},
+            "max_bytes": {"type": "integer", "default": 16384,
+                          "description": ("cap on returned page text, per URL "
+                                          "(action=fetch, default 16384)")},
         },
         "required": [],
         "subject": "query",
@@ -929,7 +952,9 @@ _SUBTOOL_FIELDS = {
         "scan": ["limit", "model", "agent"],
     },
     "web": {
-        "search": ["query", "max_results"], "fetch": ["url", "max_bytes"],
+        "search": ["query", "queries", "max_results", "max_total", "days",
+                   "include_domains", "exclude_domains", "search_depth"],
+        "fetch": ["url", "urls", "max_bytes"],
     },
     "diff": {
         "files": ["a", "b", "context"],
@@ -985,7 +1010,7 @@ _SUBTOOL_REQUIRED = {
     # C3: scan does not read `scope`; inheriting improve's namespace requirement
     # advertised a meaningless argument.
     "improve.scan": [],
-    "web.search": ["query"], "web.fetch": ["url"],
+    "web.search": [], "web.fetch": [],
     "diff.files": ["a", "b"], "diff.text": ["text_a", "text_b"],
     "process.kill": ["pid"],
     "matrix.checkpoint_save": ["slot"],
@@ -1014,6 +1039,11 @@ _SUBTOOL_ANY_OF = {
         {"required": ["session", "message"]}, {"required": ["session", "text"]},
         {"required": ["to", "message"]}, {"required": ["to", "text"]},
     ],
+    # 2026-11-16: `query` and `queries` (and `url`/`urls`) are alternatives, not
+    # both required — the canonical schema used to demand `query`, so a batched
+    # search was refused before the handler ever saw it.
+    "web.search": [{"required": ["query"]}, {"required": ["queries"]}],
+    "web.fetch": [{"required": ["url"]}, {"required": ["urls"]}],
 }
 
 _SUBTOOL_GUIDANCE = {
@@ -1258,8 +1288,13 @@ _SUBTOOL_GUIDANCE = {
     "memory.health": "Report live versus stored memory counts, per-kind budgets and unaddressable records. No arguments.",
     "memory.hygiene": "Enforce the per-kind record budget; dry run unless `confirm=true`; optional `kind` limits it to one store.",
     "improve.scan": "Scan your own sessions and PROPOSE routines from what repeats (created disabled); optional `limit`, `model`, `agent`.",
-    "web.search": "Search the public internet; `query` required, optional `max_results`; returns titles, urls and snippets.",
-    "web.fetch": "Fetch one public URL and return readable text; `url` required, optional `max_bytes`.",
+    "web.search": ("Search the public internet with `query`, or 2–4 `queries` run "
+                   "in parallel in ONE call; optional `max_results` (per query), "
+                   "`max_total`, `days`, `include_domains`/`exclude_domains`, "
+                   "`search_depth=advanced`. Returns hits with stable [wN] ids — "
+                   "cite the ids you used."),
+    "web.fetch": ("Fetch `url`, or up to 5 `urls` in ONE call, and return readable "
+                  "text; optional `max_bytes` (default 16384)."),
     "diff.files": "Compare two files and return a unified diff; `a` and `b` are paths, optional `context` lines.",
     "diff.text": "Compare two strings and return a unified diff; `text_a` and `text_b` are required, optional `context` lines.",
     "process.list": "List running processes with pid, RSS and cmdline; optional `match` substring and `limit`.",
@@ -1317,8 +1352,10 @@ def _build_canonical_schemas():
                     "description": "exact proposal scope (singular)",
                 }
             action_required = _SUBTOOL_REQUIRED.get(cname, sub_req)
-            if k == "web":
-                action_required = {"search": ["query"], "fetch": ["url"]}.get(act, sub_req)
+            # 2026-11-16: `web` no longer forces `query`/`url` here — its
+            # alternatives live in `_SUBTOOL_ANY_OF` (`query` OR `queries`,
+            # `url` OR `urls`), and a hard `required` next to `anyOf` made the
+            # batched form impossible.
             guidance = _SUBTOOL_GUIDANCE.get(cname)
             if guidance is None:
                 # R2: the old fallback appended "This tool performs only

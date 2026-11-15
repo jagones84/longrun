@@ -177,9 +177,9 @@ check("diff.text returns the changed lines",
 
 # Local, deterministic search substitute; no internet request is made.
 old_search = T._web_search
-T._web_search = lambda query, count: (
+T._web_search = lambda query, count, providers=None, opts=None: (
     [{"title": "stub result", "url": "https://example.invalid/",
-      "snippet": "local test"}], "test")
+      "snippet": "local test"}], "test", [])
 try:
     web = run("web.search", {"query": "smoke test"})
 finally:

@@ -67,7 +67,10 @@ check("A5 the old Ctrl-only send rule is gone",
       '(e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); }'
       not in UI)
 check("A6 the slash picker takes Enter with or without Ctrl, but not Shift",
-      'if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); const it = _slashItems[_slashHi]; if (it) it.pick(); return; }'
+      # v1051 re-pin: the picker now renders grouped sections and MUTED rows
+      # ("other members" of a plugin) that carry no action, so Enter must ask for
+      # a pickable row instead of calling a null pick.
+      'if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); const it = _slashItems[_slashHi]; if (it && it.pick) it.pick(); return; }'
       in UI)
 check("A7 no tooltip still promises `Ctrl+Enter` (the UI would lie)",
       "send (Ctrl+Enter)" not in UI and "Ctrl+⏎" not in UI

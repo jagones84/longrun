@@ -45,6 +45,7 @@ sys.path.insert(0, os.path.join(REPO, "src"))
 
 from longrun.core import api_v02, server  # noqa: E402
 from longrun.model import routing  # noqa: E402
+from longrun.tools import registry  # noqa: E402
 from longrun.util.steering import clear_abort, push_abort  # noqa: E402
 
 results = []
@@ -80,8 +81,14 @@ def stub_stream(messages, alias, on_delta, timeout=None, usage=None, guard=None,
 
 _orig_stream = server._router_stream
 _orig_order = routing.order_candidates
+_orig_ext = registry._external_tools
 server._router_stream = stub_stream
 routing.order_candidates = lambda c: list(c)
+# A3 measures the RUN, not the machine: a configured MCP server makes the tool
+# catalogue do real network I/O (seconds) before the generation even starts, so
+# the pin would flip with the operator's installed servers. Discovery is not the
+# subject of this test — isolate it (the battery is network-free by contract).
+registry._external_tools = lambda: {}
 try:
     t0 = time.time()
     out = api_v02.agent_run_v2("stop me", max_steps=3, model="m1",
@@ -91,6 +98,7 @@ try:
 finally:
     server._router_stream = _orig_stream
     routing.order_candidates = _orig_order
+    registry._external_tools = _orig_ext
 
 check("A1 the run's generation receives a cancel predicate",
       len(CALLS) >= 2 and CALLS[1] is not None, CALLS)

@@ -86,28 +86,31 @@ try:
     _BEHAVIOUR["tavily"] = Exception("boom")
     _BEHAVIOUR["brave"] = {"web": {"results": [
         {"title": "B", "url": "https://b.example", "description": "snip"}]}}
-    res, eng = T._web_search("q", 5)
+    res, eng, notes = T._web_search("q", 5)
     check("T2 a dead provider falls through to the next one",
           eng == "brave" and res and res[0]["url"] == "https://b.example",
           "%s %s" % (eng, res))
+    check("T2b the dead provider is NAMED with its reason",
+          ("tavily", "boom") in notes, notes)
 
     _BEHAVIOUR.clear(); _calls.clear()
     _BEHAVIOUR["tavily"] = {"results": [
         {"title": "T", "url": "https://t.example", "content": "snip"}]}
     _BEHAVIOUR["brave"] = {"web": {"results": [
         {"title": "B", "url": "https://b.example", "description": "snip"}]}}
-    res, eng = T._web_search("q", 5, providers=["brave", "tavily"])
+    res, eng, _notes = T._web_search("q", 5, providers=["brave", "tavily"])
     check("T3 a configured order wins over the default",
           eng == "brave" and _calls and "brave" in _calls[0], _calls[:2])
 
-    res, eng = T._web_search("q", 5, providers=["nope", "tavily"])
+    res, eng, _notes = T._web_search("q", 5, providers=["nope", "tavily"])
     check("T4 unknown provider names are ignored",
           eng == "tavily" and res and res[0]["url"] == "https://t.example",
           "%s %s" % (eng, res))
 
-    res, eng = T._web_search("   ", 5)
+    res, eng, notes = T._web_search("   ", 5)
     check("T5 no regression (empty query short-circuits)",
-          res is None and eng == "empty query", "%r %r" % (res, eng))
+          res is None and eng == "empty query" and notes == [("query", "empty")],
+          "%r %r" % (res, eng))
 finally:
     urllib.request.urlopen = _real_urlopen
     T._secret = _real_secret

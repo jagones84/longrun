@@ -20,6 +20,8 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from typing import Any
 
 from longrun.util import osutil
@@ -1107,7 +1109,7 @@ def _secret(name):
 
 
 def _strip_html(s):
-    s = re.sub(r"(?is)<(script|style|noscript)[^>]*>.*?</\1>", " ", s or "")
+    s = re.sub(r"(?is)<(script|style|noscript|nav|header|footer|aside|form)[^>]*>.*?</\1>", " ", s or "")
     s = re.sub(r"(?s)<[^>]+>", " ", s)
     for a, b in (("&nbsp;", " "), ("&amp;", "&"), ("&quot;", '"'),
                  ("&#x27;", "'"), ("&#39;", "'"), ("&lt;", "<"), ("&gt;", ">")):
@@ -1155,13 +1157,98 @@ def _public_host(url):
     return True, host
 
 
-def _search_tavily(query, n):
-    """Tavily provider: keyed API search, None when no key or no hits."""
+# --- web: stable hit ids, URL identity, per-query options --------------------
+
+_WEB_IDS = {}
+_WEB_IDS_LOCK = threading.Lock()
+
+
+def _web_ids(run_id, count):
+    """Hand out the next `count` citation ids for this run ([w1]…[wN]).
+
+    Ids are monotonic per `run_id` (= the session id the chat loop passes), not
+    per call: `_web` has no turn context, and a per-call `w1…wN` would make two
+    search calls in ONE turn hand out two different `w1` — a citation the UI
+    could not resolve. The counter therefore never resets; a `sessions.reset`
+    keeps the numbering going instead of colliding with fresh ids.
+    """
+    key = str(run_id or "shared")
+    count = max(0, int(count or 0))
+    with _WEB_IDS_LOCK:
+        start = int(_WEB_IDS.get(key) or 1)
+        _WEB_IDS[key] = start + count
+    return ["w%d" % (start + i) for i in range(count)]
+
+
+def _web_host(url):
+    try:
+        return (urllib.parse.urlsplit(str(url or "")).hostname or "").lower()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _web_norm_url(url):
+    """Identity of a hit for de-duplication: host + path (query/fragment dropped)."""
+    try:
+        p = urllib.parse.urlsplit(str(url or ""))
+        return ((p.hostname or "").lower() + ((p.path or "/").rstrip("/") or "/"))
+    except Exception:  # noqa: BLE001
+        return str(url or "")
+
+
+def _web_opts(args):
+    """Normalise the per-query options once, so every provider maps the same dict."""
+    def _int(key):
+        try:
+            return max(1, int(args.get(key)))
+        except (TypeError, ValueError):
+            return None
+
+    def _domains(key):
+        raw = args.get(key) or []
+        if isinstance(raw, str):
+            raw = [raw]
+        return [str(d).strip() for d in raw if str(d).strip()][:10]
+
+    depth = str(args.get("search_depth") or "").strip().lower()
+    return {"days": _int("days"),
+            "include_domains": _domains("include_domains"),
+            "exclude_domains": _domains("exclude_domains"),
+            "search_depth": depth if depth in ("basic", "advanced") else ""}
+
+
+def _web_domain_ops(query, opts):
+    """Include/exclude domains for the engines that only understand operators."""
+    inc = (opts or {}).get("include_domains") or []
+    exc = (opts or {}).get("exclude_domains") or []
+    if inc:
+        query += " (" + " OR ".join("site:%s" % d for d in inc) + ")"
+    for d in exc:
+        query += " -site:%s" % d
+    return query
+
+
+def _search_tavily(query, n, opts=None):
+    """Tavily provider: keyed API search. Raises when the key is absent.
+
+    Raising (instead of returning None) is what lets `_web_search` name the
+    reason a provider produced nothing — `None` used to mean both "no key" and
+    "no hits", so a dead key was indistinguishable from an empty result set.
+    """
     tav = _secret("TAVILY_API_KEY")
     if not tav:
-        return None
-    payload = json.dumps({"api_key": tav, "query": query,
-                          "max_results": n}).encode("utf-8")
+        raise RuntimeError("missing TAVILY_API_KEY")
+    opts = opts or {}
+    body = {"api_key": tav, "query": query, "max_results": n}
+    if opts.get("days"):
+        body["days"] = opts["days"]
+    if opts.get("search_depth"):
+        body["search_depth"] = opts["search_depth"]
+    if opts.get("include_domains"):
+        body["include_domains"] = opts["include_domains"]
+    if opts.get("exclude_domains"):
+        body["exclude_domains"] = opts["exclude_domains"]
+    payload = json.dumps(body).encode("utf-8")
     req = urllib.request.Request("https://api.tavily.com/search", data=payload,
                                  headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=25) as r:
@@ -1172,13 +1259,20 @@ def _search_tavily(query, n):
     return res or None
 
 
-def _search_brave(query, n):
-    """Brave provider: keyed API search, None when no key or no hits."""
+def _search_brave(query, n, opts=None):
+    """Brave provider: keyed API search. Raises when the key is absent."""
     brave = _secret("BRAVE_API_KEY")
     if not brave:
-        return None
+        raise RuntimeError("missing BRAVE_API_KEY")
+    opts = opts or {}
     u = ("https://api.search.brave.com/res/v1/web/search?q="
-         + urllib.parse.quote(query) + "&count=%d" % n)
+         + urllib.parse.quote(_web_domain_ops(query, opts)) + "&count=%d" % n)
+    days = opts.get("days")
+    if days:
+        # Brave only understands coarse buckets, so the exact day count degrades
+        # to the smallest bucket that still contains it.
+        u += "&freshness=" + ("pd" if days <= 1 else
+                              ("pw" if days <= 7 else ("pm" if days <= 31 else "py")))
     req = urllib.request.Request(u, headers={"Accept": "application/json",
                                              "X-Subscription-Token": brave})
     with urllib.request.urlopen(req, timeout=25) as r:
@@ -1189,9 +1283,10 @@ def _search_brave(query, n):
     return res or None
 
 
-def _search_duckduckgo(query, n):
+def _search_duckduckgo(query, n, opts=None):
     """DuckDuckGo provider: keyless HTML scrape, the last-resort fallback."""
-    u = "https://html.duckduckgo.com/html/?q=" + urllib.parse.quote(query)
+    u = ("https://html.duckduckgo.com/html/?q="
+         + urllib.parse.quote(_web_domain_ops(query, opts)))
     req = urllib.request.Request(u, headers={"User-Agent": _WEB_UA,
                                              "Accept-Language": "it,en;q=0.8"})
     with urllib.request.urlopen(req, timeout=25) as r:
@@ -1229,7 +1324,7 @@ def _parse_bing_rss(xml, n):
     return res
 
 
-def _search_bing(query, n):
+def _search_bing(query, n, opts=None):
     """Bing RSS: the keyless resort that still answers.
 
     Measured 2026-11-01 from the DGX: BOTH DuckDuckGo endpoints answer every query
@@ -1240,24 +1335,28 @@ def _search_bing(query, n):
     page hands back `ck/a` redirect wrappers that `web.fetch` cannot follow.
     """
     u = ("https://www.bing.com/search?q=%s&format=rss&count=%d"
-         % (urllib.parse.quote_plus(query), max(1, n)))
+         % (urllib.parse.quote_plus(_web_domain_ops(query, opts or {})), max(1, n)))
     req = urllib.request.Request(u, headers={"User-Agent": _WEB_UA})
     with urllib.request.urlopen(req, timeout=25) as r:
         xml = r.read(400000).decode("utf-8", "replace")
     return _parse_bing_rss(xml, n) or None
 
 
-def _web_search(query, n, providers=None):
+def _web_search(query, n, providers=None, opts=None):
     """One tool, explicit ordered fall-through chain (v605).
 
     Tavily/Brave when a key is present, then the keyless engines. `providers`
     overrides the configured order (researchcfg.search_providers); unknown names are
     ignored, a dead provider never kills the search, and Bing stays the LAST resort
     so a keyless install still has one engine that answers (2026-11-01).
+
+    2026-11-16: returns `(results, engine, notes)`. `notes` names every engine
+    that produced nothing and WHY — a missing key, a timeout, a bot page, or a
+    genuinely empty result set — so the failure the model sees is diagnosable.
     """
     n = max(1, min(int(n or 5), 10))
-    if not query.strip():
-        return None, "empty query"
+    if not str(query or "").strip():
+        return None, "empty query", [("query", "empty")]
     if providers is None:
         try:
             from longrun.research import researchcfg as _rc
@@ -1275,17 +1374,96 @@ def _web_search(query, n, providers=None):
     if "bing" not in order:
         # Not a configured provider: the last resort, never a preference.
         order.append("bing")
-    last_engine = "no results"
+    last_engine, notes = "no results", []
     for name in order:
         fn, engine = fns[name]
         try:
-            res = fn(query, n)
-        except Exception:  # noqa: BLE001 — a dead provider falls through
+            res = fn(query, n, opts)
+        except Exception as e:  # noqa: BLE001 — a dead provider falls through
+            notes.append((engine, str(e)[:120] or e.__class__.__name__))
+            last_engine = engine
             continue
         if res:
-            return res, engine
+            return res, engine, notes
+        notes.append((engine, "0 hits"))
         last_engine = engine
-    return [], last_engine
+    return [], last_engine, notes
+
+
+def _web_search_many(queries, n, max_total, opts, providers=None):
+    """Fan several queries out in parallel, then merge in QUERY order, de-duped.
+
+    Parallelism is capped at 4 so a keyless engine is not hammered; the whole
+    fan-out has a 25 s wall clock. A query that misses the clock is reported as
+    `partial` instead of silently vanishing.
+    """
+    groups = {q: {"query": q, "engine": "", "results": []} for q in queries}
+    notes, partial, seen = [], False, set()
+    ex = ThreadPoolExecutor(max_workers=max(1, min(4, len(queries))))
+    futs = {ex.submit(_web_search, q, n, providers, opts): q for q in queries}
+    try:
+        for fut in as_completed(futs, timeout=25):
+            q = futs[fut]
+            try:
+                res, engine, note = fut.result()
+            except Exception as e:  # noqa: BLE001
+                res, engine, note = [], "", [(q, str(e)[:120])]
+            groups[q]["engine"] = engine if engine != "no results" else ""
+            for r in res or []:
+                key = _web_norm_url(r.get("url"))
+                if key and key not in seen:
+                    seen.add(key)
+                    groups[q]["results"].append(r)
+            notes.extend(note)
+            if sum(len(g["results"]) for g in groups.values()) >= max_total:
+                break
+    except (TimeoutError, FutureTimeoutError):
+        partial = True
+        notes.append(("chain", "wall clock 25s"))
+    finally:
+        ex.shutdown(wait=False, cancel_futures=True)
+    ordered, total = [], 0
+    for q in queries:
+        g = groups[q]
+        room = max_total - total
+        if room <= 0:
+            partial = True
+            break
+        if len(g["results"]) > room:
+            g["results"] = g["results"][:room]
+            partial = True
+        total += len(g["results"])
+        ordered.append(g)
+    return ordered, notes, partial
+
+
+def _web_data(payload):
+    """Cap the structured payload the UI stores and the event bus keeps.
+
+    `publish()` writes every event payload verbatim to `events.db` and
+    `save_session` re-writes the whole session JSON per card, so a 30-hit payload
+    would cost twice. Snippets are trimmed first; URLs are never dropped.
+    """
+    payload = dict(payload or {})
+    try:
+        blob = json.dumps(payload, ensure_ascii=False)
+    except Exception:  # noqa: BLE001
+        return {"action": payload.get("action")}
+    if len(blob) <= 6000:
+        return payload
+    for limit in (240, 160, 80, 0):
+        for g in payload.get("groups") or []:
+            for r in g.get("results") or []:
+                r["snippet"] = str(r.get("snippet") or "")[:limit]
+        try:
+            blob = json.dumps(payload, ensure_ascii=False)
+        except Exception:  # noqa: BLE001
+            break
+        if len(blob) <= 6000:
+            return payload
+    for g in payload.get("groups") or []:
+        g["results"] = (g.get("results") or [])[:5]
+    return payload
 
 
 _DATA_URL = re.compile(r"\.(csv|tsv|json|jsonl|xml|txt|yaml|yml|md|parquet)$", re.I)
@@ -1352,38 +1530,147 @@ def _web_fetch(url, max_bytes):
 
 
 def _web(args, run_id):
-    """Harness-native public-internet tool: search + fetch (read-only)."""
+    """Harness-native public-internet tool: search (1–4 queries) + fetch (1–5 URLs).
+
+    Read-only. The model-facing `stdout` keeps its numbered-text shape, so no
+    prompt regresses; the `data` payload is what the WebUI renders (hit rows,
+    engine, timings, citation ids) and never reaches the model prompt.
+    """
     action = (args.get("action") or "search").strip().lower()
     t0 = time.time()
     if action in ("fetch", "get", "read"):
-        url = str(args.get("url") or args.get("query") or "").strip()
-        if not url:
-            return {"ok": False, "error": "url required for action=fetch",
-                    "backend": "host(web)", "sandboxed": False}
-        data, err = _web_fetch(url, int(args.get("max_bytes", 8192)))
-        if err:
-            return {"ok": False, "error": err, "backend": "host(web)", "sandboxed": False}
-        return {"ok": True, "exit_code": 0, "stderr": "", "stdout": _truncate(data["text"], 8192),
-                "url": data["url"], "via": data["via"],
-                "duration_ms": int((time.time() - t0) * 1000),
+        return _web_open(args, t0)
+    return _web_search_call(args, run_id, t0)
+
+
+def _web_open(args, t0):
+    """Fetch one URL or several (`urls`, max 5) in parallel."""
+    raw = args.get("urls")
+    if raw is None:
+        raw = [args.get("url") or args.get("query") or ""]
+    if isinstance(raw, str):
+        raw = [raw]
+    urls = [str(u).strip() for u in raw if str(u).strip()][:5]
+    if not urls:
+        return {"ok": False, "error": "url required for action=fetch",
                 "backend": "host(web)", "sandboxed": False}
-    query = str(args.get("query") or "").strip()
-    if not query:
+    try:
+        mb = int(args.get("max_bytes") or 16384)
+    except (TypeError, ValueError):
+        mb = 16384
+    mb = max(1024, min(mb, 65536))
+
+    got = {}
+    if len(urls) == 1:
+        got[urls[0]] = _web_fetch(urls[0], mb)
+    else:
+        ex = ThreadPoolExecutor(max_workers=min(4, len(urls)))
+        try:
+            futs = {ex.submit(_web_fetch, u, mb): u for u in urls}
+            for fut in as_completed(futs, timeout=45):
+                u = futs[fut]
+                try:
+                    got[u] = fut.result()
+                except Exception as e:  # noqa: BLE001
+                    got[u] = (None, "fetch failed: %s" % e)
+        except (TimeoutError, FutureTimeoutError):
+            pass
+        finally:
+            ex.shutdown(wait=False, cancel_futures=True)
+
+    pages, chunks, any_ok = [], [], False
+    for u in urls:
+        data, err = got.get(u) or (None, "not fetched (wall clock)")
+        if err or not data:
+            msg = str(err or "fetch failed")[:200]
+            pages.append({"url": u, "ok": False, "error": msg})
+            chunks.append("## %s\n[error] %s" % (u, msg))
+            continue
+        any_ok = True
+        text = str(data.get("text") or "")
+        pages.append({"url": data.get("url") or u, "ok": True,
+                      "via": data.get("via"), "host": data.get("host"),
+                      "bytes": len(text)})
+        chunks.append("## %s (%s, %d bytes)\n%s"
+                      % (data.get("url") or u, data.get("via"), len(text), text))
+    first = next((p for p in pages if p.get("ok")), {})
+    out = {"ok": any_ok, "exit_code": 0 if any_ok else 1, "stderr": "",
+           "stdout": _truncate("\n\n".join(chunks), 65536),
+           "data": _web_data({"action": "fetch", "pages": pages,
+                              "duration_ms": int((time.time() - t0) * 1000)}),
+           "duration_ms": int((time.time() - t0) * 1000),
+           "backend": "host(web)", "sandboxed": False}
+    if len(urls) == 1:
+        out["url"] = first.get("url") or urls[0]
+        out["via"] = first.get("via")
+    if not any_ok:
+        out["error"] = "; ".join("%s: %s" % (p["url"], p.get("error"))
+                                 for p in pages)[:400]
+    return out
+
+
+def _web_search_call(args, run_id, t0):
+    """Search one query or several (`queries`, max 4) and return hits with ids."""
+    raw = args.get("queries")
+    if raw is None:
+        raw = [args.get("query") or ""]
+    if isinstance(raw, str):
+        raw = [raw]
+    queries = [str(q).strip() for q in raw if str(q).strip()][:4]
+    if not queries:
         return {"ok": False, "error": "query required for action=search",
                 "backend": "host(web)", "sandboxed": False}
     try:
-        results, engine = _web_search(query, args.get("max_results", 5))
+        n = int(args.get("max_results") or 5)
+    except (TypeError, ValueError):
+        n = 5
+    n = max(1, min(n, 10))
+    try:
+        max_total = int(args.get("max_total") or 15)
+    except (TypeError, ValueError):
+        max_total = 15
+    max_total = max(1, min(max_total, 30))
+    try:
+        groups, notes, partial = _web_search_many(
+            queries, n, max_total, _web_opts(args))
     except Exception as e:  # noqa: BLE001
         return {"ok": False, "error": "search failed: %s" % e,
                 "backend": "host(web)", "sandboxed": False}
-    if not results:
-        return {"ok": False, "error": "no results for %r" % query, "engine": engine,
+    total = sum(len(g["results"]) for g in groups)
+    engines = [g["engine"] for g in groups if g["engine"]]
+    engine = ",".join(sorted(set(engines))) if engines else "none"
+    if not total:
+        chain = ", ".join("%s(%s)" % (p, r) for p, r in notes) or "no provider"
+        return {"ok": False,
+                "error": ("no results for %s — chain: %s"
+                          % ("; ".join(queries), chain))[:400],
+                "engine": engine,
+                "data": _web_data({"action": "search", "groups": groups,
+                                   "notes": notes, "partial": partial,
+                                   "duration_ms": int((time.time() - t0) * 1000)}),
                 "backend": "host(web)", "sandboxed": False}
-    lines = ["%d. %s\n   %s\n   %s" % (i + 1, r["title"], r["url"], r["snippet"])
-             for i, r in enumerate(results)]
+    ids = _web_ids(run_id, total)
+    lines, i = [], 0
+    for g in groups:
+        if len(queries) > 1:
+            lines.append("query: %s  [%s]" % (g["query"], g["engine"] or "?"))
+        for r in g["results"]:
+            r["id"] = ids[i]
+            i += 1
+            r["host"] = _web_host(r.get("url"))
+            r["provider"] = g["engine"]
+            lines.append("[%s] %s\n   %s\n   %s"
+                         % (r["id"], r.get("title", ""), r.get("url", ""),
+                            r.get("snippet", "")))
+    flat = [r for g in groups for r in g["results"]]
     return {"ok": True, "exit_code": 0, "stderr": "", "engine": engine,
-            "count": len(results), "stdout": _truncate("\n".join(lines), 8192),
-            "results": results, "duration_ms": int((time.time() - t0) * 1000),
+            "count": total, "stdout": _truncate("\n".join(lines), 8192),
+            "results": flat,
+            "data": _web_data({"action": "search", "engine": engine,
+                               "groups": groups, "notes": notes,
+                               "partial": partial,
+                               "duration_ms": int((time.time() - t0) * 1000)}),
+            "duration_ms": int((time.time() - t0) * 1000),
             "backend": "host(web)", "sandboxed": False}
 
 

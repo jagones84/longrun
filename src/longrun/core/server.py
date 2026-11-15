@@ -160,7 +160,8 @@ CHAT_STREAM_IDLE = ctx_limits.limitf("chat_stream_idle_secs")
 
 def stream_with_fallback(messages, model, role, on_delta, timeout=300, usage=None,
                          guard=None, cancel=None, max_tokens=None,
-                         temperature=None, seed=None):
+                         temperature=None, seed=None,
+                         reasoning_only_is_blank=False, advance_from=None):
     """v0.3 multi-model routing with fallback.
 
     Tries `model` (or the role-selected one) first; on a router failure walks
@@ -172,6 +173,11 @@ def stream_with_fallback(messages, model, role, on_delta, timeout=300, usage=Non
     summarizer can cap its own output. Defaults to the global `MAX_TOKENS`
     (16k) for the chat path; the summarizer passes `max(60, max_chars // 4)`
     so a 10x-compressed summary cannot blow past the user's configured ceiling.
+
+    2026-11-16: `reasoning_only_is_blank` makes an empty answer with a non-empty
+    `think` count as a failed candidate (walk the chain), and `advance_from`
+    drops the model that just failed from the front of the chain. The agent loop
+    uses both to fail over a reasoning-only model instead of nudging it again.
     """
     primary = model or routing.pick(role)
     if not primary:
@@ -185,6 +191,12 @@ def stream_with_fallback(messages, model, role, on_delta, timeout=300, usage=Non
     # `glm-5.3-flash-iq2`, and the router autoloaded 100+GB of weights). A model
     # the user chose must never silently become a different one.
     chain = [primary] + [a for a in routing.model_chain(role) if a and a != primary]
+    # 2026-11-16: the agent loop asks for a FAILOVER after a REASONING-ONLY reply
+    # (the model reasoned and emitted no content/tool call). `advance_from` drops
+    # the model that just proved it stops at the reasoning, so the next attempt is
+    # a DIFFERENT model instead of the same one again.
+    if advance_from:
+        chain = [a for a in chain if a != advance_from] or chain
     # I-2: a model inside a recorded quota window goes LAST (never dropped, so a
     # one-model setup still has a candidate).
     chain = routing.order_candidates(chain)
@@ -209,13 +221,16 @@ def stream_with_fallback(messages, model, role, on_delta, timeout=300, usage=Non
                 # model twice and then killed the turn ("the model returned an
                 # empty message three times", 6× on 2026-11-02 — three lost
                 # turns). Walk the chain instead. A reasoning-only reply is NOT
-                # blank (`think` is non-empty) and keeps its own recovery path.
-                if (not str(answer or "").strip() and not str(think or "").strip()
-                        and i + 1 < len(chain)):
+                # blank (`think` is non-empty) and keeps its own recovery path —
+                # unless the CALLER asked to treat it as blank (`reasoning_only_is_blank`),
+                # which is how the agent loop escalates a model that reasons and stops.
+                _blank = not str(answer or "").strip() and (
+                    reasoning_only_is_blank or not str(think or "").strip())
+                if _blank and i + 1 < len(chain):
                     break  # next candidate
                 if i > 0:
-                    publish("model.fallback", role=role, from_model=chain[0],
-                            to_model=alias)
+                    publish("model.fallback", role=role,
+                            from_model=advance_from or chain[0], to_model=alias)
                 return answer, think, alias
             except Exception as e:  # noqa: BLE001
                 last_err = e

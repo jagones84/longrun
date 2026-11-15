@@ -115,12 +115,17 @@ def scan(src):
             continue
         if ch == "/" and (prev_sig == "" or prev_sig in REGEX_AFTER or word in REGEX_WORDS):
             i += 1
+            in_class = False       # inside [...]: a `/` there does NOT end the literal
             while i < n:
                 c = src[i]
                 if c == "\\":
                     i += 2
                     continue
-                if c == "/":
+                if c == "[":
+                    in_class = True
+                elif c == "]":
+                    in_class = False
+                elif c == "/" and not in_class:
                     i += 1
                     break
                 if c == "\n":

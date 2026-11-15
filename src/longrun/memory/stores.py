@@ -1281,7 +1281,8 @@ def append_message(sess, role, content, reasoning=None, meta=None):
 
 
 def persist_tool_card(sess, tool, ok, args=None, result="", error="",
-                      exit_code=None, backend=None, node=None, think=None, after=None):
+                      exit_code=None, backend=None, node=None, think=None, after=None,
+                      data=None):
     """JAG-96: persist an inline tool card so cold-start UIs can rebuild it.
 
     Stored in `sess["tool_cards"]` — NOT in `messages` — so it never reaches the
@@ -1318,6 +1319,16 @@ def persist_tool_card(sess, tool, ok, args=None, result="", error="",
             "after": (len(sess.get("messages", [])) if after is None else int(after)),
             "ts": round(time.time(), 3),
         }
+        # 2026-11-16: structured tool payload (web hits, engine, ids) for the UI.
+        # It lives INSIDE the card, never in `messages`, so it cannot reach the
+        # model prompt. Capped: `publish` stores every event payload verbatim in
+        # events.db and `save_session` rewrites the whole session JSON per card.
+        if isinstance(data, dict) and data:
+            try:
+                if len(json.dumps(data, ensure_ascii=False)) <= 6000:
+                    card["data"] = data
+            except Exception:  # noqa: BLE001 — an unserialisable payload is dropped
+                pass
         # JAG-431j: file the tool call into the thread ledger (digest) before it is
         # stored — the ledger must not depend on the (compactable) transcript.
         threads_mod.record(sess, node=node, text="\u2699 %s %s" % (tool, args_str),

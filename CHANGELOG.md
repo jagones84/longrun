@@ -6,6 +6,32 @@ All notable changes to Longrun are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- **An external MCP tool is callable from a normal turn again.** The gate injected
+  `args["workspace"] = <session workspace>` into every tool whose `_origin` was not
+  `exclusive`/`delegation`; external tools are registered `origin: "mcp"`, so a strict server
+  rejected the whole call (`Input validation error: … Unrecognized key: "workspace"`) while the same
+  server answered `{}` when called directly. `_workspace_is_object_field()` now exempts
+  `origin == "mcp"` at both injection sites, and the panel's test button says **connection only —
+  tools not executed**, so a ✓ no longer reads as "usable". Live: `chrome-devtools__list_pages`
+  through the gate → `args={}`, `ok=true`, `## Pages 1: about:blank`, and the same call from a chat
+  turn answered the page list. (Locked by `v1062` 8/8.)
+- **One turn can no longer emit an unbounded chain of harness nudges.** Measured session
+  `b7329cccf94c` (22:21:29–22:21:53): ONE turn sent SIX identical "Your last message was EMPTY"
+  retries plus a CONTINUE — the `_empty_streak <= 2` cap was reset by the CONTINUE park and by any
+  non-empty-but-useless reply. `_empty_total` is now a per-TURN ceiling (2 retries, then ONE
+  continue park, then `chat.error` naming the real count). Separately, a stale plan no longer
+  extends a turn that ran **zero tools**: "Reply with exactly: OK" used to be dragged into a 7-task
+  pivot and a second retry chain. (Locked by `v1061` 9/9.)
+- **A reasoning-only model now fails over instead of filling the chat with retries.** When a model
+  streams a long chain-of-thought and returns no content and no tool call, the loop answered with the
+  same "your last message was EMPTY" nudge — four times, plus a CONTINUE and three closure rounds —
+  against the model that had just proved it stops at the reasoning (measured session
+  `b7329cccf94c`, 22:32–22:33, deepseek-v4.1-flash). The first such reply now asks
+  `stream_with_fallback` to treat it as blank and to `advance_from` the failed model, so the NEXT
+  candidate answers with **no harness message at all**; a turn that still ends `empty_reply` gets ONE
+  forced answer instead of three. (Locked by `v1063` 4/4, `v1061` 12/12; `v770` still green.)
+
 ### Added
 - **Installing a plugin now ACTIVATES it, and `/plugin:<name>` reports what is really running.**
   Operator: *"the plugin installation already has to automatically install everything needed …
@@ -24,6 +50,21 @@ All notable changes to Longrun are documented here. The format follows
   `Unrecognized key: "workspace"`) and the child's stderr was `DEVNULL`, so
   `initialize returned no response` hid the server's own reason (now quoted). (Locked by `v1060`
   37/37; `v1040` 32/32, `v1051` 18/18.)
+- **A web call is a first-class row: batched queries, structured hits, and a Sources block.**
+  `web.search` accepts 2–4 `queries` in ONE call (parallel, URL-deduped, `max_total` capped, 25 s
+  wall clock, `partial` when the clock cuts a query) and `web.fetch` accepts up to 5 `urls`; both
+  accept `days`, `include_domains`/`exclude_domains`, `search_depth=advanced` (Tavily) and a 16 KB
+  fetch default. Every hit gets a session-monotonic `[wN]` id; the tool returns a structured `data`
+  payload (engine, timings, host/snippet/published) that is persisted INSIDE the tool card (≤6 KB,
+  never in `messages`, so it costs no context) and streamed on `tool.result`. A failing chain now
+  names each provider and its reason. The WebUI renders the hits as favicon + title + host + snippet
+  rows (escaped, external links, offline letter fallback), a per-turn header
+  ("Worked for 4m 12s · 3 files read · 2 web searches"), a Sources block between the answer and the
+  turn summary (fetched pages first, cited `[wN]` marked), `[wN]` links inside the answer, human
+  labels/icons for every tool row (canonical `web.search` / `fs.read` / …, raw-name fallback), a
+  timeline rail, and a ↻ retry that re-sends the model-facing text. (Locked by `v1054` 18/18,
+  `v1055` 8/8, `v1056` 19/19, `v1057` 18/18, `v1058` 12/12, `v1059` 12/12; `v605` 7/7, `v521`
+  23/23, `v456`, `v1045`–`v1047`, `v781`, `v865`, `v873`, `v253` green.)
 - **The `/` menu is a real command surface, and `/plan` / `/spec` write reviewed documents.** The
   composer menu was three hardcoded rows; it now renders the TRAE-style groups **plugins · commands ·
   skills** from one backend catalogue (`GET /api/slash`, `core/slash.py`), with icons, one-line hints,
@@ -38,6 +79,11 @@ All notable changes to Longrun are documented here. The format follows
   `v1051` 18/18, `v1052` 28/28, `v1053` 39/39; `v775`, `v1020`, `v597`, `v863`, `v934` green.)
 
 ### Changed
+- **`web.search` / `web.fetch` take `query` OR `queries` (and `url` OR `urls`).** The canonical
+  schemas no longer demand `query`/`url`: the alternatives live in `_SUBTOOL_ANY_OF`, so a batched
+  call is not refused before the handler sees it. `_web_search` now returns
+  `(results, engine, notes)` — the old chain swallowed a missing key, which now surfaces as
+  `tavily(missing TAVILY_API_KEY)`. (`v605` 7/7, `v1058` 12/12.)
 - **Every chat shows its context saturation, and a manager sees its team's.** Operator: *"each chat
   context status shall be visible in the sessions webui even if not the active one selected at the
   moment … and the boss team of an agent (report to) shall know the status of its sub agents teams (the
