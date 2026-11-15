@@ -106,7 +106,7 @@ res = market.install("skill/security-review")           # bundled, from the ship
 check("B1 a bundled skill installs", res.get("ok") is True, res)
 rec = {r["id"]: r for r in market.installed()["installed"]}.get("skill/security-review") or {}
 check("B2 the record carries origin + category", rec.get("origin") == "bundled"
-      and rec.get("category") == "Review & Quality", rec)
+      and rec.get("category") == "Security & Quality", rec)
 check("B3 installed() labels it", rec.get("origin_label") == "Bundled", rec.get("origin_label"))
 
 res = market.install("skill/remote-skill")              # precedence: local wins over imported

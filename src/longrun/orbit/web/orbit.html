@@ -111,7 +111,7 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   #deckRail button:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
   .deckBody{flex:1 1 auto;min-width:0;min-height:0;display:flex;flex-direction:column;
     overflow-x:hidden}
-  @media (max-width:1100px){
+  @media (max-width:1200px){
     .wrap.deck{flex-direction:column}
     #deckRail{flex-direction:row;align-items:center;overflow-x:auto;overflow-y:hidden;
       position:static;max-width:100%;max-height:none;padding:6px;
@@ -141,7 +141,7 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   .grid2.ab .col>.panel:last-child{flex:1 1 auto;min-height:0}
   .grid2.ab .col>.panel:last-child>.scroll{flex:1 1 auto;max-height:none;min-height:0}
   .col{gap:0}
-  @media (max-width:1100px){ .grid2.ab,.grid2.oc{display:flex;flex-direction:column;gap:0} .rz-cols{display:none}
+  @media (max-width:1200px){ .grid2.ab,.grid2.oc{display:flex;flex-direction:column;gap:0} .rz-cols{display:none}
     /* JAG-431i: once the rows STACK, a row-height drag is meaningless — its grip sits on
        the border between two stacked panels and dragging it only SQUASHES them (a saved
        desktop row height also compressed the Agents list on a phone). Drop the grips and
@@ -736,7 +736,7 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   /* v624: a custom view never squeezes into unreadability — default columns
      share the row, but nothing goes narrower than 280px: a 6-wide view (or
      user-widened columns that overflow) wraps into clean full rows instead
-     of a half-empty partial line. Narrow screens stack (1100px rule). */
+     of a half-empty partial line. Narrow screens stack (1200px rule). */
   /* the view bar is a full-width row ABOVE the columns, not a column itself. */
   /* v890 (operator: "why the top bar in control of view is so BIH so height?"):
      `.deckBody` is a COLUMN flex container, so `flex:1 1 100%` made this row GROW
@@ -773,17 +773,15 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   .rz-vcol{align-self:stretch;width:5px;flex:0 0 auto;cursor:ew-resize;border-radius:3px;
     background:transparent;touch-action:none}
   .rz-vcol:hover,.rz-vcol:active{background:var(--acc)}
-  @media (max-width:1100px){ .rz-vcol{display:none} }
+  @media (max-width:1200px){ .rz-vcol{display:none} }
   main.view-cols section.panel[data-panel]{min-height:0}
   main.view-cols .panel.ag .scroll{max-height:none}
   main.view-cols #routines{max-height:none !important}
   main.view-cols #feed{max-height:none}
   main.view-cols .orgwrap{min-height:0;flex:1 1 auto}
   main.view-cols .panel.cpanel .cbody{height:auto;min-height:0;flex:1 1 auto}
-  @media (max-width:1100px){
-    main.view-cols .deckBody{flex-direction:column}
-    main.view-cols section.panel[data-panel]{flex:none;width:100%}
-  }
+  /* (2026-11-15) the narrow single-column deck is declared ONCE, in the consolidated
+     `@media (max-width:1200px)` block below the rows/splitter anatomy. */
   /* v626: explicit rows × columns layout (see _layoutViewCols). Each row is a
      full-width flex line, so a panel that wraps fills its row; column widths
      are % of the row (reversible), row heights resize per ROW via .rz-vrow. */
@@ -822,7 +820,31 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   .rz-vrow{width:100%;height:0;flex:0 0 0;position:relative;z-index:6;cursor:ns-resize;
     background:transparent;touch-action:none}
   .rz-vrow::before{content:"";position:absolute;left:0;right:0;top:-4px;bottom:-4px}
-  @media (max-width:1100px){ .rz-vrow{display:none} .vrow{height:auto} }
+  /* 2026-11-15 (operator): "control page horrible squeeze demolish everything and
+     mobile shall become one below the other." Below 1200 px the deck is a single
+     column: the rail is a strip on top, the two-column rows stack, and an explicit
+     rows view stacks its columns too (every panel full width, one under the other,
+     with the deck scrolling vertically instead of squeezing four panels into a strip). */
+  @media (max-width:1200px){
+    .rz-vrow{display:none}
+    .vrow{height:auto !important;flex:0 0 auto !important}
+    /* ONE panel under the other. `nowrap` matters as much as the direction: a
+       column that may wrap flows its overflow into a SECOND column to the right,
+       which is how the last panel ended up off-screen at x = viewport + 4. The
+       panels keep their content height (`0 0 auto`, never shrink) — the old
+       shrink-to-fit turned four panels into 40–170px strips — and the deck
+       scrolls vertically instead of clipping. */
+    main.view-cols .deckBody,
+    main.view-cols .deckBody.vrows{flex-direction:column;flex-wrap:nowrap;
+      overflow-y:auto;overflow-x:hidden}
+    main.view-cols .vrow{flex-direction:column;overflow:visible}
+    /* `!important` on the floor: `.grid2.ab .col>.panel:last-child` (five class
+       selectors) sets min-height:0 for the Jobs panel and outranks any reasonable
+       descendant selector here. */
+    main.view-cols .vrow > section.panel[data-panel],
+    main.view-cols .deckBody section.panel[data-panel]{width:100%;max-width:100%;min-width:0;
+      flex:0 0 auto !important;min-height:320px !important}
+  }
   /* v622: per-column move/remove controls live in each panel header, visible
      only in a custom view. The view bar (name/rename/+panel/delete) sits
      above the deck. */
@@ -852,7 +874,7 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   #viewList{display:flex;flex-direction:column;gap:2px}
   #viewList:empty{display:none}
   #viewList button{text-align:left}
-  @media (max-width:1100px){ #viewBar{flex-wrap:wrap} }
+  @media (max-width:1200px){ #viewBar{flex-wrap:wrap} }
 
   /* ======================================================================
      2026-10-31 — CONTROL DECK GRAPHICAL SYSTEM.
@@ -4058,7 +4080,7 @@ class OrbitApp {
      stored as per-row RATIOS (not px) → drags are reversible and scale with
      the window; the structure can always flow back to the first row. Row
      heights resize per ROW via a horizontal splitter between rows. Mobile
-     (≤1100px) keeps the plain vertical stack. */
+     (≤1200px) keeps the plain vertical stack. */
   _layoutViewCols(){
     const main = document.querySelector("main");
     const deck = main ? main.querySelector(".deckBody") : null;
@@ -4077,7 +4099,7 @@ class OrbitApp {
     document.querySelectorAll(".vrow,.rz-vcol,.rz-vrow").forEach(el => el.remove());
     if (deck) deck.classList.remove("vrows");
     if (!main || !main.classList.contains("view-cols") || !deck) return;
-    if (window.matchMedia("(max-width:1100px)").matches) return; // mobile stack
+    if (window.matchMedia("(max-width:1200px)").matches) return; // mobile stack
     const vis = [...document.querySelectorAll("section.panel[data-panel]")].filter(p => !p.hidden);
     if (!vis.length) return;
     // v626.3: chunk rows in the VIEW's panel order (the ◀ ▶ arrows rewrite
@@ -4219,6 +4241,15 @@ class OrbitApp {
           const m = document.querySelector("main");
           const d = m && m.classList && m.classList.contains("view-cols") ? m.querySelector(".deckBody") : null;
           if (!d) return;
+          // 2026-11-15: crossing DOWN into the single-column deck must remove an
+          // existing rows layout (its inline row heights / grow factors would keep
+          // squeezing the panels side by side). Reset the memo so crossing back up
+          // rebuilds the columns.
+          if (window.matchMedia("(max-width:1200px)").matches) {
+            if (d.classList.contains("vrows")) this._layoutViewCols();
+            this._vlastNCols = 0;
+            return;
+          }
           // v626.2: count VISIBLE panels live — the closure's `vis` goes stale
           // after switching views, which would mis-size the re-flow.
           const n = [...document.querySelectorAll("section.panel[data-panel]")].filter(p => !p.hidden).length;

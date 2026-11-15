@@ -1,0 +1,101 @@
+# Marketplace macro-areas — the ONE taxonomy the category chips use.
+#
+# Why this file exists: the official MCP Registry publishes no category at all, and
+# ClawHub's topics are inconsistent (and often non-English). Without a curated
+# vocabulary every registry row landed in one bucket, so "Research & Analysis"
+# filtered to almost nothing. `core/market_taxonomy.py` classifies an item at sync
+# time by matching these keywords against its title, name, description and any
+# upstream topic; the highest number of distinct keyword hits wins, ties follow the
+# order below, and a miss is `fallback`.
+#
+# Rules:
+#   * keep the names stable — they are what the chips show and what the install
+#     record stores;
+#   * the bundled catalogue (`src/longrun/core/market_catalog.json`) may only use a
+#     name declared here (v1031 pins that);
+#   * keywords are matched case-insensitively on word boundaries;
+#   * no model calls, no network: this file is the whole classifier.
+fallback: Other
+
+areas:
+  - name: AI & ML
+    keywords: [llm, llms, model, models, inference, agent, agents, agentic, embedding,
+               embeddings, vector, rag, openai, anthropic, claude, gpt, gemini, ollama,
+               huggingface, "machine learning", "deep learning", neural, prompt, prompting,
+               "fine-tuning", llama, mistral, "stable diffusion", vision, speech, tts, stt,
+               "text-to-speech", "speech-to-text"]
+
+  - name: Developer Tools
+    keywords: [git, github, gitlab, code, codebase, repository, repo, ci, "ci/cd", build,
+               lint, linter, docker, container, kubernetes, k8s, terraform, npm, pypi,
+               package, dependency, debugger, debug, ide, editor, shell, terminal, bash,
+               zsh, python, node, nodejs, typescript, javascript, rust, go, compiler,
+               "api client", openapi, swagger, graphql, sdk]
+
+  - name: Data & Databases
+    keywords: [database, databases, sql, postgres, postgresql, mysql, mariadb, sqlite,
+               mongodb, redis, elasticsearch, opensearch, clickhouse, warehouse, etl, elt,
+               data, dataset, datasets, csv, parquet, json, analytics, bigquery, snowflake,
+               kafka, pipeline, pipelines, spreadsheet, excel, "data frame", dataframe,
+               duckdb, vector database]
+
+  - name: Research & Analysis
+    keywords: [research, researcher, paper, papers, arxiv, scholar, literature, survey,
+               analysis, analyse, analyze, analyst, report, reporting, summarize,
+               summarization, summary, knowledge, wiki, document, documents, pdf, citation,
+               academic, study, benchmark, evaluation, evidence, "deep research"]
+
+  - name: Browser & Web
+    keywords: [browser, browsers, playwright, puppeteer, selenium, scraping, scrape, scraper,
+               crawler, crawl, http, https, fetch, web, website, url, html, dom, chrome,
+               chromium, firefox, screenshot, seo, "web search", search engine, webhook]
+
+  - name: Productivity
+    keywords: [calendar, caldav, task, tasks, todo, note, notes, notion, obsidian, email,
+               mail, inbox, slack, meeting, meetings, reminder, workflow, automation,
+               productivity, gtd, planner, schedule, bookmark]
+
+  - name: Media & Content
+    keywords: [image, images, video, videos, audio, music, ffmpeg, youtube, podcast,
+               subtitle, subtitles, design, figma, canvas, svg, photo, photos, media,
+               streaming, recording, transcription, ocr, "image generation", animation]
+
+  - name: Finance
+    keywords: [finance, financial, banking, bank, payment, payments, invoice, invoices,
+               accounting, stock, stocks, trading, trader, crypto, cryptocurrency,
+               blockchain, wallet, tax, taxes, budget, expense, expenses, payroll,
+               investing, portfolio, insurance]
+
+  - name: Science
+    keywords: [science, scientific, biology, bioinformatics, chemistry, physics, genome,
+               genomics, protein, proteins, lab, laboratory, experiment, experiments,
+               astronomy, climate, weather, medical, healthcare, clinical, drug, molecules]
+
+  - name: Location & Maps
+    keywords: [map, maps, mapping, geo, geospatial, geocode, geocoding, gps, location,
+               locations, travel, route, routing, places, "openstreetmap", navigation]
+
+  - name: Social & Communication
+    keywords: [social, twitter, mastodon, discord, telegram, whatsapp, chat, messaging,
+               message, community, reddit, linkedin, instagram, bluesky, forum,
+               notification, notifications]
+
+  - name: Business & Ops
+    keywords: [business, crm, sales, marketing, support, customer, customers, ecommerce,
+               "e-commerce", shopify, erp, jira, asana, trello, "project management",
+               operations, hr, recruiting, hiring, legal, contract, contracts, cms,
+               shop, store, product management]
+
+  - name: Security & Quality
+    keywords: [security, secure, vulnerability, vulnerabilities, vuln, cve, secret, secrets,
+               credential, credentials, auth, authentication, authorization, oauth, jwt,
+               encryption, encrypt, malware, audit, compliance, privacy, gdpr, pentest,
+               "penetration test", sast, soc2, review, reviews, quality, qa, "code review"]
+
+  # The plugins that SHIP with longrun (`src/Matrix/tools`). Their docstrings say
+  # "Matrix tool …", not what domain they serve, so they are a build-time bucket of
+  # their own rather than a guess at a macro-area. Declared here so every category
+  # the page shows is one this file names.
+  - name: Matrix tools
+    keywords: ["matrix tool", "matrix tools", "matrix namespace", "matrix plugin",
+               "matrix experimental tool"]

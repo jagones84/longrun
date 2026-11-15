@@ -128,7 +128,11 @@ check("G2 Sand gives the composer a light background; dark themes stay dark",
 
 # --- H: the deck is renamed Control (top-level tabs) ------------------------
 check("H1 the WebUI has top-level Sessions + Control tabs",
-      ">Sessions</a>" in HTML and ">Control</a>" in HTML and "location.href='/orbit'" in HTML, "")
+      # 2026-11-15 (operator): the tabs are icon-only at every width, so their identity
+      # is the id + accessible name, not a text node inside the anchor.
+      'id="tabSessions"' in HTML and 'id="tabControl"' in HTML
+      and 'aria-label="sessions"' in HTML and 'aria-label="control deck"' in HTML
+      and "location.href='/orbit'" in HTML, "")
 check("H2 the Control page title + its active tab",
       "<title>Control · Longrun beta</title>" in ORBIT and ">Control</span>" in ORBIT
       and ">Sessions</a>" in ORBIT, "")

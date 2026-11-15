@@ -62,14 +62,17 @@ check("A1 the placement reads the live zoom from the scaled root",
 check("A2 the click point and the menu box are converted visual → layout",
       "const tx = x / z, ty = y / z;" in place
       and "const w = m.offsetWidth, h = m.offsetHeight;" in place
-      and "window.innerWidth, vh = window.innerHeight" in place)
+      # v1029: innerWidth/innerHeight are VISUAL px under the app's zoom, like clientX —
+      # the clamp must divide them too, or a menu opened near the right edge overflows.
+      and "const vw = window.innerWidth / z, vh = window.innerHeight / z;" in place)
 check("A3 the clamp happens in the same unit it writes",
       "Math.min(left, vw - w - 8)" in place and "if (top + h > vh - 8)" in place)
 check("A4 the preview window also divides its width by the zoom (94vw is unscaled)",
       "width: min(calc(1180px / var(--zoom, 1)), calc(94vw / var(--zoom, 1)));" in ui)
-check("A5 both popups go through the ONE placement",
-      # the definition + its two callers: the ⋯ menu and the right-click menu
-      ui.count("_placeMenu(m,") == 3 and "openPvMenu" in ui and "openFileCtx" in ui)
+check("A5 every popup goes through the ONE placement",
+      # v1029: definition + preview ⋯ + artifact/edits right-click + plan-todo right-click
+      ui.count("_placeMenu(m,") == 4 and "openPvMenu" in ui and "openFileCtx" in ui
+      and "_placeMenu(m, ev.clientX, ev.clientY, false);" in ui)
 
 # --- B: the page's scope model — ONE owner, in v1004 -------------------------
 # This file pinned the intermediate models twice (the two-way scope switch, then a

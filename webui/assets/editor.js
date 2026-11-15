@@ -568,6 +568,10 @@ function _applyFloatGeom() {
 function _clampFloat() {
   const d = state.dock; if (!d) return;
   const r = d.getBoundingClientRect();
+  // 2026-11-15: the dock can be legitimately not rendered (it is hidden while the
+  // Control deck owns the row) — a zero rect would clamp the window to 0,0 and
+  // throw away the position the operator left it at, on the next resize.
+  if (!r.width && !r.height) return;
   const vw = window.innerWidth, vh = window.innerHeight;
   const left = Math.max(0, Math.min(r.left, Math.max(0, vw - Math.max(80, r.width))));
   const top = Math.max(0, Math.min(r.top, Math.max(0, vh - Math.min(r.height, 120))));
@@ -1283,9 +1287,11 @@ function showTreeMenu(x, y, path) {
   mk("📄 open in editor", () => open(path));
   mk("⇩ download", () => downloadPath(path));
   document.body.appendChild(m);
-  const r = m.getBoundingClientRect();
-  m.style.left = Math.min(x, window.innerWidth - r.width - 8) + "px";
-  m.style.top = Math.min(y, window.innerHeight - r.height - 8) + "px";
+  // The app's CSS zoom multiplies every `px` length: a click arrives in VISUAL px
+  // (`clientX`) while `left` is laid out in CSS px. `_placeMenu` (webui/index.html)
+  // divides by the live zoom and clamps in layout px — the same fix the preview and
+  // artifact menus already use, so a right-click no longer opens its menu elsewhere.
+  if (window._placeMenu) window._placeMenu(m, x, y, false);
 }
 /* JAG-282: right-click on an editor TAB — copy its path / name, reveal it in the
    tree, download or close. Mirrors the file-tree menu so the two behave alike. */
@@ -1314,9 +1320,8 @@ function showTabMenu(x, y, i) {
   mk("✕ close tab", () => closeTab(i));
   mk("✕✕ close all", () => closeAllTabs());
   document.body.appendChild(m);
-  const r = m.getBoundingClientRect();
-  m.style.left = Math.min(x, window.innerWidth - r.width - 8) + "px";
-  m.style.top = Math.min(y, window.innerHeight - r.height - 8) + "px";
+  // visual click px -> CSS px (see showTreeMenu: the page may be CSS-zoomed)
+  if (window._placeMenu) window._placeMenu(m, x, y, false);
 }
 /* Reveal a path in the file tree: show the pane, (re)load it, EXPAND the folders
    that contain the file, then flash + highlight its row.

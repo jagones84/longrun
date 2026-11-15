@@ -15,9 +15,11 @@ const KIND_ORDER = ["plugin", "skill", "mcp", "connector"];
 const COLLAPSE_KEY = "lrmkt.collapsed";
 
 const state = {
-  kind: "all", q: "", category: "", manage: false, items: [], stats: {},
-  sources: [], installed: [], errors: [], audit: null,
+  kind: "all", q: "", category: "", source: "", manage: false,
+  items: [], stats: {}, sources: [], installed: [], errors: [], audit: null,
+  online: [], onlineFor: "", onlineSource: "clawhub", job: null, loading: false,
 };
+const PAGE_SIZE = 300;
 
 function el(id) { return document.getElementById(id); }
 
@@ -87,26 +89,36 @@ function paintSources() {
       if (opt) opt.textContent = s.label + (s.items ? " \u00b7 " + s.items : "");
     });
   }
-  const n = el("mktSyncAge");
-  if (!n) return;
+  /* The SELECTED adapter's own cost wording, straight from the backend — the
+     page never invents a price label for a catalogue or a server. */
   const s = (state.sources || []).find(x => sel && x.id === sel.value);
-  n.textContent = s ? ageText(s) : "";
-  n.classList.toggle("mkt-warn", !!(s && s.stale));
+  const n = el("mktSyncAge");
+  if (n) {
+    n.textContent = s ? ageText(s) : "";
+    n.classList.toggle("mkt-warn", !!(s && s.stale));
+    if (s && s.cost) n.title = s.cost;
+  }
+  const c = el("mktCost");
+  if (c) {
+    c.textContent = (s && s.cost) ? s.cost
+      : "Catalogues are free \u2014 a server may still need your own key.";
+  }
 }
 
 /* One collapsible macro-area (W3C APG disclosure: heading → button + panel).
    "Recommended" uses the same helper, so every fold in the page behaves the same. */
-function sectionHtml(key, label, rows, have, shut, note) {
+function sectionHtml(key, label, rows, have, shut, note, total) {
   if (!rows.length) return "";
   const open = !shut.has(key);
   const id = "mkt-sec-" + key;
   const src = sourceBreakdown(rows) + (note ? " \u00b7 " + note : "");
+  const count = (total && total > rows.length) ? rows.length + " of " + total : String(rows.length);
   return `<h3 class="mkt-sect-h"><button class="mkt-sect-btn" type="button"
       data-kind="${esc(key)}" aria-expanded="${open ? "true" : "false"}"
       aria-controls="${id}" title="${open ? "collapse" : "expand"} ${esc(label)}">
       <span class="mkt-chev" aria-hidden="true">${open ? "\u25BE" : "\u25B8"}</span>
       <span>${esc(label)}</span>
-      <span class="mkt-sect-n">${rows.length}</span>
+      <span class="mkt-sect-n">${count}</span>
     </button></h3>
     <div class="mkt-sec-body" id="${id}"${open ? "" : " hidden"}>
       <div class="mkt-src">${src}</div>
@@ -190,9 +202,13 @@ function render() {
     return;
   }
   if (!state.items.length) {
+    const filtered = !!(state.source || state.category || state.q);
     const why = (state.errors || []).length
       ? `<div class="mkt-empty">No catalogue could be read:<br>${state.errors.map(esc).join("<br>")}</div>`
-      : `<div class="mkt-empty">The catalogue is empty.<br>
+      : filtered
+        ? `<div class="mkt-empty">Nothing matches these filters${state.source ? " in " + esc(state.source) : ""}.<br>
+             Clear the search, the category or the catalogue chip to see everything.</div>`
+        : `<div class="mkt-empty">The catalogue is empty.<br>
            Add a source URL in <code>config/market.yaml</code>, or create
            <code>data/market/catalog.json</code>.</div>`;
     body.innerHTML = why;
@@ -200,6 +216,7 @@ function render() {
   }
   const have = installedIds();
   const matched = Number(state.stats.matched || state.items.length);
+  const byKind = state.stats.by_kind || {};
   let html = matched > state.items.length
     ? `<div class="mkt-sect">Showing ${state.items.length} of ${matched} \u2014 use search or a category to narrow</div>`
     : "";
@@ -215,21 +232,76 @@ function render() {
     // Featured cards live in the "Recommended" section above, not twice in the
     // grid; say so, or the section count looks smaller than the catalogue.
     const rec = featured.filter(i => i.kind === kind).length;
+    const total = Math.max(0, Number(byKind[kind] == null ? rows.length + rec : byKind[kind]) - rec);
     html += sectionHtml(kind, KIND_LABEL[kind] || kind, rows, have, shut,
-                        rec ? `+${rec} in Recommended` : "");
+                        rec ? `+${rec} in Recommended` : "", total);
   });
+  if (state.online.length && !state.manage && onlineKindMatches()) {
+    html += `<h3 class="mkt-sect-h"><span class="mkt-sect-static">Online \u00b7 ` +
+      esc(state.onlineSource === "clawhub" ? "ClawHub" : "MCP Registry") +
+      ` \u00b7 ${state.online.length}</span></h3>` +
+      `<div class="mkt-grid">${state.online.map(onlineCard).join("")}</div>`;
+  }
+  if (matched > state.items.length) {
+    html += `<div class="mkt-more"><button class="ghost" id="mktMore" type="button"
+      title="read the next page of the catalogue">Load more (${state.items.length} of ${matched})</button></div>`;
+  }
   body.innerHTML = html;
 }
 
-function renderChips(cats) {
+/* An online row is a PREVIEW: no digest is pinned yet, so it is imported first. */
+function onlineCard(item) {
+  const badge = originBadge("online", "Online");
+  const bits = [item.publisher, item.version && "v" + item.version, item.license]
+    .filter(Boolean).map(esc).join(" \u00b7 ");
+  return `<article class="mkt-card" data-kind="${esc(item.kind)}">
+    <div class="mkt-ico" aria-hidden="true">${KIND_ICON[item.kind] || "\u25CB"}</div>
+    <div class="mkt-body">
+      <div class="mkt-name">${esc(item.title)}</div>
+      <div class="mkt-desc">${esc(item.description || "")}</div>
+      <div class="mkt-meta" title="found online \u2014 not in the local catalogue yet">${badge} ${bits}</div>
+    </div>
+    <div class="mkt-act"><button class="ghost mkt-import-remote"
+      data-source="${esc(state.onlineSource)}" data-slug="${esc(item.name)}"
+      title="download it once, pin its digest, then install it">Import</button></div>
+  </article>`;
+}
+
+function onlineKindMatches() {
+  const kind = state.onlineSource === "clawhub" ? "skill" : "mcp";
+  return state.kind === "all" || state.kind === kind;
+}
+
+function renderChips(cats, counts) {
   const box = el("mktChips");
   if (!box) return;
+  const c = counts || {};
+  /* "All" is the SCOPE total (before the category filter), not the current page:
+     sums the per-area counts, which are computed on the same scope. */
+  const scopeTotal = Object.keys(c).length
+    ? Object.values(c).reduce((a, b) => a + Number(b || 0), 0)
+    : Number(state.stats.matched || 0);
   const all = ["All"].concat(cats || []);
-  box.innerHTML = all.map(c => {
-    const on = (c === "All" && !state.category) || c === state.category;
-    return `<button class="mkt-chip" data-cat="${c === "All" ? "" : esc(c)}"
-      aria-pressed="${on ? "true" : "false"}">${esc(c)}</button>`;
+  box.innerHTML = all.map(name => {
+    const on = (name === "All" && !state.category) || name === state.category;
+    const n = name === "All" ? scopeTotal : Number(c[name] || 0);
+    return `<button class="mkt-chip" data-cat="${name === "All" ? "" : esc(name)}"
+      aria-pressed="${on ? "true" : "false"}">${esc(name)}` +
+      (n ? ` <b class="mkt-n">${n}</b>` : "") + "</button>";
   }).join("");
+}
+
+/* The catalogue FILTER (not the sync selector): one chip per origin. */
+function renderSources() {
+  const box = el("mktSources");
+  if (!box) return;
+  const opts = [{ origin: "", label: "All sources" },
+                { origin: "bundled", label: "Bundled" },
+                { origin: "imported:mcp-registry", label: "MCP Registry" },
+                { origin: "imported:clawhub", label: "ClawHub" },
+                { origin: "local", label: "Your catalogue" }];
+  box.innerHTML = opts.map(o => `<button class="mkt-chip" data-source="${esc(o.origin)}"
+    aria-pressed="${o.origin === state.source ? "true" : "false"}">${esc(o.label)}</button>`).join("");
 }
 
 function setTabs() {
@@ -242,13 +314,16 @@ function setTabs() {
 
 /* ── data ───────────────────────────────────────────────────────────────── */
 
-async function load() {
+async function load(opts) {
+  const append = !!(opts && opts.append);
   const body = el("mktBody");
   if (body && !state.items.length) body.innerHTML = `<div class="mkt-empty">loading the catalogue\u2026</div>`;
-  const qs = ["limit=500"];
+  const offset = append ? state.items.length : 0;
+  const qs = ["limit=" + PAGE_SIZE, "offset=" + offset];
   if (!state.manage && state.kind !== "all") qs.push("kind=" + encodeURIComponent(state.kind));
   if (state.q) qs.push("q=" + encodeURIComponent(state.q));
   if (state.category) qs.push("category=" + encodeURIComponent(state.category));
+  if (state.source) qs.push("source=" + encodeURIComponent(state.source));
   let cat = {}, inst = {}, aud = {}, srcs = {};
   try { cat = await window.api("GET", "/api/market/catalog" + (qs.length ? "?" + qs.join("&") : "")); }
   catch (e) { cat = { ok: false, errors: [String(e)] }; }
@@ -257,20 +332,45 @@ async function load() {
   if (state.manage) {
     try { aud = await window.api("GET", "/api/market/audit"); } catch (_) { aud = {}; }
   }
-  state.items = (cat && cat.items) || [];
+  const page = (cat && cat.items) || [];
+  state.items = append ? state.items.concat(page) : page;
   state.stats = (cat && cat.stats) || {};
   state.errors = (cat && cat.errors) || [];
   state.installed = (inst && inst.installed) || [];
   state.sources = (srcs && srcs.sources) || [];
   state.audit = aud || null;
   render();
-  renderChips((cat && cat.categories) || []);
+  renderChips((cat && cat.categories) || [], state.stats.category_counts || {});
+  renderSources();
   paintSources();
   setTabs();
   const n = el("mktCount");
   if (n) n.textContent = state.manage
     ? `${state.installed.length} installed`
     : `${Number(state.stats.matched || state.items.length)} item${state.items.length === 1 ? "" : "s"}`;
+  // Online breadth: only for a real query, and never for the Manage view.
+  if (!state.manage && state.q.trim().length >= 2) {
+    await remoteSearch();
+    render();
+  } else if (state.online.length) {
+    state.online = [];
+    state.onlineFor = "";
+    render();
+  }
+}
+
+/* A live search against the selected adapter. Rows are PREVIEWS (no digest). */
+async function remoteSearch() {
+  const q = state.q.trim();
+  const key = q + "|" + state.onlineSource;
+  if (q.length < 2 || state.onlineFor === key) return;
+  let res = {};
+  try {
+    res = await window.api("GET", "/api/market/remote?source=" +
+      encodeURIComponent(state.onlineSource) + "&q=" + encodeURIComponent(q));
+  } catch (_) { res = {}; }
+  state.online = (res && res.items) || [];
+  state.onlineFor = key;
 }
 
 async function install(id, overwrite) {
@@ -279,6 +379,19 @@ async function install(id, overwrite) {
   catch (e) { res = { ok: false, error: String(e) }; }
   if (res && res.ok) toast(`installed ${res.name || id}`, "ok");
   else toast((res && res.error) || "install failed", "err");
+  await load();
+}
+
+/* An ONLINE row: download it once, pin its digest, write it into that source's
+   group, then install it through the same path every catalogue entry uses. */
+async function importRemote(source, slug, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = "importing\u2026"; }
+  let res = {};
+  try { res = await window.api("POST", "/api/market/import-remote", { source, slug }); }
+  catch (e) { res = { ok: false, error: String(e) }; }
+  if (btn) { btn.disabled = false; btn.textContent = "Import"; }
+  if (res && res.ok) toast(`imported ${res.name || slug}`, "ok");
+  else toast((res && res.error) || "import failed", "err");
   await load();
 }
 
@@ -319,6 +432,17 @@ function wire() {
       load();
     });
   }
+  /* The CATALOGUE filter (not the sync selector): one chip per origin. */
+  const srcs = el("mktSources");
+  if (srcs && !srcs.dataset.wired) {
+    srcs.dataset.wired = "1";
+    srcs.addEventListener("click", ev => {
+      const c = ev.target.closest(".mkt-chip");
+      if (!c) return;
+      state.source = c.getAttribute("data-source") || "";
+      load();
+    });
+  }
   const search = el("mktSearch");
   if (search && !search.dataset.wired) {
     search.dataset.wired = "1";
@@ -342,6 +466,13 @@ function wire() {
       }
       const ins = ev.target.closest(".mkt-install");
       if (ins && !ins.disabled) { install(ins.getAttribute("data-id")); return; }
+      const imp = ev.target.closest(".mkt-import-remote");
+      if (imp) {
+        importRemote(imp.getAttribute("data-source"), imp.getAttribute("data-slug"), imp);
+        return;
+      }
+      const more = ev.target.closest("#mktMore");
+      if (more) { more.disabled = true; load({ append: true }); return; }
       const upd = ev.target.closest(".mkt-update");
       if (upd) { install(upd.getAttribute("data-id"), true); return; }
       const rem = ev.target.closest(".mkt-remove");
@@ -364,24 +495,40 @@ function toggleManage(force) {
 function reload() { return load(); }
 
 /* Pull an external marketplace into the catalogue (POST /api/market/sync).
-   The catalogue stays a file: a sync WRITES data/market/imported.json, and the
-   page re-reads it through the same route as everything else. Nothing installs
-   by itself, and a skill's digest was pinned by the sync. */
+   A full registry pass is minutes, not seconds: the server runs ONE background
+   job and this polls its progress. Nothing installs by itself, and a skill's
+   digest is pinned by the sync — a failed pass keeps the previous copy. */
 async function syncSource() {
   const sel = el("mktSource");
   const source = (sel && sel.value) || "mcp-registry";
   const btn = el("mktSync");
-  if (btn) { btn.disabled = true; btn.textContent = "syncing\u2026"; }
+  const age = el("mktSyncAge");
+  if (btn) { btn.disabled = true; btn.textContent = "importing\u2026"; }
   let res = {};
-  try { res = await window.api("POST", "/api/market/sync", { source }); }
+  try { res = await window.api("POST", "/api/market/sync", { source, background: 1 }); }
   catch (e) { res = { ok: false, error: String(e) }; }
-  if (btn) { btn.disabled = false; btn.textContent = "\u21E3 sync"; }
-  if (res && res.ok) {
-    const skipped = Number(res.error_count || 0);
-    toast(`synced ${source}: ${res.items} item(s)` + (skipped ? `, ${skipped} skipped` : ""), "ok");
-  } else {
-    toast((res && res.error) || "sync failed", "err");
+  if (!res || !res.ok) {
+    if (btn) { btn.disabled = false; btn.textContent = "\u21E3 import"; }
+    toast((res && res.error) || "import failed", "err");
+    await load();
+    return;
   }
+  let job = res.job || {};
+  const deadline = Date.now() + 15 * 60 * 1000;
+  while (job.running && Date.now() < deadline) {
+    if (age) age.textContent = "importing " + Number(job.rows_seen || 0) +
+      " \u00b7 page " + Number(job.pages || 0);
+    await new Promise(r => setTimeout(r, 2000));
+    try { job = (await window.api("GET", "/api/market/sync/status")).job || {}; }
+    catch (_) { break; }
+  }
+  if (btn) { btn.disabled = false; btn.textContent = "\u21E3 import"; }
+  if (job.error) toast("import failed: " + job.error, "err");
+  else if (job.running) toast("import still running \u2014 reload in a while", "err");
+  else toast("imported " + Number(job.items || 0) + " item(s) from " + source +
+             (Number(job.skipped || 0) ? ", " + job.skipped + " skipped" : "") +
+             (job.capped ? " \u2014 item budget reached, the mirror holds the first "
+               + Number(job.items || 0) : ""), "ok");
   await load();
 }
 
@@ -390,5 +537,9 @@ wire();
 window.LRMkt = { load, reload, toggleManage, get state() { return state; } };
 /* data-call reaches only GLOBALS, so the two page buttons are published here. */
 window.mktManage = () => toggleManage();
-window.mktReload = () => { state.q = ""; const s = el("mktSearch"); if (s) s.value = ""; state.category = ""; load(); };
+window.mktReload = () => {
+  state.q = ""; state.category = ""; state.source = "";
+  const s = el("mktSearch"); if (s) s.value = "";
+  load();
+};
 window.mktSync = () => syncSource();

@@ -1260,14 +1260,18 @@
   /* the chosen delivery mode is a STATE, so it is a glyph, not a second colour */
   #qmodeMenu .mi::after { content: ""; margin-left: auto; color: var(--acc); }
   #qmodeMenu .mi[aria-checked="true"]::after { content: "✓"; }
-  /* JAG-416: top-level section tabs (Session / Control) — the primary navigation.
-     A quiet tab strip: the active section is marked by a copper rule, not a pill. */
+  /* JAG-416: top-level section tabs — the primary navigation.
+     A quiet tab strip: the active section is marked by a copper rule, not a pill.
+     2026-11-15 (operator): "remove the text on top bar for tabs use only icons
+     always!" The four tabs are icons at EVERY width (drawn SVGs, 17 px, the rail's
+     stroke recipe); aria-label + title carry the names, the copper rule the state. */
   .topTabs { display: inline-flex; align-items: stretch; gap: 2px; padding: 0;
     border: 0; border-radius: 0; background: transparent; flex: 0 0 auto; height: 52px; }
-  .topTabs .ttab { display: inline-flex; align-items: center; height: 52px; padding: 0 14px;
-    border-radius: 0; color: var(--dim); font-size: 12.5px; font-weight: 600;
-    text-decoration: none; white-space: nowrap; border-bottom: 2px solid transparent;
+  .topTabs .ttab { display: inline-flex; align-items: center; justify-content: center;
+    width: 36px; height: 52px; padding: 0; border-radius: 0; color: var(--dim);
+    text-decoration: none; border-bottom: 2px solid transparent;
     transition: color .12s, border-color .12s; }
+  .topTabs .ttab svg { display: block; width: 17px; height: 17px; }
   .topTabs .ttab:hover { color: var(--txt); background: transparent; }
   .topTabs .ttab.active { color: var(--txt); background: transparent; box-shadow: none;
     border-bottom-color: var(--acc); }
@@ -1279,6 +1283,12 @@
   #controlView iframe { width: 100%; height: 100%; border: 0; display: block; background: var(--bg); }
   /* the session/inspector toggles make no sense on the Control view */
   body.control-on .pane-tog-grp { display: none !important; }
+  /* 2026-11-15 (operator): "if open editors and pass to control page and squeeze it
+     doesn't respond to close commands … and survives the page shift". The Control deck
+     owns the row; an editor left open (docked, or a fixed overlay/float once the window
+     is squeezed) lived inside `#app`, which is `inert` there — visible but dead. It is
+     hidden while the deck is up and comes back exactly as it was on Sessions. */
+  body.control-on #editorDock { display: none !important; }
   /* ---- MyArtifacts — a top-level PAGE (third tab), not a panel --------------
      Same contract as the Control tab: while it is up it owns the row and #app is
      out of the way. Cards are flat surfaces (Graphite Instrument): one hairline,
@@ -1297,6 +1307,10 @@
   body.market-on #app { display: none; }
   body.market-on #marketView { display: block; }
   body.market-on .pane-tog-grp { display: none !important; }
+  /* 2026-11-15 (operator): "myartifacts and marketplace no necessity to show in the
+     webui topbar the session. my artifact already has filter by sessions embedded."
+     Both are PAGES that own the row; neither needs the active session pill. */
+  body.artifacts-on #sessBadge, body.market-on #sessBadge { display: none !important; }
   .mkt-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
   .mkt-title { margin: 0; font-size: 18px; font-weight: 650; letter-spacing: .01em; }
   .mkt-sub { font-size: 12px; color: var(--dim); margin: 0 0 14px; }
@@ -1331,6 +1345,13 @@
     padding: 0 6px; margin-right: 5px; background: var(--bg-2); vertical-align: 1px;
     font-family: inherit; }
   .mkt-legend { font-size: 11px; color: var(--dim); margin: -8px 0 12px; }
+  #mktCost { margin: -10px 0 12px; }
+  #mktCost:empty { display: none; }
+  #mktSyncLbl { font-size: 10.5px; opacity: .8; }
+  #mktSources { margin: -4px 0 10px; }
+  .mkt-n { font-weight: 700; opacity: .75; font-variant-numeric: tabular-nums; }
+  .mkt-sect-static { display: inline-block; color: var(--dim); }
+  .mkt-more { margin: 14px 0 0; text-align: center; }
   .mkt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
   .mkt-card { border: 1px solid var(--line); border-radius: var(--r-md); background: var(--panel);
     padding: 12px 13px; display: flex; gap: 11px; align-items: flex-start; min-width: 0; }
@@ -3062,15 +3083,19 @@
     #topbar .logo svg { width: 20px; height: 20px; vertical-align: 0; }
     #topbar #topTabs { display: flex; flex-direction: column; gap: 2px; margin: 0; }
     #topbar #topTabs .ttab {
-      width: 34px; height: 30px; min-height: 30px; padding: 0; font-size: 0;
+      width: 34px; height: 30px; min-height: 30px; padding: 0;
       display: flex; align-items: center; justify-content: center;
       border: 0; border-left: 2px solid transparent; }
-    #topbar #topTabs .ttab::before { content: attr(data-ic); font-size: 15px; line-height: 1; }
     #topbar #topTabs .ttab.active { border-left-color: var(--acc); }
     /* the session name is NOT read here: chatHead owns it (one name, one place) */
     #topbar .sessbadge, #topbar .u-f1 { display: none; }
     #topbar #sbxPill { padding: 0; width: 30px; height: 26px; justify-content: center; }
     #topbar #sbxPill #sbxTxt { display: none; }
+    /* 2026-11-15: the approval chip is a 30px glyph in this 44px rail too — its word
+       (96px) pushed the rail 70px wide and the gear out of the column. */
+    #topbar #apprPill { font-size: 0; width: 30px; height: 26px; padding: 0;
+                        justify-content: center; }
+    #topbar #apprPill::before { content: "\2713"; font-size: 12px; line-height: 1; }
     #topbar #palette-open, #topbar #buildChip {
       width: 32px; height: 28px; min-height: 28px; padding: 0; }
     #topbar #buildChip { font-size: 0; }
@@ -3141,6 +3166,27 @@
       max-width: calc(100vw / var(--zoom, 1) - 88px); }
   }
 
+  /* 2026-11-15 (operator): "still there are sizes that do not display all … every size
+     shall fit … leave an icon (mouse ON reveals what they are)". The tabs are icons at
+     every width now; in this band the SANDBOX and the APPROVAL MODE also shed their
+     words — the sandbox becomes its dot, the approval mode its ✓ — while each keeps its
+     aria-label + title, so hover says what it is. The words return with the room above
+     980 px. */
+  @media (max-width: 980px) and (min-height: 501px) {
+    #topbar #sbxTxt { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden;
+                      clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
+    #topbar #sbxPill { padding: 3px 7px; }
+    #topbar #apprPill { font-size: 0; padding: 3px 7px; }
+    #topbar #apprPill::before { content: "\2713"; font-size: 12px; line-height: 1; }
+  }
+  /* The session badge duplicates the chat head directly below it, and its title can be
+     any length; on a squeezed bar it was the item that pushed the gear off-screen (the
+     header is a scroller below 920, JAG-290). It leaves below 1101 px — the app's panel
+     drawer threshold — and Artifacts/Marketplace never show it (their page CSS). */
+  @media (max-width: 1100px) {
+    #sessBadge { display: none !important; }
+  }
+
   /* ---- PHONE HEADER (≤640, portrait) — declared LAST on purpose -------------
      The topbar's geometry is written twice in this sheet (the early layout block
      and the Graphite block at ~1273/~2420). A media query placed between them
@@ -3160,14 +3206,20 @@
     #topbar .logo { font-size: 0; }
     #topbar .logo svg { width: 20px; height: 20px; vertical-align: middle; }
     #topbar .topTabs { margin-right: 0; }
-    .topTabs .ttab { padding: 0 10px; }
   }
   @media (max-width: 480px) and (min-height: 501px) {
     /* Three tabs + the wordmark + the sandbox dot + search + gear must fit 390 px:
        tighten the tabs and the gaps; the two icon buttons keep a 28 px target. */
     #topbar { gap: 4px; padding: 8px 8px; }
-    .topTabs .ttab { padding: 0 6px; font-size: 11.5px; }
+    #topbar #topTabs .ttab { width: 34px; }
     #topbar #palette-open, #topbar #settingsBtn { width: 28px; min-width: 28px; height: 28px; }
+  }
+  @media (max-width: 360px) and (min-height: 501px) {
+    /* 320 px (the narrowest phone): the four icon tabs + sandbox dot + approval mode +
+       search + gear must fit; narrow the tab targets so the gear keeps the padding. */
+    #topbar { gap: 2px; padding: 8px 6px; }
+    #topbar #topTabs .ttab { width: 32px; }
+    #topbar #apprPill { padding: 3px 7px; }
   }
   /* v1014: the narrow phone's side room is the cheapest space the model name can
      have — 16 px here, and no control is resized or covered. Declared LAST for the
@@ -3209,14 +3261,17 @@
 <header id="topbar">
   <h1 class="logo"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px"><circle cx="14.9" cy="3.7" r="2.4" fill="currentColor" stroke="none"/><path d="M13.1 6.9 10.5 13.3"/><path d="M13.1 7.2 16.9 8.6 18.9 6.2"/><path d="M13.1 7.2 9.5 9.5 6.0 7.4"/><path d="M10.5 13.3 15.2 13.6 17.1 17.8"/><path d="M10.5 13.3 6.1 16.6 2.4 14.1"/></svg> LONGRUN</h1>
   <nav id="topTabs" class="topTabs" aria-label="top-level sections">
-    <a class="ttab active" id="tabSessions" href="#sessions" data-call="showSessions" data-ic="▤"
-       aria-label="sessions" title="sessions" aria-current="page">Sessions</a>
-    <a class="ttab" id="tabControl" href="#control" data-call="showControl" data-ic="◫"
-       aria-label="control deck" title="control deck">Control</a>
-    <a class="ttab" id="tabArtifacts" href="#artifacts" data-call="showArtifacts" data-ic="▧"
-       aria-label="my artifacts" title="files the harness produced">My Artifacts</a>
-    <a class="ttab" id="tabMarket" href="#market" data-call="showMarket" data-ic="◈"
-       aria-label="marketplace" title="plugins, skills and MCP servers to install">Marketplace</a>
+    <!-- 2026-11-15 (operator): "remove the text on top bar for tabs use only icons
+         always!" Four drawn SVGs (the rail's 17px/1.8 stroke recipe), named by
+         aria-label + title so hover still says what each section is. -->
+    <a class="ttab active" id="tabSessions" href="#sessions" data-call="showSessions"
+       aria-label="sessions" title="sessions" aria-current="page"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 3 7.5l9 4.5 9-4.5L12 3Z"/><path d="m3 12.4 9 4.5 9-4.5"/></svg></a>
+    <a class="ttab" id="tabControl" href="#control" data-call="showControl"
+       aria-label="control deck" title="control deck"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/><path d="M10 9v11"/></svg></a>
+    <a class="ttab" id="tabArtifacts" href="#artifacts" data-call="showArtifacts"
+       aria-label="my artifacts" title="files the harness produced"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg></a>
+    <a class="ttab" id="tabMarket" href="#market" data-call="showMarket"
+       aria-label="marketplace" title="plugins, skills and MCP servers to install"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 7.5h14l-1.2 11.3a2 2 0 0 1-2 1.7H8.2a2 2 0 0 1-2-1.7Z"/><path d="M9 10V6.5a3 3 0 0 1 6 0V10"/></svg></a>
   </nav>
   <span class="sessbadge" id="sessBadge" hidden></span>
   <span class="u-f1"></span>
@@ -3310,14 +3365,16 @@
     <button class="ghost" id="mktManage" data-call="mktManage"
             title="installed items: version, source, digest, update">Manage</button>
     <!-- v1025: pull an external marketplace in. Read-only against the registry; a
-         skill's digest is pinned at sync time, so the install still verifies bytes. -->
+         skill's digest is pinned at sync time, so the install still verifies bytes.
+         v1030: this select is the SYNC target — the catalogue filter is #mktSources. -->
+    <span class="art-n" id="mktSyncLbl">sync from</span>
     <select id="mktSource" class="art-sel" aria-label="external marketplace to sync"
             title="the external marketplace a sync reads">
       <option value="mcp-registry">MCP Registry (official)</option>
       <option value="clawhub">ClawHub (OpenClaw skills)</option>
     </select>
     <button class="ghost" id="mktSync" data-call="mktSync"
-            title="fetch this marketplace into the catalogue — nothing installs by itself">⇣ sync</button>
+            title="fetch this marketplace into the catalogue — nothing installs by itself">⇣ import</button>
     <span class="art-n" id="mktSyncAge" aria-live="polite"></span>
     <button class="ghost" id="mktReload" data-call="mktReload" title="reload the catalogue"
             aria-label="reload the catalogue">↻</button>
@@ -3325,6 +3382,7 @@
   <p class="mkt-sub">Discover and install plugins, skills and MCP servers. Every install is digest-verified.</p>
   <p class="mkt-legend" id="mktLegend">Plugin = in-process tool · Skill = instructions ·
     MCP = external server · Connector = MCP that needs a key</p>
+  <p class="mkt-legend" id="mktCost" aria-live="polite"></p>
   <div class="mkt-tabs" id="mktTabs" role="tablist" aria-label="marketplace kinds">
     <button class="mkt-tab" role="tab" data-kind="all" aria-selected="true">All</button>
     <button class="mkt-tab" role="tab" data-kind="plugin" aria-selected="false">Plugins</button>
@@ -3333,6 +3391,8 @@
     <button class="mkt-tab" role="tab" data-kind="connector" aria-selected="false">Connectors</button>
     <button class="mkt-tab" role="tab" data-kind="manage" aria-selected="false">Manage</button>
   </div>
+  <!-- Which catalogue an entry came from (catalogue origins, not adapter ids). -->
+  <div class="mkt-chips" id="mktSources" role="group" aria-label="filter by catalogue"></div>
   <div class="mkt-row">
     <input id="mktSearch" class="mkt-search" type="search" spellcheck="false"
            placeholder="search the catalogue" aria-label="search the catalogue">
@@ -4056,6 +4116,8 @@
           <div class="u-df u-aic u-g8 u-fww">
             <div class="remaining u-f1" id="mcpSummary">loading…</div>
             <button class="ghost" data-call="openMcpFile" title="open the gitignored config/mcp_clients.local.json in the editor and edit it by hand">✎ edit file</button>
+            <button class="ghost" data-call="openMarketKind" data-args='["mcp"]'
+                    title="browse MCP servers in the Marketplace">◈ marketplace</button>
             <button class="ghost" data-call="openMcpJson" title="paste a server's mcpServers snippet and press confirm">⧉ paste JSON</button>
             <button class="ghost" data-call="reloadMcp" title="reload all MCP servers from the file">↻ reload</button>
           </div>
@@ -4084,6 +4146,10 @@
         <div class="card">
           <div class="remaining">A connector installs an MCP server <b>disabled</b>.
             Set its keys (Keys panel), test it here, then enable it in MCP.</div>
+          <div class="u-df u-g8 u-fww u-mt8">
+            <button class="ghost" data-call="openMarketKind" data-args='["connector"]'
+                    title="browse connectors in the Marketplace">◈ marketplace</button>
+          </div>
           <div id="connList" class="u-mt8"></div>
           <div id="connResult" class="remaining u-mt6"></div>
         </div>
@@ -4125,6 +4191,8 @@
             <input aria-label="skill zip file" type="file" id="skillZip" accept=".zip" class="u-fs12" style="flex:1;min-width:170px">
             <input aria-label="skill name" id="skillName" class="inp u-p610 u-fs12" style="flex:1;min-width:130px" placeholder="name (optional · from file)">
             <button class="ghost" data-call="installSkillZip">install</button>
+            <button class="ghost" data-call="openMarketKind" data-args='["skill"]'
+                    title="browse skills in the Marketplace">◈ marketplace</button>
           </div>
           <label class="remaining u-df u-g6 u-aic u-mt6"><input type="checkbox" id="skillOverwrite"> overwrite if exists</label>
           <div id="skillResult" class="remaining u-mt4" role="status" aria-live="polite"></div>
@@ -10358,9 +10426,7 @@ function _todoCtx(ev, n) {
   m.style.cssText = "position:fixed;z-index:200;padding:4px;min-width:200px";
   m.innerHTML = '<button class="ghost mi">\u25ce Show in constellation</button>';
   document.body.appendChild(m);
-  const r = m.getBoundingClientRect();
-  m.style.left = Math.max(4, Math.min(ev.clientX, innerWidth - r.width - 8)) + "px";
-  m.style.top = Math.max(4, Math.min(ev.clientY, innerHeight - r.height - 8)) + "px";
+  _placeMenu(m, ev.clientX, ev.clientY, false);
   m.querySelector("button").onclick = () => { _closeTodoCtx(); _showInConstellation(n); };
   setTimeout(() => document.addEventListener("mousedown", _closeTodoCtx, { once: true }), 0);
 }
@@ -10897,6 +10963,9 @@ async function loadApprPill() {
     el.className = "pill sbox" + (mode === "full" ? " warn" : " ok");
     el.textContent = "approvals: " + mode;
     el.title = "tool approval mode: " + mode + " — click for Settings › Permissions";
+    // 2026-11-15: on a squeezed bar the chip is only its ✓ glyph, so the name must still
+    // say the mode (and keep the visible text as a substring — axe label-content-name).
+    el.setAttribute("aria-label", "approvals: " + mode + " — click for Settings › Permissions");
   } catch (_) { el.hidden = true; }
 }
 /* v1023: the issue template already ships in the repository; this is the door to
@@ -18545,7 +18614,10 @@ function _placeMenu(m, x, y, alignRight) {
   const z = _uiZoom();
   m.style.left = "0px"; m.style.top = "0px";
   const w = m.offsetWidth, h = m.offsetHeight;      // layout px
-  const vw = window.innerWidth, vh = window.innerHeight;   // layout px too
+  // innerWidth/innerHeight are VISUAL px under the app's CSS zoom; the menu's own
+  // width/height are layout px. Divide the viewport too, or a click near the right
+  // edge places the menu past it (it used to land off-screen and clip its items).
+  const vw = window.innerWidth / z, vh = window.innerHeight / z;   // layout px
   const tx = x / z, ty = y / z;                     // visual → layout
   let left = alignRight ? tx - w : tx;
   left = Math.max(8, Math.min(left, vw - w - 8));
@@ -19733,6 +19805,17 @@ function showMarket() {
   _dockControlSettle();
   try { history.replaceState(null, "", location.pathname + location.search + "#market"); } catch (_) {}
   if (window.LRMkt) window.LRMkt.load();
+}
+/* 2026-11-15 (operator): "in MCP put a button that redirect to marketplace/mcps … the
+   same in the skills settings panel … etcetera." The Marketplace owns the catalogue;
+   one click from a Settings panel lands on the right KIND, not on "All". */
+function openMarketKind(kind) {
+  closeSettings();
+  if (window.LRMkt) {
+    window.LRMkt.state.manage = false;
+    window.LRMkt.state.kind = String(kind || "all");
+  }
+  showMarket();   // loads with the kind we just set
 }
 function showSessions() {
   const cv = document.getElementById("controlView"); if (cv) { cv.classList.remove("on"); cv.setAttribute("aria-hidden", "true"); }

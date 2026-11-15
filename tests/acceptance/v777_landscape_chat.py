@@ -44,12 +44,17 @@ check("A1 the TOP BAR leaves the flow and becomes a 44px LEFT RAIL",
       "#topbar {\n      position: fixed; left: 0; top: 0; bottom: 0; right: auto;" in _BLK
       and "width: 44px; height: auto; min-height: 0;" in _BLK
       and "flex-direction: column; align-items: center; justify-content: flex-start;" in _BLK)
+TABS = re.findall(r'<a class="ttab[^>]*>.*?</a>', UI, re.S)
 check("A2 its labels are replaced by ICONS, and every icon keeps its NAME",
       "#topbar .logo { font-size: 0;" in _BLK
-      and '#topbar #topTabs .ttab::before { content: attr(data-ic);' in _BLK
-      and 'data-ic="▤"' in UI and 'data-ic="◫"' in UI
+      # 2026-11-15 (operator): the tabs are icon-only at EVERY width now — four drawn
+      # 17px/1.8 SVGs, named by aria-label + title (no text glyph, no `data-ic`).
+      and len(TABS) == 4
+      and all("<svg" in t and 'width="17" height="17"' in t and 'stroke-width="1.8"' in t
+              for t in TABS)
       and 'id="tabSessions"' in UI and 'aria-label="sessions"' in UI
-      and 'aria-label="control deck"' in UI)
+      and 'aria-label="control deck"' in UI
+      and "data-ic" not in UI)
 check("A3 the session name is printed ONCE (chatHead owns it, the badge goes)",
       "#topbar .sessbadge, #topbar .u-f1 { display: none; }" in _BLK
       and "#chatHead { height: 26px; min-height: 26px; padding: 0 8px; }" in _BLK

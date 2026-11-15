@@ -26,3 +26,11 @@ cache_ttl: 3600
 featured_limit: 6
 # Days after which a synced group is marked stale in the page (0 = never).
 stale_days: 7
+# How many registry servers a mirror may hold: 0 = every published server.
+# The official registry grows continuously (~8k active latest servers on 2026-11-15);
+# the import runs in the background and the page shows its progress.
+registry_max: 0
+# Safety bound on one registry pass (100 rows per page upstream).
+max_sync_pages: 600
+# Online search results the page may show at once (a preview, nothing is pinned).
+remote_search_limit: 50

@@ -62,7 +62,7 @@ check("B3 aria-current repaints inside applyView (one decider)",
       'b.setAttribute("aria-current", "page")' in ORBIT
       and "b.removeAttribute(\"aria-current\")" in ORBIT)
 check("B4 narrow screens stack the rail on top (same buttons)",
-      "@media (max-width:1100px)" in ORBIT
+      "@media (max-width:1200px)" in ORBIT
       and ".wrap.deck{flex-direction:column}" in ORBIT)
 check("B5 hiding still flows through data-panel (logic untouched)",
       'const key = p.getAttribute("data-panel")' in ORBIT

@@ -107,6 +107,53 @@ All notable changes to Longrun are documented here. The format follows
   model. The approval ledger still stores the raw args of the call it recorded — not model-bound.)
 
 ### Fixed
+- **Settings points at the Marketplace instead of growing a second catalogue (`v1035`).** Operator:
+  *"in MCP put a button that redirect to marketplace/mcps … the same in the skills settings panel …
+  etcetera."* The three Settings categories that own a catalogue (MCP, Connectors, Skills) now carry one
+  `◈ marketplace` button that closes Settings, sets the catalogue's `kind` and opens the Marketplace on
+  that section — `openMarketKind(kind)` is the single door, so nothing is installed from a second place.
+  (Locked by `v1035` A.)
+- **The editor no longer sits dead over the Control deck (`v1035`).** Operator: *"if open editors and
+  pass to control page and squeeze it doesn't respond to close commands and commands in general."* The
+  dock lived inside `#app`, which is `inert` while the deck owns the row: the window stayed visible and
+  received neither clicks nor keys, and squeezing turned it into a fixed overlay on top. It is now
+  hidden under `body.control-on` and comes back exactly as it was on Sessions; `_clampFloat` also
+  refuses a zero rect, so a resize while it is not rendered can no longer clamp a floating window to
+  0,0 and lose the position the operator left it at. (Locked by `v1035` B.)
+- **The Control deck is one panel under the other below 1200 px (`v1035`).** Operator: *"control page
+  horrible squeeze demolish everything and mobile shall become one below the other."* A custom view is a
+  flex ROW that wraps, so at a squeezed width four panels shared the strip and the fourth wrapped into a
+  second column at `x = viewport + 4` — off-screen (measured at 1100 px). Below 1200 px the deck is now
+  a non-wrapping COLUMN: every panel is full width with a 320 px floor and the deck scrolls; the rail is
+  a top strip at the same breakpoint and `_layoutViewCols` returns early (tearing down an existing rows
+  layout on the way down). Measured at 1440/1204/1201 (unchanged desktop rows) and 1100/900/700/390
+  (all four panels at `x=4`, stacked, `scrollHeight` 1351 > 472). (Locked by `v1035` C.)
+- **A right-click menu opens at the pointer, under every page zoom (`v1029`).** Operator: *"right click
+  that opens menus example in the editor or elsewhere open the editors far away from the mouse click
+  that's not good."* At 130 % (the app's own zoom) a right-click at (1110, 183) put the editor-tab menu
+  at (1383, 238) — ~270 px right of the pointer and clipped by the window. A click arrives in VISUAL
+  px and `innerWidth`/`innerHeight` are visual too, while a CSS `left:` and the menu's own
+  `offsetWidth/offsetHeight` are layout px: the shared `_placeMenu` converted only the click, and the
+  editor's two menus (file row, tab) plus the Plan-todo menu did not convert at all. All of them now
+  go through `_placeMenu`, which converts the click AND the viewport, flips the menu above when it
+  would pass the bottom, and keeps it inside the window. (Locked by `v1029` 12/12; live: at 70 %,
+  100 %, 130 % and 160 % the menu lands on the click and clamps inside the viewport.)
+- **The topbar fits every size, and its tabs are icons at every width (`v1028`).**
+  Operator: *"in mobile squeezed format not all objects are visible…"*, then *"still there are sizes
+  that do not display all … every size shall fit … leave an icon (mouse ON reveals what they are)"*,
+  then *"remove the text on top bar for tabs use only icons always!"*. The header answered with
+  `overflow-x: auto`, so the search and the gear slid off the bar (measured: 820 px of content on a
+  770 px window; on a 390 px phone the last two controls were outside the viewport). The four section
+  tabs are now drawn 17 px SVGs at EVERY width (the rail's stroke recipe: Sessions = layers, Control =
+  deck layout, My Artifacts = tiles, Marketplace = bag), named by `aria-label` + `title`; below 980 px
+  the sandbox becomes its dot and the approval chip its ✓, also titled. The session badge leaves below
+  1101 px (the chat head names the session) and is never shown on My Artifacts or Marketplace, which
+  own their row and already carry their own session filter. The 320 px bar narrows the tab targets,
+  and the landscape 44 px rail gets the same 30 px approval glyph (its word overflowed the column).
+  Verified live at 320, 360, 390, 480, 640, 641, 700, 765, 820, 900, 980, 981, 1000, 1024, 1100,
+  1101, 1280 and 1440 px plus the 844×390 rail: `scrollWidth == clientWidth` and every control inside
+  the viewport. Nothing is removed: sandbox, approval mode, search and settings all stay. (Locked by
+  `v1028` 13/13.)
 - **A rail icon stays copper while the surface it opened is expanded (`v1026`).** Operator:
   *"the side bar colours shall be maintained if the relevant panel session is expanded this is still
   not true for the upper icons."* The Inspector jumps were already painted from `.insp-open`, but the

@@ -38,6 +38,12 @@ DEFAULTS = {
     "cache_ttl": 3600,
     "featured_limit": 6,
     "stale_days": 7,
+    # 0 = import every published registry server; a number caps the mirror.
+    "registry_max": 0,
+    # Safety bound on a single registry pass (100 rows per page upstream).
+    "max_sync_pages": 600,
+    # How many online search results the page may show at once (max 100).
+    "remote_search_limit": 50,
 }
 MAX_CATALOG_BYTES = 4 * 1024 * 1024
 MAX_ITEM_BYTES = 32 * 1024 * 1024
@@ -184,7 +190,9 @@ def config_view():
     cfg = _config()
     return {"catalogs": list(cfg["catalogs"]), "allow_hosts": list(cfg["allow_hosts"]),
             "cache_ttl": cfg["cache_ttl"], "featured_limit": cfg["featured_limit"],
-            "stale_days": cfg["stale_days"]}
+            "stale_days": cfg["stale_days"], "registry_max": cfg.get("registry_max", 0),
+            "max_sync_pages": cfg.get("max_sync_pages", 600),
+            "remote_search_limit": cfg.get("remote_search_limit", 50)}
 
 
 def origin_label(origin):
@@ -299,6 +307,9 @@ def _normalize(raw, origin):
         "title": str(raw.get("title") or name),
         "description": str(raw.get("description") or ""),
         "category": str(raw.get("category") or "Uncategorised"),
+        # The publisher's own label, when it had one, kept for the tooltip only:
+        # the chip/filter always uses `category` (the curated macro-area).
+        "upstream_category": str(raw.get("upstream_category") or ""),
         "featured": bool(raw.get("featured")),
         "version": str(raw.get("version") or ""),
         "publisher": str(raw.get("publisher") or ""),
@@ -411,23 +422,59 @@ def categories(items=None):
     return sorted(out)
 
 
-def search(q="", kind=None, category=None, featured=False, limit=60):
+def _taxonomy_order(names):
+    """Chips in the curated order first, then any extra category alphabetically."""
+    from longrun.core import market_taxonomy
+    areas = market_taxonomy.areas()
+    head = [a for a in areas if a in names]
+    tail = sorted(n for n in names if n not in areas)
+    return head + tail
+
+
+def search(q="", kind=None, category=None, featured=False, limit=60,
+           source=None, offset=0):
+    """Filtered catalogue page.
+
+    `source` matches an item's ORIGIN (`bundled`, `imported:mcp-registry`,
+    `imported:clawhub`, `local`, a catalogue URL); a value ending in ":" is a
+    prefix, so `imported:` covers every adapter. `categories` and
+    `category_counts` are computed for the CURRENT kind/source/search scope and
+    BEFORE the category filter, so a chip that would return nothing is not shown.
+    """
     items, errors, stats = catalog()
     q = str(q or "").strip().lower()
+    src = str(source or "").strip().lower()
     if kind:
         items = [i for i in items if i["kind"] == kind]
-    if category:
-        items = [i for i in items if i["category"].lower() == str(category).lower()]
+    if src:
+        items = [i for i in items
+                 if (i.get("origin", "").lower().startswith(src) if src.endswith(":")
+                     else i.get("origin", "").lower() == src)]
     if featured:
         items = [i for i in items if i["featured"]]
     if q:
         items = [i for i in items
                  if q in i["id"].lower() or q in i["name"].lower()
                  or q in i["title"].lower() or q in i["description"].lower()]
+    scoped = categories(items)
+    counts = {}
+    for i in items:
+        counts[i["category"]] = counts.get(i["category"], 0) + 1
+    if category:
+        items = [i for i in items if i["category"].lower() == str(category).lower()]
+    stats = dict(stats)
     stats["matched"] = len(items)
-    items = [dict(i, origin_label=origin_label(i.get("origin"))) for i in items[:max(1, int(limit))]]
-    return {"ok": True, "items": items, "categories": categories(),
-            "errors": errors, "stats": stats, "config": config_view()}
+    stats["category_counts"] = counts
+    stats["by_kind"] = {}
+    for i in items:
+        stats["by_kind"][i["kind"]] = stats["by_kind"].get(i["kind"], 0) + 1
+    start = max(0, int(offset or 0))
+    page = items[start:start + max(1, int(limit))]
+    page = [dict(i, origin_label=origin_label(i.get("origin"))) for i in page]
+    from longrun.core import market_taxonomy
+    return {"ok": True, "items": page, "categories": _taxonomy_order(scoped),
+            "errors": errors, "stats": stats, "config": config_view(),
+            "taxonomy": market_taxonomy.areas()}
 
 
 # ── installed record ──────────────────────────────────────────────────────────

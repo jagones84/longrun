@@ -46,7 +46,7 @@ check("P5 same worker registered (install flow, never /api)",
       and 'url.pathname.startsWith("/api/")' in SW)
 check("P6 notch safe-areas honored", "env(safe-area-inset-top" in ORBIT)
 check("P7 narrow layout keeps the rail usable (top strip, no row grips)",
-      "@media (max-width:1100px)" in ORBIT and "@media (max-width:640px)" in ORBIT)
+      "@media (max-width:1200px)" in ORBIT and "@media (max-width:640px)" in ORBIT)
 
 print("---")
 ok = sum(results)

@@ -70,9 +70,16 @@ check("C1 a horizontal splitter resizes the whole ROW above, per row",
       and "const h = Math.max(220, Math.min(3000, h0 + (ev.clientY - y0)))" in ORBIT)
 check("C2 row splitter sits between the two rows",
       "deck.insertBefore(sp, rowB)" in ORBIT)
-check("D1 mobile (<=1100px) keeps the plain vertical stack (no rows built)",
-      'if (window.matchMedia("(max-width:1100px)").matches) return; // mobile stack' in ORBIT
-      and "@media (max-width:1100px){ .rz-vrow{display:none} .vrow{height:auto} }" in ORBIT)
+check("D1 mobile (<=1200px) keeps the plain vertical stack (no rows built)",
+      'if (window.matchMedia("(max-width:1200px)").matches) return; // mobile stack' in ORBIT
+      and "@media (max-width:1200px){" in ORBIT
+      and ".rz-vrow{display:none}" in ORBIT
+      and "main.view-cols .vrow{flex-direction:column;overflow:visible}" in ORBIT
+      and "main.view-cols .vrow > section.panel[data-panel],"
+          in ORBIT
+      and "main.view-cols .deckBody section.panel[data-panel]{width:100%;max-width:100%;min-width:0;"
+          in ORBIT
+      and "flex:0 0 auto !important;min-height:320px !important}" in ORBIT)
 check("D2 window resize re-flows only when the column count changes (live panel count)",
       "if (c !== this._vlastNCols) this._layoutViewCols()" in ORBIT
       and "this._vlastNCols = ncols" in ORBIT

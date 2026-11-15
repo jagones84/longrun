@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""v1026 — every rail door keeps the accent while the surface it opens is expanded.
+"""v1034 — every rail door keeps the accent while the surface it opens is expanded.
 
 Operator, 2026-11-15:
   *"the side bar colours shall be maintained if the relevant panel session is expanded
@@ -19,7 +19,7 @@ as the pointer left. This pins the fix to the same source of truth the panel its
   E) no new state store, endpoint or duplicate repaint path.
 
 Deterministic: static contract on webui/index.html + webui/assets/editor.js.
-Run: python3 tests/acceptance/v1026_rail_icon_state.py
+Run: python3 tests/acceptance/v1034_rail_icon_state.py
 """
 import os
 import sys
@@ -85,5 +85,5 @@ check("E1 no endpoint was invented for a visual state",
 
 print("---")
 passed = sum(results)
-print("v1026: %d/%d PASS" % (passed, len(results)))
+print("v1034: %d/%d PASS" % (passed, len(results)))
 sys.exit(0 if passed == len(results) else 1)

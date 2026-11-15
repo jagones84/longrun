@@ -85,7 +85,7 @@ check("G1 the kind tabs are declared once (Plugins · Skills · MCP · Connector
 check("G2 the tab strip keeps aria-selected in step with the state",
       't.setAttribute("aria-selected", on ? "true" : "false")' in JS)
 check("G3 category chips are rendered from the backend's own categories",
-      "renderChips((cat && cat.categories) || [])" in JS)
+      "renderChips((cat && cat.categories) || []" in JS)
 check("G4 an empty catalogue explains both ways to fill it",
       "config/market.yaml" in JS and "data/market/catalog.json" in JS)
 

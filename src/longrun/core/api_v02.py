@@ -2012,7 +2012,8 @@ def handle(handler, method, path, qs, body):
             from longrun.core import market as _mkt
             return _r(handler, 200, _mkt.search(
                 qs.get("q") or "", qs.get("kind") or None, qs.get("category") or None,
-                qs.get("featured") in ("1", "true", "yes"), _int(qs.get("limit"), 60)))
+                qs.get("featured") in ("1", "true", "yes"), _int(qs.get("limit"), 60),
+                qs.get("source") or None, _int(qs.get("offset"), 0)))
         if path == "/api/market/installed":
             from longrun.core import market as _mkt
             return _r(handler, 200, _mkt.installed())
@@ -2031,7 +2032,19 @@ def handle(handler, method, path, qs, body):
             from longrun.core import market as _mkt
             from longrun.core import market_sync as _ms
             return _r(handler, 200, {"ok": True, "sources": _ms.status(),
+                                     "job": _ms.job_status(),
                                      "allow_hosts": _mkt.config_view()["allow_hosts"]})
+        # The background import the page started (progress while it runs).
+        if path == "/api/market/sync/status":
+            from longrun.core import market_sync as _ms
+            return _r(handler, 200, {"ok": True, "job": _ms.job_status()})
+        # ONLINE search: breadth without mirroring 10k skills. Rows are previews.
+        if path == "/api/market/remote":
+            from longrun.core import market as _mkt
+            from longrun.core import market_sync as _ms
+            return _r(handler, 200, _ms.search_remote(
+                qs.get("source") or "clawhub", qs.get("q") or "",
+                _int(qs.get("limit"), _mkt.config_view().get("remote_search_limit") or 50)))
         # User-defined `/` commands (data/commands.yaml) and the connector view
         # over the catalogue. Both read the ONE store their object already has.
         if path == "/api/commands":
@@ -2622,9 +2635,21 @@ def handle(handler, method, path, qs, body):
         # against the registry; every fetched artifact is pinned by digest.
         if path == "/api/market/sync":
             from longrun.core import market_sync as _ms
-            res = _ms.sync(body.get("source") or "mcp-registry",
-                           body.get("limit"), body.get("query") or "")
-            _publish("market.sync", source=body.get("source"), ok=bool(res.get("ok")))
+            src = body.get("source") or "mcp-registry"
+            # A full registry mirror is minutes long: the page starts a background
+            # job and polls /api/market/sync/status. `background: 0` keeps the old
+            # synchronous path for the CLI and for tests.
+            if body.get("background", True):
+                res = _ms.start(src, body.get("limit"), body.get("query") or "")
+                _publish("market.sync", source=src, ok=bool(res.get("ok")), background=True)
+            else:
+                res = _ms.sync(src, body.get("limit"), body.get("query") or "")
+                _publish("market.sync", source=src, ok=bool(res.get("ok")))
+            return _r(handler, 200 if res.get("ok") else 400, res)
+        if path == "/api/market/import-remote":
+            from longrun.core import market_sync as _ms
+            res = _ms.import_one(body.get("source") or "clawhub", body.get("slug") or "")
+            _publish("market.import", source=body.get("source"), ok=bool(res.get("ok")))
             return _r(handler, 200 if res.get("ok") else 400, res)
         if path == "/api/connectors/install":
             from longrun.core import connectors as _conn
