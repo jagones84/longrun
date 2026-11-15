@@ -72,8 +72,9 @@
 
   function get(key) { return memory[key] || load(key); }
 
-  function save(key, st) {
+  function save(key, st, persist) {
     memory[key] = st;
+    if (persist === false) return;
     try { localStorage.setItem(KEYPREFIX + key, JSON.stringify(st)); } catch (e) {}
   }
 
@@ -178,7 +179,7 @@
       }
       teamSel.value = st.team;
     }
-    function commit() { save(key, st); paint(); if (opts.onChange) opts.onChange(st); }
+    function commit() { save(key, st, !opts.noPersist); paint(); if (opts.onChange) opts.onChange(st); }
 
     teamSel.onchange = function () { st.team = teamSel.value; commit(); };
     sortSel.onchange = function () {
@@ -225,7 +226,7 @@
       refreshTeams: function () { fillTeams(true); paint(); },
       setSilent: function (patch) {   // a page-owned normalisation, no onChange
         Object.keys(patch || {}).forEach(function (k) { if (patch[k] !== undefined) st[k] = patch[k]; });
-        save(key, st);
+        save(key, st, !opts.noPersist);
         paint();
       }
     };

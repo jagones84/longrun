@@ -475,9 +475,10 @@
   .sgroup-h:hover { background: var(--hover); color: var(--txt); }
   /* v910: the No-team header carries the SAME bulk kebab as the Control deck's
      team headers — glyph control, no frame (rule 9), named for a11y (rule 2). */
-  .sgroup-h .gkebab { border: 0; background: none; color: var(--dim); cursor: pointer;
-    font-size: 13px; line-height: 1; padding: 1px 4px; border-radius: 6px; flex: none; }
-  .sgroup-h .gkebab:hover { background: var(--hover); color: var(--txt); }
+  .sgroup-h .gkebab, .sgroup-h .gassign { border: 0; background: none; color: var(--dim);
+    cursor: pointer; font-size: 13px; line-height: 1; padding: 1px 4px; border-radius: 6px; flex: none; }
+  .sgroup-h .gkebab:hover, .sgroup-h .gassign:hover { background: var(--hover); color: var(--txt); }
+  .sgroup-h .gassign { font-size: 12px; opacity: .9; }
   .sgroup-h .chev { font-size: 11px; width: 11px; text-align: center; opacity: .75; }
   .sgroup-h .gsym { font-size: 13px; line-height: 1; color: var(--tcol, var(--dim)); }
   .sgroup-h .gname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -501,6 +502,8 @@
   .srail-tools button { background: transparent; border: 1px solid transparent; color: var(--dim);
     border-radius: 6px; padding: 0 5px; font-size: 10px; line-height: 16px; cursor: pointer; }
   .srail-tools button:hover { color: var(--txt); border-color: var(--acc); }
+  .srail-tools button[aria-expanded="true"] { color: var(--txt); border-color: var(--acc);
+    background: var(--hover); }
   /* v879 (operator): ONE control per job. Two arrows (▲/▼, ⊞/⊟) said the same
      thing twice; a single fold toggle now carries the STATE on its glyph —
      chevrons apart while something can be opened, together when all is open —
@@ -530,7 +533,10 @@
      dim on a hairline. One definition, dim on a hairline, at the row's smallest size. */
   .sess .jid { font-size: 10.5px; color: var(--dim); flex-shrink: 0;
     background: var(--hover); border: 1px solid var(--line);
-    border-radius: 6px; padding: 1px 5px; }
+    border-radius: 6px; padding: 1px 5px; cursor: pointer; }
+  /* AGENTS-panel parity: an EMPTY ROLE.md is a real state and stays visible. */
+  .sess .req { color: var(--warn, var(--acc)); font-size: 11px; flex-shrink: 0;
+    line-height: 1; }
   /* JAG-2.8: agent role label in the session rail (e.g. "Senior Project Manager") */
   .sess .nrl { font-size: 10.5px; color: var(--dim); white-space: nowrap; overflow: hidden;
     text-overflow: ellipsis; max-width: 120px; flex-shrink: 1; }
@@ -1286,6 +1292,43 @@
     background: var(--bg); display: none; }
   #controlView.on { display: block; }
   #controlView iframe { width: 100%; height: 100%; border: 0; display: block; background: var(--bg); }
+  /* 2026-11-16: ONE reusable panel window hosted by the Sessions page. It shows a
+     single deck panel (agents/jobs/org/const) and the deck's own editors inside it,
+     so the Sessions rail and Control share one implementation. The full Control
+     tab stays the backup; this window is a guest, not a second deck. */
+  #panelView { position: fixed; left: 0; top: 52px; z-index: 19;
+    width: min(620px, calc(100vw / var(--zoom, 1) - 40px));
+    height: calc(100dvh / var(--zoom, 1) - 64px);
+    display: flex; flex-direction: column; overflow: hidden;
+    background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--r, 12px);
+    box-shadow: var(--shadow-2, 0 18px 48px rgba(0,0,0,.42)); }
+  #panelView[hidden] { display: none; }
+  #panelView .pv-head { display: flex; align-items: center; gap: 8px; flex: 0 0 auto;
+    padding: 6px 8px; border-bottom: 1px solid var(--line); background: var(--panel2, var(--panel)); }
+  #panelView #pvTitle { font-size: 12px; font-weight: 600; color: var(--txt); white-space: nowrap; }
+  #panelView .pv-scope { font-size: 10.5px; color: var(--dim); max-width: 190px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #panelView .pv-tabs { display: inline-flex; align-items: center; gap: 2px; min-width: 0; }
+  #panelView .pv-tabs button { border: 1px solid transparent; border-radius: 6px;
+    background: transparent; color: var(--dim); font-size: 11px; padding: 4px 8px; cursor: pointer; }
+  #panelView .pv-tabs button:hover { color: var(--txt); border-color: var(--line-2); }
+  #panelView .pv-tabs button[aria-selected="true"] { color: var(--txt); border-color: var(--acc);
+    background: var(--hover); }
+  #panelView .pv-head > button { border: 1px solid transparent; border-radius: 6px;
+    background: transparent; color: var(--dim); font-size: 11px; padding: 4px 8px; cursor: pointer; }
+  #panelView .pv-head > button:hover { color: var(--txt); border-color: var(--line-2); }
+  #panelView #panelFrame { flex: 1 1 auto; width: 100%; border: 0; display: block; background: var(--bg); }
+  #panelView .pv-resize { position: absolute; top: 0; right: 0; bottom: 0; width: 8px;
+    cursor: col-resize; z-index: 2; }
+  #panelView .pv-resize:hover { background: linear-gradient(90deg, transparent, var(--acc)); opacity: .35; }
+  @media (max-width: 900px) {
+    #panelView { left: 0 !important; top: 0 !important; border-radius: 0; z-index: 30;
+      width: calc(100vw / var(--zoom, 1)) !important;
+      height: calc(100dvh / var(--zoom, 1)) !important; }
+    #panelView .pv-resize { display: none; }
+    #panelView .pv-scope { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) { #panelView, #panelView * { transition: none !important; } }
   /* the session/inspector toggles make no sense on the Control view */
   body.control-on .pane-tog-grp { display: none !important; }
   /* 2026-11-15 (operator): "if open editors and pass to control page and squeeze it
@@ -3331,6 +3374,25 @@
   </button>
 </header>
 <div id="controlView" aria-hidden="true"><iframe id="controlFrame" title="Control deck"></iframe></div>
+<!-- 2026-11-16: the Sessions page's reusable Control window. One iframe, one panel
+     at a time; the deck's own panel code renders the content. -->
+<div id="panelView" hidden role="dialog" aria-modal="false" aria-labelledby="pvTitle">
+  <div class="pv-head">
+    <b id="pvTitle">Agents</b>
+    <span class="pv-scope" id="pvScope"></span>
+    <nav class="pv-tabs" role="tablist" aria-label="control panels">
+      <button type="button" role="tab" data-panel="agents" aria-selected="true">Agents</button>
+      <button type="button" role="tab" data-panel="jobs" aria-selected="false">Jobs</button>
+      <button type="button" role="tab" data-panel="org" aria-selected="false">Org</button>
+      <button type="button" role="tab" data-panel="const" aria-selected="false">Map</button>
+    </nav>
+    <span class="u-f1"></span>
+    <button type="button" id="pvControl" title="open the full Control page">Control</button>
+    <button type="button" id="pvClose" aria-label="close panel" title="close (Esc)">×</button>
+  </div>
+  <iframe id="panelFrame" title="session panel"></iframe>
+  <div id="pvResize" class="pv-resize" title="drag to resize" aria-hidden="true"></div>
+</div>
 <!-- MyArtifacts — files the harness (or the journaled editor save) produced,
      read from GET /api/artifacts. A PAGE, not a panel: while its tab is active it
      owns the row, exactly like the Control deck, and the tab strip marks it. -->
@@ -3411,7 +3473,7 @@
   <aside id="aside" data-col="sessions" aria-label="sessions rail">
     <section class="rail">
       <header class="rail-head">
-        <h2>Sessions<span class="srail-tools"><button type="button" id="railToggleAll" class="fold-tg" title="expand all groups" aria-label="expand all groups"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.5 9.5 12 5l4.5 4.5"/><path d="m7.5 14.5 4.5 4.5 4.5-4.5"/></svg></button></span></h2>
+        <h2>Sessions<span class="srail-tools"><button type="button" id="railAgents" class="rail-panel" title="open the agents panel" aria-label="open the agents panel"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M3.5 19a4.5 4.5 0 0 1 9 0"/><path d="M15 7h5M15 11h5M15 15h5"/></svg></button><button type="button" id="railJobs" class="rail-panel" title="open the jobs panel for this session" aria-label="open the jobs panel for this session"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 6h10M10 12h10M10 18h10"/><path d="m3.6 6 1.3 1.3L7.4 4.7"/><path d="m3.6 12 1.3 1.3 2.5-2.6"/><path d="m3.6 18 1.3 1.3 2.5-2.6"/></svg></button><button type="button" id="railOrg" class="rail-panel" title="open the org chart" aria-label="open the org chart"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="4" rx="1"/><rect x="3" y="16" width="6" height="4" rx="1"/><rect x="15" y="16" width="6" height="4" rx="1"/><path d="M12 7v4M6 16v-3h12v3"/></svg></button><button type="button" id="railConst" class="rail-panel" title="open the constellation" aria-label="open the constellation"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="5" r="2"/><circle cx="5" cy="18" r="2"/><circle cx="19" cy="18" r="2"/><path d="m12 7-6 9M12 7l6 9M7 18h10"/></svg></button><button type="button" id="railToggleAll" class="fold-tg" title="expand all groups" aria-label="expand all groups"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.5 9.5 12 5l4.5 4.5"/><path d="m7.5 14.5 4.5 4.5 4.5-4.5"/></svg></button></span></h2>
       </header>
       <div class="rail-tools" role="toolbar" aria-label="session tools">
         <button type="button" class="rail-btn" id="railNew" data-call="newSession"
@@ -7656,8 +7718,12 @@ function selectSession(s) {
   // wait for some future turn to end, which looked like the queue had swallowed
   // it. `flushQueue` is the one door: it re-checks the session + the live stream.
   if (!turnSSE[s.id]) flushQueue(s.id);
+  // 2026-11-16: the reusable panel window is session-scoped — follow the switch.
+  const _pv = $("panelView");
+  if (_pv && !_pv.hidden && _DP.panel) { _DP.sid = sessionId; _dpPaint(_DP.panel); _dpSend(_DP.panel); }
 }
 let _agents = {};   // JAG-287: session id -> org-agent record (empty if none)
+let _sessMeta = {};  // 2026-11-16: /api/orbit/sessions row truth (prompt_chars/model/running)
 let _teamsById = {};   // JAG-339: team id -> team record (symbol/name/colour)
 let _sidebarOrder = { revision: 0, teams: [], sessions: {} };
 let _teamOrderBase = [];
@@ -7770,15 +7836,20 @@ function _agentNum(s) {
 async function loadAgents() {
   try {
     // JAG-339: agents carry their `teams`; fetch the team records for the symbols.
-    const [d, t] = await Promise.all([
+    // 2026-11-16: the same roster the AGENTS table reads carries the row truth the
+    // rail lacked — EMPTY ROLE.md (`prompt_chars`) and the effective model.
+    const [d, t, m] = await Promise.all([
       api("GET", "/api/agents"),
-      api("GET", "/api/teams").catch(() => ({ teams: [] }))
+      api("GET", "/api/teams").catch(() => ({ teams: [] })),
+      api("GET", "/api/orbit/sessions").catch(() => ({ sessions: [] }))
     ]);
     _agents = {};
     (d.agents || []).forEach(a => { _agents[a.session] = a; });
     _teamsById = {};
     (t.teams || []).forEach(x => { _teamsById[x.id] = x; });
-  } catch (e) { _agents = {}; }
+    _sessMeta = {};
+    (m.sessions || []).forEach(x => { _sessMeta[x.id] = x; });
+  } catch (e) { _agents = {}; _sessMeta = {}; }
 }
 function _isSystemSess(s) { return !!(s && (s.system || s.undeletable || s.id === "architect")); }
 function _systemPinnedIds(list) {
@@ -7820,13 +7891,38 @@ async function openSessMenu(row, s, ag) {
   const pinBtn = isSys
     ? `<button data-a="pin-sys" disabled title="permanent system session — always pinned above the list">📌 Pinned (permanent)</button>`
     : `<button data-a="pin">${pinned ? "Unpin session" : "Pin session"}</button>`;
-  m.innerHTML = `${pinBtn}<button data-a="rename">Rename</button><button data-a="org">⬢ Show in organigram</button><button data-a="role">Edit role (ROLE.md)</button>${lraBtn}<button data-a="rewind">⏪ Rewind…</button><button data-a="clear">Clear chat + tasks</button>${delBtn}`;
+  // The AGENTS panel's row actions, pointed at the deck's own editors (no second
+  // Teams/Model/Reports-to form in this file).
+  const relBtn = (ag && ag.kind !== "session")
+    ? '<button data-a="release">Release agent</button>' : "";
+  m.innerHTML = `${pinBtn}<button data-a="rename">Rename</button>`
+    + '<button data-a="prompt">Edit prompt (ROLE.md)</button>'
+    + '<button data-a="teams">Teams…</button>'
+    + '<button data-a="reports_to">Reports to…</button>'
+    + '<button data-a="model">Model…</button>'
+    + '<button data-a="org">⬢ Show in organigram</button>'
+    + `${relBtn}${lraBtn}<button data-a="rewind">⏪ Rewind…</button>`
+    + '<button data-a="clear">Clear chat + tasks</button>' + delBtn;
   row.appendChild(m);
   m.onclick = async (e) => {
     const a = e.target.dataset && e.target.dataset.a;
     if (!a) return;
     if (a === "pin") { _togglePin(s.id); }
     if (a === "org") { closeSessMenu(); _showAgentInOrganigram(s.id); return; }
+    if (a === "prompt") { closeSessMenu(); _ensureDeckPanel("agents"); _dpPostAgent(s.id, "prompt"); return; }
+    if (a === "teams") { closeSessMenu(); _ensureDeckPanel("agents"); _dpPostAgent(s.id, "teams"); return; }
+    if (a === "reports_to") { closeSessMenu(); _ensureDeckPanel("agents"); _dpPostAgent(s.id, "reports_to"); return; }
+    if (a === "model") { closeSessMenu(); _ensureDeckPanel("agents"); _dpPostAgent(s.id, "model"); return; }
+    if (a === "release") {
+      closeSessMenu();
+      const rep = (ag && ag.reports && ag.reports.length) ? (" It manages " + ag.reports.join(", ") + ".") : "";
+      if (!(await uiConfirm("Release " + ((ag && (ag.name || ag.id)) || s.id) + "?",
+          "The session stays but loses the agent badge." + rep, { okLabel: "release" }))) return;
+      const rel = await api("DELETE", "/api/agents/" + encodeURIComponent(s.id));
+      if (!rel || rel.ok === false) { toast("Cannot release this agent: " + ((rel && rel.error) || "blocked") + " — reassign its reports first.", "err"); return; }
+      loadSessions();
+      return;
+    }
     if (a === "lra") {
       closeSessMenu();
       await api("POST", "/api/architect/access", { session: s.id, allow_architect: !hasLra });
@@ -7835,7 +7931,6 @@ async function openSessMenu(row, s, ag) {
       return;
     }
     if (a === "rename") { const v = await uiAsk({ title: "Rename session", value: s.title || s.id, okLabel: "rename" }); if (v && String(v).trim()) { await api("POST", "/api/sessions/" + s.id + "/rename", { title: String(v).trim() }); loadSessions(); } }
-    if (a === "role") { let rp = null, rt = ""; try { const r = await api("GET", "/api/roles?session=" + encodeURIComponent(s.id)); rp = r && r.path; rt = (r && r.text) || ""; } catch (e) {} if (!rp || !rt) { toast("no role file yet \u2014 send a message first"); return; } closeSessMenu(); openInEditor(rp, { mode: "code" }); return; }
     if (a === "rewind") { closeSessMenu(); openRewindDlg(s.id); return; }
     if (a === "clear") { if (await confirmDelete("clear this session?")) { await api("POST", "/api/sessions/" + s.id + "/clear", {}); _forgetChatScrollState(s.id); if (s.id === sessionId) { $("log").innerHTML = ""; loadHistory(); loadPlan(); } loadSessions(); } }
     if (a === "del") {
@@ -7857,51 +7952,93 @@ async function openSessMenu(row, s, ag) {
   };
   setTimeout(() => document.addEventListener("click", closeSessMenu, { once: true }), 0);
 }
-/* v910: the No-team bucket's bulk menu — the SAME items and copy as the Control
-   deck's team kebab (v910 extension), served by the SAME one backend route
-   (POST /api/teams/__none__/<action>). No per-session loop in the browser, no
-   second engine: the server resolves the bucket and walks its own cascade. */
-function openNoTeamMenu(head, g) {
+/* The ONE rail team menu: the No-team bucket and every real team (v910 + the
+   AGENTS-panel parity). Real teams add edit/policy/delete; the four bulk actions
+   and their copy are the SAME strings the Control deck uses, and the server walks
+   the cascade — no per-session loop here. */
+function openTeamMenu(head, g) {
   closeSessMenu();
+  const none = g.key === "__none__" || !g.id;
+  const tid = none ? "__none__" : g.id;
+  const n = (g.sessions || []).length;
+  const name = none ? "the No-team bucket" : (g.name || tid);
   const m = document.createElement("div");
   m.className = "sess-menu";
-  const n = (g.sessions || []).length;
-  m.innerHTML = '<button data-a="reset">↺ Reset all sessions…</button>'
+  m.innerHTML = (none ? "" : '<button data-a="edit">✎ Edit team…</button>')
+    + '<button data-a="reset">↺ Reset all sessions…</button>'
     + '<button data-a="compact">≡ Compact all sessions…</button>'
     + '<button data-a="dropold">✕ Drop OLD plans…</button>'
+    // The Control AGENTS team kebab also owns the model policy and the team itself.
+    + (none ? "" : '<button data-a="policy">⚙ Apply model policy</button>')
+    + (none ? "" : '<button data-a="del" class="danger">✖ Delete team…</button>')
     + '<button data-a="delall" class="danger">✖ Delete ALL sessions…</button>';
   head.appendChild(m);
   m.onclick = async (e) => {
     const a = e.target.dataset && e.target.dataset.a;
     if (!a) return;
     closeSessMenu();
+    // The deck owns the two AGENTS-panel forms: open its Agents panel and hand it
+    // the team action. No second team editor/picker in this file.
+    if (a === "edit") { _ensureDeckPanel("agents"); _dpPostTeam(tid, "edit"); return; }
+    if (a === "policy") {
+      const r = await api("POST", "/api/teams/" + encodeURIComponent(tid) + "/models", {});
+      if (!r || r.ok === false) { toast((r && r.error) || "model policy failed", "err"); return; }
+      toast("model policy · " + (r.assigned || 0) + " set · lead " + (r.lead_model || "?")
+        + " · member " + (r.member_model || "?"), "ok");
+      loadSessions();
+      return;
+    }
     // v772 I6: every dialog in the app is the app's OWN (`uiConfirm`), never the
     // browser's — the v910 bucket menu shipped with `confirm`/`alert` and the a11y
-    // gate caught it. Same copy, same four items, same one route.
+    // gate caught it. Same copy, same four items, same one engine.
     if (a === "reset") {
-      if (await uiConfirm("Reset all " + n + " no-team session(s)?",
+      if (await uiConfirm(none ? ("Reset all " + n + " no-team session(s)?")
+            : ("Reset all " + n + " session(s) of " + name + "?"),
           "Their chat history and task list are wiped — the agents, their names and their ROLE.md stay. Nothing is deleted."))
-        await _noTeamBulk("reset");
+        await (none ? _noTeamBulk("reset") : _teamBulk(tid, "reset"));
     }
     if (a === "compact") {
-      if (await uiConfirm("Compact all " + n + " no-team session(s)?",
+      if (await uiConfirm(none ? ("Compact all " + n + " no-team session(s)?")
+            : ("Compact all " + n + " session(s) of " + name + "?"),
           "The older half of each transcript is summarised so the context shrinks."))
-        await _noTeamBulk("compact");
+        await (none ? _noTeamBulk("compact") : _teamBulk(tid, "compact"));
     }
     if (a === "dropold") {
-      if (await uiConfirm("Drop ALL old plans in every session of the No-team bucket (" + n + " session(s))?",
+      if (await uiConfirm(none ? ("Drop ALL old plans in every session of the No-team bucket (" + n + " session(s))?")
+            : ("Drop ALL old plans in every session of " + name + " (" + n + " session(s))?"),
           "Only plans below each session's current one are deleted — current work, chats and agents stay."))
-        await _noTeamBulk("drop-old-plans");
+        await (none ? _noTeamBulk("drop-old-plans") : _teamBulk(tid, "drop-old-plans"));
+    }
+    if (a === "del") {
+      if (!(await uiConfirm('Delete team "' + name + '"?',
+          (n ? n + " agent(s) stay — only the team link disappears.\n" : "")
+          + "This cannot be undone.", { okLabel: "delete", danger: true }))) return;
+      const r = await api("DELETE", "/api/teams/" + encodeURIComponent(tid));
+      if (!r || r.ok === false) { toast((r && r.error) || "delete failed", "err"); return; }
+      loadSessions();
+      return;
     }
     if (a === "delall") {
-      if (!(await confirmDelete("⚠ Delete ALL " + n + " no-team session(s) and their agents?\n\nThe REAL delete: every chat, task list and agent record in scope goes. Jobs and routines that name them are scrubbed; an agent with reports re-points them to nobody. This cannot be undone."))) return;
-      await _noTeamBulk("delete-sessions");
+      if (!(await confirmDelete("⚠ Delete ALL " + n + " " + (none ? "no-team session(s)" : ("session(s) of " + name))
+          + " and their agents?\n\nThe REAL delete: every chat, task list and agent record in scope goes. Jobs and routines that name them are scrubbed; an agent with reports re-points them to nobody. This cannot be undone."))) return;
+      await (none ? _noTeamBulk("delete-sessions") : _teamBulk(tid, "delete-sessions"));
     }
   };
   setTimeout(() => document.addEventListener("click", closeSessMenu, { once: true }), 0);
 }
-async function _noTeamBulk(action) {
-  const r = await api("POST", "/api/teams/__none__/" + action, {});
+/* The ⊕ on a real team header opens the deck's own assign picker (same route,
+   same pool as the AGENTS table). */
+function openTeamAssign(head, g) {
+  if (!g || !g.id) return;
+  closeSessMenu();
+  _ensureDeckPanel("agents");
+  _dpPostTeam(g.id, "assign");
+}
+async function _teamBulk(tid, action) {
+  const r = await api("POST", "/api/teams/" + encodeURIComponent(tid) + "/" + action, {});
+  return _bulkResult(r, action);
+}
+async function _bulkResult(r, action) {
   if (!r || r.ok === false) { toast((r && r.error) || (action + " failed"), "err"); return; }
   const bad = (r.results || []).filter(x => x.error || (x.result && x.result.error));
   if (bad.length)
@@ -7911,6 +8048,11 @@ async function _noTeamBulk(action) {
   toast((action === "delete-sessions" ? "deleted " + (r.deleted || 0) : action.replace(/-/g, " "))
     + " · " + (r.count || 0) + " session(s)");
   loadSessions();
+}
+/* v910 contract: the No-team bucket keeps its own literal route (the same engine). */
+async function _noTeamBulk(action) {
+  const r = await api("POST", "/api/teams/__none__/" + action, {});
+  return _bulkResult(r, action);
 }
 /* JAG-414: the session rail groups rows by TEAM (collapsible). v652: a session
    belongs to ONE row — the first group that claims it (Pinned → No team → team),
@@ -7991,10 +8133,12 @@ function _sessRowEl(s, pinnedIds, ag, groupKey, orderContainer) {
   const age = s.age ? (" · " + s.age) : "";
   const fol = s.workspace ? `<span class="ws" title="workspace: ${esc(s.workspace)}">📁</span>` : "";
   const _anum = _agentNum(s);
+  const _meta = _sessMeta[s.id] || {};
+  const _model = _meta.model || s.model || "";
   // EV-30: every session IS an agent, so the chip is always its A<n>. Before the
   // roster arrives there is no id to show — never fabricate one (UP-1).
   const jid = (ag && _anum)
-    ? `<span class="jid" title="agent id ${esc(ag.id)}">A${_anum}</span>` : "";
+    ? `<span class="jid" role="button" tabindex="0" title="agent id ${esc(ag.id)} — click to see it in the org chart">A${_anum}</span>` : "";
   // EV-30: the ⬢ mark means "TEAM member" — a session's own identity record is not one.
   const agtag = (ag && ag.kind !== "session") ? `<span title="org agent ${esc(ag.id)}${ag.name ? " — " + esc(ag.name) : ""}${(ag.reports && ag.reports.length) ? " · manages " + esc(ag.reports.join(", ")) : ""}" style="color:var(--acc2);flex-shrink:0">⬢</span>` : "";
   // JAG-339: the team symbol(s) this agent belongs to (may be several).
@@ -8002,10 +8146,17 @@ function _sessRowEl(s, pinnedIds, ag, groupKey, orderContainer) {
     return t ? `<span class="team" title="team ${esc(t.name)} — ${esc(t.id)}" style="flex-shrink:0">${esc(t.symbol || "•")}</span>` : ""; }).join("") : "";
   // JAG-2.8: show the agent's role from the roster (e.g. "Senior Project Manager")
   const roleBadge = (ag && ag.role) ? `<span class="nrl" title="agent role: ${esc(ag.role)}">${esc(ag.role)}</span>` : "";
+  // The AGENTS table's VOID prompt mark: this agent runs on the bare system prompt.
+  const voidMark = (_meta.prompt_chars === 0)
+    ? '<span class="req" title="EMPTY ROLE.md - this agent runs on the bare system prompt">*</span>' : "";
   const pin = pinnedIds.includes(s.id) ? '<span class="pin" title="pinned session">📌</span>' : "";
+  d.title = [_model ? ("model: " + _model) : "",
+             (_meta.prompt_chars != null ? ("ROLE.md: " + _meta.prompt_chars + " chars") : ""),
+             (ag && ag.reports && ag.reports.length ? ("manages " + ag.reports.join(", ")) : "")]
+            .filter(Boolean).join(" · ");
   // JAG-424g: the ctx ring sits on LINE 1 of the active row (before the full-width
   // title, which always wraps to its own line) so it never lands under the title text.
-  d.innerHTML = `${pin}${agtag}${jid}${tchips}${roleBadge}<span class="n">${s.messages} msg${age}</span><span class="menu-btn" title="session actions">⋮</span>${_ctxRingHtml(s)}<span class="t">${esc(s.title || s.id)}</span>`;
+  d.innerHTML = `${pin}${agtag}${jid}${tchips}${roleBadge}${voidMark}<span class="n">${s.messages} msg${age}</span><span class="menu-btn" title="session actions">⋮</span>${_ctxRingHtml(s)}<span class="t">${esc(s.title || s.id)}</span>`;
   if (!_isSystemSess(s)) {
     _bindSidebarDrag(d.querySelector(".t"), "session", s.id,
       d.dataset.groupKey, orderContainer || d.parentElement);
@@ -8013,8 +8164,13 @@ function _sessRowEl(s, pinnedIds, ag, groupKey, orderContainer) {
   d.onclick = e => {
     if (DragSort.consumeClick(e)) return;
     if (e.target.classList.contains("menu-btn")) { openSessMenu(d, s, ag); return; }
+    if (e.target.closest && e.target.closest(".jid")) { e.stopPropagation(); _showAgentInOrganigram(s.id); return; }
     if (e.target.closest && e.target.closest(".sess-menu")) return;
     selectSession(s);
+  };
+  const jidEl = d.querySelector(".jid");
+  if (jidEl) jidEl.onkeydown = (e) => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); _showAgentInOrganigram(s.id); }
   };
   // JAG-395: right-click opens THIS row's ⋯ menu — the session under the cursor.
   d.oncontextmenu = e => {
@@ -8271,13 +8427,18 @@ async function loadSessions() {
         + `<span class="gsym">${esc(g.symbol)}</span>`
         + `<span class="gname">${esc(g.name)}${g.id ? ` <span class="gid">${esc(g.id)}</span>` : ""}</span>`
         + `<span class="gcount">${g.sessions.length}</span>`
+        // AGENTS-panel parity: every real team gets the assign control and the
+        // SAME three-dot bulk menu the Control deck's team header carries.
+        + (g.id ? `<button class="gassign" aria-label="assign agents to ${esc(g.name)}" title="assign agents to ${esc(g.name)}">⊕</button>` : "")
         // v910: the No-team bucket carries the SAME bulk menu as the Control
         // deck's team headers — one route (/api/teams/__none__/…), no second engine.
-        + (g.key === "__none__" ? '<button class="gkebab" aria-label="no-team actions" aria-haspopup="menu" title="no-team actions — every session without a team">⋮</button>' : "");
+        + (g.key === "__none__" ? '<button class="gkebab" aria-label="no-team actions" aria-haspopup="menu" title="no-team actions — every session without a team">⋮</button>'
+          : (g.id ? `<button class="gkebab" aria-label="team actions" aria-haspopup="menu" title="team actions — all sessions of ${esc(g.name)}">⋮</button>` : ""));
       head.onclick = e => {
         if (DragSort.consumeClick(e)) return;
-        // v910: the kebab opens the bulk menu — it must not toggle the group.
-        if (e.target.closest && e.target.closest(".gkebab")) { openNoTeamMenu(head, g); return; }
+        // The header icons own their clicks — they must not toggle the group.
+        if (e.target.closest && e.target.closest(".gassign")) { openTeamAssign(head, g); return; }
+        if (e.target.closest && e.target.closest(".gkebab")) { openTeamMenu(head, g); return; }
         _toggleGroup(g.key);
       };
       sec.appendChild(head);
@@ -10535,8 +10696,10 @@ function _planRing(f, tries) {
   } catch (e) {}
 }
 function _showInConstellation(n) {
-  showControl();
-  const f = document.getElementById("controlFrame");
+  // 2026-11-16: the constellation now opens in the Sessions page's own window;
+  // the deck's panel and focus message are unchanged.
+  _ensureDeckPanel("const");
+  const f = document.getElementById("panelFrame");
   const id = n && n.id ? String(n.id) : null;
   // v703: carry the ACTIVE chat session. The deck's constellation is registry-scoped
   // and a plain chat session is not an org agent, so without this it fell back to the
@@ -10562,8 +10725,8 @@ function _showInConstellation(n) {
    node, and REMEMBERS the selection across its 5s polling refresh. */
 function _showAgentInOrganigram(sid) {
   if (!sid) return;
-  showControl();
-  const f = document.getElementById("controlFrame");
+  _ensureDeckPanel("org");
+  const f = document.getElementById("panelFrame");
   let n = 0;
   const iv = setInterval(() => {
     try {
@@ -10695,8 +10858,8 @@ async function _showJobDetail(jid, n) {
    subjob) id — the deck expands + rings that row (postMessage, same pattern
    as _showInConstellation). Retried so the first-open iframe boot is covered. */
 function _showJobInControl(jid) {
-  showControl();
-  const f = document.getElementById("controlFrame");
+  _ensureDeckPanel("jobs");
+  const f = document.getElementById("panelFrame");
   const full = _fullJ(jid);
   let n2 = 0;
   const iv = setInterval(() => {
@@ -19852,7 +20015,186 @@ async function _ctlShellWatch(f){
     }
   } catch (_) {}
 }
+/* 2026-11-16: ONE reusable Control window for the Sessions page. It hosts the
+   deck's own panel (`/orbit?embed=1&panel=…`) and its own editors; the rail and
+   Control therefore share one implementation. The full Control tab is untouched. */
+const _DP_PANELS = { agents: "Agents", jobs: "Jobs", org: "Org chart", const: "Constellation" };
+let _DP = { panel: null, sid: null, loadedSid: null, trigger: null };
+function _deckPanelUrl(panel, sid) {
+  const theme = encodeURIComponent(localStorage.getItem("sf_theme") || "indigo");
+  return "/orbit?embed=1&panel=" + encodeURIComponent(panel) + "&theme=" + theme
+    + (sid ? "&session=" + encodeURIComponent(sid) : "");
+}
+function _dpZoom() { return (typeof _zoom === "number" && _zoom > 0) ? _zoom : 1; }
+function _dpAnchor() {
+  const el = $("panelView"); if (!el) return;
+  const z = _dpZoom();
+  const aside = document.querySelector('[data-col="sessions"]');
+  const hidden = !aside || getComputedStyle(aside).display === "none";
+  const left = hidden ? 8 : Math.max(8, Math.round(aside.getBoundingClientRect().right / z) + 1);
+  const top = _tabTop() + 8;
+  const maxW = Math.max(320, Math.round(window.innerWidth / z) - left - 12);
+  const saved = Number(localStorage.getItem("sf_panel_w")) || 0;
+  const want = saved || Math.min(620, maxW);
+  const w = Math.max(360, Math.min(want, maxW));
+  const h = Math.max(280, Math.round(window.innerHeight / z) - top - 8);
+  el.style.left = left + "px";
+  el.style.top = top + "px";
+  el.style.width = w + "px";
+  el.style.height = h + "px";
+}
+function _dpRailState(panel) {
+  [["railAgents", "agents"], ["railJobs", "jobs"], ["railOrg", "org"], ["railConst", "const"]]
+    .forEach(([id, key]) => {
+      const b = $(id); if (!b) return;
+      b.setAttribute("aria-expanded", panel === key ? "true" : "false");
+    });
+}
+function _dpPaint(panel) {
+  const label = _DP_PANELS[panel] || "Agents";
+  if ($("pvTitle")) $("pvTitle").textContent = label;
+  document.querySelectorAll("#panelView .pv-tabs button").forEach(b => {
+    const on = b.dataset.panel === panel;
+    b.setAttribute("aria-selected", on ? "true" : "false");
+    b.setAttribute("aria-current", on ? "page" : "false");
+    if (!on) b.removeAttribute("aria-current");
+  });
+  _dpRailState(panel);
+  _dpScopeLabel();
+}
+function _dpScopeLabel() {
+  const el = $("pvScope"); if (!el) return;
+  const t = _DP.sid ? (_sessTitle && _sessTitle[_DP.sid] ? _sessTitle[_DP.sid] : _DP.sid) : "";
+  el.textContent = _DP.sid ? ("session · " + String(t).slice(0, 42)) : "no session";
+  el.title = _DP.sid ? ("scoped to the active session: " + t) : "no active session";
+}
+/* The task the constellation should ring — same target as showConstellation. */
+function _dpTaskNode() {
+  const nodes = (typeof planNodes === "function" ? planNodes(graph) : ((graph && graph.nodes) || []));
+  const n = (_lastPlanNode && nodes.find(x => String(x.id) === String(_lastPlanNode))) ||
+            (_activeNodeId && nodes.find(x => String(x.id) === String(_activeNodeId))) ||
+            nodes.find(x => x.status === "doing") || null;
+  return (n && n.id != null) ? String(n.id) : null;
+}
+function _dpPostReady(msgs) {
+  const f = $("panelFrame"); if (!f) return;
+  let n = 0;
+  const iv = setInterval(() => {
+    try {
+      if (f.contentWindow && f.contentWindow.__orbitApp && f.contentWindow.__orbitApp._ready
+          && f.contentDocument && f.contentDocument.readyState === "complete") {
+        (msgs || []).forEach(m => { try { f.contentWindow.postMessage(m, "*"); } catch (_) {} });
+        clearInterval(iv);
+        return;
+      }
+    } catch (_) {}
+    if (++n >= 30) clearInterval(iv);
+  }, 150);
+}
+function _dpSend(panel) {
+  const sid = _DP.sid || "";
+  const msgs = [{ type: "longrun-show-panel", panel: panel }];
+  if (panel === "jobs") {
+    msgs.push({ type: "longrun-scope-session", session: sid });
+  } else if (panel === "const") {
+    msgs.push({ type: "longrun-focus-node", id: _dpTaskNode(), session: sid });
+  } else if (sid) {
+    msgs.push({ type: "longrun-focus-agent", session: sid });
+  }
+  _dpPostReady(msgs);
+}
+/* Hand the deck's Agents panel a team action (edit/assign): the deck owns the
+   form/picker, the rail only names the team. Sent ONCE the frame is ready — a
+   repeated popover open would keep closing the form under the operator. */
+function _dpPostTeam(tid, action) {
+  if (!tid) return;
+  _dpPostReady([{ type: "longrun-team-action", team: tid, action: action }]);
+}
+/* Hand the deck's Agents panel ONE row editor for a session (teams/model/…). */
+function _dpPostAgent(sid, kind) {
+  if (!sid) return;
+  _dpPostReady([{ type: "longrun-agent-editor", session: sid, kind: kind }]);
+}
+function _openDeckPanel(panel) {
+  const el = $("panelView"); if (!el) return;
+  panel = _DP_PANELS[panel] ? panel : "agents";
+  if (!el.hidden && _DP.panel === panel) { _closeDeckPanel(); return; }
+  if (el.hidden) _DP.trigger = document.activeElement;
+  _DP.panel = panel;
+  _DP.sid = sessionId || null;
+  _dpAnchor();
+  const f = $("panelFrame");
+  const reload = !f.getAttribute("src") || _DP.loadedSid !== _DP.sid;
+  if (reload) {
+    f.setAttribute("src", _deckPanelUrl(panel, _DP.sid));
+    _DP.loadedSid = _DP.sid;
+  }
+  el.hidden = false;
+  el.setAttribute("aria-hidden", "false");
+  _dpPaint(panel);
+  _dpSend(panel);
+  try { $("pvClose").focus(); } catch (_) {}
+}
+/* Navigation (not a toggle): reveal this panel and re-focus the active session. */
+function _ensureDeckPanel(panel) {
+  const el = $("panelView");
+  if (el && !el.hidden && _DP.panel === panel) { _dpSend(panel); return; }
+  _openDeckPanel(panel);
+}
+function _closeDeckPanel(silent) {
+  const el = $("panelView"); if (!el || el.hidden) return;
+  el.hidden = true;
+  el.setAttribute("aria-hidden", "true");
+  const f = $("panelFrame");
+  try { if (f) f.setAttribute("src", "about:blank"); } catch (_) {}
+  _DP.panel = null; _DP.loadedSid = null;
+  _dpRailState(null);
+  if (!silent && _DP.trigger && typeof _DP.trigger.focus === "function") {
+    try { _DP.trigger.focus(); } catch (_) {}
+  }
+  _DP.trigger = null;
+}
+document.querySelectorAll("#panelView .pv-tabs button").forEach(b => {
+  b.onclick = () => _openDeckPanel(b.dataset.panel);
+});
+[["railAgents", "agents"], ["railJobs", "jobs"], ["railOrg", "org"], ["railConst", "const"]]
+  .forEach(([id, panel]) => { const b = $(id); if (b) b.onclick = () => _openDeckPanel(panel); });
+if ($("pvClose")) $("pvClose").onclick = () => _closeDeckPanel();
+if ($("pvControl")) $("pvControl").onclick = () => { _closeDeckPanel(true); showControl(); };
+(function _dpResize() {
+  const grip = $("pvResize"), el = $("panelView");
+  if (!grip || !el) return;
+  grip.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    try { grip.setPointerCapture(e.pointerId); } catch (_) {}
+    const z = _dpZoom();
+    const x0 = e.clientX, w0 = el.getBoundingClientRect().width / z;
+    const left = el.getBoundingClientRect().left / z;
+    const maxW = Math.max(320, Math.round(window.innerWidth / z) - left - 12);
+    const move = (ev) => {
+      const w = Math.max(360, Math.min(maxW, w0 + (ev.clientX - x0) / z));
+      el.style.width = w + "px";
+      try { localStorage.setItem("sf_panel_w", String(Math.round(w))); } catch (_) {}
+    };
+    const up = () => {
+      grip.removeEventListener("pointermove", move);
+      grip.removeEventListener("pointerup", up);
+      _dpAnchor();
+    };
+    grip.addEventListener("pointermove", move);
+    grip.addEventListener("pointerup", up);
+  });
+})();
+window.addEventListener("resize", () => {
+  const el = $("panelView");
+  if (el && !el.hidden) { _dpAnchor(); _dpPaint(_DP.panel); }
+});
+document.addEventListener("keydown", (e) => {
+  const el = $("panelView");
+  if (e.key === "Escape" && el && !el.hidden) { e.preventDefault(); _closeDeckPanel(); }
+}, true);
 function showControl() {
+  _closeDeckPanel(true);
   const cv = document.getElementById("controlView"); if (!cv) return;
   cv.style.top = _tabTop() + "px";
   const f = document.getElementById("controlFrame");
@@ -19873,6 +20215,7 @@ function showControl() {
 /* MyArtifacts: the third top-level page. Same contract as the Control deck —
    it owns the row, #app stands down, the strip marks it, the hash deep-links it. */
 function showArtifacts() {
+  _closeDeckPanel(true);
   const cv = document.getElementById("controlView");
   if (cv) { cv.classList.remove("on"); cv.setAttribute("aria-hidden", "true"); }
   document.body.classList.remove("control-on");
@@ -19891,6 +20234,7 @@ function showArtifacts() {
    the row, #app stands down, the strip marks it, the hash deep-links it, and the
    page asks the catalogue (real backend state) every time it opens. */
 function showMarket() {
+  _closeDeckPanel(true);
   const cv = document.getElementById("controlView");
   if (cv) { cv.classList.remove("on"); cv.setAttribute("aria-hidden", "true"); }
   document.body.classList.remove("control-on");
@@ -19916,6 +20260,7 @@ function openMarketKind(kind) {
   showMarket();   // loads with the kind we just set
 }
 function showSessions() {
+  _closeDeckPanel(true);
   const cv = document.getElementById("controlView"); if (cv) { cv.classList.remove("on"); cv.setAttribute("aria-hidden", "true"); }
   document.body.classList.remove("control-on");
   document.body.classList.remove("artifacts-on");
@@ -20328,6 +20673,9 @@ function _paintPaneState() {
   if (L) L.setAttribute("aria-pressed", _panelShown('[data-col="sessions"]') ? "true" : "false");
   if (R) R.setAttribute("aria-pressed", _panelShown('[data-col="context"]') ? "true" : "false");
   positionDrawerResizers();   // JAG-368: keep a drawer's inner grip glued to its edge
+  // 2026-11-16: the Control window rides the rail's inner edge (resize/toggle/drawer).
+  const _pv = $("panelView");
+  if (_pv && !_pv.hidden) _dpAnchor();
 }
 /* JAG-358: re-glue for a few frames after anything that can move a panel (a
    toggle, a load, a CSS transition) — one call can land before layout settles. */

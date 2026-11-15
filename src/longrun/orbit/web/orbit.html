@@ -581,6 +581,13 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   .job .st.blocked{color:var(--ice);border-color:rgba(124,196,255,.5)}
   .runrow{display:flex;gap:8px;padding:5px 12px;font-size:11px;color:var(--dim);border-bottom:1px solid var(--line)}
   .runrow .st{color:var(--ice)}
+  /* session-scoped Jobs: the in-session subagent ledger (SJ<n>) sits above the
+     team jobs, visually separated but with the SAME row grammar. */
+  .sj-sep{display:flex;align-items:center;gap:6px;padding:5px 8px;font-size:10px;
+    letter-spacing:.04em;text-transform:uppercase;color:var(--dim);
+    background:var(--brief);border-bottom:1px solid var(--line)}
+  .sj-sep b{color:var(--txt);font-weight:600}
+  .sj-item .job{cursor:pointer}
   .orgrow{display:flex;align-items:center;gap:8px;padding:5px 10px;border-bottom:1px solid var(--line)}
   .orgrow .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   #feed{font-family:ui-monospace,monospace;font-size:11px;color:var(--dim);padding:8px 12px;max-height:24vh;overflow:auto}
@@ -673,6 +680,15 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   /* JAG-422: anchor the first row flush to the banner — a top padding left a strip of
      the parent page (the Sessions view) visible above the Agents/Routines panes. */
   html.embed .wrap{padding-top:0}
+  /* 2026-11-16: the Sessions page opens ONE deck panel in a reusable window
+     (`?panel=agents|jobs|org|const`). The deck's own rail/view bar would be a
+     second navigation inside that window — hide it; the host owns the tabs. */
+  html.embed-panel #deckRail,
+  html.embed-panel #viewBar,
+  html.embed-panel #buildChip{display:none!important}
+  html.embed-panel .wrap{max-width:none;padding:0;height:100vh}
+  html.embed-panel main.view-one{height:100vh}
+  html.embed-panel main.view-one .deckBody{height:100%;min-height:0}
   /* JAG-431i: a finger on the charts pans/pinches them instead of scrolling the page. */
   .orgwrap,.orgcanvas,.cbody,.csvg{touch-action:none}
   /* JAG-431i: PHONE layout (<=640px). Desktop is untouched. The toolbars used to wrap
@@ -916,7 +932,7 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
 </style>
 </head>
 <body>
-<script>if(window.self!==window.top||/[?&]embed=1/.test(location.search))document.documentElement.classList.add("embed");</script>
+<script>if(window.self!==window.top||/[?&]embed=1/.test(location.search))document.documentElement.classList.add("embed");if(/[?&]panel=/.test(location.search))document.documentElement.classList.add("embed-panel");</script>
 <header>
   <h1 class="logo"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px"><circle cx="14.9" cy="3.7" r="2.4" fill="currentColor" stroke="none"/><path d="M13.1 6.9 10.5 13.3"/><path d="M13.1 7.2 16.9 8.6 18.9 6.2"/><path d="M13.1 7.2 9.5 9.5 6.0 7.4"/><path d="M10.5 13.3 15.2 13.6 17.1 17.8"/><path d="M10.5 13.3 6.1 16.6 2.4 14.1"/></svg> LONGRUN</h1>
   <nav class="topTabs" aria-label="top-level sections">
@@ -1090,7 +1106,14 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
 
     <!-- Job: goal + who you give it to (its reports are the team) -->
     <section class="panel" data-panel="jobs">
-      <h2>Jobs <span class="n" id="jobsCount">—</span></h2>
+      <h2>Jobs <span class="n" id="jobsCount">—</span>
+        <span class="ctools" id="jobScopeTools" hidden>
+          <select class="inp mini" id="jobScope" aria-label="jobs scope"
+                  title="this session = the jobs this agent participates in + its in-session subagent jobs">
+            <option value="session">this session</option>
+            <option value="all">all jobs</option>
+          </select>
+        </span></h2>
       <div class="pad" style="border-bottom:1px solid var(--line)">
         <textarea class="inp" id="jobGoal" aria-label="job goal" placeholder="job goal — the coordinator decomposes it and its team executes…"></textarea>
         <div class="row" style="gap:6px;margin-top:6px">
@@ -3292,13 +3315,81 @@ class Constellation {
 
 /* ---------------------------------------------------------------- Jobs --- */
 class JobsView {
-  constructor(api, onChanged, onOpenAgent){ this.api = api; this.onChanged = onChanged;
-    this.onOpenAgent = onOpenAgent; this.jobs = []; this.open = null; }
+  constructor(api, onChanged, onOpenAgent, onScopeChange){
+    this.api = api; this.onChanged = onChanged;
+    this.onOpenAgent = onOpenAgent; this.onScopeChange = onScopeChange;
+    this.jobs = []; this.allJobs = []; this.open = null;
+    // 2026-11-16: the Sessions window opens this panel SCOPED to the active chat.
+    // `all` is the Control parity mode; `session` filters the team jobs to the
+    // session's agent and prepends the read-only in-session subagent ledger.
+    this.scope = "all"; this.scopeSession = ""; this.scopeAgent = ""; this.sj = [];
+    const sel = $("jobScope");
+    if (sel) sel.onchange = () => {
+      this.scope = sel.value === "session" ? "session" : "all";
+      if (this.onScopeChange) this.onScopeChange(this.scope);
+      else this.render(this.allJobs, this.sj);
+    };
+  }
+  setSession(sid, agentId){
+    const changed = this.scopeSession !== (sid || "");
+    this.scopeSession = sid || "";
+    this.scopeAgent = agentId || "";
+    // A NEW session starts scoped; a 5s poll of the same session must keep the
+    // operator's "all jobs" choice. No session = the Control deck's parity mode.
+    if (!this.scopeSession) this.scope = "all";
+    else if (changed) this.scope = "session";
+    this._paintScope();
+  }
+  setScope(v){ this.scope = v === "all" ? "all" : "session"; this._paintScope(); }
+  _paintScope(){
+    const tools = $("jobScopeTools"), sel = $("jobScope");
+    if (tools) tools.hidden = !this.scopeSession;
+    if (sel) sel.value = this.scope;
+  }
+  _inScope(j){
+    if (this.scope !== "session") return true;
+    if (!this.scopeAgent) return false;
+    return (j.agents || []).includes(this.scopeAgent) || j.coordinator === this.scopeAgent;
+  }
+  _sjHtml(){
+    if (this.scope !== "session") return "";
+    const jobs = (this.sj && this.sj.jobs) || [];
+    if (!jobs.length)
+      return '<div class="sj-sep"><b>In-session jobs</b><span>no subagent job in this chat</span></div>';
+    const rows = jobs.map(j => {
+      const subs = j.subjobs || [];
+      const key = "sj:" + String(j.id);
+      const open = this.open === key;
+      const subHtml = open ? subs.map(s => {
+        const bits = [
+          s.status ? ("status " + s.status) : "",
+          (s.deps && s.deps.length) ? ("deps " + s.deps.join(", ")) : "",
+          s.error ? ("error: " + s.error) : (s.result ? ("result: " + String(s.result).slice(0, 240)) : "")
+        ].filter(Boolean).join(" · ");
+        return '<div class="runrow" style="padding-left:24px" title="' + esc(bits) + '">' +
+          '<span class="st">' + esc(s.id) + (s.label ? (" " + esc(s.label)) : "") + '</span>' +
+          '<span>' + esc(s.status || "pending") + '</span>' +
+          '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
+          esc(short(bits, 120)) + '</span></div>';
+      }).join("") : "";
+      return '<div class="job-item sj-item"><div class="job" data-sj="' + esc(j.id) + '">' +
+        '<span class="jstack"><span class="st ' + esc(j.status || "") + '">' + esc(j.status || "—") + '</span>' +
+        '<span class="aid">' + esc(j.id) + '</span></span>' +
+        '<span class="muted job-goal" title="' + esc(j.goal || "") + '">' + esc(j.goal || "(no goal)") + '</span>' +
+        '<span class="rl">' + subs.length + ' subjob' + (subs.length === 1 ? "" : "s") + '</span></div>' +
+        subHtml + '</div>';
+    }).join("");
+    return '<div class="sj-sep"><b>In-session jobs</b><span>' + jobs.length +
+      ' subagent job' + (jobs.length === 1 ? "" : "s") + ' · read-only</span></div>' + rows;
+  }
   _coord(jid){ const j = this.jobs.find(x => x.id === jid); return (j && j.coordinator) || ""; }
-  render(list){
-    this.jobs = list || [];
+  render(list, sj){
+    this.allJobs = list || [];
+    this.sj = sj || this.sj || [];
+    this._paintScope();
+    this.jobs = this.allJobs.filter(j => this._inScope(j));
     $("jobsCount").textContent = this.jobs.length ? (this.jobs.filter(j => j.status === "running").length + " running / " + this.jobs.length) : "—";
-    $("jobs").innerHTML = this.jobs.map(j => {
+    $("jobs").innerHTML = this._sjHtml() + (this.jobs.map(j => {
       const subs = j.subjobs || {};
       // JAG-322/335/484: the job's SUBJOBS (J8.1, J8.1.1 …) — who was assigned what,
       // tracked and timed. Each row is INDENTED by its org depth and carries an
@@ -3347,7 +3438,11 @@ class JobsView {
         '<button class="btn ghost mini icon-action dots" data-jmore="' + esc(j.id) + '" data-canrun="' + (canRun ? "1" : "0") + '"' +
         ' aria-haspopup="menu" aria-label="job actions for ' + esc(j.id) + '" title="job actions for ' + esc(j.id) + '">⋮</button></div>' +
         relationHtml + runHtml + '</div>'; }).join("") ||
-      '<div class="empty">no jobs yet — write a goal and pick who to give it to.</div>';
+      '<div class="empty">' + (this.scope === "session"
+        ? (this.scopeAgent
+            ? "no team job names this agent yet — switch to all jobs to see every job."
+            : "this session has no agent id yet — no team jobs.")
+        : "no jobs yet — write a goal and pick who to give it to.") + '</div>');
     $("jobs").querySelectorAll("[data-jmore]").forEach(b => { b.onclick = (e) => {
       e.stopPropagation();
       const jid = b.dataset.jmore, canRun = b.dataset.canrun === "1";
@@ -3375,7 +3470,7 @@ class JobsView {
     $("jobs").querySelectorAll("[data-go]").forEach(b => {
       b.onclick = (e) => { e.stopPropagation();
         if (this.onOpenAgent) this.onOpenAgent(b.dataset.go); }; });
-    $("jobs").querySelectorAll(".job").forEach(el => {
+    $("jobs").querySelectorAll(".job:not([data-sj])").forEach(el => {
       // JAG-431r4: a double-click also fires two `click`s first, and the first
       // click's render() replaced #jobs.innerHTML — destroying the node the dblclick
       // needed — so "double-click to open the coordinator" was unreliable and always
@@ -3383,9 +3478,18 @@ class JobsView {
       // (same 210ms pattern used for the constellation nodes).
       let jt = null;
       el.onclick = () => { clearTimeout(jt);
-        jt = setTimeout(() => { this.open = (this.open === el.dataset.id) ? null : el.dataset.id; this.render(this.jobs); }, 210); };
+        jt = setTimeout(() => { this.open = (this.open === el.dataset.id) ? null : el.dataset.id; this.render(this.allJobs, this.sj); }, 210); };
       el.ondblclick = () => { clearTimeout(jt);
         if (this.onOpenAgent) this.onOpenAgent(this._coord(el.dataset.id)); };
+    });
+    // In-session subagent jobs are introspection: clicking expands the subjob rows,
+    // there is no dispatch/delete door (the SJ lifecycle belongs to the agent).
+    $("jobs").querySelectorAll("[data-sj]").forEach(el => {
+      el.onclick = () => {
+        const key = "sj:" + String(el.dataset.sj);
+        this.open = (this.open === key) ? null : key;
+        this.render(this.allJobs, this.sj);
+      };
     });
   }
   /* v609/v610: the Sessions Plan panel hands us a job or subjob id
@@ -3401,10 +3505,16 @@ class JobsView {
     if (!full) return;
     const dot = full.indexOf(".");
     const parent = dot < 0 ? full : full.slice(0, dot);
-    const rec = this.jobs.find(j => String(j.id) === parent);
+    let rec = this.jobs.find(j => String(j.id) === parent);
+    // The Plan panel's J-chip can name a job outside this session's slice. The
+    // handover must still land: widen the scope to ALL and re-render, then focus.
+    if (!rec && this.scope === "session"){
+      const wide = this.allJobs.find(j => String(j.id) === parent);
+      if (wide){ this.scope = "all"; this._paintScope(); this.jobs = this.allJobs.slice(); rec = wide; }
+    }
     if (!rec) return;
     this.open = rec.id;
-    this.render(this.jobs);
+    this.render(this.allJobs, this.sj);
     const panel = document.querySelector('section.panel[data-panel="jobs"]');
     if (panel && panel.hidden === false) {
       try { panel.scrollIntoView({ block: "nearest", behavior: "smooth" }); } catch (_) {}
@@ -3536,6 +3646,14 @@ class FeedView {
 class OrbitApp {
   constructor(){
     this.api = new Api();
+    // 2026-11-16: the Sessions page opens ONE panel in a reusable window. The
+    // panel and the active chat arrive as query params; neither may rewrite the
+    // Control tab's saved view, sort or filter (the frame is a guest).
+    const _qs = new URLSearchParams(location.search);
+    const _wantPanel = String(_qs.get("panel") || "");
+    this.embedPanel = ["agents", "routines", "jobs", "org", "const", "feed"].includes(_wantPanel)
+      ? _wantPanel : "";
+    this.scopeSession = String(_qs.get("session") || "");
     this.agents = new AgentsView(this.api, () => this.refresh(), (aid) => this.openAgent(aid));
     this.lastAgents = [];
     this.team = "ALL";        // JAG-339: the selected team scopes the whole board
@@ -3553,6 +3671,7 @@ class OrbitApp {
     };
     if (window.ResizeObserver) new ResizeObserver(() => { try { if (this.org.auto) this.org.fit(); } catch (_) {} }).observe($("orgtree"));
     this.jobs = new JobsView(this.api, () => this.refresh(), (aid) => this.openAgent(aid));
+    this.jobs.onScopeChange = () => this.refresh();
     this.routines = new RoutinesView(this.api, () => this.refresh());
     this.feed = new FeedView(this.api, () => this.refresh());
     this.tac.mount();
@@ -3569,6 +3688,8 @@ class OrbitApp {
       ids: { team: "teamSel", sort: "agSort", dir: "agDir",
              hideEmpty: "agHideEmpty", running: "agRunning" },
       defaults: { sort: "leader", dir: "asc" },
+      // A guest frame must not rewrite the Control tab's persisted filter.
+      noPersist: !!this.embedPanel,
       teams: () => this.teamOptions(),
       onChange: (st) => {
         const teamChanged = this.team !== st.team;
@@ -3580,6 +3701,13 @@ class OrbitApp {
     }) : null;
     if (this.fs) {
       this.agents.sort = this.fs.get().sort; this.agents.dir = this.fs.get().dir;
+      // The window is opened FOR one session: show it even when the deck's saved
+      // filter would hide it. In-memory only — Control's stored filter is untouched.
+      if (this.embedPanel) {
+        const st = this.fs.get();
+        st.team = "ALL"; st.hideEmpty = false; st.running = false;
+        this.team = "ALL";
+      }
       // v752: a row drop switches the shared sort to "manual (drag order)" and the
       // panel repaints to say so (setSilent: no onChange — the persist path refreshes).
       this.agents.onManualOrder = () => {
@@ -3664,7 +3792,8 @@ class OrbitApp {
       try { saved = localStorage.getItem("orbit_view_v1"); } catch (e){ saved = null; }
       // the stacked "All panels" board is gone — an old saved "all" (or
       // anything unknown) lands on the first custom view.
-      this.applyView(saved || ("view:" + this.views[0].id));
+      // A guest panel window opens on ITS panel, not on the Control tab's view.
+      this.applyView(this.embedPanel || saved || ("view:" + this.views[0].id));
       // 2026-11-01: the durable copy lives on the server; adopt it when it differs.
       this.hydrateViews();
     }
@@ -3909,9 +4038,12 @@ class OrbitApp {
     this._markSync(true);
     const want = String(doc.active || "");
     const active = this.findView(want.replace("view:", "")) ? want : ("view:" + this.views[0].id);
-    this.applyView(active);
+    if (!this.embedPanel) this.applyView(active);
   }
   saveViews(){
+    // The embedded panel window is a guest: it must not rewrite the server's view
+    // (the Control tab owns that state).
+    if (this.embedPanel) return;
     try { localStorage.setItem("orbit_views_v1", JSON.stringify(this.views)); } catch (e){ /* private mode */ }
     clearTimeout(this._saveT);
     this._saveT = setTimeout(() => {
@@ -4068,7 +4200,7 @@ class OrbitApp {
     this.renderViewList();
     if (cols) this.paintViewBar();
     this._layoutViewCols();
-    try { localStorage.setItem("orbit_view_v1", view); } catch (e){ /* private mode */ }
+    if (!this.embedPanel) try { localStorage.setItem("orbit_view_v1", view); } catch (e){ /* private mode */ }
     // a lone panel or fresh columns take viewport heights (org/constellation
     // canvases size from their box) — tell resize listeners to re-fit.
     try { window.dispatchEvent(new Event("resize")); } catch (e){}
@@ -4344,6 +4476,13 @@ class OrbitApp {
       this.api.get("/api/architect/writes").catch(() => null)
     ]);
     this.agents.written = (wrote && wrote.targets) || {};
+    // 2026-11-16: the session-scoped Jobs panel also reads the in-session
+    // subagent ledger (SJ<n>). Read-only, same session as the window.
+    let sj = null;
+    if (this.scopeSession) {
+      try { sj = await this.api.get("/api/sessions/" + encodeURIComponent(this.scopeSession) + "/sj"); }
+      catch (_) { sj = {jobs: []}; }
+    }
     if (tms) this.teams = tms.teams || [];
     if (this.org) this.org.teams = this.teams;   // v890: the org chart tints by team
     // JAG-536: the palette lives on the VIEW (it owns the picker), and it is the
@@ -4406,11 +4545,22 @@ class OrbitApp {
     this.agents.scope = team;
     if (fTree) this.agents.render(fTree, list, running, tms ? tms.teams : null, designated, pool);
     if (dTree) this.org.render(dTree);
-    if (fJobs) this.jobs.render(fJobs.jobs);
+    if (this.scopeSession) {
+      const _scopeRow = sessRows.find(s => s.id === this.scopeSession);
+      this.jobs.setSession(this.scopeSession, (_scopeRow && _scopeRow.agent) || "");
+    } else {
+      this.jobs.setSession("", "");
+      this.jobs.setScope("all");
+    }
+    if (fJobs) this.jobs.render(fJobs.jobs, sj);
     if (fRoutines) this.routines.render(fRoutines.routines);
     // JAG-297: the constellation is a docked panel — keep it fresh, but never
     // yank an open chat-extract popover out from under the user.
-    if (!$("constBody").querySelector(".cpop")) this.tac.load(true, team).then(() => this.tac.draw());
+    const _markReady = () => { this._ready = true; };
+    if (!$("constBody").querySelector(".cpop"))
+      await this.tac.load(true, team).then(() => { try { this.tac.draw(); } catch (_) {} _markReady(); })
+        .catch(() => _markReady());
+    else _markReady();
   }
   async createJob(){
     const goal = $("jobGoal").value.trim(), assignee = $("jobTo").value;
@@ -4434,7 +4584,8 @@ class OrbitApp {
       link.setAttribute("href", "/?token=" + encodeURIComponent(this.api.token)
         + (frag ? "#" + frag : ""));
     });
-    this.refresh(); this.feed.connect();
+    this.refresh().then(() => { this._ready = true; }).catch(() => { this._ready = true; });
+    this.feed.connect();
     setInterval(() => this.refresh(), 5000);
     this._watchBuild();
   }
@@ -4608,6 +4759,89 @@ function focusConstellationNode(id, tries, sid){
 }
 window.addEventListener("message", (e) => {
   const d = e.data || {};
+  const app = window.__orbitApp;
+  // 2026-11-16: the Sessions page hosts ONE panel in a reusable window. The host
+  // owns the tabs and the active chat; this frame only renders the deck's own panel.
+  if (d && d.type === "longrun-show-panel" && app) {
+    try {
+      const key = String(d.panel || "");
+      if (app.PANELS.includes(key)) {
+        try { closePopover(); } catch (_) {}   // a menu cannot outlive its panel
+        app.applyView(key);
+      }
+    } catch (_) {}
+    return;
+  }
+  if (d && d.type === "longrun-scope-session" && app) {
+    try {
+      app.scopeSession = String(d.session || "");
+      app.refresh();
+    } catch (_) {}
+    return;
+  }
+  if (d && d.type === "longrun-team-action" && app) {
+    try {
+      const tid = String(d.team || "");
+      const x = Math.max(8, Math.min(Number(d.x) || 40, Math.max(8, window.innerWidth - 360)));
+      const y = Math.max(8, Math.min(Number(d.y) || 48, Math.max(8, window.innerHeight - 240)));
+      const ev = {clientX: x, clientY: y};
+      app.applyView("agents");
+      setTimeout(() => {
+        try {
+          if (d.action === "assign") app.agents.openAssignPicker(ev, tid);
+          else app.agents.openTeamEdit(ev, tid);
+        } catch (_) {}
+      }, 80);
+    } catch (_) {}
+    return;
+  }
+  if (d && d.type === "longrun-agent-editor" && app) {
+    try {
+      const sid = String(d.session || "");
+      const kind = String(d.kind || "name");
+      const x = Math.max(8, Math.min(Number(d.x) || 40, Math.max(8, window.innerWidth - 360)));
+      const y = Math.max(8, Math.min(Number(d.y) || 48, Math.max(8, window.innerHeight - 240)));
+      const ev = {clientX: x, clientY: y};
+      app.applyView("agents");
+      app.focusAgentSession(sid);
+      setTimeout(() => {
+        try {
+          const a = (app.lastAgents || []).find(x2 => x2.session === sid) ||
+            ((app.agents.pool || []).find(x2 => x2.session === sid)) ||
+            ((app.agents.roster || []).find(x2 => x2.session === sid)) ||
+            {session: sid, id: null, name: "", role: "", model: "", reports_to: null,
+             teams: [], prompt_chars: null};
+          if (kind === "teams") app.agents.openTeamPicker(ev, a);
+          else if (kind === "prompt") app.agents.openPrompt(a);
+          else app.agents.openAgentEditor(ev, a, kind);
+        } catch (_) {}
+      }, 90);
+    } catch (_) {}
+    return;
+  }
+  if (d && d.type === "longrun-agents-action" && app) {
+    try {
+      app.applyView("agents");
+      setTimeout(() => {
+        try {
+          const action = String(d.action || "");
+          if (action === "new-agent") {
+            if ($("agAddBar") && $("agAddBar").hidden) $("agNewBtn").click();
+            if ($("agNewName")) $("agNewName").focus();
+          } else if (action === "new-team") {
+            if ($("tmAddBar") && $("tmAddBar").hidden) $("tmNewBtn").click();
+            if ($("tmNewName")) $("tmNewName").focus();
+          } else if (action === "architect") {
+            if ($("lraAutoBar") && $("lraAutoBar").hidden) $("lraAutoBtn").click();
+            if ($("lraAutoInp")) $("lraAutoInp").focus();
+          } else if (action === "policy" && $("agPolicy")) {
+            $("agPolicy").click();
+          }
+        } catch (_) {}
+      }, 80);
+    } catch (_) {}
+    return;
+  }
   if (d && d.type === "longrun-focus-node") focusConstellationNode(d.id, 0, d.session);
   /* v609: the Sessions Plan panel hands us a job id — expand + ring that job
      in the Jobs panel (single shared bridge, no second truth). */
