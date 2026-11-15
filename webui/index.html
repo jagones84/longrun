@@ -1358,7 +1358,8 @@
   .mkt-ico { width: 34px; height: 34px; border-radius: 9px; background: var(--bg-2); flex: 0 0 auto;
     border: 1px solid var(--line); display: grid; place-items: center; font-size: 16px; }
   .mkt-body { min-width: 0; flex: 1; }
-  .mkt-name { font-size: 13px; font-weight: 650; }
+  .mkt-name { font-size: 13px; font-weight: 650; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; }
   .mkt-desc { font-size: 11.5px; color: var(--dim); margin-top: 2px; line-height: 1.4;
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .mkt-meta { font-size: 10.5px; color: var(--dim); margin-top: 6px; font-family: ui-monospace, Menlo, monospace;

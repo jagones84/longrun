@@ -255,13 +255,41 @@ def convert(root, trusted=False):
         contracts = manifest.get("contracts") or {}
         what = ", ".join("%s %s" % (k, ", ".join(map(str, v)) if isinstance(v, list) else v)
                          for k, v in contracts.items()) or "code"
-        return {"ok": False,
-                "error": ("openclaw code plugin (%s): its runtime is JavaScript inside the "
-                          "OpenClaw gateway — port it to a Matrix tool or ship an MCP server"
-                          % what),
-                "ignored": ["code"]}
+        # A code plugin is refused as CODE, but it is still a container: several of them
+        # ship skills next to the JavaScript (a `skills` manifest key, or a SKILL.md at the
+        # root). Those ARE portable, so they are imported and the code part is named as
+        # ignored — refusing the whole package would throw away what the source gives.
+        skill_dirs = []
+        declared = manifest.get("skills")
+        if isinstance(declared, str):
+            declared = [declared]
+        for rel in declared or []:
+            rel = str(rel).strip()
+            rel = rel[2:] if rel.startswith("./") else rel.lstrip("/")
+            path = os.path.realpath(os.path.join(real, rel))
+            if path == real or path.startswith(real + os.sep):
+                skill_dirs.append(path)
+        if os.path.isfile(os.path.join(real, "SKILL.md")):
+            skill_dirs.append(real)
+        members = []
+        for path in skill_dirs:
+            members += _skill_members(path)
+        if not members:
+            return {"ok": False,
+                    "error": ("openclaw code plugin (%s): its runtime is JavaScript inside the "
+                              "OpenClaw gateway — port it to a Matrix tool or ship an MCP server"
+                              % what),
+                    "ignored": ["code"]}
+        ignored.append("code")
+        notes.append("code (%s) has no portable member: only its skills are imported" % what)
+        title = manifest.get("name") or manifest.get("id") or os.path.basename(real)
+        description = manifest.get("description") or ""
+        publisher = (manifest.get("author") or {}).get("name") if isinstance(
+            manifest.get("author"), dict) else ""
+        version = manifest.get("version") or ""
+        category = _category(" ".join([str(title), str(description)]))
 
-    if fmt == "trae":
+    elif fmt == "trae":
         manifest = _json(os.path.join(real, ".trae-plugin", "plugin.json")) or {}
         skills_dir = os.path.join(real, str(manifest.get("skills") or "./skills/"))
         members = _skill_members(skills_dir)
@@ -369,7 +397,8 @@ def scan(max_age=30):
                            description=item["description"], category=item["category"],
                            members=[{"kind": m["kind"], "name": m["name"]}
                                     for m in item["members"]],
-                           ignored=conv.get("ignored") or [])
+                           ignored=conv.get("ignored") or [],
+                           notes=conv.get("notes") or [])
             else:
                 row.update(error=conv.get("error") or "not convertible",
                            ignored=conv.get("ignored") or [])

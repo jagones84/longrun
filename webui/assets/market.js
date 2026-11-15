@@ -135,21 +135,29 @@ function localSection() {
   const rows = state.local || [];
   if (!rows.length) return "";
   return `<h3 class="mkt-sect-h"><span class="mkt-sect-static">Found on this machine \u00b7 ${rows.length}</span></h3>
-    <div class="mkt-src">Plugins installed for another harness: each is converted to its skills
-      and MCP servers. A code plugin has no portable member and is refused by name.</div>
+    <div class="mkt-src">Plugins installed for another harness, converted to their skills and MCP
+      servers. A code plugin contributes only its skills: the JavaScript part is named as ignored.</div>
     <div class="mkt-grid">${rows.map(localCard).join("")}</div>`;
+}
+
+function shortHome(p) {
+  return String(p || "").replace(/^\/(?:home|Users)\/[^/]+/, "~");
 }
 
 function localCard(p) {
   const bad = !!p.error;
   const members = (p.members || []).map(m => m.kind + ":" + m.name).join(", ");
   const ignored = (p.ignored || []).length ? " \u00b7 ignored: " + p.ignored.join(", ") : "";
+  const base = String(p.path || "").replace(/\/+$/, "").split("/").pop() || p.path || "";
+  const where = shortHome(p.path);
+  const tip = [p.path].concat(p.notes || []).join(" \u2014 ");
+  const meta = bad ? `${p.format} \u00b7 ${where}` : `${p.format} \u00b7 ${members || "\u2014"}${ignored}`;
   return `<article class="mkt-card" data-kind="plugin">
     <div class="mkt-ico" aria-hidden="true">${bad ? "\u25CB" : KIND_ICON.plugin}</div>
     <div class="mkt-body">
-      <div class="mkt-name">${esc(p.title || p.name || p.path)}</div>
+      <div class="mkt-name" title="${esc(tip)}">${esc(p.title || p.name || base)}</div>
       <div class="mkt-desc">${esc(bad ? p.error : (p.description || members || ""))}</div>
-      <div class="mkt-meta" title="${esc(p.path)}">${esc(p.format)} \u00b7 ${esc(members || "\u2014")}${esc(ignored)}</div>
+      <div class="mkt-meta" title="${esc(tip)}">${esc(meta)}</div>
     </div>
     <div class="mkt-act">${bad
       ? `<span class="mkt-warn" title="code plugins have no portable member">not portable</span>`

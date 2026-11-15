@@ -6,7 +6,7 @@ The three standards are read from the package's own manifest, never guessed:
   A  trae   `.trae-plugin/plugin.json`  -> skills + `mcp` document (a ${VAR} = connector)
   B  claude `.claude-plugin/plugin.json` -> skills + `.mcp.json`
   C  a bare directory with SKILL.md
-  D  openclaw `openclaw.plugin.json` = CODE -> refused by name
+  D  openclaw `openclaw.plugin.json` = CODE -> its skills are imported, the code is named
   E  a path outside the configured roots is refused
   F  the install goes through the SAME bundle path: one record, owner-side state, rm
   G  what cannot travel is named (binaries), never silently dropped
@@ -90,6 +90,17 @@ openclaw = pkg("code-demo", {
     "dist/index.js": "module.exports = {};\n",
 })
 
+# A code plugin is still a container: `diffs` (real) ships `skills: ["./skills"]`, `lobster`
+# ships a SKILL.md at the root. The portable part is imported; the code is named as ignored.
+openclaw_mixed = pkg("code-with-skills", {
+    "openclaw.plugin.json": json.dumps({
+        "id": "code-with-skills", "name": "Code With Skills",
+        "description": "A viewer with instructions.", "version": "3.0.0",
+        "contracts": {"tools": ["view"]}, "skills": ["./skills"]}),
+    "skills/octo/SKILL.md": SKILL % "Octo",
+    "dist/index.js": "module.exports = {};\n",
+})
+
 blocked = os.path.join(_TMP, "not-a-root", "pkg")
 write(os.path.join(blocked, "SKILL.md"), SKILL % "Blocked")
 
@@ -123,6 +134,19 @@ check("D1 an OpenClaw code plugin is refused by name",
       bad.get("ok") is False and "openclaw code plugin" in bad.get("error", ""), bad.get("error"))
 check("D2 the refusal names what it carried",
       "tools x" in bad.get("error", ""), bad.get("error"))
+mixed = mp.convert(openclaw_mixed)
+check("D3 a code plugin that ships skills imports the skills, not nothing",
+      mixed.get("ok") is True and [m["name"] for m in mixed["item"]["members"]] == ["octo"],
+      mixed.get("error") or mixed.get("ignored"))
+check("D4 the code it cannot run is named as ignored, never silent",
+      "code" in (mixed.get("ignored") or []) and "view" in " ".join(mixed.get("notes") or []),
+      (mixed.get("ignored"), mixed.get("notes")))
+# A54 finding F1: the note that names the dropped code must reach the scan row, not only convert().
+_rows = mp.scan(max_age=0)["packages"]
+_row = [r for r in _rows if str(r.get("path", "")).endswith("code-with-skills")]
+check("D5 the scan carries the note that names the code it will not run",
+      bool(_row) and any("view" in str(n) for n in _row[0].get("notes") or []),
+      _row[0].get("notes") if _row else "row missing")
 out = mp.convert(blocked)
 check("E1 a path outside the configured roots is refused",
       out.get("ok") is False and "outside the plugin roots" in out.get("error", ""), out.get("error"))
@@ -190,6 +214,8 @@ check("I2 the page shows what it found, with an Import button",
       "mkt-import-local" in JS and "Found on this machine" in JS)
 check("I3 the CLI exposes both verbs",
       '"plugin-scan", "plugin-add"' in FORGE)
+check("I4 a card names the package, never a full path that overflows the card",
+      "p.title || p.name || base" in JS and "shortHome(" in JS)
 
 print("\n---\nv1040: %d/%d PASS" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

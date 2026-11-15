@@ -319,8 +319,10 @@ All notable changes to Longrun are documented here. The format follows
   and each is converted into the `plugin` entry the catalogue already installs: a skill member (the
   directory zipped deterministically so the digest gate still applies) and an `mcp`/`connector` member
   from `mcpServers`, with `${VAR}` making it a connector and naming its key. OpenClaw's
-  `openclaw.plugin.json` is a CODE plugin and is refused by name (tools/hooks/channels have no portable
-  member; the Longrun home for code is Matrix). Anything else a package carries (commands, agents,
+  `openclaw.plugin.json` is a CODE plugin, so only its SKILLS travel (`skills: "./skills"` or a
+  SKILL.md at the root — `diffs` and `lobster` on this machine do exactly that); the JavaScript
+  (tools, hooks, channels) is named as ignored, because the Longrun home for code is Matrix.
+  Anything else a package carries (commands, agents,
   hooks, binaries, apps) is listed as ignored, never installed, so nothing lands half-imported.
   Split roots keep it safe: a path must live under `plugin_sources` (defaults: `~/.trae/plugins`,
   `~/.claude/plugins`, `~/.openclaw/extensions`, `~/.openclaw/plugin-skills`, the repo), an https ZIP
@@ -330,7 +332,9 @@ All notable changes to Longrun are documented here. The format follows
   a "Found on this machine" block in the Plugins section with an Import button. The testing head found
   two diagnostics and both are fixed in the same change: a path outside the roots is now refused for
   WHERE IT LIVES even when it carries no manifest (the location gate runs before the format gate), and
-  the reported roots are the enforced ones, repository included. (Locked by `v1040` 24/24.)
+  the reported roots are the enforced ones, repository included. Operator follow-up fixed too: a local
+  card names the package (`diffs`) with its shortened location in the meta, because the full path as a
+  title painted over the neighbouring card. (Locked by `v1040` 28/28.)
 - **A plugin is a container, and the Matrix modules are their own kind (`v1039`).** Operator: *"plugins
   are only matrix. does they need adaption to the longrun specific harness …? plugins are combinations
   of skills and mcps? what are plugins?"* — and the answer was no in the catalogue: `plugin` named an
