@@ -56,6 +56,12 @@ class SessionRegistry:
                 "updated": s.get("updated"),
                 "running": sid in active,
                 "prompt_chars": _prompt_chars(sid),
+                # 2026-11-16 (operator): a manager sees the LLM and the context
+                # saturation of the agents under its line, on the AGENTS table too —
+                # the same number the Sessions rail renders (stores.list_sessions).
+                "ctx_pct": s.get("ctx_pct"),
+                "ctx_tokens": s.get("ctx_tokens"),
+                "ctx_budget": s.get("ctx_budget"),
             })
         return {"sessions": rows, "count": len(rows), "active": len(active)}
 

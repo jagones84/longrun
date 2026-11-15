@@ -454,7 +454,10 @@
   .sess .menu-btn { color: var(--dim); font-size: 14px; flex-shrink: 0; padding: 2px 6px; border-radius: 6px; opacity: 0; }
   .sess:hover .menu-btn, .sess.menu-open .menu-btn { opacity: .8; }
   .sess .menu-btn:hover { opacity: 1; background: var(--hover); }
-  .sess-menu { position: absolute; z-index: 50; background: var(--menubg); border: 1px solid var(--line-2); border-radius: 10px; padding: 4px; min-width: 150px; box-shadow: 0 8px 24px rgba(0,0,0,.4); }
+  /* 2026-11-16 (operator): the menu is a BODY-level fixed popover. As an absolutely
+     positioned child of the row it was clipped by the scrolling rail and painted
+     under the rows below it ("not visible because beyond the other webui objects"). */
+  .sess-menu { position: fixed; z-index: 53; background: var(--menubg); border: 1px solid var(--line-2); border-radius: 10px; padding: 4px; min-width: 150px; box-shadow: 0 8px 24px rgba(0,0,0,.4); }
   .sess-menu button { display: block; width: 100%; text-align: left; background: none; border: 0; color: var(--txt); padding: 7px 10px; border-radius: 7px; font-size: 12px; cursor: pointer; }
   .sess-menu button:hover { background: var(--hover); }
   .sess-menu button.danger { color: var(--err); }
@@ -7881,6 +7884,20 @@ function _togglePin(sid) {
   loadSessions();
 }
 function closeSessMenu() { document.querySelectorAll(".sess-menu").forEach(m => m.remove()); document.querySelectorAll(".sess.menu-open").forEach(d => d.classList.remove("menu-open")); }
+/* 2026-11-16 (operator): "click the ⋮ menu, close it, click again — it does not start
+   anymore". Each open armed a ONE-SHOT document listener; it was still pending when
+   the ⋮ was clicked again, so it closed the menu that click had just opened. ONE
+   persistent listener owns the outside-click close (the pattern the runs popover
+   already uses): a click inside the menu closes it after its action ran, and the ⋮
+   that opens it is never treated as "outside". */
+function _wireSessMenuClose() {
+  document.addEventListener("click", e => {
+    if (!document.querySelector(".sess-menu")) return;
+    const t = e.target;
+    if (t && t.closest && (t.closest(".menu-btn") || t.closest(".gkebab"))) return;
+    closeSessMenu();
+  });
+}
 async function openSessMenu(row, s, ag) {
   closeSessMenu();
   row.classList.add("menu-open");
@@ -7907,7 +7924,13 @@ async function openSessMenu(row, s, ag) {
     + '<button data-a="org">⬢ Show in organigram</button>'
     + `${relBtn}${lraBtn}<button data-a="rewind">⏪ Rewind…</button>`
     + '<button data-a="clear">Clear chat + tasks</button>' + delBtn;
-  row.appendChild(m);
+  // 2026-11-16 (operator): a body-level fixed popover, placed from the ⋮ — the same
+  // door the preview menu uses. Inside the row it was clipped by the scrolling rail
+  // and painted under the rows below it, so most of it never showed.
+  document.body.appendChild(m);
+  const _mb = row.querySelector(".menu-btn");
+  const _mr = (_mb || row).getBoundingClientRect();
+  _placeMenu(m, _mr.right, _mr.bottom + 4, true);
   m.onclick = async (e) => {
     const a = e.target.dataset && e.target.dataset.a;
     if (!a) return;
@@ -7954,7 +7977,6 @@ async function openSessMenu(row, s, ag) {
     }
     closeSessMenu();
   };
-  setTimeout(() => document.addEventListener("click", closeSessMenu, { once: true }), 0);
 }
 /* The ONE rail team menu: the No-team bucket and every real team (v910 + the
    AGENTS-panel parity). Real teams add edit/policy/delete; the four bulk actions
@@ -7976,7 +7998,13 @@ function openTeamMenu(head, g) {
     + (none ? "" : '<button data-a="policy">⚙ Apply model policy</button>')
     + (none ? "" : '<button data-a="del" class="danger">✖ Delete team…</button>')
     + '<button data-a="delall" class="danger">✖ Delete ALL sessions…</button>';
-  head.appendChild(m);
+  // 2026-11-16: a BODY-level fixed popover, like the session ⋮ — the rail scrolls
+  // and clips, so an in-header menu hid behind the rows below it. Placed from the
+  // kebab with the one zoom-aware helper the other menus use.
+  document.body.appendChild(m);
+  const _kb = head.querySelector(".gkebab") || head;
+  const _kr = _kb.getBoundingClientRect();
+  _placeMenu(m, _kr.right, _kr.bottom + 4, true);
   m.onclick = async (e) => {
     const a = e.target.dataset && e.target.dataset.a;
     if (!a) return;
@@ -8028,7 +8056,6 @@ function openTeamMenu(head, g) {
       await (none ? _noTeamBulk("delete-sessions") : _teamBulk(tid, "delete-sessions"));
     }
   };
-  setTimeout(() => document.addEventListener("click", closeSessMenu, { once: true }), 0);
 }
 /* The ⊕ on a real team header opens the deck's own assign picker (same route,
    same pool as the AGENTS table). */
@@ -8112,13 +8139,31 @@ function _orgRankMap() {
 /* JAG-424g: the context ring belongs to ONE session — it is drawn on the ACTIVE session's
    row (its own saturation), once per render (the active session may be drawn in several
    team groups). The state is re-applied after every rail render. */
+/* 2026-11-16 (operator): EVERY chat shows its own saturation, not only the one on
+   screen. The number is what the router really sent on that session's last request
+   (`s.ctx_pct`, recorded by the turn and served by `/api/sessions`). The ACTIVE row
+   keeps the ids, so the live `/api/context` meter still repaints it; a row with no
+   number (a session that never ran) renders nothing — never a fabricated 0%. */
 let _ctxRingPlaced = false, _ctxPct = null, _ctxTitle = "context tokens / budget";
 function _ctxRingHtml(s) {
-  if (s.id !== sessionId || _ctxRingPlaced) return "";
-  _ctxRingPlaced = true;
-  return '<span class="sess-ctx"><span class="pill meter" id="ctx-meter" title="context tokens / budget">'
+  const isActive = s.id === sessionId;
+  const _n = Number(s.ctx_pct);
+  const pct = (s.ctx_pct == null || !isFinite(_n)) ? null : _n;
+  if (!isActive && pct == null) return "";
+  if (isActive && _ctxRingPlaced) return "";
+  if (isActive) _ctxRingPlaced = true;
+  const iM = isActive ? ' id="ctx-meter"' : "";
+  const iR = isActive ? ' id="ctxRing"' : "";
+  const iP = isActive ? ' id="ctxPctTop"' : "";
+  const off = 100 - Math.max(0, Math.min(100, pct == null ? 0 : pct));
+  const tip = pct == null ? "context tokens / budget"
+    : ("context: " + pct + "% of the budget (" + (s.ctx_tokens || "?") + " / "
+       + (s.ctx_budget || "?") + " tokens)");
+  return '<span class="sess-ctx"><span class="pill meter' + (pct != null && pct >= 70 ? " hot" : "") + '"' + iM
+    + ' title="' + esc(tip) + '">'
     + '<svg class="mring" viewBox="0 0 36 36" aria-hidden="true"><circle class="mtrk" cx="18" cy="18" r="15.9155"></circle>'
-    + '<circle class="mfill" id="ctxRing" cx="18" cy="18" r="15.9155"></circle></svg><b id="ctxPctTop">…</b></span></span>';
+    + '<circle class="mfill"' + iR + ' cx="18" cy="18" r="15.9155" style="stroke-dashoffset:' + off + '"></circle></svg>'
+    + '<b' + iP + '>' + (pct == null ? "…" : Math.round(pct) + "%") + '</b></span></span>';
 }
 function _repaintCtx() {
   const pill = $("ctx-meter");
@@ -20859,6 +20904,7 @@ $("mcpJsonWin").addEventListener("click", e => { if (e.target.id === "mcpJsonWin
 $("session-search").addEventListener("input", loadSessions);
 { const _cfgText = $("cfgFileText"); if (_cfgText) _cfgText.addEventListener("input", _syncConfigFileSaveState); }
 _wireRunsPanel();   // JAG-479: the running/unread popover reads real state and follows it
+_wireSessMenuClose();   // 2026-11-16: one listener closes the session ⋮ menu (reopens cleanly)
 { const _chc = $("chatHeadCopy"); if (_chc) _chc.onclick = _copySessionName; }   // JAG-480
 $("chatSearchToggle").onclick = toggleChatSearch;
 $("chatSearchClose").onclick = closeChatSearch;

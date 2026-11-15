@@ -288,6 +288,11 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   table.at td.acell .arole{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   table.at td.acell .rep{flex:0 0 auto;width:auto;font-size:10px;color:var(--acc2)}
   table.at td.acell .rep:hover{color:var(--acc)}
+  /* 2026-11-16: the manager's view of a subordinate: LLM in the model cell (already
+     there), context saturation here, from the same number the Sessions rail shows. */
+  table.at td.acell .actx{flex:0 0 auto;font-size:10px;color:var(--dim);
+    border:1px solid var(--line);border-radius:6px;padding:0 4px;font-variant-numeric:tabular-nums}
+  table.at td.acell .actx.hot{color:var(--warn,var(--acc));border-color:var(--warn,var(--acc))}
   /* v892: a ⋮ is a GLYPH, not a framed button — the frame cost ~6px on every row. */
   .btn.ghost.mini.dots{border:0;background:transparent;padding:0;width:20px;min-width:20px;height:22px;
     display:inline-flex;align-items:center;justify-content:center;color:var(--dim)}
@@ -1635,11 +1640,17 @@ class AgentsView {
     // v895: an EMPTY ROLE.md stays visible as a tiny mark on the row's SECOND line
     // (vertical space that was already there) instead of a red pill in a column.
     const voidMark = voidP ? '<span class="req" title="EMPTY ROLE.md - this agent runs on the bare system prompt">*</span>' : '';
+    // 2026-11-16 (operator): the boss sees each subordinate's context saturation here,
+    // next to the role and the reporting line — no number means "never ran" (no 0%).
+    const _ctxN = (a.ctx_pct == null) ? null : Number(a.ctx_pct);
+    const ctxChip = (_ctxN == null || !isFinite(_ctxN)) ? ''
+      : '<span class="actx' + (_ctxN >= 70 ? ' hot' : '') + '" title="context: '
+        + _ctxN + '% of the budget">ctx ' + Math.round(_ctxN) + '%</span>';
     return '<tr data-sid="' + esc(a.session) + '" data-grp="' + esc(grp) + '"' + hid + '>' +
       '<td class="aid"><span class="aidbox"><span class="rowgrip" title="drag to reorder this agent">⋮⋮</span>' + idCell + run + '</span></td>' +
       '<td class="acell">' +
         '<button type="button" class="linklike" data-aedit="name" data-sid="' + esc(a.session) + '" title="edit name and role" aria-label="edit name and role"><span class="aname">' + esc(a.name || "\u2014") + '</span></button>' +
-        '<span class="asub">' + aiBadge + voidMark + '<span class="arole">' + esc(a.role || "") + '</span>' +
+        '<span class="asub">' + aiBadge + voidMark + ctxChip + '<span class="arole">' + esc(a.role || "") + '</span>' +
           '<button type="button" class="linklike rep" data-aedit="reports_to" data-sid="' + esc(a.session) + '" title="reports to ' + esc(a.reports_to || "nobody") + '" aria-label="edit reports to">' + esc(repLabel) + '</button></span>' +
       '</td>' +
       '<td class="mcell"><button class="btn ghost mini cbtn' + (a.model ? '' : ' empty') + '" data-aedit="model" data-sid="' + esc(a.session) + '" title="model: ' + esc(a.model || "router default") + '" aria-label="edit model"><span class="cv" data-m="' + esc(a.model || "default") + '">' + esc(modelLabel) + '</span></button></td>' +
@@ -4509,11 +4520,16 @@ class OrbitApp {
     const promptChars = {};
     sessRows.forEach(s => { promptChars[s.id] = s.prompt_chars; });
     designated.forEach(a => { a.prompt_chars = promptChars[a.session]; });
+    // 2026-11-16 (operator): the manager reads its subordinates' context saturation
+    // beside the role — the same value the Sessions rail paints on every row.
+    const ctxBySid = {};
+    sessRows.forEach(s => { ctxBySid[s.id] = s.ctx_pct; });
+    designated.forEach(a => { a.ctx_pct = ctxBySid[a.session]; });
     const extras = sessRows.filter(s => !dsids.has(s.id))
       .map(s => ({session: s.id, id: null, agent: s.agent || null, undesignated: true, n: 1e9,
                   name: s.title || ("session " + String(s.id).slice(0, 6)),
                   role: "", model: s.model || "", teams: [], reports_to: null,
-                  prompt_chars: s.prompt_chars, updated: s.updated || 0}));
+                  prompt_chars: s.prompt_chars, ctx_pct: s.ctx_pct, updated: s.updated || 0}));
     const pool = designated.concat(extras);
     // v752: status filters and the newest-first sort key are shared with the Sessions
     // rail — same panel state, same meaning. `hide empty` here means a VOID prompt

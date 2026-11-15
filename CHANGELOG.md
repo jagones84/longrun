@@ -6,6 +6,20 @@ All notable changes to Longrun are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- **Every chat shows its context saturation, and a manager sees its team's.** Operator: *"each chat
+  context status shall be visible in the sessions webui even if not the active one selected at the
+  moment … and the boss team of an agent (report to) shall know the status of its sub agents teams (the
+  ones that can be dispatched by him) including llm, context saturation etcetera"*. The chat loop
+  records `sess["ctx"]` at turn end from the router's real `prompt_tokens` of its last request plus the
+  budget of the model that served it; `stores.list_sessions` serves `ctx_pct` / `ctx_tokens` /
+  `ctx_budget` on every row, overlaying the LIVE router number while a turn still runs, and a one-shot
+  background pass (memory only, never on the request path) fills sessions that ran before this change
+  — measured live: 118/118 rows populated within 4 s of the restart. The rail paints the ctx pill on
+  EVERY row (the active one keeps the live `/api/context` ids), `sessions.list` prints
+  `model=… | ctx=…%` so a manager reads the agents it can dispatch, and the deck's AGENTS row gains a
+  `ctx NN%` chip beside the role. (Locked by `v1048` 11/11.)
+
 ### Security
 - **The bearer token no longer lands in the systemd journal (`v940`).** `main()` printed
   `http://<lan-ip>:8790/?token=<secret>` on boot, so every `systemctl --user restart longrun` wrote the
@@ -107,6 +121,22 @@ All notable changes to Longrun are documented here. The format follows
   model. The approval ledger still stores the raw args of the call it recorded — not model-bound.)
 
 ### Fixed
+- **The ⋮ session and team menus open again after being closed.** Operator: *"if i click tree dot
+  menus and close and click again it does not start anymore"*. Each open armed a one-shot document
+  listener; it was still pending when the ⋮ was clicked again, so it closed the menu that click had
+  just opened. ONE persistent listener (`_wireSessMenuClose`) now owns the close, and both rail menus
+  are body-level fixed popovers placed from their trigger — so they neither vanish on reopen nor clip
+  behind the rail. (Locked by `v1048` D1/D2.)
+- **The session ⋮ menu opens fully in front, never behind the rail.** Operator: *"the treedot menus
+  opened are not visible because they are beyond the other webui objects instead of being fully front
+  as graphical objects."* `.sess-menu` was an absolutely positioned child of the session row with no
+  offsets, inside the scrolling rail: the rail clipped it and the rows below painted over it. It is now
+  a BODY-level `position: fixed` popover at `z-index: 53`, placed from the ⋮ with the same zoom-aware
+  `_placeMenu()` the preview menu uses (it flips above near the bottom edge). Two stale pins were
+  re-pointed in the same change: `v311`'s clear emulation now calls the real `clear_session` door (the
+  old `save_session(messages=[])` is merged back by the v947 prefix adoption), and "Edit role opens
+  ROLE.md in code mode" now pins the deck's agent editor, where that form lives. (Locked by `v311`
+  34/34, `v284` 18/18.)
 - **A row of "Agents & unread" reveals its chat like the rail's centre button.** Operator: *"the
   agents and unread panel if click on agents shall also make the same work as the left sidebar
   CENTER icon that move camera to the chat session specific agents … make this quick fix, don't

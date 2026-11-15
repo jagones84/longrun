@@ -2848,9 +2848,18 @@ def _sessions(args, run_id):
     for r in rows[:max(1, limit)]:
         _who = amap.get(r.get("id"))
         _addr = ("%s (%s)" % _who) if _who else r.get("id")
-        lines.append("  %s | %s | msgs=%s | %s%s"
+        # 2026-11-16 (operator): a manager reads the LLM and the context saturation of
+        # the agents it can dispatch on the same line as their address — the status it
+        # needs before delegating, from the same rows the Sessions webui renders.
+        _model = r.get("model") or "default"
+        _ctx = ("" if r.get("ctx_pct") is None
+                else " | ctx=%s%% (%s/%s tok)" % (r.get("ctx_pct"),
+                                                  r.get("ctx_tokens") or "?",
+                                                  r.get("ctx_budget") or "?"))
+        lines.append("  %s | %s | msgs=%s | model=%s%s | %s%s"
                      % (_addr, (r.get("title") or "")[:48], r.get("messages"),
-                        r.get("age") or "", " | RUNNING" if r.get("running") else ""))
+                        _model, _ctx, r.get("age") or "",
+                        " | RUNNING" if r.get("running") else ""))
     stdout = ("%d session(s)%s (read one with action=read, session=<name, A-id or id>):\n%s"
               % (len(rows), (" matching %r" % q) if q else "",
                  "\n".join(lines) or "  (none)"))

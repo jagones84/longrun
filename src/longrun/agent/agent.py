@@ -7031,6 +7031,20 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             save_session(sess)
     except Exception as _exc:  # noqa: BLE001 — persistence must never break a turn
         publish("graph.error", kind="transcript.persist", error=str(_exc))
+    # 2026-11-16 (operator): "each chat context status shall be visible in the sessions
+    # webui even if not the active one". The router's real prompt_tokens of the LAST
+    # request IS what this turn carried; the budget belongs to the model that served it.
+    # Recorded on the session the reply is about to save, so `list_sessions` reads ONE
+    # number — no second estimator, no per-row prompt build.
+    try:
+        _ctx_used = int(_REAL_PROMPT_TOKENS.get(sess["id"]) or 0)
+        _ctx_budget = int(context_budget(model) or 0)
+        if _ctx_used and _ctx_budget:
+            sess["ctx"] = {"tokens_used": _ctx_used, "budget_tokens": _ctx_budget,
+                           "pct": round(_ctx_used / _ctx_budget * 100, 1),
+                           "model": model, "at": round(time.time(), 3)}
+    except Exception:  # noqa: BLE001 — a meter must never break a turn
+        pass
     meta.update(_turn_stats)   # survive every earlier `meta = {...}` branch
     reply = append_message(sess, "assistant", content, reasoning=think.strip() or None,
                            meta=meta)

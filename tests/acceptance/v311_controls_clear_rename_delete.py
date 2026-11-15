@@ -45,10 +45,9 @@ server.append_message(s, "user", "hello")
 server.append_message(s, "assistant", "hi there")
 check("session has 2 messages before clear", len(server.load_session(sid)["messages"]) == 2)
 
-# the clear handler body (mirrors POST /api/sessions/<sid>/clear)
-sess = server.load_session(sid)
-sess["messages"] = []
-server.save_session(sess)
+# the clear handler body: POST /api/sessions/<sid>/clear calls `clear_session`, the
+# ONE door that wipes messages + cards + injects (the v1045 tombstone lives there).
+server.clear_session(sid)
 check("clear wipes the chat history", server.load_session(sid)["messages"] == [])
 check("clear keeps the session itself", server.load_session(sid) is not None)
 check("clear keeps the title", server.load_session(sid).get("title") == "clear-me")
@@ -113,8 +112,16 @@ check("the overflow menu offers reset session", "reset session" in gui)
 # JAG-395: right-click opens that row's own menu; Edit role opens code mode.
 check("right-click on ANY session row opens its own ⋯ menu",
       "d.oncontextmenu" in gui and "openSessMenu(d, s, ag)" in gui)
-check("Edit role opens ROLE.md in the editor's CODE mode (not render)",
-      'openInEditor(rp, { mode: "code" })' in gui)
+# 2026-11-16 (operator): "the treedot menus opened are not visible because they are
+# beyond the other webui objects" — an in-row absolute child was clipped by the
+# scrolling rail and painted under later rows. It is a body-level fixed popover now.
+check("the session menu is a BODY-level fixed popover, never clipped by the rail",
+      "document.body.appendChild(m)" in gui
+      and ".sess-menu { position: fixed; z-index: 53;" in gui
+      and "row.appendChild(m)" not in gui)
+check("Edit prompt opens the ONE agent editor (the deck), not a second form",
+      '_dpPostAgent(s.id, "prompt")' in gui
+      and '<button data-a="prompt">Edit prompt (ROLE.md)</button>' in gui)
 
 with open(os.path.join(REPO, "src", "longrun", "orbit", "web", "orbit.html"), encoding="utf-8") as f:
     orb = f.read()

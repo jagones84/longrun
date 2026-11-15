@@ -53,7 +53,9 @@ check("clicking a donut slice highlights its bar (seg + bar share a data-i key)"
 
 # --- 1c) JAG-396: opaque menus, prominent compact, composer keeps the model ----
 check("floating menus are opaque (sessions / attach / overflow / slash)",
-      '.sess-menu { position: absolute; z-index: 50; background: var(--menubg);' in ui
+      # 2026-11-16 (operator): the session menu is a BODY-level fixed popover now —
+      # z-index 53 puts it above every rail row and the panels it overlaps.
+      '.sess-menu { position: fixed; z-index: 53; background: var(--menubg);' in ui
       and 'background: var(--menubg); border: 1px solid var(--line); border-radius: 12px;' in ui
       # 2026-11-07 (operator): the ⋯ menu moved to the rail and now shares its rule with
       # the queue/steer popup; z-index 60 keeps it above the composer it opens over.

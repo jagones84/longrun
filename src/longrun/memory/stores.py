@@ -575,6 +575,11 @@ def _forget_session_runtime(sid):
     """
     _REAL_PROMPT_TOKENS.pop(sid, None)
     _REAL_CACHED_TOKENS.pop(sid, None)
+    # 2026-11-16: a deleted/cleared session must not keep the saturation computed for
+    # the transcript that no longer exists (it can be recomputed on demand).
+    with _CTX_BACKFILL_LOCK:
+        _CTX_BACKFILL.pop(sid, None)
+        _CTX_BACKFILL_TRIED.discard(sid)
     with _steer_lock:
         STEER_INBOX.pop(sid, None)
     forget_steers(sid)   # JAG-796: the durable steer log would otherwise leak too
@@ -671,6 +676,47 @@ def _rel_time(ts):
 
 _SESSION_SUMMARY_CACHE = {}   # path -> ((mtime_ns, size), summary_dict)
 _SESSION_SUMMARY_LOCK = threading.Lock()
+# 2026-11-16 (operator): a session that ran BEFORE the turn started recording
+# `sess["ctx"]` has no saturation. One background pass fills it from the same
+# assembler the Context panel uses (`context_usage`), cached IN MEMORY only — never
+# written to the session document (that would be a second truth) and never on the
+# request path (the first build costs seconds: it warms the model weights).
+_CTX_BACKFILL = {}            # sid -> {"pct", "tokens_used", "budget_tokens"}
+_CTX_BACKFILL_TRIED = set()   # one attempt per session per process
+_CTX_BACKFILL_LOCK = threading.Lock()
+_CTX_BACKFILL_Q = None        # queue.Queue, created with the single worker
+
+
+def _ctx_backfill_loop():
+    """ONE daemon worker: the queue keeps the cost off every request thread."""
+    from longrun.core import httpapi   # lazy: memory must not import core at load
+    while True:
+        sid = _CTX_BACKFILL_Q.get()
+        try:
+            u = httpapi.context_usage(sid)
+            if u.get("available"):
+                with _CTX_BACKFILL_LOCK:
+                    _CTX_BACKFILL[sid] = {"pct": u.get("pct"),
+                                          "tokens_used": u.get("tokens_used"),
+                                          "budget_tokens": u.get("budget_tokens")}
+        except Exception:  # noqa: BLE001 — a meter must never kill the worker
+            pass
+
+
+def _ctx_backfill_request(sid):
+    """Ask for one session's saturation, at most once per process."""
+    global _CTX_BACKFILL_Q
+    with _CTX_BACKFILL_LOCK:
+        if sid in _CTX_BACKFILL_TRIED:
+            return
+        _CTX_BACKFILL_TRIED.add(sid)
+        if _CTX_BACKFILL_Q is None:
+            import queue
+            _CTX_BACKFILL_Q = queue.Queue()
+            threading.Thread(target=_ctx_backfill_loop, daemon=True,
+                             name="ctx-backfill").start()
+        _CTX_BACKFILL_Q.put(sid)
+
 
 
 def _session_summary_row(s):
@@ -684,6 +730,11 @@ def _session_summary_row(s):
     if cards:
         stamps.append(cards[-1].get("ts") or 0)
     upd = max(stamps)
+    # 2026-11-16 (operator): "each chat context status shall be visible in the sessions
+    # webui even if not the active one". The turn records what the router really sent on
+    # its last request (`sess["ctx"]`), so every row carries its own saturation; None —
+    # never a fabricated 0 — when the session has not run yet.
+    ctx = s.get("ctx") if isinstance(s.get("ctx"), dict) else {}
     return {
         "id": s["id"],
         "title": s.get("title", ""),
@@ -692,6 +743,9 @@ def _session_summary_row(s):
         "messages": len(msgs),
         "workspace": s.get("workspace"),
         "model": s.get("model"),
+        "ctx_pct": ctx.get("pct"),
+        "ctx_tokens": ctx.get("tokens_used"),
+        "ctx_budget": ctx.get("budget_tokens"),
         "system": bool(s.get("system")),
         "undeletable": bool(s.get("undeletable")),
         "stateless": bool(s.get("stateless")),
@@ -743,6 +797,26 @@ def list_sessions():
                     _SESSION_SUMMARY_CACHE[p] = (stamp, row)
             if not row:
                 continue
+            # A RUNNING turn's router number is fresher than the one it persisted at its
+            # last end, so the rail follows the live request while the turn works.
+            _live = _REAL_PROMPT_TOKENS.get(row["id"])
+            if _live and row.get("ctx_budget"):
+                try:
+                    _lp = round(int(_live) / int(row["ctx_budget"]) * 100, 1)
+                    row = {**row, "ctx_tokens": int(_live), "ctx_pct": _lp}
+                except (TypeError, ValueError, ZeroDivisionError):
+                    pass
+            if row.get("ctx_pct") is None and row["id"] not in _active:
+                # No turn has recorded this session yet: serve the background value
+                # while the worker computes it (the request never waits for it).
+                with _CTX_BACKFILL_LOCK:
+                    _bf = _CTX_BACKFILL.get(row["id"])
+                if _bf:
+                    row = {**row, "ctx_pct": _bf.get("pct"),
+                           "ctx_tokens": _bf.get("tokens_used"),
+                           "ctx_budget": _bf.get("budget_tokens")}
+                else:
+                    _ctx_backfill_request(row["id"])
             upd = row["updated"]
             out.append({
                 **row,
