@@ -244,11 +244,14 @@ only earns a continuation when the turn actually ran a tool: a one-line request 
 tools stops as `user_pivot` instead of being dragged into a pivot round (measured: "Reply with
 exactly: OK" plus seven open steps produced a second retry chain).
 
-A **reasoning-only** reply (long chain-of-thought, no content, no tool call) is not retried against
-the same model: the loop asks `stream_with_fallback` to treat it as blank and to advance past that
-model, so the next candidate answers with no harness message; a turn that still ends `empty_reply`
-gets one forced answer, not three (measured: four identical retries plus three closure rounds per
-turn while the model reasoned and stopped).
+A **reasoning-only** reply (long chain-of-thought, no content, no tool call) or an **output-limit**
+reply (`finish_reason=length`) is answered in two visible steps before any model switch: the first
+failure names the mode, the reasoning tokens and the envelope (`reasoning.max_tokens`) and asks the
+SAME model to think less; only a second failure names the failover and advances past that model. A
+completely **blank** reply (no answer, no reasoning) has its own message. Each failed attempt is
+persisted as a `model.attempt` card — UI-only (`tool_cards`, never `messages`, so it is displayed
+live and after a reload but never re-sent) — carrying the model, the mode and the reasoning it
+produced; a turn that still ends `empty_reply` gets one forced answer, not three.
 
 ### Diagnosing a failed turn — the trace tree (HD-2, 2026-11-14)
 

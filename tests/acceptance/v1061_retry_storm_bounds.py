@@ -42,8 +42,15 @@ check("B2 the stale plan stops as user_pivot",
       '"continue": False, "reason": "user_pivot"' in src)
 check("B3 the pivot gate sits before the decision",
       src.count("else:\n                    _dec = _pivot_decide(") == 2)
-check("C1 a reasoning-only reply fails over instead of nudging",
-      "if (str(think or \"\").strip() and not _reasoning_failover_used" in src)
+# 2026-11-16: the first response to a reasoning-only / output-limit reply is no
+# longer an immediate failover — the operator asked for the SAME model to be told
+# to think less first. The pin moves with the intended behaviour: step one is the
+# same-model round, step two is the failover.
+check("C1 a reasoning-only reply first asks the SAME model to think less",
+      "if not _reasoning_think_less and not _is_aborted" in src)
+check("C1b the failover is the SECOND step, not the first",
+      src.index("if not _reasoning_think_less and not _is_aborted")
+      < src.index("if not _reasoning_failover_used and not _is_aborted"))
 check("C2 the failover is requested from the router",
       "reasoning_only_is_blank=_reasoning_failover" in src
       and "advance_from=_advance_from" in src)

@@ -1179,6 +1179,16 @@ def _router_stream(messages, model, on_delta, timeout=300, usage=None, guard=Non
                     continue
                 if usage is not None and isinstance(chunk.get("usage"), dict):
                     usage.update(chunk["usage"])
+                    # 2026-11-16: the finish reason is what tells "the model was cut
+                    # by the token envelope" apart from "the model wrote reasoning and
+                    # stopped". Both look like an empty answer to the caller, and the
+                    # operator asked for a DIFFERENT harness message per failure mode.
+                    _details = chunk["usage"].get("completion_tokens_details") or {}
+                    if _details.get("reasoning_tokens") is not None:
+                        usage["reasoning_tokens"] = _details["reasoning_tokens"]
+                _choices = chunk.get("choices") or []
+                if usage is not None and _choices and _choices[0].get("finish_reason"):
+                    usage["finish_reason"] = _choices[0]["finish_reason"]
                 delta = ((chunk.get("choices") or [{}])[0].get("delta")) or {}
                 # JAG-383: the reasoning delta has NO single name across providers —
                 # llama.cpp / vLLM (OpenAI-compat) use `reasoning_content`, OpenRouter

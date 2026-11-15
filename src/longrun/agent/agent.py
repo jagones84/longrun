@@ -5638,6 +5638,10 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     # reply now fails over to the next model (no harness message at all).
     _reasoning_failover = False
     _reasoning_failover_used = False
+    # 2026-11-16: the FIRST reasoning-only / output-limit reply gets a SAME-MODEL
+    # "think less" instruction (the operator's rule: a budget failure is answered by
+    # asking that model to think less BEFORE switching). Only the second one fails over.
+    _reasoning_think_less = False
     _think_action_used = False  # one round when the action hides in the reasoning
     _timeout_retried = False   # one retry when the MODEL CALL itself times out
     # HA-6 (lot H): the third correction on the SAME point becomes advice — one
@@ -5851,18 +5855,72 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             # will do it again, and each nudge costs a full-context call while the
             # chat fills with harness rows (measured session b7329cccf94c). No
             # message is appended: `stream_with_fallback` walks to the next model.
-            if (str(think or "").strip() and not _reasoning_failover_used
-                    and not _is_aborted(sess["id"])):
-                _reasoning_failover_used = True
-                _reasoning_failover = True
-                continue
+            #
+            # 2026-11-16 (operator): every failure MODE gets its OWN message, and a
+            # token-budget failure first asks the SAME model to think less. So:
+            #   1. reasoning-only / finish_reason=length -> "think less" (same model);
+            #   2. still failing -> a second, explicit message, then the failover;
+            #   3. a completely blank reply -> its own message (provider defect).
+            _finish = str((chat_usage or {}).get("finish_reason") or "")
+            _rtok = (chat_usage or {}).get("reasoning_tokens")
+            _budget = None
+            try:
+                from longrun.model import rllm as _rllm
+                _budget = _rllm._max_tokens()
+            except Exception:  # noqa: BLE001 — the message must never break the turn
+                _budget = None
+            _think_chars = len(str(think or ""))
+            # 2026-11-16 (operator: "all that goes to llm I want to see in chat
+            # history ... no hiding things"): the failed attempt is a thing that
+            # HAPPENED. It is persisted as a UI-only card (never in `messages`, so it
+            # is not re-sent) carrying the model and the reasoning it produced; the
+            # live CoT used to vanish on reload.
+            try:
+                _att_mode = ("output-limit" if _finish == "length"
+                             else ("reasoning-only" if _think_chars else "blank"))
+                _att_args = {"model": model, "mode": _att_mode,
+                             "finish_reason": _finish or None,
+                             "reasoning_tokens": _rtok}
+                persist_tool_card(
+                    sess, "model.attempt", True, args=_att_args,
+                    result=str(think or "")[:4000],
+                    node=_cur_node(), after=_after())
+                # Live twin of the persisted record: the card must appear NOW, not
+                # only after a reload (the operator's chronological rule).
+                on_event("tool.result", session=sess["id"], tool="model.attempt",
+                         ok=True, args=_att_args, output=str(think or "")[:4000],
+                         summary=_att_mode)
+            except Exception:  # noqa: BLE001 — a record must never break the turn
+                pass
+            if _finish == "length" or _think_chars:
+                if _finish == "length":
+                    _why = ("the reply hit the completion envelope (max_tokens=%s%s)"
+                            % (_budget or "?", "" if _rtok is None
+                               else ", %s reasoning tokens" % _rtok))
+                else:
+                    _why = ("it was reasoning-only (%d chars of reasoning, no answer%s)"
+                            % (_think_chars, "" if _rtok is None
+                               else ", %s reasoning tokens" % _rtok))
+                if not _reasoning_think_less and not _is_aborted(sess["id"]):
+                    _reasoning_think_less = True
+                    _inject("Your last message was EMPTY because %s. Think LESS now: "
+                            "at most half of that, no preamble and no re-planning — "
+                            "then emit the next tool call, or write the answer as plain "
+                            "text." % _why, "retry")
+                    continue
+                if not _reasoning_failover_used and not _is_aborted(sess["id"]):
+                    _reasoning_failover_used = True
+                    _reasoning_failover = True
+                    _inject("The model produced no answer TWICE (%s). This turn "
+                            "continues on the next configured model instead of asking "
+                            "the same one again." % _why, "retry")
+                    continue
             _empty_streak += 1
             _empty_total += 1
             if _empty_streak <= 2 and _empty_total <= 2:
-                _inject("Your last message was EMPTY — it carried no answer text and "
-                        "no tool call (only reasoning, or it hit the output limit). "
-                        "Continue: emit the next tool call, or write the answer as "
-                        "plain text.", "retry")
+                _inject("The provider returned a BLANK message: no answer text and no "
+                        "reasoning at all — a transport/provider defect, not your task. "
+                        "Retrying the same request.", "retry")
                 continue
             _empty_streak = 0
             # 2026-11-15: an OPEN plan outranks a model that keeps returning

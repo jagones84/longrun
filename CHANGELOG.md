@@ -22,15 +22,25 @@ All notable changes to Longrun are documented here. The format follows
   non-empty-but-useless reply. `_empty_total` is now a per-TURN ceiling (2 retries, then ONE
   continue park, then `chat.error` naming the real count). Separately, a stale plan no longer
   extends a turn that ran **zero tools**: "Reply with exactly: OK" used to be dragged into a 7-task
-  pivot and a second retry chain. (Locked by `v1061` 9/9.)
-- **A reasoning-only model now fails over instead of filling the chat with retries.** When a model
-  streams a long chain-of-thought and returns no content and no tool call, the loop answered with the
-  same "your last message was EMPTY" nudge — four times, plus a CONTINUE and three closure rounds —
+  pivot and a second retry chain. (Locked by `v1061` 13/13.)
+- **Every empty-reply FAILURE MODE now has its own visible harness message.** When a model streams a
+  long chain-of-thought and returns no content and no tool call, the loop answered with the same
+  "your last message was EMPTY" nudge — four times, plus a CONTINUE and three closure rounds —
   against the model that had just proved it stops at the reasoning (measured session
-  `b7329cccf94c`, 22:32–22:33, deepseek-v4.1-flash). The first such reply now asks
-  `stream_with_fallback` to treat it as blank and to `advance_from` the failed model, so the NEXT
-  candidate answers with **no harness message at all**; a turn that still ends `empty_reply` gets ONE
-  forced answer instead of three. (Locked by `v1063` 4/4, `v1061` 12/12; `v770` still green.)
+  `b7329cccf94c`, 22:32–22:33, deepseek-v4.1-flash). Now: **reasoning-only** and **output-limit**
+  (`finish_reason=length`) get a message that names the mode, the reasoning tokens and the envelope
+  (`reasoning.max_tokens`), and the FIRST one asks the SAME model to **think less** before anything
+  else; only a second failure names the failover and advances (`stream_with_fallback(...,
+  reasoning_only_is_blank=True, advance_from=…)`). A **completely blank** reply has its own message
+  (provider defect). Every failed attempt is persisted as a `model.attempt` card — UI-only, so it is
+  displayed live and on reload but never re-sent — carrying the model, the mode and the reasoning it
+  produced, so the chat stays chronological with nothing hidden. A turn that still ends
+  `empty_reply` gets ONE forced answer instead of three. (Locked by `v1064` 12/12, `v1063` 4/4,
+  `v1061` 13/13; `v770` still green.)
+- **The README battery badge is checkable again, and counts the real suite.** The shields.io badge
+  URL-encodes the separator (`748%2F748`), while `v354` D5 looked for the literal `748/748` — it had
+  been red since the badge was encoded, and a targeted battery never runs it. The pin now accepts
+  both spellings and the badge reads `748/748` (two test files had been added without it).
 
 ### Added
 - **A run killed by a restart is closed, and an interrupted turn says it will be resumed.**

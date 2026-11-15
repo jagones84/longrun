@@ -105,8 +105,13 @@ check("D4 the 1.0.0 changelog no longer says 'merely spawns sub-agents'",
       CHANGELOG is None or "merely spawns sub-agents" not in CHANGELOG, "")
 _ntests = len([f for f in os.listdir(os.path.join(REPO, "tests", "acceptance"))
                if f.startswith("v") and f.endswith(".py")])
+# 2026-11-16: the shields.io badge URL-encodes the separator (`748%2F748`), so the
+# literal `748/748` never appears in README.md and this pin had been red since the
+# badge was encoded — invisible because a targeted battery does not run it.
+_badge = "%d/%d" % (_ntests, _ntests)
 check("D5 the README battery count matches the acceptance-suite size",
-      README is None or ("%d/%d" % (_ntests, _ntests)) in README, "%d tests" % _ntests)
+      README is None or (_badge in README
+                         or _badge.replace("/", "%2F") in README), "%d tests" % _ntests)
 
 # --- B: a task list survives compaction --------------------------------------
 TMP = tempfile.mkdtemp(prefix="sf-v354-")
