@@ -2030,7 +2030,7 @@ def handle(handler, method, path, qs, body):
         if path == "/api/market/sources":
             from longrun.core import market as _mkt
             from longrun.core import market_sync as _ms
-            return _r(handler, 200, {"ok": True, "sources": _ms.sources(),
+            return _r(handler, 200, {"ok": True, "sources": _ms.status(),
                                      "allow_hosts": _mkt.config_view()["allow_hosts"]})
         # User-defined `/` commands (data/commands.yaml) and the connector view
         # over the catalogue. Both read the ONE store their object already has.
@@ -2154,7 +2154,24 @@ def handle(handler, method, path, qs, body):
 
         if path == "/api/mcp/clients":
             _lazy('mcp_client')
-            return _r(handler, 200, _MCP_CLIENT.status())
+            res = _MCP_CLIENT.status()
+            # Provenance for the panel: the marketplace RECORD is joined by name
+            # (an installed server's client key IS the catalogue item's name), so
+            # a hand-pasted client is never labelled with a catalogue.
+            try:
+                from longrun.core import market as _mkt
+                mmap = _mkt.installed_map()
+            except Exception:  # noqa: BLE001 — the panel must render without the record
+                mmap = {}
+            # Copy the clients first: the status payload can be reused, and the
+            # provenance attached here must not outlive this response.
+            res["clients"] = {k: dict(v) for k, v in (res.get("clients") or {}).items()}
+            for name, client in res["clients"].items():
+                m = mmap.get(name)
+                if m and m.get("kind") in ("mcp", "connector"):
+                    client["market"] = {k: m[k] for k in
+                                        ("id", "origin", "origin_label", "installed")}
+            return _r(handler, 200, res)
 
         # --- JAG-109: skills (engine in skills.py) ---
         if path == "/api/skills":
@@ -2170,6 +2187,28 @@ def handle(handler, method, path, qs, body):
                 disc = {"skills": len(items), "opened": {}, "retrieved": {},
                         "never_opened": [], "never_retrieved": [],
                         "missing_description": [], "probes": []}
+            # Provenance: a skill installed from the marketplace carries the record
+            # under `market`. The join requires the RECORDED target to be this
+            # skill's own directory, so a same-named operator skill is untouched.
+            try:
+                from longrun.core import market as _mkt
+                mmap = _mkt.installed_map()
+            except Exception:  # noqa: BLE001 — the list must render without the record
+                mmap = {}
+            if mmap:
+                import os as _os
+                # Copy first: `list_skills()` may hand back cached dicts, and a
+                # mutation would outlive this response (a removed record's label
+                # would stick to the next one).
+                items = [dict(i) for i in items]
+                for it in items:
+                    m = mmap.get(it.get("name") or "")
+                    target = (m or {}).get("target") or ""
+                    here = _os.path.realpath(it.get("abspath") or "")
+                    # `abspath` is the SKILL.md file; the record stores its directory.
+                    if target and here and _os.path.realpath(target) in (here, _os.path.dirname(here)):
+                        it["market"] = {k: m[k] for k in
+                                        ("id", "origin", "origin_label", "installed")}
             return _r(handler, 200, {"skills": items, "count": len(items),
                                      "local_dir": skills_mod._local_dir(),
                                      "discovery": disc})

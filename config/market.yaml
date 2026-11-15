@@ -24,3 +24,5 @@ allow_hosts:
 cache_ttl: 3600
 # How many `featured: true` items the Marketplace surfaces in its Recommended row.
 featured_limit: 6
+# Days after which a synced group is marked stale in the page (0 = never).
+stale_days: 7

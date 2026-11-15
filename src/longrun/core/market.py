@@ -37,6 +37,7 @@ DEFAULTS = {
     "allow_hosts": [],
     "cache_ttl": 3600,
     "featured_limit": 6,
+    "stale_days": 7,
 }
 MAX_CATALOG_BYTES = 4 * 1024 * 1024
 MAX_ITEM_BYTES = 32 * 1024 * 1024
@@ -170,6 +171,10 @@ def _config():
         cfg["featured_limit"] = max(1, int(cfg.get("featured_limit") or 6))
     except (TypeError, ValueError):
         cfg["featured_limit"] = DEFAULTS["featured_limit"]
+    try:
+        cfg["stale_days"] = max(0, int(cfg.get("stale_days") or 0))
+    except (TypeError, ValueError):
+        cfg["stale_days"] = DEFAULTS["stale_days"]
     _cache.update(sig=sig, cfg=cfg)
     return cfg
 
@@ -178,7 +183,32 @@ def config_view():
     """The catalogue sources in force — names only, never a credential."""
     cfg = _config()
     return {"catalogs": list(cfg["catalogs"]), "allow_hosts": list(cfg["allow_hosts"]),
-            "cache_ttl": cfg["cache_ttl"], "featured_limit": cfg["featured_limit"]}
+            "cache_ttl": cfg["cache_ttl"], "featured_limit": cfg["featured_limit"],
+            "stale_days": cfg["stale_days"]}
+
+
+def origin_label(origin):
+    """The ONE human label for a catalogue origin (`local`, `bundled`, `imported:x`…).
+
+    Provenance is one value everywhere: the Marketplace card, the Manage row, the
+    Settings panels and the audit all call this, so a source is never named twice
+    in two vocabularies.
+    """
+    o = str(origin or "").strip()
+    fixed = {"local": "Your catalogue", "bundled": "Bundled",
+             "matrix": "Bundled (Matrix)", "unknown": "Unknown", "": "Unknown"}
+    if o in fixed:
+        return fixed[o]
+    if o.startswith("imported:"):
+        src = o.split(":", 1)[1]
+        named = {"mcp-registry": "MCP Registry", "clawhub": "ClawHub"}
+        return named.get(src, src.replace("-", " ").title() or "Imported")
+    if o.startswith("http://") or o.startswith("https://"):
+        try:
+            return urllib.parse.urlsplit(o).hostname or o
+        except ValueError:
+            return o
+    return o
 
 
 # ── fetch (https + allow-list only) ───────────────────────────────────────────
@@ -272,6 +302,11 @@ def _normalize(raw, origin):
         "featured": bool(raw.get("featured")),
         "version": str(raw.get("version") or ""),
         "publisher": str(raw.get("publisher") or ""),
+        # Optional upstream metadata a sync may carry (never invented here).
+        "updated": str(raw.get("updated") or ""),
+        "status": str(raw.get("status") or ""),
+        "license": str(raw.get("license") or ""),
+        "downloads": raw.get("downloads") if isinstance(raw.get("downloads"), int) else None,
         "sha256": sha,
         "bytes": raw.get("bytes") if isinstance(raw.get("bytes"), int) else None,
         "source": {"type": str(source.get("type") or ""),
@@ -390,7 +425,8 @@ def search(q="", kind=None, category=None, featured=False, limit=60):
                  if q in i["id"].lower() or q in i["name"].lower()
                  or q in i["title"].lower() or q in i["description"].lower()]
     stats["matched"] = len(items)
-    return {"ok": True, "items": items[:max(1, int(limit))], "categories": categories(),
+    items = [dict(i, origin_label=origin_label(i.get("origin"))) for i in items[:max(1, int(limit))]]
+    return {"ok": True, "items": items, "categories": categories(),
             "errors": errors, "stats": stats, "config": config_view()}
 
 
@@ -415,6 +451,10 @@ def _record(item, target):
         "id": item["id"], "kind": item["kind"], "name": item["name"],
         "version": item["version"], "sha256": item["sha256"],
         "publisher": item["publisher"], "source": item["source"].get("url") or "",
+        # Provenance: WHICH catalogue the entry came from (see origin_label()).
+        # It is recorded here, at install time, because the catalogue that named
+        # the item can be re-synced or removed later.
+        "origin": str(item.get("origin") or ""), "category": str(item.get("category") or ""),
         "installed": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "enabled": item["kind"] not in ("mcp", "connector"),
         "target": target or "",
@@ -430,12 +470,34 @@ def installed():
     for rec in _read_installed():
         live = by_id.get(rec["id"])
         row = dict(rec)
+        # A record written before provenance was persisted is backfilled from the
+        # live catalogue — the id still identifies the entry. Gone from every
+        # catalogue and never recorded: "unknown", never a guess.
+        row["origin"] = str(rec.get("origin") or (live or {}).get("origin") or "unknown")
+        row["origin_label"] = origin_label(row["origin"])
         row["in_catalog"] = bool(live)
         row["update_available"] = bool(
             live and (live["version"] != rec.get("version")
                       or (live["sha256"] and live["sha256"] != rec.get("sha256"))))
         rows.append(row)
     return {"ok": True, "installed": rows, "count": len(rows)}
+
+
+def installed_map():
+    """`{name: {id, kind, origin, origin_label, installed, target}}` for the owners.
+
+    The Settings panels list objects from THEIR store (skills on disk, MCP clients
+    in the config). This is the one join to the marketplace RECORD, so a panel can
+    say where an object came from without a second lookup or a copied field.
+    """
+    out = {}
+    for rec in installed()["installed"]:
+        name = str(rec.get("name") or "")
+        if name:
+            out[name] = {"id": rec.get("id"), "kind": rec.get("kind"),
+                         "origin": rec.get("origin"), "origin_label": rec.get("origin_label"),
+                         "installed": rec.get("installed"), "target": rec.get("target") or ""}
+    return out
 
 
 def forget(item_id, remove_target=False):
@@ -469,9 +531,10 @@ def audit():
     from longrun.interop import mcp_client
     clients = (mcp_client.load_doc().get("clients") or {})
     out = []
-    for rec in _read_installed():
+    for rec in installed()["installed"]:
         row = {"id": rec.get("id"), "kind": rec.get("kind"), "owner": "", "state": "ok",
-               "detail": ""}
+               "detail": "", "origin": rec.get("origin") or "",
+               "origin_label": rec.get("origin_label") or "Unknown"}
         kind = rec.get("kind")
         if kind == "skill":
             row["owner"] = "memory.skills"

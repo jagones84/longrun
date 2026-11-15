@@ -51,6 +51,8 @@ def available():
             "id": item["id"], "name": item["name"], "title": item["title"],
             "description": item["description"], "category": item["category"],
             "publisher": item["publisher"], "version": item["version"],
+            "origin": item.get("origin") or "",
+            "origin_label": market.origin_label(item.get("origin")),
             "keys": [{"name": k, "set": k in present} for k in item["keys"]],
             "missing": missing,
             "installed": bool(spec),

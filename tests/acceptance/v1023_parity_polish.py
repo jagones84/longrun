@@ -64,7 +64,10 @@ check("D3 the row is declared in the one navigation list",
       UI.index('["market", "Marketplace"]') > UI.index("const SETTINGS_CATS = ["))
 
 # ── E: one vocabulary ──────────────────────────────────────────────────────
-check("D4 `featured` renders as Recommended", '<div class="mkt-sect">Recommended</div>' in JS)
+# v1027: Recommended is now a collapsible section like the four kinds (same helper),
+# so the pin moved from a bare div to the shared disclosure builder.
+check("D4 `featured` renders as Recommended",
+      'sectionHtml("recommended", "Recommended"' in JS)
 check("E1 no second word for the same row", 'mkt-sect">Featured<' not in JS)
 
 print("\n---\nv1023: %d/%d PASS" % (sum(results), len(results)))

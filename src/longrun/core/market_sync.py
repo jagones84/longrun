@@ -26,6 +26,7 @@ the catalogue reads after the operator's own file and the bundled one.
 """
 from __future__ import annotations
 
+import datetime
 import hashlib
 import json
 import os
@@ -154,6 +155,11 @@ def _map_remote(remote, slug):
     return server, keys
 
 
+def _meta(row):
+    """The registry's per-row official metadata (`status`, timestamps, isLatest)."""
+    return (row.get("_meta") or {}).get("io.modelcontextprotocol.registry/official") or {}
+
+
 def _map_server(row):
     """One registry row → a catalogue entry, or None (counted as skipped)."""
     srv = row.get("server") if isinstance(row, dict) else None
@@ -178,16 +184,22 @@ def _map_server(row):
     if server is None:
         return None
     kind = "connector" if keys else "mcp"
+    meta = _meta(row)
     item = {
         "id": ("connector/" if keys else "mcp/") + slug,
         "kind": kind,
         "name": slug,
         "title": str(srv.get("title") or name),
         "description": str(srv.get("description") or "")[:DESC_MAX],
-        "category": "MCP Registry",
+        # `category` is editorial, never provenance: which catalogue an item came
+        # from is the item's `origin` (see market.origin_label). The registry has
+        # no taxonomy of its own, so one honest bucket.
+        "category": "MCP servers",
         "featured": False,
         "version": str(srv.get("version") or ""),
         "publisher": str(name.split("/")[0] if "/" in name else ""),
+        "updated": str(meta.get("updatedAt") or "")[:10],
+        "status": str(meta.get("status") or "active"),
         "server": server,
     }
     if keys:
@@ -196,8 +208,7 @@ def _map_server(row):
 
 
 def _is_latest(row):
-    meta = (row.get("_meta") or {}).get("io.modelcontextprotocol.registry/official") or {}
-    return bool(meta.get("isLatest", True))
+    return bool(_meta(row).get("isLatest", True))
 
 
 def sync_mcp_registry(limit=200, query="", cfg=None):
@@ -223,6 +234,11 @@ def sync_mcp_registry(limit=200, query="", cfg=None):
             break
         for row in rows:
             if not _is_latest(row):
+                continue
+            status = str(_meta(row).get("status") or "active")
+            if status != "active":
+                errors.append("skipped (status=%s): %s"
+                              % (status, (row.get("server") or {}).get("name") or "?"))
                 continue
             item = _map_server(row)
             if item is None:
@@ -259,14 +275,27 @@ def _claw_item(row, cfg):
     data, why = market._fetch(dl, cfg, market.MAX_ITEM_BYTES)
     if data is None:
         return None, "%s: %s" % (row["slug"], why)
+    topics = [str(t).strip() for t in (row.get("topics") or []) if str(t).strip()]
+    # The UI is English-only: take the publisher's first ASCII topic, else one
+    # neutral bucket. Provenance never depends on this.
+    topic = next((t.title() for t in topics if t.isascii()), "Skills")
+    stamp = row.get("updatedAt")
+    updated = ""
+    if isinstance(stamp, (int, float)) and stamp > 0:
+        updated = time.strftime("%Y-%m-%d", time.gmtime(stamp / 1000.0))
+    stats = row.get("stats") if isinstance(row.get("stats"), dict) else {}
     return {
         "id": "skill/" + slug, "kind": "skill", "name": slug,
         "title": str(row.get("displayName") or row.get("slug")),
         "description": str(row.get("summary") or "")[:DESC_MAX],
-        "category": "ClawHub",
-        "featured": bool((row.get("stats") or {}).get("downloads", 0) > 1000),
+        # `category` is the publisher's own topic; the source is `origin`.
+        "category": topic,
+        "featured": bool((stats.get("downloads") or 0) > 1000),
         "version": version,
         "publisher": str(row.get("ownerHandle") or ""),
+        "updated": updated,
+        "license": str(latest.get("license") or ""),
+        "downloads": stats.get("downloads") if isinstance(stats.get("downloads"), int) else None,
         "sha256": hashlib.sha256(data).hexdigest(),
         "bytes": len(data),
         "source": {"type": "https", "url": dl},
@@ -301,6 +330,35 @@ def sync_clawhub(limit=25, query="", cfg=None):
 
 
 SOURCES = {"mcp-registry": sync_mcp_registry, "clawhub": sync_clawhub}
+
+
+def status(cfg=None):
+    """Each adapter plus its LAST SYNC (`at`, `items`, `age_seconds`, `stale`).
+
+    A sync is a point-in-time copy, so the page must be able to say how old it
+    is: `stale_days` in `config/market.yaml` (0 = never stale).
+    """
+    cfg = cfg or market._config()
+    groups = _read_imported()
+    stale_days = int(cfg.get("stale_days") or 0)
+    now = time.time()
+    out = []
+    for src in sources():
+        group = groups.get(src["id"]) if isinstance(groups, dict) else None
+        group = group if isinstance(group, dict) else {}
+        rows = group.get("items")
+        at = str(group.get("at") or "")
+        age = None
+        if at:
+            try:
+                stamp = datetime.datetime.strptime(at, "%Y-%m-%dT%H:%M:%SZ")
+                age = max(0, int(now - stamp.replace(tzinfo=datetime.timezone.utc).timestamp()))
+            except ValueError:
+                age = None
+        out.append(dict(src, at=at, items=len(rows) if isinstance(rows, list) else 0,
+                        age_seconds=age,
+                        stale=bool(stale_days and age is not None and age > stale_days * 86400)))
+    return out
 
 
 def sync(source, limit=None, query="", cfg=None):

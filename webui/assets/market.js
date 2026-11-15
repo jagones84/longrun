@@ -9,8 +9,15 @@
 
 const KIND_ICON = { plugin: "\u25C8", skill: "\u2726", mcp: "\u26AF", connector: "\u21BB" };
 const KIND_LABEL = { plugin: "Plugin", skill: "Skill", mcp: "MCP server", connector: "Connector" };
+/* The four macro-areas, in a fixed order. A connector is an MCP server that needs
+   a key, so it is its own section: the install path and the gate differ. */
+const KIND_ORDER = ["plugin", "skill", "mcp", "connector"];
+const COLLAPSE_KEY = "lrmkt.collapsed";
 
-const state = { kind: "all", q: "", category: "", manage: false, items: [], stats: {}, installed: [], errors: [], audit: null };
+const state = {
+  kind: "all", q: "", category: "", manage: false, items: [], stats: {},
+  sources: [], installed: [], errors: [], audit: null,
+};
 
 function el(id) { return document.getElementById(id); }
 
@@ -35,6 +42,78 @@ function installedIds() {
   return out;
 }
 
+/* ── provenance + sections ──────────────────────────────────────────────── */
+
+/* The label comes from the backend (`market.origin_label`) — one vocabulary. */
+function originBadge(origin, label, extra) {
+  const title = "catalogue: " + (origin || "unknown") + (extra ? " \u00b7 " + extra : "");
+  return `<span class="mkt-origin" data-origin="${esc(origin || "")}" title="${esc(title)}">${esc(label || "Unknown")}</span>`;
+}
+
+function collapsed() {
+  try { return new Set(JSON.parse(localStorage.getItem(COLLAPSE_KEY) || "[]")); }
+  catch (_) { return new Set(); }
+}
+
+function persistCollapsed(set) {
+  try { localStorage.setItem(COLLAPSE_KEY, JSON.stringify(Array.from(set))); } catch (_) {}
+}
+
+function sourceBreakdown(rows) {
+  const m = {};
+  rows.forEach(i => { const k = i.origin_label || "Unknown"; m[k] = (m[k] || 0) + 1; });
+  return Object.keys(m).sort((a, b) => m[b] - m[a])
+    .map(k => esc(k) + " " + m[k]).join(" \u00b7 ");
+}
+
+/* A sync is a point-in-time copy: say how old it is, and when it went stale. */
+function ageText(s) {
+  if (!s) return "";
+  if (!s.at) return "never synced";
+  const sec = Number(s.age_seconds || 0);
+  let t = "just now";
+  if (sec >= 86400) t = Math.floor(sec / 86400) + "d ago";
+  else if (sec >= 3600) t = Math.floor(sec / 3600) + "h ago";
+  else if (sec >= 60) t = Math.floor(sec / 60) + "m ago";
+  return "synced " + t + (s.stale ? " \u2014 stale, sync to refresh" : "") +
+    " \u00b7 " + Number(s.items || 0) + " entries";
+}
+
+function paintSources() {
+  const sel = el("mktSource");
+  if (sel) {
+    (state.sources || []).forEach(s => {
+      const opt = Array.from(sel.options).find(o => o.value === s.id);
+      if (opt) opt.textContent = s.label + (s.items ? " \u00b7 " + s.items : "");
+    });
+  }
+  const n = el("mktSyncAge");
+  if (!n) return;
+  const s = (state.sources || []).find(x => sel && x.id === sel.value);
+  n.textContent = s ? ageText(s) : "";
+  n.classList.toggle("mkt-warn", !!(s && s.stale));
+}
+
+/* One collapsible macro-area (W3C APG disclosure: heading → button + panel).
+   "Recommended" uses the same helper, so every fold in the page behaves the same. */
+function sectionHtml(key, label, rows, have, shut, note) {
+  if (!rows.length) return "";
+  const open = !shut.has(key);
+  const id = "mkt-sec-" + key;
+  const src = sourceBreakdown(rows) + (note ? " \u00b7 " + note : "");
+  return `<h3 class="mkt-sect-h"><button class="mkt-sect-btn" type="button"
+      data-kind="${esc(key)}" aria-expanded="${open ? "true" : "false"}"
+      aria-controls="${id}" title="${open ? "collapse" : "expand"} ${esc(label)}">
+      <span class="mkt-chev" aria-hidden="true">${open ? "\u25BE" : "\u25B8"}</span>
+      <span>${esc(label)}</span>
+      <span class="mkt-sect-n">${rows.length}</span>
+    </button></h3>
+    <div class="mkt-sec-body" id="${id}"${open ? "" : " hidden"}>
+      <div class="mkt-src">${src}</div>
+      <div class="mkt-grid">${rows.map(i => card(i, have)).join("")}</div>
+    </div>`;
+}
+
 /* ── render ─────────────────────────────────────────────────────────────── */
 
 function card(item, have) {
@@ -44,8 +123,12 @@ function card(item, have) {
   const bits = [];
   if (item.publisher) bits.push(esc(item.publisher));
   if (item.version) bits.push("v" + esc(item.version));
+  if (item.updated) bits.push("updated " + esc(item.updated));
   if (item.sha256) bits.push("sha256 " + esc(shortDigest(item.sha256)));
   else if (item.kind === "skill" || item.kind === "plugin") bits.push("no digest \u2014 not installable");
+  const badge = originBadge(item.origin, item.origin_label,
+    (item.source && (item.source.url || item.source.path)) ||
+    (item.license ? "license " + item.license : ""));
   const reason = item.installable ? "" : (item.sha256 ? "not installable" : "this entry carries no sha256");
   const why = item.present ? "ships with longrun" : "already installed \u2014 see Manage";
   const act = mine
@@ -57,7 +140,7 @@ function card(item, have) {
     <div class="mkt-body">
       <div class="mkt-name">${esc(item.title)}</div>
       <div class="mkt-desc">${esc(item.description || KIND_LABEL[item.kind] || "")}</div>
-      <div class="mkt-meta" title="${esc(bits.join(" \u00b7 "))}">${esc(bits.join(" \u00b7 ") || KIND_LABEL[item.kind] || "")}</div>
+      <div class="mkt-meta" title="${esc(bits.join(" \u00b7 "))}">${badge} ${esc(bits.join(" \u00b7 ") || KIND_LABEL[item.kind] || "")}</div>
     </div>
     <div class="mkt-act">${act}</div>
   </article>`;
@@ -65,7 +148,9 @@ function card(item, have) {
 
 function manageRow(rec) {
   const meta = [rec.publisher, rec.version && "v" + rec.version, rec.sha256 && ("sha256 " + shortDigest(rec.sha256)),
-    rec.source].filter(Boolean).map(esc).join(" \u00b7 ");
+    rec.installed && ("installed " + String(rec.installed).slice(0, 10)), rec.source]
+    .filter(Boolean).map(esc).join(" \u00b7 ");
+  const badge = originBadge(rec.origin, rec.origin_label, rec.source || rec.target || "");
   const flag = rec.update_available
     ? `<span class="mkt-warn" title="a newer entry exists in the catalogue">update available</span>`
     : (rec.in_catalog ? "" : `<span class="mkt-warn" title="this item is no longer in any catalogue">not in catalogue</span>`);
@@ -78,7 +163,7 @@ function manageRow(rec) {
     <div class="mkt-body">
       <div class="mkt-name">${esc(rec.name || rec.id)} ${flag}</div>
       <div class="mkt-desc">${esc(KIND_LABEL[rec.kind] || rec.kind)}${rec.enabled === false ? " \u00b7 disabled" : ""}</div>
-      <div class="mkt-meta" title="${meta}">${meta}</div>
+      <div class="mkt-meta" title="${meta}">${badge} ${meta}</div>
     </div>
     <div class="mkt-act">
       ${upd}
@@ -114,19 +199,24 @@ function render() {
     return;
   }
   const have = installedIds();
-  const featured = state.items.filter(i => i.featured);
-  const rest = state.items.filter(i => !i.featured);
   const matched = Number(state.stats.matched || state.items.length);
   let html = matched > state.items.length
     ? `<div class="mkt-sect">Showing ${state.items.length} of ${matched} \u2014 use search or a category to narrow</div>`
     : "";
+  const featured = state.items.filter(i => i.featured);
+  const rest = state.items.filter(i => !i.featured);
+  const shut = collapsed();
   if (featured.length) {
-    html += `<div class="mkt-sect">Recommended</div><div class="mkt-grid">${featured.map(i => card(i, have)).join("")}</div>`;
+    html += sectionHtml("recommended", "Recommended", featured, have, shut, "");
   }
-  const groups = {};
-  rest.forEach(i => { (groups[i.category] = groups[i.category] || []).push(i); });
-  Object.keys(groups).sort().forEach(cat => {
-    html += `<div class="mkt-sect">${esc(cat)}</div><div class="mkt-grid">${groups[cat].map(i => card(i, have)).join("")}</div>`;
+  const kinds = state.kind === "all" ? KIND_ORDER : [state.kind];
+  kinds.forEach(kind => {
+    const rows = rest.filter(i => i.kind === kind);
+    // Featured cards live in the "Recommended" section above, not twice in the
+    // grid; say so, or the section count looks smaller than the catalogue.
+    const rec = featured.filter(i => i.kind === kind).length;
+    html += sectionHtml(kind, KIND_LABEL[kind] || kind, rows, have, shut,
+                        rec ? `+${rec} in Recommended` : "");
   });
   body.innerHTML = html;
 }
@@ -159,10 +249,11 @@ async function load() {
   if (!state.manage && state.kind !== "all") qs.push("kind=" + encodeURIComponent(state.kind));
   if (state.q) qs.push("q=" + encodeURIComponent(state.q));
   if (state.category) qs.push("category=" + encodeURIComponent(state.category));
-  let cat = {}, inst = {}, aud = {};
+  let cat = {}, inst = {}, aud = {}, srcs = {};
   try { cat = await window.api("GET", "/api/market/catalog" + (qs.length ? "?" + qs.join("&") : "")); }
   catch (e) { cat = { ok: false, errors: [String(e)] }; }
   try { inst = await window.api("GET", "/api/market/installed"); } catch (_) { inst = {}; }
+  try { srcs = await window.api("GET", "/api/market/sources"); } catch (_) { srcs = {}; }
   if (state.manage) {
     try { aud = await window.api("GET", "/api/market/audit"); } catch (_) { aud = {}; }
   }
@@ -170,9 +261,11 @@ async function load() {
   state.stats = (cat && cat.stats) || {};
   state.errors = (cat && cat.errors) || [];
   state.installed = (inst && inst.installed) || [];
+  state.sources = (srcs && srcs.sources) || [];
   state.audit = aud || null;
   render();
   renderChips((cat && cat.categories) || []);
+  paintSources();
   setTabs();
   const n = el("mktCount");
   if (n) n.textContent = state.manage
@@ -238,6 +331,15 @@ function wire() {
   if (body && !body.dataset.wired) {
     body.dataset.wired = "1";
     body.addEventListener("click", ev => {
+      const sec = ev.target.closest(".mkt-sect-btn");
+      if (sec) {
+        const k = sec.getAttribute("data-kind");
+        const set = collapsed();
+        if (set.has(k)) set.delete(k); else set.add(k);
+        persistCollapsed(set);
+        render();
+        return;
+      }
       const ins = ev.target.closest(".mkt-install");
       if (ins && !ins.disabled) { install(ins.getAttribute("data-id")); return; }
       const upd = ev.target.closest(".mkt-update");
@@ -245,6 +347,11 @@ function wire() {
       const rem = ev.target.closest(".mkt-remove");
       if (rem) remove(rem.getAttribute("data-id"));
     });
+  }
+  const sel = el("mktSource");
+  if (sel && !sel.dataset.wired) {
+    sel.dataset.wired = "1";
+    sel.addEventListener("change", paintSources);
   }
 }
 

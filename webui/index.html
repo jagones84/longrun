@@ -695,6 +695,7 @@
   .sk-user { color: var(--acc2); }
   .sk-core { color: var(--dim); }
   .sk-matrix { color: var(--warn); border-color: var(--warn); }
+  .sk-market { color: var(--acc); border-color: var(--acc); }
   .sk-mcp { color: var(--acc2); border-color: var(--acc2); }
   /* JAG-511: collapsible provenance sections (skills + tool origins). */
   .sk-sec { margin-bottom: 6px; }
@@ -1315,6 +1316,21 @@
   .mkt-chip[aria-pressed="true"] { color: var(--txt); border-color: var(--line-2); background: var(--panel); }
   .mkt-sect { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
     color: var(--dim); margin: 16px 0 8px; }
+  .mkt-sect-h { margin: 16px 0 8px; }
+  .mkt-sect-btn { display: flex; align-items: center; gap: 6px; width: 100%; background: none;
+    border: 0; padding: 0; color: var(--dim); font: inherit; font-size: 11px; font-weight: 700;
+    letter-spacing: .08em; text-transform: uppercase; cursor: pointer; text-align: left; }
+  .mkt-sect-btn:hover { color: var(--txt); }
+  .mkt-sect-btn:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; border-radius: 3px; }
+  .mkt-chev { width: 12px; display: inline-block; color: var(--dim); }
+  .mkt-sect-n { font-variant-numeric: tabular-nums; color: var(--dim); font-weight: 600; }
+  .mkt-src { font-size: 10.5px; color: var(--dim); margin: 0 0 8px 18px; }
+  .mkt-sec-body[hidden] { display: none; }
+  .mkt-origin { display: inline-block; font-size: 9.5px; font-weight: 700; letter-spacing: .04em;
+    text-transform: uppercase; color: var(--txt); border: 1px solid var(--line-2); border-radius: 999px;
+    padding: 0 6px; margin-right: 5px; background: var(--bg-2); vertical-align: 1px;
+    font-family: inherit; }
+  .mkt-legend { font-size: 11px; color: var(--dim); margin: -8px 0 12px; }
   .mkt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
   .mkt-card { border: 1px solid var(--line); border-radius: var(--r-md); background: var(--panel);
     padding: 12px 13px; display: flex; gap: 11px; align-items: flex-start; min-width: 0; }
@@ -3302,10 +3318,13 @@
     </select>
     <button class="ghost" id="mktSync" data-call="mktSync"
             title="fetch this marketplace into the catalogue — nothing installs by itself">⇣ sync</button>
+    <span class="art-n" id="mktSyncAge" aria-live="polite"></span>
     <button class="ghost" id="mktReload" data-call="mktReload" title="reload the catalogue"
             aria-label="reload the catalogue">↻</button>
   </div>
   <p class="mkt-sub">Discover and install plugins, skills and MCP servers. Every install is digest-verified.</p>
+  <p class="mkt-legend" id="mktLegend">Plugin = in-process tool · Skill = instructions ·
+    MCP = external server · Connector = MCP that needs a key</p>
   <div class="mkt-tabs" id="mktTabs" role="tablist" aria-label="marketplace kinds">
     <button class="mkt-tab" role="tab" data-kind="all" aria-selected="true">All</button>
     <button class="mkt-tab" role="tab" data-kind="plugin" aria-selected="false">Plugins</button>
@@ -13864,9 +13883,16 @@ async function loadMcpClients() {
       const _hint = c.error ? (" · ⚠ " + _errorHint)
         : (c.launcher_ok === false ? (" · ⚠ " + (c.command || "command") + " is not installed on this host")
            : (_zero ? (" · ⚠ " + _zeroHint) : ""));
-      sub.textContent = (c.transport === "stdio"
+      // Provenance: an installed server carries the marketplace RECORD's label;
+      // a pasted one has none and gets no badge.
+      const _where = c.market
+        ? '<span class="sk-badge sk-market" title="' +
+          esc("catalogue: " + (c.market.origin || "")) + '">' +
+          esc(c.market.origin_label || "marketplace") + "</span>"
+        : "";
+      sub.innerHTML = _where + esc((c.transport === "stdio"
         ? ((c.command || "") + " " + ((c.args || []).join(" ")))
-        : (c.url || "")) + " · " + (c.tools || 0) + " tool" + _hint;
+        : (c.url || "")) + " · " + (c.tools || 0) + " tool" + _hint);
       if (_hint) sub.style.color = "var(--warn)";
       info.append(title, sub);
       const edit = document.createElement("button"); edit.className = "ghost"; edit.textContent = "✎";
@@ -14018,14 +14044,19 @@ function renderSkills() {
   // content, not harness built-ins — they are "registered". Only the two machine
   // buckets (skills/created and .Matrix/skills) are generated, and Matrix is a
   // SEPARATE zone because it lives outside the Nucleus.
-  const auto = matches.filter(s => s.auto && !s.matrix);
-  const matrix = matches.filter(s => s.matrix);
-  const local = matches.filter(s => s.local);
-  const core = matches.filter(s => !s.auto && !s.local && !s.matrix);
+  const auto = matches.filter(s => s.auto && !s.matrix && !s.market);
+  const matrix = matches.filter(s => s.matrix && !s.market);
+  const local = matches.filter(s => s.local && !s.market);
+  // A skill installed from a catalogue: `/api/skills` joins the marketplace RECORD,
+  // so this bucket says WHICH catalogue (Bundled, ClawHub, your own URL…). Without
+  // the join a ClawHub skill looked exactly like an operator upload.
+  const market = matches.filter(s => s.market);
+  const core = matches.filter(s => !s.auto && !s.local && !s.matrix && !s.market);
   summary.innerHTML = query
     ? "<b>" + matches.length + "</b> of " + _skillsCache.length + " skills match “" + esc(query) + "”"
     : _skillsCache.length + " skills · <b>" + auto.length + "</b> self-generated · " +
-      matrix.length + " matrix · " + local.length + " uploaded · " + core.length + " registered";
+      matrix.length + " matrix · " + local.length + " uploaded · " +
+      market.length + " marketplace · " + core.length + " registered";
   // HA-2 (lot H): one suffix, only when something is wrong: a skill whose
   // description never surfaces it is invisible while idle. Names on click.
   if (_skillsDiscovery) {
@@ -14055,9 +14086,10 @@ function renderSkills() {
     // in the row. The badge carries it.
     const info = document.createElement("div"); info.style.cssText = "flex:1;min-width:0";
     const t = document.createElement("div"); t.style.fontWeight = "600"; t.textContent = s.name;
-    const badge = s.matrix ? '<span class="sk-badge sk-matrix">matrix</span>'
-      : (s.auto ? '<span class="sk-badge sk-auto">self-generated</span>'
-        : (s.local ? '<span class="sk-badge sk-user">uploaded</span>' : '<span class="sk-badge sk-core">registered</span>'));
+    const badge = s.market ? '<span class="sk-badge sk-market">' + esc(s.market.origin_label || "marketplace") + '</span>'
+      : (s.matrix ? '<span class="sk-badge sk-matrix">matrix</span>'
+        : (s.auto ? '<span class="sk-badge sk-auto">self-generated</span>'
+          : (s.local ? '<span class="sk-badge sk-user">uploaded</span>' : '<span class="sk-badge sk-core">registered</span>')));
     const sub = document.createElement("div"); sub.className = "remaining";
     sub.innerHTML = badge + esc(s.category || "") + " · " + esc(s.title || "") +
       (s.path ? ' · <code>' + esc(s.path) + "</code>" : "");
@@ -14066,12 +14098,15 @@ function renderSkills() {
     ins.title = "use in chat";
     ins.onclick = e => { e.stopPropagation(); $("inp").value = "/" + s.name + " "; $("inp").focus(); };
     row.append(info, ins);
-    if (s.local) {
+    if (s.local || s.market) {
       const del = document.createElement("button"); del.className = "ghost"; del.textContent = "🗑";
       del.onclick = async e => {
         e.stopPropagation();
         if (!(await confirmDelete("remove skill '" + s.name + "'?"))) return;
-        await api("DELETE", "/api/skills/" + encodeURIComponent(s.name));
+        // A marketplace skill has a RECORD; removing only the files would leave
+        // it behind as drift, so the record owns the removal (`?files=1`).
+        if (s.market) await api("DELETE", "/api/market/installed/" + encodeURIComponent(s.market.id) + "?files=1");
+        else await api("DELETE", "/api/skills/" + encodeURIComponent(s.name));
         loadSkills();
       };
       row.appendChild(del);
@@ -14105,6 +14140,7 @@ function renderSkills() {
     }
     list.forEach(s => det.appendChild(rowEl(s)));
   };
+  section("market", "From the marketplace", market, "installed from a catalogue (bundled, or a synced registry)", true);
   section("auto", "Self-generated", auto, "mined by the harness and promoted into skills/created/", true);
   section("matrix", "Matrix", matrix, "live zone outside the Nucleus (.Matrix/skills) — promote to make it permanent", true);
   section("local", "Uploaded", local, "installed from a zip by you", true);
@@ -15615,9 +15651,15 @@ async function loadConnectorsPanel() {
     const s = document.createElement("div");
     s.className = "remaining"; s.style.wordBreak = "break-word";
     const keys = (c.keys || []).map(k => k.name + (k.set ? " ✓" : " ✗")).join(" · ");
-    s.textContent = (c.description || "")
+    // Which catalogue this connector comes from (a connector is not a 5th object:
+    // it is an MCP entry that names the key it needs).
+    const _where = c.origin_label
+      ? '<span class="sk-badge sk-market" title="' + esc("catalogue: " + (c.origin || "")) +
+        '">' + esc(c.origin_label) + "</span>"
+      : "";
+    s.innerHTML = _where + esc((c.description || "")
       + (keys ? " · keys: " + keys : " · no key required")
-      + (c.installed ? (" · " + (c.enabled ? "enabled" : "disabled")) : "");
+      + (c.installed ? (" · " + (c.enabled ? "enabled" : "disabled")) : ""));
     row.append(hd, s);
     box.appendChild(row);
   });
