@@ -1,0 +1,18 @@
+# Marketplace catalogue sources.
+#
+# The catalogue is DATA, never code: one JSON document per source, merged by item
+# id. Every installable entry must carry a `sha256`; an entry without one is
+# browsable and NOT installable, and an install whose bytes do not hash to that
+# value is refused by name before anything is written. No third-party code runs.
+#
+# `catalogs` is empty by default: the marketplace then serves only the local
+# `data/market/catalog.json`, which the operator may create by hand. Add a URL
+# here (and its host in `allow_hosts`) to browse a remote catalogue.
+catalogs: []
+# Hosts a remote catalogue (and its item sources) may be fetched from. https only.
+# An empty list means NO remote fetch is possible, whatever `catalogs` says.
+allow_hosts: []
+# Seconds a fetched catalogue is reused before it is fetched again.
+cache_ttl: 3600
+# How many `featured: true` items the Marketplace surfaces in its Featured row.
+featured_limit: 6

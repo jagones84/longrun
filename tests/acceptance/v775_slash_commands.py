@@ -72,9 +72,13 @@ check("B6 an EMPTY insert is a value (it consumes the token), never an absent on
       "c.insert === undefined ?" in UI and 'insert: ""' in UI)
 
 # ---- C: "/" is the command menu ----------------------------------------------
+# v1020 re-pointed this pin: the registry is now the UNION of the built-ins and the
+# operator's own commands (data/commands.yaml), so an empty query still matches
+# EVERY command — the assertion is the behaviour, not the literal it used to be.
 check("C1 an EMPTY query matches every command (the submenu opener)",
       "function _slashCmdHits(q) {" in UI
-      and "if (!q) return SLASH_COMMANDS.slice();" in UI)
+      and "const all = SLASH_COMMANDS.concat(USER_COMMANDS);" in UI
+      and "if (!q) return all.slice();" in UI)
 check("C2 with no query the SKILL catalogue is not ranked at all",
       "const _matched = q ? _rankSkills(_skills, q)" in UI
       and ": (_slashSkillsOnly ? _skills.map(s => ({ s })) : []);" in UI)
@@ -102,8 +106,12 @@ check("E2 a REAL skill with the same name still wins (the server's rule)",
       "const _ownSkill = (_skillsCache || []).some(s => String(s.name || \"\").toLowerCase() === _tok);" in UI)
 
 # ---- F: the lies are gone ----------------------------------------------------
+# v1020: the chip lookup goes through _slashEntry so a USER command can carry a
+# tooltip too; a built-in still wins its token (the user list is filtered against
+# SLASH_BY_ID at load), so "one table, one tooltip" is unchanged.
 check("F1 the composer chips read the registry (ONE table, one tooltip)",
-      "const _cmd = SLASH_BY_ID[t];" in UI
+      "const _cmd = _slashEntry(t);" in UI
+      and "function _slashEntry(tok) { return _USER_BY_ID[tok] || SLASH_BY_ID[tok]; }" in UI
       and "else if (_cmd) push(_cmd.icon, _cmd.id, _cmd.hint, false);" in UI)
 check("F2 the false chip tooltip is gone",
       "opens the Skills panel (pick from the / menu)" not in UI)

@@ -2005,6 +2005,35 @@ def handle(handler, method, path, qs, body):
             hid = path[len("/api/webhooks/"):-len("/deliveries")].strip("/")
             res = _wh.deliveries(hid, qs.get("limit") or 20)
             return _r(handler, 200 if res.get("ok") else 404, res)
+        # Marketplace: the catalogue is DATA (digest-pinned entries), and every
+        # install delegates to the installer that already owns the object — so
+        # these routes add a shelf, not a new trust boundary.
+        if path == "/api/market/catalog":
+            from longrun.core import market as _mkt
+            return _r(handler, 200, _mkt.search(
+                qs.get("q") or "", qs.get("kind") or None, qs.get("category") or None,
+                qs.get("featured") in ("1", "true", "yes"), _int(qs.get("limit"), 60)))
+        if path == "/api/market/installed":
+            from longrun.core import market as _mkt
+            return _r(handler, 200, _mkt.installed())
+        if path == "/api/market/item":
+            from longrun.core import market as _mkt
+            items, _, _ = _mkt.catalog()
+            item = next((i for i in items if i["id"] == qs.get("id")), None)
+            if item is None:
+                return _r(handler, 404, {"ok": False, "error": "unknown item"})
+            return _r(handler, 200, {"ok": True, "item": item})
+        if path == "/api/market/audit":
+            from longrun.core import market as _mkt
+            return _r(handler, 200, _mkt.audit())
+        # User-defined `/` commands (data/commands.yaml) and the connector view
+        # over the catalogue. Both read the ONE store their object already has.
+        if path == "/api/commands":
+            from longrun.core import commands as _cmds
+            return _r(handler, 200, _cmds.list_commands())
+        if path == "/api/connectors":
+            from longrun.core import connectors as _conn
+            return _r(handler, 200, _conn.available())
         # JAG-488: the WHOLE config/ YAML store is editable from the WebUI.
         if path == "/api/config/files":
             from longrun.core import configfiles
@@ -2533,6 +2562,25 @@ def handle(handler, method, path, qs, body):
             return _r(handler, 200, term_exec(body))
         if path == "/api/term/reset":  # JAG-281: kill the session's shell
             return _r(handler, 200, term_reset(body))
+        if path == "/api/market/install":
+            # Marketplace install: digest-verified for bytes, opt-in for a server.
+            from longrun.core import market as _mkt
+            res = _mkt.install(body.get("id"), overwrite=bool(body.get("overwrite")))
+            _publish("market.install", id=body.get("id"), ok=bool(res.get("ok")))
+            return _r(handler, 200 if res.get("ok") else 400, res)
+        if path == "/api/commands":
+            from longrun.core import commands as _cmds
+            res = _cmds.upsert(body)
+            _publish("commands.save", name=body.get("name"), ok=bool(res.get("ok")))
+            return _r(handler, 200 if res.get("ok") else 400, res)
+        if path == "/api/connectors/install":
+            from longrun.core import connectors as _conn
+            res = _conn.install(body.get("id"))
+            _publish("connectors.install", id=body.get("id"), ok=bool(res.get("ok")))
+            return _r(handler, 200 if res.get("ok") else 400, res)
+        if path == "/api/connectors/test":
+            from longrun.core import connectors as _conn
+            return _r(handler, 200, _conn.test(body.get("id")))
         if path == "/api/config/file":
             # JAG-488: validate + atomically write any config/*.yaml, then reload.
             from longrun.core import configfiles
@@ -2980,6 +3028,23 @@ def handle(handler, method, path, qs, body):
         return False
 
     if method == "DELETE":
+        # Marketplace: drop the installed RECORD (and, on ?files=1, the skill
+        # directory with it). The owning store is never silently edited here.
+        if path.startswith("/api/market/installed/"):
+            from urllib.parse import unquote
+            from longrun.core import market as _mkt
+            iid = unquote(path[len("/api/market/installed/"):]).strip("/")
+            res = _mkt.forget(iid, remove_target=qs.get("files") in ("1", "true", "yes"))
+            _publish("market.remove", id=iid, ok=bool(res.get("ok")))
+            return _r(handler, 200 if res.get("ok") else 404, res)
+        # A user command is removed by NAME; the composer stops offering it at once.
+        if path.startswith("/api/commands/"):
+            from urllib.parse import unquote
+            from longrun.core import commands as _cmds
+            nm = unquote(path[len("/api/commands/"):]).strip("/")
+            res = _cmds.remove(nm)
+            _publish("commands.remove", name=nm, ok=bool(res.get("ok")))
+            return _r(handler, 200 if res.get("ok") else 404, res)
         # 2026-11-06: delete one webhook inlet (its deliveries go with it).
         if path.startswith("/api/webhooks/"):
             from longrun.core import webhooks as _wh

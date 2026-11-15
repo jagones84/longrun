@@ -1282,6 +1282,50 @@
   body.artifacts-on #app { display: none; }
   body.artifacts-on #artifactsView { display: block; }
   body.artifacts-on .pane-tog-grp { display: none !important; }
+  /* ---- Marketplace — a top-level PAGE (fourth tab) -------------------------
+     Same contract as My Artifacts: while it is up it owns the row and #app stands
+     down. Every card prints the digest the install will be verified against, so
+     the shelf never hides what the gate will check. */
+  #marketView { display: none; flex: 1; min-height: 0; overflow-y: auto;
+    padding: 18px 22px 42px; }
+  body.market-on #app { display: none; }
+  body.market-on #marketView { display: block; }
+  body.market-on .pane-tog-grp { display: none !important; }
+  .mkt-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+  .mkt-title { margin: 0; font-size: 18px; font-weight: 650; letter-spacing: .01em; }
+  .mkt-sub { font-size: 12px; color: var(--dim); margin: 0 0 14px; }
+  .mkt-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin-bottom: 12px; flex-wrap: wrap; }
+  .mkt-tab { background: none; border: 0; border-bottom: 2px solid transparent; color: var(--dim);
+    font: inherit; font-size: 13px; font-weight: 600; padding: 7px 12px; cursor: pointer; }
+  .mkt-tab:hover { color: var(--txt); }
+  .mkt-tab[aria-selected="true"] { color: var(--txt); border-bottom-color: var(--acc); }
+  .mkt-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  .mkt-search { background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--r-sm);
+    color: var(--txt); font: inherit; font-size: 12px; padding: 5px 9px; width: 260px; outline: none; }
+  .mkt-search:focus { border-color: var(--line-2); }
+  .mkt-chips { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+  .mkt-chip { background: transparent; border: 1px solid transparent; color: var(--dim);
+    font: inherit; font-size: 11.5px; font-weight: 600; padding: 3px 9px; border-radius: 999px; cursor: pointer; }
+  .mkt-chip:hover { color: var(--txt); background: var(--hover); }
+  .mkt-chip[aria-pressed="true"] { color: var(--txt); border-color: var(--line-2); background: var(--panel); }
+  .mkt-sect { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--dim); margin: 16px 0 8px; }
+  .mkt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
+  .mkt-card { border: 1px solid var(--line); border-radius: var(--r-md); background: var(--panel);
+    padding: 12px 13px; display: flex; gap: 11px; align-items: flex-start; min-width: 0; }
+  .mkt-ico { width: 34px; height: 34px; border-radius: 9px; background: var(--bg-2); flex: 0 0 auto;
+    border: 1px solid var(--line); display: grid; place-items: center; font-size: 16px; }
+  .mkt-body { min-width: 0; flex: 1; }
+  .mkt-name { font-size: 13px; font-weight: 650; }
+  .mkt-desc { font-size: 11.5px; color: var(--dim); margin-top: 2px; line-height: 1.4;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .mkt-meta { font-size: 10.5px; color: var(--dim); margin-top: 6px; font-family: ui-monospace, Menlo, monospace;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mkt-act { display: flex; flex-direction: column; gap: 6px; align-items: flex-end; flex: 0 0 auto; }
+  .mkt-empty { border: 1px dashed var(--line); border-radius: var(--r-md); padding: 26px 18px;
+    text-align: center; color: var(--dim); font-size: 12.5px; line-height: 1.6; }
+  .mkt-empty code { background: var(--bg-2); border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; }
+  .mkt-warn { color: #e0b45a; font-size: 10.5px; font-weight: 600; margin-left: 6px; }
   .art-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
     margin-bottom: 14px; min-height: 30px; }
   .art-title { margin: 0; font-size: 15px; font-weight: 650; letter-spacing: .01em; }
@@ -3014,6 +3058,7 @@
     /* everything that was below the bar now starts at the left rail */
     #app { margin-left: 44px; }
     #artifactsView { margin-left: 44px; }
+    #marketView { margin-left: 44px; }
     #controlView { top: 0; left: 44px; }
     body.show-left #aside {
       top: 0; left: 44px; width: calc(100vw / var(--zoom, 1) - 88px) !important;
@@ -3067,6 +3112,7 @@
        40 px and that strip was neither visible nor clickable. */
     #app { margin-right: 44px; }
     #artifactsView { margin-right: 44px; }
+    #marketView { margin-right: 44px; }
     #controlView { right: 44px; }
     body.show-right [data-col="context"] {
       left: 44px !important; right: 44px !important;
@@ -3148,12 +3194,19 @@
        aria-label="control deck" title="control deck">Control</a>
     <a class="ttab" id="tabArtifacts" href="#artifacts" data-call="showArtifacts" data-ic="▧"
        aria-label="my artifacts" title="files the harness produced">My Artifacts</a>
+    <a class="ttab" id="tabMarket" href="#market" data-call="showMarket" data-ic="◈"
+       aria-label="marketplace" title="plugins, skills and MCP servers to install">Marketplace</a>
   </nav>
   <span class="sessbadge" id="sessBadge" hidden></span>
   <span class="u-f1"></span>
   <!-- JAG-424: the sandbox pill moved OUT of the ☰ menu onto the banner line. -->
   <span class="pill sbox" id="sbxPill" title="sandbox backend"><span class="sdot" id="sbxDot"></span><span
       id="sbxTxt">…</span></span>
+  <!-- v1023: the approval MODE in force, next to the sandbox pill — the two things
+       that decide whether a tool call can touch the world. One control per fact:
+       the chip reports, Settings ▸ Permissions owns the value. -->
+  <button class="pill sbox" id="apprPill" hidden data-call="openSettings" data-args='["permissions"]'
+          title="tool approval mode — click for Settings › Permissions"></button>
   <!-- RH-27 (operator, 2026-11-03): the settings gear LEFT the topbar — it now lives
        in the chat tool rail (#toolsBar), pinned level with the send button, found the
        same way on desktop and on a phone. Only the search stays up here. -->
@@ -3223,6 +3276,36 @@
     </button>
   </div>
   <div id="artGrid" class="art-grid"></div>
+</section>
+<!-- Marketplace — the fourth top-level PAGE. The catalogue is DATA
+     (GET /api/market/catalog): each installable entry carries a sha256, and the
+     card prints it, so the shelf never hides what the gate will check. Installs
+     go through the installers that already own each object. -->
+<section id="marketView" aria-label="marketplace" aria-hidden="true">
+  <div class="mkt-head">
+    <h2 class="mkt-title">Marketplace</h2>
+    <span class="art-n" id="mktCount"></span>
+    <span class="u-f1"></span>
+    <button class="ghost" id="mktManage" data-call="mktManage"
+            title="installed items: version, source, digest, update">Manage</button>
+    <button class="ghost" id="mktReload" data-call="mktReload" title="reload the catalogue"
+            aria-label="reload the catalogue">↻</button>
+  </div>
+  <p class="mkt-sub">Discover and install plugins, skills and MCP servers. Every install is digest-verified.</p>
+  <div class="mkt-tabs" id="mktTabs" role="tablist" aria-label="marketplace kinds">
+    <button class="mkt-tab" role="tab" data-kind="all" aria-selected="true">All</button>
+    <button class="mkt-tab" role="tab" data-kind="plugin" aria-selected="false">Plugins</button>
+    <button class="mkt-tab" role="tab" data-kind="skill" aria-selected="false">Skills</button>
+    <button class="mkt-tab" role="tab" data-kind="mcp" aria-selected="false">MCP</button>
+    <button class="mkt-tab" role="tab" data-kind="connector" aria-selected="false">Connectors</button>
+    <button class="mkt-tab" role="tab" data-kind="manage" aria-selected="false">Manage</button>
+  </div>
+  <div class="mkt-row">
+    <input id="mktSearch" class="mkt-search" type="search" spellcheck="false"
+           placeholder="search the catalogue" aria-label="search the catalogue">
+    <div class="mkt-chips" id="mktChips" role="group" aria-label="filter by category"></div>
+  </div>
+  <div id="mktBody"></div>
 </section>
 <main id="app">
   <aside id="aside" data-col="sessions" aria-label="sessions rail">
@@ -3866,6 +3949,14 @@
       <div class="sw-cat" data-cat="info" hidden>
         <h2>Info</h2>
         <div class="card" id="selfPanel"><div class="remaining">loading…</div></div>
+        <!-- v1023: the bug-report template ships in the repo; this opens it. -->
+        <h2>Report an issue</h2>
+        <div class="card">
+          <div class="remaining">The template ships with the repository — fill it in and attach
+            the session id (<code>/api/self</code> prints it).</div>
+          <button class="ghost u-mt8" data-call="openIssueTemplate"
+                  title="open .github/ISSUE_TEMPLATE/bug_report.md in the editor">open bug_report.md</button>
+        </div>
         <!-- v641: the two-line parenthetical is the tooltip; the heading is a label. -->
         <h2 title="The folder that holds data/ and matrix/, outside this checkout — it can live anywhere you want">Data home</h2>
         <div class="card" id="homeCard">
@@ -3949,6 +4040,46 @@
         <h2>Catalog · add in one click</h2>
         <div class="card">
           <div id="mcpCatalog"></div>
+        </div>
+      </div>
+      <!-- Connectors: an MCP server preset PLUS the key NAMES it needs. Installing
+           one adds the client DISABLED (the same opt-in a pasted server gets); this
+           panel adds what a paste cannot — which key is still missing, and a test
+           before enabling. Key VALUES are never shown here. -->
+      <div class="sw-cat" data-cat="connectors" hidden>
+        <h2>Connectors · integrations</h2>
+        <div class="card">
+          <div class="remaining">A connector installs an MCP server <b>disabled</b>.
+            Set its keys (Keys panel), test it here, then enable it in MCP.</div>
+          <div id="connList" class="u-mt8"></div>
+          <div id="connResult" class="remaining u-mt6"></div>
+        </div>
+      </div>
+      <!-- Commands: the operator's own `/` commands. Picking one expands its PROMPT
+           into the message while the transcript keeps `/name` — the split send(text,
+           display) already implements for skills. One store: data/commands.yaml. -->
+      <div class="sw-cat" data-cat="commands" hidden>
+        <h2>Commands · your own /commands</h2>
+        <div class="card">
+          <div class="remaining">A command is a name, a description and a prompt.
+            Picking it in the composer expands the prompt; the transcript keeps
+            <code>/name</code>. Stored in <code>data/commands.yaml</code>. The built-in
+            tokens (<code>goal</code> · <code>skills</code> · <code>compact</code>) cannot be reused.</div>
+          <div class="u-df u-g8 u-fww u-mt8">
+            <input id="cmdName" class="art-search" style="width:150px" spellcheck="false"
+                   placeholder="name (a-z0-9_-)" aria-label="command name">
+            <input id="cmdDesc" class="art-search" style="width:250px" spellcheck="false"
+                   placeholder="one-line description" aria-label="command description">
+            <input id="cmdAliases" class="art-search" style="width:180px" spellcheck="false"
+                   placeholder="aliases, comma separated" aria-label="command aliases">
+            <button class="ghost" data-call="saveCommand"
+                    title="create or replace this command">＋ save</button>
+          </div>
+          <textarea id="cmdPrompt" class="art-search" rows="4" spellcheck="false"
+                    style="width:100%;margin-top:8px;resize:vertical;min-height:88px"
+                    placeholder="the prompt the model receives" aria-label="command prompt"></textarea>
+          <div id="cmdList" class="u-mt8"></div>
+          <div id="cmdResult" class="remaining u-mt6"></div>
         </div>
       </div>
       <div class="sw-cat" data-cat="skills" hidden>
@@ -6969,13 +7100,55 @@ const SLASH_BY_ID = (() => {
   SLASH_COMMANDS.forEach(c => { m[c.id] = c; (c.aliases || []).forEach(a => { m[a] = c; }); });
   return m;
 })();
+/* USER-DEFINED `/` commands (data/commands.yaml, GET /api/commands).
+   They join the SAME menu and the SAME send-time interception as the built-ins,
+   but a BUILT-IN always wins its token: a user command can add, never shadow.
+   The prompt is what the MODEL receives; `/name` is what the transcript shows —
+   the same split send(text, display) already implements for skills. */
+let USER_COMMANDS = [];
+const _USER_BY_ID = {};
+function _applyUserCommands(list) {
+  const ok = (list || []).filter(c => c && c.name).map(c => ({
+    id: String(c.name).toLowerCase(),
+    aliases: (c.aliases || []).map(a => String(a).toLowerCase()),
+    icon: "/", insert: "/" + c.name + " ",
+    hint: c.description || "user command",
+    user: true, prompt: c.prompt || "",
+  })).filter(c => !SLASH_BY_ID[c.id] && !(c.aliases || []).some(a => SLASH_BY_ID[a]));
+  USER_COMMANDS = ok;
+  Object.keys(_USER_BY_ID).forEach(k => { delete _USER_BY_ID[k]; });
+  ok.forEach(c => { _USER_BY_ID[c.id] = c; (c.aliases || []).forEach(a => { _USER_BY_ID[a] = c; }); });
+}
+async function loadUserCommands() {
+  let r = {};
+  try { r = await api("GET", "/api/commands"); } catch (_) { r = {}; }
+  _applyUserCommands((r && r.commands) || []);
+}
+/* ONE lookup for a token: user commands first is safe because a user command
+   with a built-in name was filtered out at load time. */
+function _slashEntry(tok) { return _USER_BY_ID[tok] || SLASH_BY_ID[tok]; }
+/* A message that IS a user command expands to its prompt (and keeps the rest as
+   arguments). A REAL skill with that name still wins — the server resolves
+   `/<name>` as a skill, so the composer must not pretend otherwise. */
+function _expandUserCommand(raw) {
+  const m = String(raw || "").match(/^\/([A-Za-z0-9_.\-]+)(?:\s+([\s\S]*))?$/);
+  if (!m) return null;
+  const tok = m[1].toLowerCase();
+  const u = _USER_BY_ID[tok];
+  if (!u) return null;
+  if ((_skillsCache || []).some(s => String(s.name || "").toLowerCase() === tok)) return null;
+  const rest = (m[2] || "").trim();
+  return { text: rest ? (u.prompt + "\n\n" + rest) : u.prompt, display: "/" + u.id };
+}
+loadUserCommands();   // first paint can offer them; a failure leaves the built-ins
 /* SL-2: the commands a query matches, in declared order. An EMPTY query matches them
    all — that is the "submenu opener" the operator asked for: a bare "/" opens the
    COMMAND menu (the frontier pattern: Claude Code's /agents, /config open their own
    interface), it does not dump the skill catalogue. */
 function _slashCmdHits(q) {
-  if (!q) return SLASH_COMMANDS.slice();
-  return SLASH_COMMANDS.filter(c => c.id.startsWith(q)
+  const all = SLASH_COMMANDS.concat(USER_COMMANDS);
+  if (!q) return all.slice();
+  return all.filter(c => c.id.startsWith(q)
     || (c.aliases || []).some(a => a.startsWith(q)));
 }
 /* JAG-431r4b: function send(text, display) also accepts an optional `atts`
@@ -7009,6 +7182,15 @@ function send(text, display, atts) {
       _draftClear(sessionId);   // it left the box: never restore it
       _c.run(); return;
     }
+  }
+  // A user-defined command expands to its PROMPT here, before anything is sent;
+  // the transcript still shows `/name` (the send(text, display) split).
+  const _uc = _expandUserCommand(raw);
+  if (_uc) {
+    inp.value = ""; if (inp.style) inp.style.height = ""; _renderCmdChips();
+    _draftClear(sessionId);
+    send(_uc.text, _uc.display, atts);
+    return;
   }
   // JAG-278: attachments are prepended for the MODEL (read them first) and shown
   // to the user as a 📎 note; the chips are consumed once the message is sent.
@@ -10666,7 +10848,29 @@ async function loadStatus() {
         (sb.isolated ? " — sandboxed (isolated)" : " — host execution, no sandbox");
     }
   } catch { /* /api/status is best-effort: the meter keeps its last value */ }
+  if (!loadApprPill._done) { loadApprPill._done = true; loadApprPill(); }
   loadHome();
+}
+/* v1023: the approval MODE is a different fact from the sandbox backend and it
+   changes rarely, so it is fetched ONCE per page (GET /api/tools carries the live
+   policy), never on every status poll. The chip reports; Settings ▸ Permissions
+   owns the value — no second writer. */
+async function loadApprPill() {
+  const el = $("apprPill"); if (!el) return;
+  try {
+    const r = await api("GET", "/api/tools");
+    const mode = String((r && r.policy && r.policy.mode) || "normal");
+    el.hidden = false;
+    el.className = "pill sbox" + (mode === "full" ? " warn" : " ok");
+    el.textContent = "approvals: " + mode;
+    el.title = "tool approval mode: " + mode + " — click for Settings › Permissions";
+  } catch (_) { el.hidden = true; }
+}
+/* v1023: the issue template already ships in the repository; this is the door to
+   it from the app (Settings ▸ Info), so a report does not start from a blank page. */
+function openIssueTemplate() {
+  try { openFile(".github/ISSUE_TEMPLATE/bug_report.md"); }
+  catch (_) { toast("open .github/ISSUE_TEMPLATE/bug_report.md from the editor", "warn"); }
 }
 
 /* ---- data home (JAG-533) ----
@@ -14694,6 +14898,7 @@ const SETTINGS_CATS = [
   ["subagents", "Subagents"], ["orchestrate", "Swarm & blackboard"], ["tools", "Tools & approvals"],
   ["permissions", "Permissions"], ["sandbox", "Sandbox"],
   ["mcp", "MCP"],
+  ["connectors", "Connectors"], ["commands", "Commands"],
   ["skills", "Skills"], ["rules", "Rules"], ["knowledge", "Knowledge"],
   ["compaction", "Compaction"],
   ["improvement", "Improvements"],
@@ -14701,7 +14906,9 @@ const SETTINGS_CATS = [
   // 2026-11-06: an inlet is the other half of Hooks — an outside EVENT vs a
   // deterministic command. Next to it so the two are never confused.
   ["webhooks", "Webhooks"],
-  ["harness", "Harness"], ["config", "Config files"], ["info", "\u24D8 Info"],
+  ["harness", "Harness"], ["config", "Config files"],
+  ["market", "Marketplace"],
+  ["info", "\u24D8 Info"],
 ];
 /* JAG-352: theme + text-weight. Persisted per device; theme is applied pre-paint
    by the inline boot script above, these helpers just re-render and save. */
@@ -15128,6 +15335,9 @@ function panelLabel(cat) {
 function gotoSubagents() { settingsCategory("subagents"); }
 function gotoOrchestrate() { settingsCategory("orchestrate"); }
 function settingsCategory(name) {
+  // v1023: Marketplace is a PAGE, not a panel — the Settings row is a second door
+  // to it (Settings is where an operator looks for "where do I get more things").
+  if (name === "market") { closeSettings(); showMarket(); return; }
   document.querySelectorAll("#swNav button").forEach(b => b.classList.toggle("active", b.dataset.cat === name));
   const _navSel = $("swNavSel");
   if (_navSel && _navSel.value !== name) _navSel.value = name;
@@ -15136,6 +15346,8 @@ function settingsCategory(name) {
   // K-5: no category-level mount — each section's ✨ is mounted by the renderer that
   // owns its field (one control per field, never a second identical button).
   if (name === "mcp") { loadMcpClients(); if (typeof renderMcpCatalog === "function") renderMcpCatalog(); }
+  else if (name === "connectors") { loadConnectorsPanel(); }
+  else if (name === "commands") { loadCommandsPanel(); }
   else if (name === "skills") { loadSkills(); }
   else if (name === "rules") { loadRules(); }
   else if (name === "harness") {
@@ -15273,6 +15485,134 @@ function _applySettingsGeom(w) {
     w.style.top = Math.max(56, Math.round((innerHeight - r.height) / 2) - 24) + "px";
   }
   _clampBox(w);
+}
+/* ── Settings ▸ Commands (data/commands.yaml) ────────────────────────────────
+   ONE store owns the commands: this panel writes it, and the composer's `/` menu
+   reads it back through _applyUserCommands, so the two can never disagree. */
+async function loadCommandsPanel() {
+  const box = $("cmdList"); if (!box) return;
+  let r = {};
+  try { r = await api("GET", "/api/commands"); } catch (_) { r = {}; }
+  const rows = (r && r.commands) || [];
+  _applyUserCommands(rows);   // the composer menu follows the same file
+  box.innerHTML = "";
+  if (!rows.length) {
+    box.innerHTML = `<div class="remaining">No commands yet — create one above.</div>`;
+  }
+  rows.forEach(c => {
+    const row = document.createElement("div");
+    row.className = "card";
+    row.style.cssText = "padding:6px 8px;margin-bottom:6px;display:flex;gap:8px;align-items:center";
+    const info = document.createElement("div");
+    info.style.cssText = "flex:1;min-width:0";
+    const t = document.createElement("div"); t.style.fontWeight = "600";
+    t.textContent = "/" + c.name + ((c.aliases || []).length
+      ? "  (" + c.aliases.map(a => "/" + a).join(", ") + ")" : "");
+    const s = document.createElement("div"); s.className = "remaining";
+    s.style.wordBreak = "break-word";
+    s.textContent = (c.description || "(no description)") + " · "
+      + String(c.prompt || "").length + " chars";
+    info.append(t, s);
+    const ed = document.createElement("button"); ed.className = "ghost"; ed.textContent = "edit";
+    ed.onclick = () => {
+      $("cmdName").value = c.name; $("cmdDesc").value = c.description || "";
+      $("cmdAliases").value = (c.aliases || []).join(", "); $("cmdPrompt").value = c.prompt || "";
+    };
+    const del = document.createElement("button"); del.className = "ghost"; del.textContent = "✕";
+    del.title = "delete this command"; del.setAttribute("aria-label", "delete /" + c.name);
+    del.onclick = () => deleteCommand(c.name);
+    row.append(info, ed, del);
+    box.appendChild(row);
+  });
+  const out = $("cmdResult");
+  if (out) out.textContent = r.path ? (rows.length + " command(s) · " + r.path) : "";
+}
+async function saveCommand() {
+  const name = ($("cmdName").value || "").trim();
+  const body = {
+    name: name,
+    description: ($("cmdDesc").value || "").trim(),
+    prompt: $("cmdPrompt").value || "",
+    aliases: ($("cmdAliases").value || "").split(",").map(x => x.trim()).filter(Boolean),
+    mode: "send",
+  };
+  let r = {};
+  try { r = await api("POST", "/api/commands", body); }
+  catch (e) { r = { ok: false, error: String(e) }; }
+  const out = $("cmdResult");
+  if (r && r.ok) { if (out) out.textContent = "saved /" + name; await loadCommandsPanel(); }
+  else if (out) out.textContent = (r && r.error) || "save failed";
+}
+async function deleteCommand(name) {
+  let r = {};
+  try { r = await api("DELETE", "/api/commands/" + encodeURIComponent(name)); }
+  catch (e) { r = { ok: false, error: String(e) }; }
+  const out = $("cmdResult");
+  if (out) out.textContent = (r && r.ok) ? ("deleted /" + name) : ((r && r.error) || "delete failed");
+  await loadCommandsPanel();
+}
+/* ── Settings ▸ Connectors — an MCP preset plus the key NAMES it needs ──────
+   The panel never receives a key VALUE: /api/connectors reports NAME + set only.
+   Install adds the client DISABLED, exactly like a pasted server. */
+async function loadConnectorsPanel() {
+  const box = $("connList"); if (!box) return;
+  let r = {};
+  try { r = await api("GET", "/api/connectors"); } catch (_) { r = {}; }
+  const rows = (r && r.connectors) || [];
+  box.innerHTML = "";
+  if (!rows.length) {
+    box.innerHTML = `<div class="remaining">No connector in the catalogue. A connector is an
+      entry of kind <code>connector</code> in <code>data/market/catalog.json</code>,
+      with a <code>server</code> block and the key NAMES it needs.</div>`;
+  }
+  rows.forEach(c => {
+    const row = document.createElement("div");
+    row.className = "card";
+    row.style.cssText = "padding:6px 8px;margin-bottom:6px";
+    const hd = document.createElement("div");
+    hd.style.cssText = "display:flex;gap:8px;align-items:center";
+    const t = document.createElement("div");
+    t.style.cssText = "font-weight:600;flex:1;min-width:0"; t.textContent = c.title;
+    const btns = document.createElement("div");
+    if (!c.installed) {
+      const b = document.createElement("button"); b.className = "ghost"; b.textContent = "＋ install";
+      b.disabled = !c.installable;
+      b.title = c.installable ? "install the server (disabled)" : "this entry is not installable";
+      b.onclick = () => installConnector(c.id);
+      btns.appendChild(b);
+    } else {
+      const b = document.createElement("button"); b.className = "ghost"; b.textContent = "test";
+      b.title = "connect once and list its tools — nothing is persisted or enabled";
+      b.onclick = () => testConnector(c.id);
+      btns.appendChild(b);
+    }
+    hd.append(t, btns);
+    const s = document.createElement("div");
+    s.className = "remaining"; s.style.wordBreak = "break-word";
+    const keys = (c.keys || []).map(k => k.name + (k.set ? " ✓" : " ✗")).join(" · ");
+    s.textContent = (c.description || "")
+      + (keys ? " · keys: " + keys : " · no key required")
+      + (c.installed ? (" · " + (c.enabled ? "enabled" : "disabled")) : "");
+    row.append(hd, s);
+    box.appendChild(row);
+  });
+  const out = $("connResult");
+  if (out) out.textContent = (r && r.note) || "";
+}
+async function installConnector(id) {
+  let r = {};
+  try { r = await api("POST", "/api/connectors/install", { id: id }); }
+  catch (e) { r = { ok: false, error: String(e) }; }
+  const out = $("connResult");
+  if (out) out.textContent = (r && r.ok) ? (r.note || "installed (disabled)") : ((r && r.error) || "install failed");
+  await loadConnectorsPanel();
+}
+async function testConnector(id) {
+  let r = {};
+  try { r = await api("POST", "/api/connectors/test", { id: id }); }
+  catch (e) { r = { ok: false, error: String(e) }; }
+  const out = $("connResult");
+  if (out) out.textContent = JSON.stringify(r).slice(0, 400);
 }
 function openSettings(cat) {
   buildSettingsWin(); settingsWin().hidden = false;
@@ -19207,7 +19547,8 @@ function _tabTop() {
 }
 /* One tab name → its element. Adding a page means one row here, never a second
    hand-written pair of toggles that can drift out of step with the strip. */
-const TAB_IDS = { sessions: "tabSessions", control: "tabControl", artifacts: "tabArtifacts" };
+const TAB_IDS = { sessions: "tabSessions", control: "tabControl", artifacts: "tabArtifacts",
+                  market: "tabMarket" };
 function _setTabs(which) {
   Object.keys(TAB_IDS).forEach(name => {
     const el = document.getElementById(TAB_IDS[name]);
@@ -19269,6 +19610,8 @@ function showControl() {
   _ctlShellWatch(f);   // I-8: a changed shell must not stay invisible in the deck
   cv.classList.add("on"); cv.setAttribute("aria-hidden", "false"); document.body.classList.add("control-on"); _setTabs("control");
   document.body.classList.remove("artifacts-on");
+  document.body.classList.remove("market-on");
+  const mv = document.getElementById("marketView"); if (mv) mv.setAttribute("aria-hidden", "true");
   const av = document.getElementById("artifactsView"); if (av) av.setAttribute("aria-hidden", "true");
   // JAG-424g: while Control is up, the Sessions page must not receive mouse OR keyboard —
   // `inert` removes it from hit-testing, focus and the a11y tree in one shot.
@@ -19283,6 +19626,8 @@ function showArtifacts() {
   if (cv) { cv.classList.remove("on"); cv.setAttribute("aria-hidden", "true"); }
   document.body.classList.remove("control-on");
   document.body.classList.add("artifacts-on");
+  document.body.classList.remove("market-on");
+  const mv = document.getElementById("marketView"); if (mv) mv.setAttribute("aria-hidden", "true");
   const av = document.getElementById("artifactsView");
   if (av) av.setAttribute("aria-hidden", "false");
   const app = document.getElementById("app"); if (app) app.setAttribute("inert", "");
@@ -19291,10 +19636,29 @@ function showArtifacts() {
   try { history.replaceState(null, "", location.pathname + location.search + "#artifacts"); } catch (_) {}
   loadArtifacts();
 }
+/* Marketplace: the fourth top-level page. Same contract as My Artifacts — it owns
+   the row, #app stands down, the strip marks it, the hash deep-links it, and the
+   page asks the catalogue (real backend state) every time it opens. */
+function showMarket() {
+  const cv = document.getElementById("controlView");
+  if (cv) { cv.classList.remove("on"); cv.setAttribute("aria-hidden", "true"); }
+  document.body.classList.remove("control-on");
+  document.body.classList.remove("artifacts-on");
+  document.body.classList.add("market-on");
+  const av = document.getElementById("artifactsView"); if (av) av.setAttribute("aria-hidden", "true");
+  const mv = document.getElementById("marketView"); if (mv) mv.setAttribute("aria-hidden", "false");
+  const app = document.getElementById("app"); if (app) app.setAttribute("inert", "");
+  _setTabs("market");
+  _dockControlSettle();
+  try { history.replaceState(null, "", location.pathname + location.search + "#market"); } catch (_) {}
+  if (window.LRMkt) window.LRMkt.load();
+}
 function showSessions() {
   const cv = document.getElementById("controlView"); if (cv) { cv.classList.remove("on"); cv.setAttribute("aria-hidden", "true"); }
   document.body.classList.remove("control-on");
   document.body.classList.remove("artifacts-on");
+  document.body.classList.remove("market-on");
+  const mv = document.getElementById("marketView"); if (mv) mv.setAttribute("aria-hidden", "true");
   const av = document.getElementById("artifactsView"); if (av) av.setAttribute("aria-hidden", "true");
   const app = document.getElementById("app"); if (app) app.removeAttribute("inert");
   _dockControlSettle();   // v642: put the editor back in the row, where it was
@@ -19306,6 +19670,7 @@ function goControlDetached() { location.href='/orbit' + (TOKEN ? ('?token=' + en
 function goControl() { showControl(); }
 function goSession() { showSessions(); }
 function goArtifacts() { showArtifacts(); }
+function goMarket() { showMarket(); }
 /* JAG-431r10: the Control deck asks US to open a task — a double-click on a
    constellation task when the deck runs EMBEDDED in the Control tab (navigating the
    iframe would trap the main app inside the deck frame). We hop to the Sessions
@@ -19329,6 +19694,7 @@ window.addEventListener("message", (e) => {
 window.addEventListener("DOMContentLoaded", () => {
   if (location.hash === "#control") showControl();
   else if (location.hash === "#artifacts") showArtifacts();
+  else if (location.hash === "#market") showMarket();
   mountStaticSparkles();
 });
 // JAG-431r4: honour a hash CHANGE too (a deep link after load, back/forward, or a
@@ -19337,6 +19703,7 @@ window.addEventListener("DOMContentLoaded", () => {
 window.addEventListener("hashchange", () => {
   if (location.hash === "#control") showControl();
   else if (location.hash === "#artifacts") showArtifacts();
+  else if (location.hash === "#market") showMarket();
   else showSessions();
 });
 /* ---- v0.8.1 resizable columns + panel toggles ---- */
@@ -19884,6 +20251,8 @@ addEventListener("keydown", e => {
   if (e.key === "Escape" && !$("mcpJsonWin").hidden) { closeMcpJson(); return; }
   if (e.key === "Escape" && settingsWin() && !settingsWin().hidden) { closeSettings(); return; }
   if ((e.metaKey || e.ctrlKey) && e.key === "k") { e.preventDefault(); openPalette(); }
+  // v1023: Ctrl/⌘+, opens Settings — the shortcut every IDE uses for it.
+  if ((e.metaKey || e.ctrlKey) && e.key === ",") { e.preventDefault(); toggleSettings(); }
   // JAG-416: Alt+X toggles voice input (start / stop).
   if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === "x" || e.key === "X")) { e.preventDefault(); micToggle(); }
   if (e.key === "Escape") { closePalette(); closeNewSess(); closeDirPicker(); closeImage(); }
@@ -19943,7 +20312,7 @@ function _renderCmdChips() {
     // something the command does not do. A REAL skill still wins over a UI command
     // for the same token — exactly what the server does (`_apply_skill_slash`
     // resolves `/<name>` for every token but `goal`), so the chip cannot lie.
-    const _cmd = SLASH_BY_ID[t];
+    const _cmd = _slashEntry(t);
     if (names[t]) push("📖", names[t], "open the skill in the editor — /" + t
                             + " rides along with the message", true, true);
     else if (_cmd) push(_cmd.icon, _cmd.id, _cmd.hint, false);
@@ -20236,6 +20605,7 @@ _bindSessBadgeReveal();   // JAG-428: clicking the collapsed-panel session badge
 <script src="/assets/vendor/purify.min.js"></script>
 <script type="module" src="/assets/editor.js"></script>
 <script type="module" src="/assets/viewer.js"></script>
+<script type="module" src="/assets/market.js"></script>
 <script src="/api/matrix/plugins.js" defer></script>
 </body>
 </html>

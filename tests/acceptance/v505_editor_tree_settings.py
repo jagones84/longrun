@@ -111,10 +111,13 @@ cats = re.findall(r'\[\s*"([a-z]+)"\s*,', m.group(1)) if m else []
 # (operator: the security rules do not belong in the tools list).
 # 2026-11-07: Webhooks (inbound event receivers) landed as its own category and
 # sits with Hooks — the outbound half — immediately above Harness.
+# 2026-11-15 (v1020/v1021/v1023): Connectors and Commands sit beside MCP — the
+# three ways an outside capability enters — and Marketplace is the last entry,
+# before Info, because it opens a PAGE rather than a panel.
 want = ["diagnostics", "appearance", "keys", "models", "subagents", "orchestrate", "tools",
-        "permissions", "sandbox", "mcp",
+        "permissions", "sandbox", "mcp", "connectors", "commands",
         "skills", "rules", "knowledge", "compaction", "improvement", "hooks", "webhooks",
-        "harness", "config"]
+        "harness", "config", "market"]
 check("B1 SETTINGS_CATS is parseable", bool(cats), "found %r" % (cats,))
 check("B2 categories follow the operator's order",
       cats[:len(want)] == want, "got %r" % (cats,))
