@@ -3513,6 +3513,19 @@ def main():
         pass
     reconcile_orphan_turns()       # JAG-262: close turns killed by a hard restart
     try:
+        # 2026-11-16: every owner closes its own orphans — sessions above, jobs
+        # below, subjobs in their module — but `runs` had NO sweep: `Run.finish()`
+        # was the only writer of the status, so a process killed mid-run left the
+        # row `running` forever (measured: 182 rows, the oldest 2026-09-29, four of
+        # them turns killed by that day's restarts). A run started by THIS boot is
+        # newer than the cut and is never touched.
+        from longrun.util import tracing as _tracing_boot
+        _rr = _tracing_boot.reconcile_orphans(before=time.time())
+        if _rr.get("closed"):
+            publish("runs.reconciled", closed=_rr["closed"], ids=_rr["ids"][:20])
+    except Exception:  # noqa: BLE001 — a boot sweep must never stop the boot
+        pass
+    try:
         # 2026-11-15: the harness restart owns its ticket; Matrix no longer does.
         from longrun.core import restart as _restart_boot
         _restart_boot.resume_after_restart()

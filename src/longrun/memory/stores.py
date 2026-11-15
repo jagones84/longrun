@@ -1661,11 +1661,14 @@ def reconcile_orphan_turns(session=None):
             pass
         if _cls["effect"] == "interrupted_before_effect":
             _notice = ("previous turn was interrupted by a service restart "
-                       "before it executed anything — send a new message to "
-                       "resume from the pre-turn checkpoint.")
+                       "before it executed anything — the harness resumes it "
+                       "automatically when it can (look for [Harness restart] "
+                       "below); if nothing follows, send a new message to continue.")
         else:
             _notice = ("previous turn was interrupted by a service restart "
-                       "— send a new message to continue.")
+                       "— the harness resumes it automatically when it can (look "
+                       "for [Harness restart] below); if nothing follows, send a "
+                       "new message to continue.")
         try:
             append_message(
                 sess, "assistant",

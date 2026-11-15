@@ -33,6 +33,19 @@ All notable changes to Longrun are documented here. The format follows
   forced answer instead of three. (Locked by `v1063` 4/4, `v1061` 12/12; `v770` still green.)
 
 ### Added
+- **A run killed by a restart is closed, and an interrupted turn says it will be resumed.**
+  Operator: *"there are agents that stop unexpectedly that's the worst thing can happen"*. Every
+  other owner already closed its own orphans (sessions, jobs, subjobs); `runs` had no sweep —
+  `Run.finish()` was the only writer of the status — so a process killed mid-turn left the row
+  `running` forever: measured 2026-11-16, **182 rows**, the oldest 2026-09-29, four of them turns
+  killed by that evening's restarts, all served by `/api/runs` and the trace/cost reads as if live.
+  Boot now runs `tracing.reconcile_orphans(before=<boot ts>)`, closing only rows older than the
+  current process as `interrupted` (a run started by this boot is never touched; idempotent) and
+  emitting `runs.reconciled`. The interrupted-turn notice no longer reads as "the work is lost": it
+  names the automatic `[Harness restart]` resume and only then "send a new message". Project rule
+  `.trae/rules/agent-turns.md`: proof of idleness before a restart (`/api/chat/live` must be
+  empty), read `service.resume` afterwards, and never declare an agent dead without quoting the
+  session id, the message index and the resume marker. (Locked by `v1065` 8/8.)
 - **Installing a plugin now ACTIVATES it, and `/plugin:<name>` reports what is really running.**
   Operator: *"the plugin installation already has to automatically install everything needed …
   if plugins contain skills and MCP they shall be installed in longrun according to longrun

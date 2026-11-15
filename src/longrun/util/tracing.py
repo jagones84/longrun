@@ -331,3 +331,35 @@ def runs_summary(limit=50):
              "tokens_in": r[5], "tokens_out": r[6], "cost_usd": r[7], "status": r[8]}
             for r in rows]
 
+
+def reconcile_orphans(before=None, status="interrupted"):
+    """Close the runs a PREVIOUS process left `running` (2026-11-16).
+
+    Every other owner already has this sweep — sessions
+    (`stores.reconcile_orphan_turns`), jobs (`JOBS.reconcile`), subjobs
+    (`session_jobs`) — but `runs` had none: `Run.finish()` was the only writer
+    of the column, so a killed process left the row `running` FOREVER. Measured
+    2026-11-16: 182 rows, the oldest from 2026-09-29, including four turns killed
+    by that day's restarts; `/api/runs`, `GET /api/runs/<id>/trace` and the cost
+    audit served them as if they were live.
+
+    `before` (epoch seconds) protects a run THIS process has just started: only a
+    row older than it can be an orphan. Called at boot before the server accepts
+    a request, so the default (`now`) is safe. Idempotent; never raises.
+    """
+    cut = time.time() if before is None else float(before)
+    try:
+        with _db_lock:
+            rows = db().execute(
+                "SELECT id FROM runs WHERE status='running' AND ts < ?",
+                (cut,)).fetchall()
+            ids = [r[0] for r in rows]
+            if ids:
+                db().execute(
+                    "UPDATE runs SET status=? WHERE status='running' AND ts < ?",
+                    (status, cut))
+                db().commit()
+        return {"ok": True, "closed": len(ids), "ids": ids, "status": status}
+    except Exception as e:  # noqa: BLE001 — a boot sweep must never stop the boot
+        return {"ok": False, "closed": 0, "ids": [], "error": str(e)}
+
