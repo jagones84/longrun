@@ -7,7 +7,8 @@ triggers a specific harness message".
 
 Pins:
   A  the transport records WHY a reply was empty (`finish_reason`, `reasoning_tokens`)
-  B  a reasoning-only / output-limit reply first asks the SAME model to think less
+  B  a reasoning-only / output-limit reply first gets ONE same-model round that
+     keeps the thinking and asks for the answer (never "think less")
   C  a second failure names the failover explicitly
   D  a completely blank reply has its OWN message (provider defect)
   E  the failed attempt is persisted as a UI-only card (`model.attempt`) and emitted
@@ -41,10 +42,11 @@ check("A1 finish_reason captured",
       'usage["finish_reason"] = _choices[0]["finish_reason"]' in rllm)
 check("A2 reasoning tokens captured",
       'usage["reasoning_tokens"] = _details["reasoning_tokens"]' in rllm)
-check("B1 think-less is a SAME-model round", "_reasoning_think_less = False" in agent
-      and "if not _reasoning_think_less and not _is_aborted" in agent)
-check("B2 the message names the mode and asks for less thinking",
-      "Think LESS now:" in agent and "it was reasoning-only" in agent
+check("B1 one same-model round keeps the thinking", "_reasoning_retry_used = False" in agent
+      and "if not _reasoning_retry_used and not _is_aborted" in agent)
+check("B2 the message names the mode and asks for the ANSWER, never for less thinking",
+      "Keep the thinking" in agent and "it was reasoning-only" in agent
+      and "Think LESS" not in agent
       and "the reply hit the completion envelope (max_tokens=" in agent)
 check("C1 the second failure names the failover", "continues on the next configured model" in agent)
 check("D1 a blank reply has its own message", "The provider returned a BLANK message" in agent)

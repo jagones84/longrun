@@ -11067,7 +11067,7 @@ function _docFailCard(kind, why) {
   _logAppend(d); scroll();
   return d;
 }
-const DOC_WAIT_MS = 240000;      // the planner is 1-3 model calls; 4 min is the ceiling
+const DOC_WAIT_MS = 600000;      // /spec is 3 thinking model calls; 10 min is the ceiling
 async function _runDocCommand(kind, ask) {
   const sid = sessionId;
   who("user", "/" + kind + " " + ask);
@@ -11079,7 +11079,7 @@ async function _runDocCommand(kind, ask) {
                       ctl ? { signal: ctl.signal } : undefined); }
   catch (e) {
     r = { ok: false, error: (e && e.name === "AbortError")
-      ? "the planner did not answer within 4 minutes — it may still be running; reload this session to see the document"
+      ? "the planner did not answer within 10 minutes — it may still be running; reload this session to see the document"
       : String((e && e.message) || e) };
   }
   finally { if (timer) clearTimeout(timer); }

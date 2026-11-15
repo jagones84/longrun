@@ -38,8 +38,9 @@ All notable changes to Longrun are documented here. The format follows
   against the model that had just proved it stops at the reasoning (measured session
   `b7329cccf94c`, 22:32–22:33, deepseek-v4.1-flash). Now: **reasoning-only** and **output-limit**
   (`finish_reason=length`) get a message that names the mode, the reasoning tokens and the envelope
-  (`reasoning.max_tokens`), and the FIRST one asks the SAME model to **think less** before anything
-  else; only a second failure names the failover and advances (`stream_with_fallback(...,
+  (`reasoning.max_tokens`), and the FIRST one gives the SAME model one more round that **keeps the
+  thinking** and asks for the answer — never "think less" (operator, 2026-11-16: *"i modelli devono
+  pensare"*); a second failure names the failover and advances (`stream_with_fallback(...,
   reasoning_only_is_blank=True, advance_from=…)`). A **completely blank** reply has its own message
   (provider defect). Every failed attempt is persisted as a `model.attempt` card — UI-only, so it is
   displayed live and on reload but never re-sent — carrying the model, the mode and the reasoning it

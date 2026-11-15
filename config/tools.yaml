@@ -242,12 +242,15 @@ webhooks:
 #
 # The chain is DEFAULTS (rllm.py) <- this file <- data/tools.overlay.yaml.
 reasoning:
-  enabled: false            # OPT-IN. With false nothing is sent, so the PROVIDER default
-                            # applies. That default is NOT the deepest shape (measured
-                            # 2026-11-03 with curl: z-ai/glm-5.3-flash 422-618 reasoning
-                            # tokens with no field vs 2510-4855 with `effort: max`, and
-                            # gemini-2.5-flash thinks 0 tokens). `max` is the top.
-  effort: ""                # none|minimal|low|medium|high|xhigh|max; "" = leave alone
+  # 2026-11-16 (operator: "i modelli devono pensare" — the chain-of-thought had
+  # disappeared from the chat): ON by default. With false nothing is sent and the
+  # PROVIDER default applies, and that default is NOT the deepest shape (measured
+  # 2026-11-03: z-ai/glm-5.3-flash 422-618 reasoning tokens with no field vs
+  # 2510-4855 with `effort: max`; gemini-2.5-flash thinks 0 tokens). A model that
+  # rejects the field is retried once without it (JAG-403), so this is safe for
+  # models that cannot reason. Lower `effort` HERE if a turn gets too slow.
+  enabled: true
+  effort: max               # none|minimal|low|medium|high|xhigh|max; "" = leave alone
   format: auto              # provider dialect; auto reads it from the provider kind
   # The answer+thinking ENVELOPE of one completion. A thinking budget is clamped
   # strictly below it, so a small envelope SILENTLY caps the thinking: at 16384 the

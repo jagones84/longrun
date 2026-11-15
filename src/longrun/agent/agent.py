@@ -5638,10 +5638,11 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     # reply now fails over to the next model (no harness message at all).
     _reasoning_failover = False
     _reasoning_failover_used = False
-    # 2026-11-16: the FIRST reasoning-only / output-limit reply gets a SAME-MODEL
-    # "think less" instruction (the operator's rule: a budget failure is answered by
-    # asking that model to think less BEFORE switching). Only the second one fails over.
-    _reasoning_think_less = False
+    # 2026-11-16 (operator: "i modelli devono pensare"): a reasoning-only /
+    # output-limit reply gets ONE same-model round that KEEPS the thinking and asks
+    # for the answer — never an instruction to think less, which is what removed the
+    # chain-of-thought from the transcript. Only the second one fails over.
+    _reasoning_retry_used = False
     _think_action_used = False  # one round when the action hides in the reasoning
     _timeout_retried = False   # one retry when the MODEL CALL itself times out
     # HA-6 (lot H): the third correction on the SAME point becomes advice — one
@@ -5901,12 +5902,12 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                     _why = ("it was reasoning-only (%d chars of reasoning, no answer%s)"
                             % (_think_chars, "" if _rtok is None
                                else ", %s reasoning tokens" % _rtok))
-                if not _reasoning_think_less and not _is_aborted(sess["id"]):
-                    _reasoning_think_less = True
-                    _inject("Your last message was EMPTY because %s. Think LESS now: "
-                            "at most half of that, no preamble and no re-planning — "
-                            "then emit the next tool call, or write the answer as plain "
-                            "text." % _why, "retry")
+                if not _reasoning_retry_used and not _is_aborted(sess["id"]):
+                    _reasoning_retry_used = True
+                    _inject("Your last message was EMPTY because %s. Keep the thinking "
+                            "you already did and now EMIT the next tool call, or write "
+                            "the answer as plain text — do not start a new analysis."
+                            % _why, "retry")
                     continue
                 if not _reasoning_failover_used and not _is_aborted(sess["id"]):
                     _reasoning_failover_used = True
@@ -7443,7 +7444,9 @@ def _doc_completion(system, user, model, kind, phase):
     if not model:
         raise RuntimeError("no model available for document generation")
     try:
-        publish("docs.thinking", kind=kind, phase=phase, model=model)
+        # `publish(kind, **data)` owns `kind`: the payload calls it `doc_kind`
+        # (same trap that killed the create route, live 2026-11-16).
+        publish("docs.thinking", doc_kind=kind, phase=phase, model=model)
     except Exception:  # noqa: BLE001 — progress must not break the call
         pass
     msgs = [{"role": "system", "content": system},
