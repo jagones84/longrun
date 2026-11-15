@@ -9,7 +9,7 @@ that keep it honest:
   B  the operator's own file still WINS over the shipped one
   C  a bundled skill installs OFFLINE and its bytes are verified against the digest
   D  a bundled file edited behind the catalogue's back is REFUSED
-  E  the Matrix plugins ship in longrun and are listed as PRESENT, not installable
+  E  the Matrix modules ship in longrun and are listed as PRESENT `matrix` rows
   F  the GitHub connector is a real remote server with a key NAME, and it lands disabled
 """
 import json
@@ -56,8 +56,8 @@ check("A2 it is a valid longrun.market document", doc.get("schema") == market.SC
       and isinstance(doc.get("items"), list))
 items = by_id()
 kinds = {i["kind"] for i in items.values()}
-check("A3 every kind is represented (skills, mcp, connectors, plugins)",
-      {"skill", "mcp", "connector", "plugin"} <= kinds, sorted(kinds))
+check("A3 every kind is represented (skills, mcp, connectors, plugins, matrix)",
+      {"skill", "mcp", "connector", "plugin", "matrix"} <= kinds, sorted(kinds))
 check("A4 the page therefore has real content on a fresh install", len(items) >= 15, len(items))
 
 # ── B: the operator's file wins ────────────────────────────────────────────
@@ -104,8 +104,8 @@ check("D3 forgetting with files removes the MARKET directory it recorded",
       gone.get("ok") is True and gone.get("removed_files") is True
       and not os.path.isdir(skill_dir), (gone, os.path.isdir(skill_dir)))
 
-# ── E: Matrix plugins are present, not installable ─────────────────────────
-plugins = [i for i in items.values() if i["kind"] == "plugin" and i["origin"] == "matrix"]
+# ── E: Matrix modules are present, not installable ─────────────────────────
+plugins = [i for i in items.values() if i["kind"] == "matrix" and i["origin"] == "matrix"]
 check("E1 the Matrix tools are listed", len(plugins) >= 5, len(plugins))
 check("E2 they are marked present (already hot-loaded), not installable",
       all(p["present"] and not p["installable"] for p in plugins))

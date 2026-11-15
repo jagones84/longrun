@@ -48,7 +48,7 @@ catalog = json.load(open(os.path.join(REPO, "src", "longrun", "core", "market_ca
 check("A4 every bundled catalogue category is a declared area",
       all(market_taxonomy.is_known(i.get("category")) for i in catalog),
       sorted({i.get("category") for i in catalog if not market_taxonomy.is_known(i.get("category"))}))
-check("A5 the shipped plugins have a declared bucket of their own",
+check("A5 the shipped Matrix modules have a declared bucket of their own",
       market_taxonomy.is_known("Matrix tools"))
 
 # ── B: classification ──────────────────────────────────────────────────────

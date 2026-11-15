@@ -273,6 +273,42 @@
       "keys": [
         "SUPABASE_ACCESS_TOKEN"
       ]
+    },
+    {
+      "id": "plugin/starter-kit",
+      "kind": "plugin",
+      "name": "starter-kit",
+      "title": "Starter kit",
+      "description": "One install for a working loop: the release-notes skill plus the filesystem MCP server. A plugin is skills + MCP servers, installed one by one by the stores that own them.",
+      "category": "Developer Tools",
+      "featured": false,
+      "version": "1.0.0",
+      "publisher": "longrun",
+      "members": [
+        {
+          "kind": "skill",
+          "name": "release-notes",
+          "title": "Release Notes",
+          "sha256": "58cd588464583aa27bb706ab06c4f6a28050a6778088097eaa6e4d9b98c9780a",
+          "source": {
+            "type": "bundled",
+            "path": "market/skills/release-notes/SKILL.md"
+          }
+        },
+        {
+          "kind": "mcp",
+          "name": "filesystem",
+          "title": "Filesystem",
+          "server": {
+            "command": "npx",
+            "args": [
+              "-y",
+              "@modelcontextprotocol/server-filesystem",
+              "/tmp"
+            ]
+          }
+        }
+      ]
     }
   ]
 }

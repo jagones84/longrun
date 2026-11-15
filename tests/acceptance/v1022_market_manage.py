@@ -96,21 +96,22 @@ finally:
 check("B4 an update with the wrong bytes is REFUSED and changes nothing",
       bad.get("ok") is False and market.installed()["installed"][0]["sha256"] == hashlib.sha256(v2).hexdigest())
 
-# ── C: drift is reported, never repaired ───────────────────────────────────
-target = market.installed()["installed"][0]["target"]
+# ── C: the record follows its owner (pruned on read, never "repaired") ─────
 skills.remove("tool")
-aud = market.audit()
-check("C1 audit reports the record whose owner lost the object",
-      aud["drift"] == 1 and aud["rows"][0]["state"] == "missing", aud["rows"])
-check("C2 audit did NOT delete the record (it reports, it does not repair)",
-      market.installed()["count"] == 1)
+inst = market.installed()
+check("C1 a record whose owner lost the object is pruned on read",
+      inst["count"] == 0 and inst.get("pruned") == 1, inst)
+check("C2 audit reports no drift: the record is gone, not repaired",
+      market.audit()["drift"] == 0)
+market._write_installed([{"id": "skill/tool", "kind": "skill", "name": "tool",
+                          "target": "", "origin": "local"}])
 check("C3 a forget removes the record", market.forget("skill/tool")["ok"] is True
       and market.installed()["count"] == 0)
 
-# ── D: plugins go through Matrix, never a second installer ─────────────────
+# ── D: Matrix bundles go through Matrix, never a second installer ──────────
 from longrun.core import matrix  # noqa: E402
 
-catalog([{"id": "plugin/learned", "kind": "plugin", "name": "learned", "title": "Learned pack",
+catalog([{"id": "matrix/learned", "kind": "matrix", "name": "learned", "title": "Learned pack",
           "sha256": "e" * 64, "source": {"type": "https", "url": "https://h.test/p.zip"},
           "bundle": [{"kind": "tool", "name": "learned_x", "content": "#"}]}])
 seen = {}
@@ -124,15 +125,15 @@ def _fake_apply(bundle, repo_root=None):
 
 matrix.apply_learning = _fake_apply
 try:
-    pres = market.install("plugin/learned")
+    pres = market.install("matrix/learned")
 finally:
     matrix.apply_learning = _orig_apply
-check("D1 a plugin installs through matrix.apply_learning", pres.get("ok") is True, pres)
+check("D1 a Matrix bundle installs through matrix.apply_learning", pres.get("ok") is True, pres)
 check("D2 the bundle reached Matrix unchanged", seen.get("bundle") and seen["bundle"][0]["name"] == "learned_x")
-catalog([{"id": "plugin/empty", "kind": "plugin", "name": "empty", "title": "Empty",
+catalog([{"id": "matrix/empty", "kind": "matrix", "name": "empty", "title": "Empty",
           "sha256": "f" * 64, "source": {"type": "https", "url": "https://h.test/e.zip"}}])
-check("D3 a plugin with no bundle is refused by name",
-      "no bundle" in market.install("plugin/empty")["error"])
+check("D3 a Matrix entry with no bundle is refused by name",
+      "no bundle" in market.install("matrix/empty")["error"])
 
 # ── E: the Manage view is wired to those routes ────────────────────────────
 check("E1 Manage asks the audit route", 'api("GET", "/api/market/audit")' in JS)

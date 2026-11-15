@@ -530,7 +530,7 @@ _html = _read("webui/index.html")
 check("C1 the panel renders the client error next to the tool count",
       'const _errorHint = c.error' in _html
       and 'const _hint = c.error ? (" · ⚠ " + _errorHint)' in _html
-      and '+ _hint;' in _html)
+      and '+ _hint);' in _html)
 check("C2 the summary warns how many clients are NOT working",
       '(" · ⚠ " + broken.length + " not working")' in _html
       and "c.connected && !(c.tools > 0)" in _html)

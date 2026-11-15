@@ -140,6 +140,12 @@ check("C1 a record without origin is backfilled from the live catalogue",
       back["skill/security-review"]["origin"] == "bundled"
       and back["skill/security-review"]["origin_label"] == "Bundled", back["skill/security-review"])
 rows.append({"id": "mcp/vanished", "kind": "mcp", "name": "vanished", "installed": "2026-01-01T00:00:00Z"})
+# The record follows its owner (v1038): a row whose client is not in the document
+# is pruned on read, so give this one a live client and keep the point of C2 —
+# an id that no catalogue defines is "Unknown", never a guess.
+_doc = mcp_client.load_doc()
+_doc.setdefault("clients", {})["vanished"] = {"enabled": False}
+mcp_client._save_local_doc(_doc)
 market._write_installed(rows)
 ghost = {r["id"]: r for r in market.installed()["installed"]}["mcp/vanished"]
 check("C2 an id in no catalogue is 'Unknown', never a guess",

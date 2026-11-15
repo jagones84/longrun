@@ -29,8 +29,8 @@ def check(name, ok, detail=""):
 
 
 # ── A: macro-areas ─────────────────────────────────────────────────────────
-check("A1 the four kinds are ordered plugin → skill → mcp → connector",
-      'const KIND_ORDER = ["plugin", "skill", "mcp", "connector"]' in JS)
+check("A1 the five kinds are ordered plugin → skill → mcp → connector → matrix",
+      'const KIND_ORDER = ["plugin", "skill", "mcp", "connector", "matrix"]' in JS)
 check("A2 a section is a heading with a real disclosure button",
       'class="mkt-sect-h"' in JS and "mkt-sect-btn" in JS
       and 'aria-expanded="${open ? "true" : "false"}"' in JS and "aria-controls=" in JS)

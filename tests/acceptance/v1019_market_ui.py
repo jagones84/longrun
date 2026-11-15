@@ -58,7 +58,7 @@ check("C4 remove goes through DELETE /api/market/installed/<id>",
 # ── D: the digest is on the card, not only in the payload ───────────────────
 check("D1 the card prints the sha256 it will verify",
       '"sha256 " + esc(shortDigest(item.sha256))' in JS)
-check("D2 a skill/plugin with no digest says so on the card",
+check("D2 a skill with no digest says so on the card",
       "no digest" in JS and "not installable" in JS)
 check("D3 the digest is shortened for display, never hidden entirely",
       "function shortDigest(sha)" in JS and "slice(0, 12)" in JS)

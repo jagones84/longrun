@@ -1,19 +1,34 @@
-"""Marketplace catalogue for skills, MCP servers, plugins and connectors.
+"""Marketplace catalogue for skills, MCP servers, plugins, connectors and Matrix modules.
 
 The catalogue is DATA, never code: one JSON document per source, merged by item
-`id`. A **skill** or **plugin** entry is installable only when it carries a
-`sha256`; an install whose bytes do not hash to that value is refused by name
-before anything is written. An **mcp** or **connector** entry is installable
-when it carries a `server` block (it is a config preset, not an artifact).
+`id`. A **skill**, **matrix** or **plugin** entry is installable only when its
+artifacts are pinned; an install whose bytes do not hash to the declared `sha256`
+is refused by name before anything is written. An **mcp** or **connector** entry
+is installable when it carries a `server` block (it is a config preset, not an
+artifact).
+
+The five kinds are five different things, and the names say which:
+
+  * **plugin** — a CONTAINER of members (`skill`, `mcp`, `connector`). It writes
+    nothing itself: every member is delegated to the installer that owns it, and
+    a failure undoes only what this call created.
+  * **skill** — instructions (`SKILL.md`), installed by `memory.skills`.
+  * **mcp** / **connector** — a config preset for an external server (a connector
+    additionally names the keys it needs); it lands disabled.
+  * **matrix** — an in-process Matrix artifact bundle (`core.matrix.apply_learning`),
+    and the kind the modules that already ship in `src/Matrix/tools` are listed as.
 
 Nothing here executes third-party code. An install delegates to the installer
 that already owns the object — `memory.skills.install_zip` for a skill, the MCP
-client document for a server/connector, `core.matrix.apply_learning` for a
-Matrix plugin bundle — so the marketplace adds a shelf, never a trust boundary.
+client document for a server/connector, `core.matrix.apply_learning` for a Matrix
+bundle — so the marketplace adds a shelf, never a trust boundary.
 
 `data/market/installed.json` is a RECORD of what was installed and verified; the
-owning store stays authoritative and `audit()` reports drift instead of repairing
-it.
+owning store stays authoritative. A record whose object no longer exists in its
+owner (an MCP client deleted in Settings, a skill directory removed) is pruned on
+the next read — measured 2026-11-15: deleting `filesystem` in Settings ▸ MCP left
+the Marketplace advertising it as "installed". `audit()` still reports the drift a
+probe cannot decide (plugin, unknown kind).
 """
 from __future__ import annotations
 
@@ -31,7 +46,11 @@ import yaml
 from longrun.util import paths, fswrite
 
 SCHEMA = "longrun.market/1"
-KINDS = ("skill", "mcp", "plugin", "connector")
+KINDS = ("plugin", "skill", "mcp", "connector", "matrix")
+# What a plugin may contain. Anything else (command, rule, hook, code) is refused
+# by name: those stores have no digest gate, so a bundle must not write them.
+MEMBER_KINDS = ("skill", "mcp", "connector")
+MAX_MEMBERS = 32
 DEFAULTS = {
     "catalogs": [],
     "allow_hosts": [],
@@ -101,11 +120,12 @@ def _read_doc_file(path):
     return doc if isinstance(doc, dict) else None
 
 
-def _bundled_plugins():
-    """The Matrix tools that ship with longrun, listed as PRESENT plugins.
+def _bundled_matrix():
+    """The Matrix tool modules that ship with longrun, listed as PRESENT `matrix` rows.
 
-    A plugin here is a Matrix tool module: it is already hot-loaded, so the card
-    reports it as installed instead of offering an install that cannot happen.
+    A `matrix` row is an in-process module: it is already hot-loaded, so the card
+    reports it as present instead of offering an install that cannot happen. The
+    `plugin` kind is the container (skills + MCP servers), never a module.
     """
     root = os.path.join(paths.REPO_ROOT, "src", "Matrix", "tools")
     out = []
@@ -126,9 +146,9 @@ def _bundled_plugins():
         except OSError:
             pass
         stem = fn[:-3]
-        out.append({"id": "plugin/" + stem, "kind": "plugin", "name": stem,
+        out.append({"id": "matrix/" + stem, "kind": "matrix", "name": stem,
                     "title": stem.replace("_", " ").title(),
-                    "description": desc or "Matrix plugin shipped with longrun",
+                    "description": desc or "Matrix tool shipped with longrun",
                     "category": "Matrix tools", "publisher": "longrun", "version": ""})
     return out
 
@@ -287,6 +307,43 @@ def _fetch_json(url, cfg):
 
 # ── entries ───────────────────────────────────────────────────────────────────
 
+def _member(raw):
+    """One plugin member, normalised like an item. `None` only when it is malformed.
+
+    An UNKNOWN kind is kept, not dropped: `_bundle_plan` must be able to refuse it
+    by name ("unsupported member kind: command") instead of silently installing a
+    container with fewer members than the catalogue declared.
+    """
+    if not isinstance(raw, dict):
+        return None
+    kind = str(raw.get("kind") or "").strip().lower()
+    name = str(raw.get("name") or "").strip()
+    if not kind or not _SLUG.match(name):
+        return None
+    src = raw.get("source") if isinstance(raw.get("source"), dict) else {}
+    server = raw.get("server") if isinstance(raw.get("server"), dict) else None
+    return {"kind": kind,
+            "name": name,
+            "title": str(raw.get("title") or name).strip(),
+            "sha256": str(raw.get("sha256") or "").strip().lower(),
+            "source": {"type": str(src.get("type") or ""),
+                       "url": str(src.get("url") or ""),
+                       "path": str(src.get("path") or "")},
+            "server": server,
+            "keys": [str(k) for k in (raw.get("keys") or []) if str(k).strip()]}
+
+
+def _member_installable(member):
+    """A member is installable by the SAME rule its own kind is; an unknown kind never is."""
+    if member["kind"] not in MEMBER_KINDS:
+        return False
+    if member["kind"] == "skill":
+        bundled = member["source"]["type"] == "bundled" and bool(member["source"]["path"])
+        return bool(member["sha256"]) and (bool(member["source"]["url"]) or bundled)
+    srv = member.get("server") or {}
+    return bool(srv.get("command") or srv.get("url"))
+
+
 def _normalize(raw, origin):
     if not isinstance(raw, dict):
         return None
@@ -300,6 +357,8 @@ def _normalize(raw, origin):
     source = raw.get("source") if isinstance(raw.get("source"), dict) else {}
     server = raw.get("server") if isinstance(raw.get("server"), dict) else None
     sha = str(raw.get("sha256") or "").strip().lower()
+    declared = raw.get("members") if isinstance(raw.get("members"), list) else []
+    members = [m for m in (_member(r) for r in declared[:MAX_MEMBERS]) if m]
     item = {
         "id": rid,
         "kind": kind,
@@ -326,13 +385,25 @@ def _normalize(raw, origin):
         "server": server,
         "keys": [str(k) for k in (raw.get("keys") or []) if str(k).strip()],
         "bundle": raw.get("bundle") if isinstance(raw.get("bundle"), list) else None,
+        # A plugin is a CONTAINER: `members` is what it will install, in order.
+        "members": members,
+        "members_declared": len(declared),
         "requires": raw.get("requires") if isinstance(raw.get("requires"), dict) else {},
         "origin": str(origin),
         "present": False,
     }
-    if kind in ("skill", "plugin"):
-        bundled = item["source"]["type"] == "bundled" and bool(item["source"]["path"])
-        item["installable"] = bool(item["sha256"]) and (bool(item["source"]["url"]) or bundled)
+    bundled = item["source"]["type"] == "bundled" and bool(item["source"]["path"])
+    pinned = bool(item["sha256"]) and (bool(item["source"]["url"]) or bundled)
+    if kind == "skill":
+        item["installable"] = pinned
+    elif kind == "matrix":
+        # The code artifact is the digest-pinned one AND it must carry a bundle.
+        item["installable"] = pinned and bool(item["bundle"])
+    elif kind == "plugin":
+        # Installable only when EVERY declared member is (a malformed or unpinned
+        # member makes the whole container refuse, never install half of it).
+        item["installable"] = bool(members) and all(
+            _member_installable(m) for m in members)
     else:  # mcp / connector: a config preset, no artifact bytes to hash
         item["installable"] = bool(server) and bool(server.get("command") or server.get("url"))
     return item
@@ -395,9 +466,10 @@ def catalog():
                 continue
             seen[item["id"]] = item
             items.append(item)
-    # The Matrix plugins that ship with longrun are listed as PRESENT: they are
-    # already hot-loaded, so pretending they are installable would be a lie.
-    for raw in _bundled_plugins():
+    # The Matrix modules that ship with longrun are listed as PRESENT `matrix`
+    # rows: they are already hot-loaded, so pretending they are installable would
+    # be a lie. No remote catalogue publishes them.
+    for raw in _bundled_matrix():
         if raw["id"] in seen:
             continue
         item = _normalize(raw, "matrix")
@@ -492,9 +564,9 @@ def _write_installed(rows):
     fswrite.write_json(_installed_path(), rows)
 
 
-def _record(item, target):
+def _record(item, target, members=None):
     rows = [r for r in _read_installed() if r.get("id") != item["id"]]
-    rows.append({
+    rec = {
         "id": item["id"], "kind": item["kind"], "name": item["name"],
         "version": item["version"], "sha256": item["sha256"],
         "publisher": item["publisher"], "source": item["source"].get("url") or "",
@@ -505,16 +577,81 @@ def _record(item, target):
         "installed": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "enabled": item["kind"] not in ("mcp", "connector"),
         "target": target or "",
-    })
+    }
+    if members:
+        # A plugin's members ARE its installation: per-member target and whether
+        # this install created it (an uninstall never removes a pre-existing one).
+        rec["members"] = [{"kind": m.get("kind"), "name": m.get("name"),
+                           "target": m.get("target") or "",
+                           "created": bool(m.get("created")),
+                           "enabled": bool(m.get("enabled", True))} for m in members]
+    rows.append(rec)
     rows.sort(key=lambda r: (r.get("kind", ""), r.get("id", "")))
     _write_installed(rows)
+
+
+def _owner_state(rec, clients, clients_readable):
+    """`live` / `gone` / `unknown` for one record against its OWNING store.
+
+    The record is written at install time; the owner is the live truth (the MCP
+    client config, the skills tree). A `gone` answer means the object was deleted
+    somewhere else and the Marketplace must stop advertising it. `unknown` is
+    never pruned: a probe that cannot read the owner must not erase a record.
+    """
+    kind = str(rec.get("kind") or "")
+    if kind == "skill":
+        target = str(rec.get("target") or "")
+        if not target:
+            return "unknown"
+        return "live" if os.path.isdir(target) else "gone"
+    if kind in ("mcp", "connector"):
+        if not clients_readable:
+            return "unknown"
+        return "live" if str(rec.get("name") or "") in clients else "gone"
+    if kind == "plugin":
+        members = rec.get("members") or []
+        if not members:
+            return "unknown"
+        live = False
+        for member in members:
+            if str(member.get("kind") or "") != "skill" and not clients_readable:
+                return "unknown"
+            if _member_present(member, clients):
+                live = True
+        return "live" if live else "gone"
+    return "unknown"  # matrix / unknown kind: no live probe, never a guess
+
+
+def _live_clients():
+    """`(clients, readable)` — the MCP client document, and whether it was read."""
+    try:
+        from longrun.interop import mcp_client
+        return (mcp_client.load_doc().get("clients") or {}), True
+    except Exception:  # noqa: BLE001 — an unreadable owner must not prune anything
+        return {}, False
 
 
 def installed():
     items, _, _ = catalog()
     by_id = {i["id"]: i for i in items}
+    clients, readable = _live_clients()
+    records = _read_installed()
+    kept, dropped = [], 0
+    for rec in records:
+        if _owner_state(rec, clients, readable) == "gone":
+            dropped += 1
+            continue
+        kept.append(rec)
+    if dropped:
+        # Prune once, atomically. ONE read reconciles every panel: a client deleted
+        # in Settings ▸ MCP, a skill folder removed by hand, an uninstall from the
+        # API — none of them may leave the badge behind.
+        try:
+            _write_installed(kept)
+        except Exception:  # noqa: BLE001 — a failed prune must never break a read
+            pass
     rows = []
-    for rec in _read_installed():
+    for rec in kept:
         live = by_id.get(rec["id"])
         row = dict(rec)
         # A record written before provenance was persisted is backfilled from the
@@ -527,7 +664,7 @@ def installed():
             live and (live["version"] != rec.get("version")
                       or (live["sha256"] and live["sha256"] != rec.get("sha256"))))
         rows.append(row)
-    return {"ok": True, "installed": rows, "count": len(rows)}
+    return {"ok": True, "installed": rows, "count": len(rows), "pruned": dropped}
 
 
 def installed_map():
@@ -553,7 +690,12 @@ def forget(item_id, remove_target=False):
     if rec is None:
         return {"ok": False, "error": "not installed: %s" % item_id}
     removed = False
-    if remove_target and rec.get("target"):
+    if remove_target and rec.get("kind") == "plugin":
+        # A plugin is uninstalled member by member, and only the members this
+        # install created: a skill or server that was already there stays.
+        _undo_members(rec.get("members") or [])
+        removed = True
+    elif remove_target and rec.get("target"):
         import shutil
         from longrun.memory import skills as _skills
         raw = str(rec["target"])
@@ -594,6 +736,21 @@ def audit():
             elif not clients[rec["name"]].get("enabled"):
                 row.update(state="disabled", detail="client installed but not enabled")
         elif kind == "plugin":
+            members = rec.get("members") or []
+            if not members:
+                # A record written before plugins became containers: it named a
+                # Matrix bundle, whose owner cannot be probed from here.
+                row["owner"] = "core.matrix"
+                row.update(detail="legacy record without members — owner not probed")
+            else:
+                row["owner"] = "members"
+                missing = [m.get("name") for m in members if not _member_present(m, clients)]
+                if missing:
+                    row.update(state="missing",
+                               detail="missing member(s): %s" % ", ".join(str(n) for n in missing))
+                else:
+                    row.update(detail="%d members live" % len(members))
+        elif kind == "matrix":
             row["owner"] = "core.matrix"
             row.update(detail="owner not probed")
         else:
@@ -665,15 +822,130 @@ def _install_server(item):
     return {"ok": True, "target": path, "enabled": False}
 
 
-def _install_plugin(item):
+def _install_matrix(item):
+    """A Matrix artifact bundle: in-process code, written by `core.matrix` only."""
     bundle = item.get("bundle")
     if not bundle:
-        return {"ok": False, "error": "plugin item has no bundle"}
+        return {"ok": False, "error": "matrix item has no bundle"}
     from longrun.core import matrix
     res = matrix.apply_learning(bundle)
     if not res.get("ok"):
         return {"ok": False, "error": res.get("error") or "apply_learning refused the bundle"}
     return {"ok": True, "target": ",".join(res.get("installed") or [])}
+
+
+def _bundle_plan(item):
+    """`(members, reason)` — what a plugin would install, validated BEFORE any write."""
+    declared = int(item.get("members_declared") or 0)
+    members = item.get("members") or []
+    if not declared:
+        return [], "plugin has no members"
+    if declared > MAX_MEMBERS:
+        return [], "plugin has more than %d members" % MAX_MEMBERS
+    if len(members) != declared:
+        return [], ("a member is malformed (kind must be one of %s and name a slug)"
+                    % ", ".join(MEMBER_KINDS))
+    for member in members:
+        if member["kind"] not in MEMBER_KINDS:
+            return [], "unsupported member kind: %s (%s)" % (member["kind"], member["name"])
+        if not _member_installable(member):
+            return [], ("member %s (%s) is not installable: a skill needs sha256 and a source, "
+                        "a server needs command or url" % (member["name"], member["kind"]))
+    seen = set()
+    for member in members:
+        key = (member["kind"], member["name"])
+        if key in seen:
+            return [], "duplicate member: %s (%s)" % (member["name"], member["kind"])
+        seen.add(key)
+    return members, ""
+
+
+def _member_present(member, clients):
+    """Is this member still in the store that owns it?"""
+    if str(member.get("kind") or "") == "skill":
+        target = str(member.get("target") or "")
+        return bool(target) and os.path.isdir(target)
+    return str(member.get("name") or "") in clients
+
+
+def _remove_skill_member(member):
+    """Remove a skill THIS install created — by its own target, under the skills root."""
+    import shutil
+    from longrun.memory import skills as _skills
+    target = str(member.get("target") or "")
+    if target:
+        root = os.path.realpath(_skills.SKILLS_DIR)
+        real = os.path.realpath(target)
+        # Same guard as `forget`: only a skill DIRECTORY below the skills root —
+        # one that still holds a SKILL.md — may go. `skills.remove` looks in the
+        # local category only, and a bundled skill lands under its own category.
+        if (real != root and real.startswith(root + os.sep)
+                and os.path.isfile(os.path.join(real, "SKILL.md"))):
+            shutil.rmtree(real, ignore_errors=True)
+            if not os.path.exists(real):
+                _skills.list_skills(reload=True)
+                return
+    _skills.remove(member.get("name"))
+
+
+def _undo_members(members):
+    """Remove ONLY what this install created. A pre-existing object is never touched."""
+    for member in reversed(members or []):
+        if not member.get("created"):
+            continue
+        try:
+            if member.get("kind") == "skill":
+                _remove_skill_member(member)
+            elif member.get("kind") in ("mcp", "connector"):
+                from longrun.interop import mcp_client
+                mcp_client.remove_client(member["name"])
+        except Exception:  # noqa: BLE001 — an undo failure must not mask the reason
+            pass
+
+
+def _install_bundle(item, cfg, overwrite):
+    """A plugin writes nothing itself: every member goes to the installer that owns it."""
+    members, why = _bundle_plan(item)
+    if not members:
+        return {"ok": False, "error": why}
+    from longrun.memory import skills as _skills
+    from longrun.interop import mcp_client
+    existing = {s.get("name"): (s.get("abspath") or s.get("path") or "")
+                for s in _skills.list_skills(reload=True)}
+    try:
+        clients_before = dict(mcp_client.load_doc().get("clients") or {})
+    except Exception:  # noqa: BLE001 — an unreadable owner is not a pre-existing member
+        clients_before = {}
+    done, failed = [], ""
+    for member in members:
+        name = member["name"]
+        if member["kind"] == "skill":
+            # An already-installed member is SATISFIED, never re-written: the
+            # skill installer refuses to clobber, and a bundle must not fail
+            # because the operator already had one of its parts.
+            if name in existing and not overwrite:
+                res = {"ok": True, "target": existing[name]}
+            else:
+                res = _install_skill(dict(member, id="skill/" + name), cfg, overwrite)
+            created = name not in existing
+        else:
+            if name in clients_before and not overwrite:
+                res = {"ok": True, "target": "",
+                       "enabled": bool((clients_before.get(name) or {}).get("enabled", False))}
+            else:
+                res = _install_server(dict(member, id=member["kind"] + "/" + name))
+            created = name not in clients_before
+        if not res.get("ok"):
+            failed = "member %s (%s): %s" % (name, member["kind"],
+                                             res.get("error") or "install failed")
+            break
+        done.append({"kind": member["kind"], "name": name,
+                     "target": res.get("target") or "", "created": bool(created),
+                     "enabled": res.get("enabled", True)})
+    if failed:
+        _undo_members(done)
+        return {"ok": False, "error": failed}
+    return {"ok": True, "target": "%d members" % len(done), "members": done}
 
 
 def install(item_id, overwrite=False):
@@ -689,12 +961,15 @@ def install(item_id, overwrite=False):
     elif kind in ("mcp", "connector"):
         res = _install_server(item)
     elif kind == "plugin":
-        res = _install_plugin(item)
+        res = _install_bundle(item, cfg, overwrite)
+    elif kind == "matrix":
+        res = _install_matrix(item)
     else:
         res = {"ok": False, "error": "unknown kind: %s" % kind}
     if not res.get("ok"):
         return {"ok": False, "error": res.get("error") or "install failed", "id": item["id"]}
-    _record(item, res.get("target"))
+    _record(item, res.get("target"), res.get("members"))
     return {"ok": True, "id": item["id"], "kind": kind, "name": item["name"],
             "target": res.get("target"), "sha256": item["sha256"],
+            "members": res.get("members") or [],
             "enabled": res.get("enabled", True)}

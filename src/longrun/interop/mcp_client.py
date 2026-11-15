@@ -64,6 +64,15 @@ ALLOWED_CLIENT_KEYS = ("enabled", "command", "args", "url", "headers", "env", "c
 PROTOCOL_VERSION = "2025-06-18"
 SUPPORTED_PROTOCOLS = ("2025-06-18", "2025-03-26", "2024-11-05")
 
+# A credential reference (`${VAR}` / `$VAR`) that `os.path.expandvars` could not
+# resolve. Measured 2026-11-15: the GitHub connector ships
+# `Authorization: Bearer ${GITHUB_PERSONAL_ACCESS_TOKEN}`, this install only had
+# `GITHUB_TOKEN`, so the literal placeholder went out and GitHub answered
+# `400 bad request: Authorization header is badly formatted` — the panel showed a
+# bare HTTP status instead of "set this key".
+_ENV_REF_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)")
+
+
 _log_lock = threading.Lock()
 
 
@@ -74,6 +83,25 @@ def log(fmt, *a):
         except TypeError:
             msg = " ".join(str(x) for x in (fmt,) + a)
         print("[mcp-client]", msg, file=sys.stderr, flush=True)
+
+
+def _expand(value):
+    """Expand `${VAR}`; return `(text, missing)` where `missing` names unresolved vars.
+
+    `os.path.expandvars` leaves an unknown reference VERBATIM, so a missing key
+    silently becomes a literal credential in the request. One helper for both
+    transports keeps the diagnosis identical: HTTP headers and stdio env/args.
+    """
+    out = os.path.expandvars(str(value))
+    missing = [(m.group(1) or m.group(2)) for m in _ENV_REF_RE.finditer(out)]
+    return out, missing
+
+
+def _missing_credentials(missing):
+    """The operator-facing sentence for one or more unresolved credential refs."""
+    names = ", ".join(sorted({str(m) for m in missing if m}))
+    return ("missing credential: %s — set it in Settings › Keys, then test again"
+            % names)
 
 
 def _mcp_session_expired(resp):
@@ -135,8 +163,25 @@ class MCPSession:
         # `${VAR}` is the documented reference form for a credential, and the HTTP
         # transport already expands it in headers (see _http_headers). Expand it here
         # too, so an MCP preset or connector can carry `KEY=${KEY}` instead of a value.
-        full_env.update({k: os.path.expandvars(str(v)) for k, v in (env or {}).items()})
-        args = [os.path.expandvars(str(a)) for a in (args or [])]
+        # An unresolved reference never reaches the child: it would start with a
+        # literal `${KEY}` and fail somewhere far from the cause.
+        missing = []
+        expanded_env = {}
+        for key, value in (env or {}).items():
+            text, gone = _expand(value)
+            missing.extend(gone)
+            expanded_env[key] = text
+        full_env.update(expanded_env)
+        new_args = []
+        for arg in (args or []):
+            text, gone = _expand(arg)
+            missing.extend(gone)
+            new_args.append(text)
+        args = new_args
+        if missing:
+            self.connection_error = _missing_credentials(missing)
+            log("%s: %s", self.name, self.connection_error)
+            return False
         # A systemd user service does not carry `~/.local/bin`, where a per-user
         # Node install lives: without this the `which` below fails, `or command`
         # keeps the bare name and Popen dies with ENOENT on an installed npx.
@@ -269,8 +314,17 @@ class MCPSession:
         self._http_headers = {
             "Accept": "application/json, text/event-stream",
         }
+        missing = []
         for k, v in (headers or {}).items():
-            self._http_headers[k] = os.path.expandvars(str(v))
+            text, gone = _expand(v)
+            missing.extend(gone)
+            self._http_headers[k] = text
+        if missing:
+            # Never send `Bearer ${SOME_KEY}`: a server answers 400/401 about a
+            # malformed header, which names the symptom and hides the cause.
+            self.connection_error = _missing_credentials(missing)
+            log("%s: %s", self.name, self.connection_error)
+            return False
         log("%s: HTTP base = %s", self.name, self._http_base)
         return True
 
@@ -675,8 +729,9 @@ class MCPClientManager:
                             log("%s: initialize failed, closing", name)
                             session.close()
                     else:
-                        self._errors[name] = "transport connect failed"
-                        log("%s: transport connect failed", name)
+                        self._errors[name] = (getattr(session, "connection_error", None)
+                                              or "transport connect failed")
+                        log("%s: %s", name, self._errors[name])
                 except Exception as e:
                     self._errors[name] = str(e)[:200]
                     log("%s: connection error: %s", name, e)
@@ -883,13 +938,23 @@ def test_client(spec):
     """
     cfg = dict(spec or {})
     nm = str(cfg.get("name") or "").strip()
-    if nm and not cfg.get("command") and not cfg.get("url"):
-        known = (load_doc().get("clients") or {})
-        if nm not in known:
-            return {"ok": False, "error": "unknown MCP client %r" % nm,
-                    "clients": sorted(known)}
-        cfg = dict(known[nm] or {})
+    known = (load_doc().get("clients") or {})
+    if nm in known:
+        # 2026-11-15: a caller may hand back a REDACTED client row — the WebUI's
+        # test button posts `status()`'s row, which carries url/command/args but
+        # never `headers` (a settings panel must not echo secrets). Replacing the
+        # stored spec with that row dropped the Authorization header, so every
+        # authenticated HTTP server tested from the panel answered
+        # "initialize failed: HTTP status 401" while `mcp.test {"name": ...}`
+        # worked. Layer the supplied keys OVER the stored spec: a URL/args edit
+        # still takes effect, credentials survive unless explicitly overridden.
+        stored = dict(known[nm] or {})
+        stored.update({k: v for k, v in cfg.items() if k != "name"})
+        cfg = stored
         cfg["name"] = nm
+    elif nm and not cfg.get("command") and not cfg.get("url"):
+        return {"ok": False, "error": "unknown MCP client %r" % nm,
+                "clients": sorted(known)}
     session = MCPSession("__test__", cfg)
     try:
         if cfg.get("command"):
@@ -900,7 +965,8 @@ def test_client(spec):
         else:
             return {"ok": False, "error": "command (stdio) or url (http) required"}
         if not ok:
-            return {"ok": False, "error": "transport connect failed"}
+            return {"ok": False, "error": (session.connection_error
+                                           or "transport connect failed")}
         if not session.initialize():
             return {"ok": False, "error": (session.connection_error
                                              or "initialize failed")}
@@ -1004,9 +1070,11 @@ def remove_client(name):
         return {"error": "name required"}
     doc = _load_local_doc()
     removed = False
+    deleted = False
     if name in doc["clients"]:
         doc["clients"].pop(name, None)
         removed = True
+        deleted = True
     else:
         base = _read_doc(CONFIG_PATH) or {}
         if name in (base.get("clients") or {}):
@@ -1014,4 +1082,14 @@ def remove_client(name):
             removed = True
     _save_local_doc(doc)
     st = reload()
+    if deleted:
+        # The Marketplace RECORD must not outlive the client: without this a delete
+        # here left the catalogue advertising "installed" until the next read
+        # reconciled it (2026-11-15). Best-effort — a delete never fails on a record.
+        try:
+            from longrun.core import market as _market
+            for _id in ("mcp/" + name, "connector/" + name):
+                _market.forget(_id)
+        except Exception:  # noqa: BLE001
+            pass
     return {"ok": removed, "name": name, **st}

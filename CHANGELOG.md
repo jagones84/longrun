@@ -107,6 +107,33 @@ All notable changes to Longrun are documented here. The format follows
   model. The approval ledger still stores the raw args of the call it recorded — not model-bound.)
 
 ### Fixed
+- **The Marketplace's "installed" state follows its owner (`v1038`).** Operator: *"i added from
+  marketplace filesystem then deleted from the settings-mcp panel, go again in marketplace and found
+  it labeled installed! … marketplace and installed ones shall be synced always. same for MANAGE, and
+  for everything actually."* `data/market/installed.json` was written at install time and never
+  reconciled, so `remove_client()` left the record behind. Every read now joins the record with the
+  owning store: a record whose object is GONE (MCP client absent from the client document, skill
+  directory removed) is pruned atomically, with `pruned` in the payload; a DISABLED client still
+  counts as installed; an owner that cannot be read prunes nothing. `remove_client()` also forgets the
+  record immediately, so the Settings delete needs no extra read to show in the catalogue.
+  (Locked by `v1038` 10/10.)
+- **A missing MCP credential is named, never sent as `${VAR}` (`v1037`).** Operator: *"✗ github —
+  initialize failed: HTTP status 400 … my token should be in .env"*. The bundled GitHub connector
+  carries `Authorization: Bearer ${GITHUB_PERSONAL_ACCESS_TOKEN}` while this install only defined
+  `GITHUB_TOKEN`; `os.path.expandvars` left the reference VERBATIM, so the literal placeholder went
+  out and GitHub answered `400 bad request: Authorization header is badly formatted`. Both transports
+  now expand through one helper that reports what stayed unresolved: the client fails BEFORE any
+  request (or any child process) with "missing credential: NAME — set it in Settings › Keys", and
+  `test_client` / the manager surface that sentence instead of `transport connect failed`.
+  (Locked by `v1037` 10/10.)
+- **The MCP panel's test button keeps the stored credentials (`v1036`).** Operator: *"testing PMCP button
+  gives ✗ PMCP — initialize failed: HTTP status 401"* — while `mcp.test {"name":"PMCP"}` and a direct
+  `initialize` with the stored bearer both worked. `status()` deliberately omits `headers` (a panel must
+  not echo secrets) and the button posts that redacted row; `test_client` only resolved a stored spec when
+  BOTH `command` and `url` were absent, so a row carrying `url` replaced the stored entry and dropped
+  `Authorization`. The supplied keys are now layered OVER the stored spec: a URL/args edit still applies,
+  credentials survive unless explicitly overridden, and an explicit `headers: {}` still means "no headers".
+  (Locked by `v1036` 9/9.)
 - **Settings points at the Marketplace instead of growing a second catalogue (`v1035`).** Operator:
   *"in MCP put a button that redirect to marketplace/mcps … the same in the skills settings panel …
   etcetera."* The three Settings categories that own a catalogue (MCP, Connectors, Skills) now carry one
@@ -284,6 +311,20 @@ All notable changes to Longrun are documented here. The format follows
   axe: 0 violations, no static-file restart needed.)
 
 ### Added
+- **A plugin is a container, and the Matrix modules are their own kind (`v1039`).** Operator: *"plugins
+  are only matrix. does they need adaption to the longrun specific harness …? plugins are combinations
+  of skills and mcps? what are plugins?"* — and the answer was no in the catalogue: `plugin` named an
+  in-process Matrix module (`src/Matrix/tools/<ns>.py`), so the Plugin tab could only ever show the
+  nine modules that ship with the repo. A commercial plugin is a CONTAINER (skills + MCP servers, and
+  in other products commands/hooks/code), which is a different object. `plugin` now means exactly that:
+  an entry declares `members` (`skill`, `mcp`, `connector`), it writes nothing itself, and every member
+  goes to the installer that already owns it — `_install_bundle` validates the whole set first (an
+  unknown member kind such as `command` is refused BY NAME, a duplicated member is refused, every
+  member must be installable by its own kind's rule), rolls back the members it created if a later one
+  fails, and records ONE row carrying them with a `created` flag, so `rm` never removes a skill or
+  server that was already there. The shipped Matrix modules are the new `matrix` kind (present, never
+  installable). One real bundle ships — `plugin/starter-kit` (release-notes skill + filesystem MCP
+  server) — so the tab proves the path end to end. (Locked by `v1039` 27/27.)
 - **A chief can free its team's context (`v939`).** `sessions.compact` and `sessions.reset` now let any
   manager act on a member BELOW it in the reporting line, at every level (transitive, same team when
   teams exist) — and nothing else: never itself, never upward, never sideways. `context.compact` used

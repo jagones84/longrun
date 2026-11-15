@@ -7,11 +7,13 @@
    Installed state is a RECORD (GET /api/market/installed) over the stores that
    already own each object — this page never claims to be their owner. */
 
-const KIND_ICON = { plugin: "\u25C8", skill: "\u2726", mcp: "\u26AF", connector: "\u21BB" };
-const KIND_LABEL = { plugin: "Plugin", skill: "Skill", mcp: "MCP server", connector: "Connector" };
-/* The four macro-areas, in a fixed order. A connector is an MCP server that needs
-   a key, so it is its own section: the install path and the gate differ. */
-const KIND_ORDER = ["plugin", "skill", "mcp", "connector"];
+const KIND_ICON = { plugin: "\u25C8", skill: "\u2726", mcp: "\u26AF", connector: "\u21BB", matrix: "\u25C7" };
+const KIND_LABEL = { plugin: "Plugin", skill: "Skill", mcp: "MCP server", connector: "Connector",
+                     matrix: "Matrix module" };
+/* The five sections, in a fixed order. A plugin is first because it is the
+   COMPOSITE (skills + MCP servers); `matrix` is last because it is the only kind
+   that ships inside the harness and can never be installed. */
+const KIND_ORDER = ["plugin", "skill", "mcp", "connector", "matrix"];
 const COLLAPSE_KEY = "lrmkt.collapsed";
 
 const state = {
@@ -137,11 +139,29 @@ function card(item, have) {
   if (item.version) bits.push("v" + esc(item.version));
   if (item.updated) bits.push("updated " + esc(item.updated));
   if (item.sha256) bits.push("sha256 " + esc(shortDigest(item.sha256)));
-  else if (item.kind === "skill" || item.kind === "plugin") bits.push("no digest \u2014 not installable");
+  else if (item.kind === "skill") bits.push("no digest \u2014 not installable");
+  let memberTip = "";
+  if (item.kind === "plugin") {
+    /* A plugin has no artifact of its own: what it WILL install is its members.
+       The card's meta line is one clamped row, so only the COUNT is printed and
+       the breakdown lives in the tooltip — never clipped text as the only copy. */
+    const MEMBER_NOUN = { skill: ["skill", "skills"], mcp: ["MCP server", "MCP servers"],
+                          connector: ["connector", "connectors"] };
+    const members = item.members || [];
+    const byKind = {};
+    members.forEach(m => { byKind[m.kind] = (byKind[m.kind] || 0) + 1; });
+    memberTip = Object.keys(byKind).map(k => {
+      const noun = MEMBER_NOUN[k] || [k, k + "s"];
+      return byKind[k] + " " + noun[byKind[k] > 1 ? 1 : 0];
+    }).join(" \u00b7 ");
+    bits.push(members.length + (members.length === 1 ? " member" : " members"));
+  }
   const badge = originBadge(item.origin, item.origin_label,
     (item.source && (item.source.url || item.source.path)) ||
     (item.license ? "license " + item.license : ""));
-  const reason = item.installable ? "" : (item.sha256 ? "not installable" : "this entry carries no sha256");
+  const reason = item.installable ? "" : (item.kind === "plugin"
+    ? "a member is missing its digest or its server \u2014 not installable"
+    : (item.sha256 ? "not installable" : "this entry carries no sha256"));
   const why = item.present ? "ships with longrun" : "already installed \u2014 see Manage";
   const act = mine
     ? `<button class="ghost" disabled title="${esc(why)}">Installed</button>`
@@ -152,7 +172,7 @@ function card(item, have) {
     <div class="mkt-body">
       <div class="mkt-name">${esc(item.title)}</div>
       <div class="mkt-desc">${esc(item.description || KIND_LABEL[item.kind] || "")}</div>
-      <div class="mkt-meta" title="${esc(bits.join(" \u00b7 "))}">${badge} ${esc(bits.join(" \u00b7 ") || KIND_LABEL[item.kind] || "")}</div>
+      <div class="mkt-meta" title="${esc(bits.join(" \u00b7 ") + (memberTip ? " \u00b7 " + memberTip : ""))}">${badge} ${esc(bits.join(" \u00b7 ") || KIND_LABEL[item.kind] || "")}</div>
     </div>
     <div class="mkt-act">${act}</div>
   </article>`;

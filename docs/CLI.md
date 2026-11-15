@@ -352,6 +352,10 @@ python3 forge.py acp list         # ACP/MCP clients as the server sees them
 
 ### Marketplace
 
+Five kinds, and `--kind` takes any of them: `plugin` (a bundle whose members are `skill`, `mcp` or
+`connector` entries, each installed by the store that owns it), `skill`, `mcp`, `connector`, and
+`matrix` (an in-process Matrix module — it ships with the harness and is never installable).
+
 | Command | Endpoint | Notes |
 |---|---|---|
 | `market ls [--kind K] [--category C] [--source S] [--q TEXT] [--limit N] [--offset N]` | `GET /api/market/catalog` | `source` is a catalogue ORIGIN (`bundled`, `local`, `imported:mcp-registry`, `imported:clawhub`); a trailing `:` is a prefix. Prints area, origin and `matched N` |
