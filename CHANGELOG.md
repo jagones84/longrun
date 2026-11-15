@@ -107,6 +107,38 @@ All notable changes to Longrun are documented here. The format follows
   model. The approval ledger still stores the raw args of the call it recorded — not model-bound.)
 
 ### Fixed
+- **Every turn keeps its duration, printed under the answer (`v1042`).** Operator: *"after a work of
+  the session i need to know how much time that turn took to be completed — this shall remain printed
+  as a summary in the chat session, i don't like things that appear and disappear from the chat
+  history."* The numbers existed (the run ledger records `duration_s`), but the chat only drew them
+  as a transient `run.metrics` bubble and a `plan.stopped` line: neither lives in the transcript, so
+  both vanished on the next reload. The chat loop now measures the turn ONCE (`_turn_t0` beside
+  `runmetrics.start`) and persists `duration_s` / `iterations` / `steps` / `tokens` / `stop_reason`
+  ON the assistant message (after every `meta = {...}` branch, before `append_message`), feeds the
+  SAME duration to the ledger, and carries it on `chat.final`. The WebUI paints `.turnfoot` under the
+  answer from that meta — e.g. `✓ work complete · turn took 5.5s · 3 rounds · 0 steps · 29k tok` —
+  both live and on reload (loadHistory), and the transient `runFooter` / `planStopped` bubbles are
+  gone (the stop label rides on the summary instead). Verified live in Chrome: the footer under the
+  answer is byte-identical before and after a `reloadChat()` (persisted meta 5.5 s / 3 / 0 / 28 513).
+  (Locked by `v1042` 13/13; live-nesting set 10/10: `v1041`.)
+- **The live chat nests the turn's work under its todo, without a ↻ (`v1041`).** Operator: *"the
+  chat session is not refreshed realtime … i don't see the chat workflow under the
+  todo/justifications, i see it only if i press the refresh button — but that button causes a
+  temporary blackout of the chat."* Every card/inject is PERSISTED with the step it belongs to
+  (`node=_cur_node()`, the same value `persist_tool_card`/`persist_inject` store), so a reload nests
+  the work under that todo — but the LIVE render events carried no node, `applyGraphEvent` dropped
+  any node event without a `run` (half of them: the chat loop's `on_event` pairs), a step was born
+  closed, and a completed step's section was collapsed live. So during a turn the work piled into
+  the free group ABOVE the todo cards and the workflow appeared under them only after ↻ (which
+  blanks `#log`). The chat loop now stamps the SAME step on `tool.call`/`tool.result`/`tool.blocked`/
+  `harness.inject` (transient frames — the system-prompt chip, a suppressed repeat, `todo.write`'s
+  own top-level card — are skipped, because a reload cannot reproduce them), the WebUI points the
+  next append at that step (`_atNode`) and OPENS a step the work lands in, a completed step is
+  closed only when it holds no cards (the reload contract), and `applyGraphEvent` gates on the
+  SESSION instead of `run`. Verified live in Chrome on a scratch session: the tool cards, harness
+  chips and the step's justification paint INSIDE its todo while the turn runs (6 items nested, step
+  open, no reload). (Locked by `v1041` 10/10; live-nesting regression set 35/35: `v505`, `v532`,
+  `v443`.)
 - **The Marketplace's "installed" state follows its owner (`v1038`).** Operator: *"i added from
   marketplace filesystem then deleted from the settings-mcp panel, go again in marketplace and found
   it labeled installed! … marketplace and installed ones shall be synced always. same for MANAGE, and

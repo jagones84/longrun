@@ -94,7 +94,14 @@ def start(key, model=None):
 
 def finish(key, outcome="done", stop_reason=None, iterations=0, steps=0, tokens=0,
            prompt_tokens=0, completion_tokens=0, model=None, difficulty=None,
-           error=None, code=None, usd=None):
+           error=None, code=None, usd=None, duration_s=None):
+    """Close a run record. `duration_s` lets the CALLER own the clock.
+
+    2026-11-15: a chat turn now prints its duration under the persisted answer, so
+    the same number must feed the ledger — otherwise the summary and `data/runs/`
+    could report two different times for one turn. Absent, the wall clock from
+    `start()` is used (unchanged behaviour for every other caller).
+    """
     rec = get(key)
     if not rec:
         rec = start(key)
@@ -123,7 +130,13 @@ def finish(key, outcome="done", stop_reason=None, iterations=0, steps=0, tokens=
         rec["difficulty"] = difficulty
     with _LOCK:
         started = _START.pop(key, None) or rec.get("started") or now
-    rec["duration_s"] = round(now - float(started), 1)
+    if duration_s is not None:
+        try:
+            rec["duration_s"] = round(float(duration_s), 1)
+        except (TypeError, ValueError):
+            rec["duration_s"] = round(now - float(started), 1)
+    else:
+        rec["duration_s"] = round(now - float(started), 1)
     _write(key, rec)
     return rec
 

@@ -5011,7 +5011,9 @@ def _turn_flags(autonomous=False, goal_mode=False, plan_only=False, headless=Fal
     return wrap, bool(autonomous or goal_mode or headless)
 
 
-def _emit_final_reply(on_event, sess, content, hitl=None, node=None, ts=None):
+def _emit_final_reply(on_event, sess, content, hitl=None, node=None, ts=None,
+                      duration_s=None, iterations=None, steps=None, tokens=None,
+                      stop_reason=None):
     """Announce the CANONICAL reply of a turn — the one that was persisted.
 
     ONE owner for "what the chat shows live". The streamed `chat.delta`s carry the
@@ -5025,11 +5027,17 @@ def _emit_final_reply(on_event, sess, content, hitl=None, node=None, ts=None):
 
     `hitl=True` tells the client the HUMAN IN THE LOOP card already owns that stop
     (it was announced by `hitl.request`), so the canned prose is not drawn twice.
+
+    2026-11-15: the frame also carries the turn's summary numbers (duration,
+    iterations, steps, tokens), so the chat can print it live in the SAME shape
+    the persisted message meta rebuilds on reload.
     """
     try:
         on_event("chat.final", session=(sess or {}).get("id"), text=content,
                  hitl=bool(hitl), reason=(hitl or {}).get("reason") or "",
-                 node=node, ts=ts)
+                 node=node, ts=ts, duration_s=duration_s,
+                 iterations=iterations, steps=steps, tokens=tokens,
+                 stop_reason=stop_reason)
     except Exception:  # noqa: BLE001 — the reply is persisted; the live echo is best-effort
         pass
 
@@ -5190,6 +5198,12 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     # planner had already run) wiped a Stop pressed during that window, so the turn ran
     # to completion anyway.
     from longrun.model import runmetrics
+    # 2026-11-15 (operator: "after a work of the session i need to know how much
+    # time that turn took … i don't like things that appear and disappear from the
+    # chat history"): ONE clock for the turn. The same number feeds the persisted
+    # assistant message (`meta["duration_s"]`), the `chat.final` echo and the run
+    # ledger, so the summary under the answer can never disagree with the ledger.
+    _turn_t0 = time.time()
     runmetrics.start(sess["id"], model=model)
     _abort_now = (lambda: _is_aborted(sess["id"]))  # JAG-129D: Stop kills the generation
     _kg_rounds = 0          # every continuation THIS turn (honest count: display + metrics)
@@ -5326,6 +5340,33 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 if _n.get("status") == _st:
                     return _n.get("id")
         return None
+
+    # 2026-11-15 (operator: "i don't see the chat workflow under the todo/
+    # justifications until i press the refresh button"): every card and inject is
+    # PERSISTED with the step it belongs to (`node=_cur_node()` below, the same
+    # value `persist_tool_card`/`persist_inject` store), so a reload nests the work
+    # under that todo. The LIVE events carried no node, so the stream appended the
+    # work into the free group ABOVE the todo cards and only a manual reload
+    # rebuilt the nesting. Stamp the SAME node on the live render events — one wrapper, so a
+    # new emitter cannot forget it (and the re-attach replay nests identically).
+    _live_on_event = on_event
+    _NODE_STAMPED = frozenset(("tool.call", "tool.result", "tool.blocked",
+                               "harness.inject"))
+
+    def on_event(kind, **d):
+        if kind in _NODE_STAMPED and not d.get("node"):
+            # Only a frame that is PERSISTED with a step gets one: the live chip must
+            # land where a reload puts its card. The system-prompt chip and a
+            # suppressed repeat are transient, and todo.write's own card is stored
+            # top-level — stamping them would invent a nesting a reload cannot show.
+            _skip = ((kind == "harness.inject"
+                      and (d.get("inject_kind") == "system" or d.get("repeat")))
+                     or d.get("tool") == "todo.write")
+            if not _skip:
+                _nid = _cur_node()
+                if _nid:
+                    d["node"] = _nid
+        return _live_on_event(kind, **d)
 
     def _after():
         """JAG-192: the transcript boundary a persisted card/inject belongs to.
@@ -6873,6 +6914,10 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     # on the agent's behalf). Explicit user goals have a human present even though
     # their model turn is autonomous.
     _goal_incomplete = False
+    # 2026-11-15: the turn's stop reason is part of the persisted summary now, so the
+    # "✓ work complete / ⏸ stopped with open steps" line no longer has to be a
+    # transient `plan.stopped` bubble that vanished on reload.
+    _turn_stop = _kg_stop_reason or ""
     if (not _hitl and not _user_pivot and (not autonomous or goal_mode) and not plan_only
             and not _is_aborted(sess["id"])):
         try:
@@ -6883,6 +6928,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
         except Exception:  # noqa: BLE001 — the gate must never break a turn
             _all2, _open2, _goal_incomplete = [], [], goal_mode
         _reason2 = _kg_stop_reason or "open_todos"
+        _turn_stop = _kg_stop_reason or ("open_todos" if _open2 else "")
         if _open2 and not _kg_stop_reason:
             # JAG-501: report the REAL cause. `_kg_stop_reason` is set by every
             # typed stop; when the loop ended without one, the honest cause is
@@ -6891,6 +6937,14 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                      open=len(_open2), total=len(_all2), rounds=_kg_rounds,
                      duration_s=round(time.time() - _kg_started, 1),
                      difficulty=_diff_level)
+    # 2026-11-15: the turn's own summary, persisted ON the answer (never a transient
+    # event the chat loses on reload): duration + rounds + steps + tokens, exactly
+    # the numbers the run ledger reports.
+    _turn_stats = {"duration_s": round(time.time() - _turn_t0, 1),
+                   "iterations": int(iters),
+                   "steps": int(_total_work_steps),
+                   "tokens": int(_total_prompt + _total_completion),
+                   "stop_reason": _turn_stop or None}
     meta = {"model": model, "node": _cur_node()}
     content = answer.strip()
     # A message that is NOTHING BUT a reasoning block is not an answer either: the
@@ -6977,6 +7031,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             save_session(sess)
     except Exception as _exc:  # noqa: BLE001 — persistence must never break a turn
         publish("graph.error", kind="transcript.persist", error=str(_exc))
+    meta.update(_turn_stats)   # survive every earlier `meta = {...}` branch
     reply = append_message(sess, "assistant", content, reasoning=think.strip() or None,
                            meta=meta)
     # 2026-11-11 (operator: "in sessione devo vedere tutto quello che succede"): the
@@ -6985,7 +7040,8 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     # that stopped, a JSON action replaced by a summary, an empty turn). Without it
     # the live chat showed one text and the session another until a reload.
     _emit_final_reply(on_event, sess, content, _hitl, node=_cur_node(),
-                      ts=(reply or {}).get("ts") if isinstance(reply, dict) else None)
+                      ts=(reply or {}).get("ts") if isinstance(reply, dict) else None,
+                      **_turn_stats)
     # B-6 (v818): did the answer USE the memories the context engine injected?
     # Observability only — it never changes what was injected, and it is the only
     # signal that can tune the memory ranking by evidence instead of guesswork.
@@ -7026,7 +7082,9 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                           completion_tokens=_total_completion,
                           tokens=_total_prompt + _total_completion,
                           usd=_spent.get("usd") if _spent.get("calls") else None,
-                          model=model, difficulty=_diff_level)
+                          model=model, difficulty=_diff_level,
+                          # the SAME clock the persisted summary prints
+                          duration_s=_turn_stats.get("duration_s"))
         publish("run.metrics", session=sess["id"], metrics=runmetrics.get(sess["id"]))
     except Exception:  # noqa: BLE001 — metrics must never break a turn
         pass

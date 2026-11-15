@@ -16,8 +16,14 @@
  * 2026-11-03 (RH-20) — bumped to v4: the Subagents draft control and the landscape
  * rail changed the shell's shape, and an unchanged name would have kept a phone PWA
  * on the v3 copy captured at its own install. BUMP THIS WHENEVER THE SHELL CHANGES.
+ * 2026-11-16 — bumped to v5, measured on the tablet over Tailscale: its installed
+ * PWA still held the 2026-11-09 "/" copy (1,052,587 B vs 1,203,162 B served) while
+ * a week of shell changes shipped. A failed launch (Tailscale not up yet) therefore
+ * rendered a week-old shell, and every failed script/style was answered with that
+ * HTML — "not working PWA". The cache name is the ONLY thing that retires an old
+ * copy for an already-installed app.
  */
-const CACHE = "longrun-shell-v4";
+const CACHE = "longrun-shell-v5";
 const SHELL = ["/", "/orbit", "/assets/dragsort.js", "/assets/icon-192.png",
                "/assets/icon-512.png", "/assets/apple-touch-icon.png",
                "/assets/icon-maskable-512.png"];
@@ -56,12 +62,22 @@ self.addEventListener("fetch", (e) => {
       if (res && res.ok && (url.pathname === "/" || url.pathname === "/index.html"
                             || url.pathname === "/orbit")) {
         const c = await caches.open(CACHE);
-        c.put(url.pathname, res.clone());
+        // `waitUntil` owns the write: a detached `c.put` is aborted when the
+        // worker is stopped right after the response, so the cached copy can stay
+        // frozen at an older deploy even though every launch was live (measured:
+        // a week). Keeping the event alive is what makes the copy follow the shell.
+        e.waitUntil(c.put(url.pathname, res.clone()).catch(() => {}));
       }
       return res;
     } catch (_) {
       const hit = await caches.match(req);
-      return hit || (await caches.match("/")) || Response.error();
+      if (hit) return hit;
+      // ONLY a navigation may fall back to the cached shell. Answering a failed
+      // script/style with that HTML made the browser refuse it as `text/html`
+      // (MIME) and left the app half-booted; a real network error is honest and
+      // lets the page be retried.
+      if (req.mode === "navigate") return (await caches.match("/")) || Response.error();
+      return Response.error();
     }
   })());
 });
