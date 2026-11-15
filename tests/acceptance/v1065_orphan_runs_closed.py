@@ -1,20 +1,25 @@
 #!/usr/bin/env python3
-"""v1065 — a run killed by a restart is CLOSED, not left `running` forever.
+"""v1065 — a run killed by a restart is CLOSED, and the work that SURVIVED says so.
 
 Operator, 2026-11-16: *"there are agents that stop unexpectedly that's the worst thing
-can happen"*. Measured the same day: `runs` held **182** rows with `status='running'`,
-the oldest from 2026-09-29, four of them turns killed by that evening's restarts. Every
-other owner already closes its own orphans (sessions, jobs, subjobs); `runs` had NO
-sweep — `Run.finish()` was the only writer of the column — so `/api/runs`,
-`GET /api/runs/<id>/trace` and the cost audit kept serving them as live.
+can happen"* / *"i want runs survive restart — it's a tech spec prerequisite"*.
+
+Two facts, one record:
+  * the PROCESS that owned a run died with the restart — its row cannot keep saying
+    `running` (measured: 182 rows, the oldest 2026-09-29, served by `/api/runs` as live);
+  * the WORK does not die: `inflight.recover` delivers the `[Harness restart]` turn and the
+    task graph is a file. A row whose session was actually continued is therefore marked
+    `resumed` (with a `restart.resumed` span), never left reading "stopped".
 
   A  a run older than the boot cut is closed as `interrupted`
   B  a run started by THIS boot is never touched
   C  a finished run is untouched, and the sweep is idempotent
   D  the closed status is what `/api/runs` serves
-  E  the boot runs the sweep (after `reconcile_orphan_turns`)
+  E  the boot runs the sweep, and records the RESUMED rows after the recovery
   F  the interrupted-turn notice says the harness resumes automatically
+  G  a run whose session was continued becomes `resumed`, not `interrupted`
 """
+import json
 import os
 import sqlite3
 import sys
@@ -83,10 +88,35 @@ sweep = api.index("_tracing_boot.reconcile_orphans(before=time.time())")
 check("E1 the boot closes orphaned runs, right after the session reconcile",
       sweep > boot and "_tracing_boot.reconcile_orphans" in api and sweep - boot < 2000,
       (boot, sweep))
+check("E3 the boot records which runs were RESUMED, after the recovery",
+      "_tracing_resumed.mark_resumed" in api
+      and api.index("_tracing_resumed.mark_resumed") > api.index("_inflight.recover("),
+      api.count("_tracing_resumed.mark_resumed"))
+
+# ── G: the run whose SESSION was continued did not end — it survived ────────
+add_run("killed-continued", now - 3600)
+add_run("killed-alone", now - 3600)
+events.db().execute(
+    "INSERT INTO events(ts, kind, data) VALUES(?,?,?)",
+    (now, "chat.run", json.dumps({"run_id": "killed-continued", "session": "s-continued"})))
+events.db().commit()
+tracing.reconcile_orphans(before=cut)
+resumed = tracing.mark_resumed(["s-continued"])
+check("G1 a run whose session was continued is marked `resumed`",
+      resumed.get("marked") == 1 and status_of("killed-continued") == "resumed", resumed)
+spans = json.loads(events.db().execute(
+    "SELECT spans FROM runs WHERE id='killed-continued'").fetchone()[0])
+check("G2 the record says WHAT took over",
+      any(s.get("name") == "restart.resumed" and s.get("session") == "s-continued"
+          for s in spans), spans)
+check("G3 a run with no continuation keeps `interrupted`",
+      status_of("killed-alone") == "interrupted", status_of("killed-alone"))
+check("G4 marking again changes nothing", tracing.mark_resumed(["s-continued"]).get("marked") == 0)
 
 tr = open(os.path.join(REPO, "src", "longrun", "util", "tracing.py"), encoding="utf-8").read()
 check("E2 `Run.finish` is no longer the ONLY writer of the status",
-      tr.count("UPDATE runs SET") == 2 and "def reconcile_orphans" in tr,
+      tr.count("UPDATE runs SET") == 3 and "def reconcile_orphans" in tr
+      and "def mark_resumed" in tr,
       tr.count("UPDATE runs SET"))
 
 stores = open(os.path.join(REPO, "src", "longrun", "memory", "stores.py"), encoding="utf-8").read()

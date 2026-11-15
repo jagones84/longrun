@@ -343,6 +343,11 @@ def reconcile_orphans(before=None, status="interrupted"):
     by that day's restarts; `/api/runs`, `GET /api/runs/<id>/trace` and the cost
     audit served them as if they were live.
 
+    This does NOT end any work: the process was already gone. The TASK survives —
+    `inflight.recover` delivers the `[Harness restart]` continuation and the task
+    graph is a file — and `mark_resumed()` turns the rows whose session was
+    actually continued into `resumed` right after this sweep.
+
     `before` (epoch seconds) protects a run THIS process has just started: only a
     row older than it can be an orphan. Called at boot before the server accepts
     a request, so the default (`now`) is safe. Idempotent; never raises.
@@ -362,4 +367,70 @@ def reconcile_orphans(before=None, status="interrupted"):
         return {"ok": True, "closed": len(ids), "ids": ids, "status": status}
     except Exception as e:  # noqa: BLE001 — a boot sweep must never stop the boot
         return {"ok": False, "closed": 0, "ids": [], "error": str(e)}
+
+
+def run_ids_for_session(session, limit=500):
+    """Run ids recorded for `session` — the `chat.run` event is the join.
+
+    `runs` has no session column (by design: it is an audit of ONE process
+    instance), so the session→run link lives in the event that opened the run.
+    """
+    sid = str(session or "")
+    if not sid:
+        return []
+    try:
+        with _db_lock:
+            rows = db().execute(
+                "SELECT data FROM events WHERE kind='chat.run'"
+                " ORDER BY rowid DESC LIMIT ?", (int(limit),)).fetchall()
+    except Exception:  # noqa: BLE001 — a lookup failure is "no link"
+        return []
+    out = []
+    for (data,) in rows:
+        try:
+            d = json.loads(data) if isinstance(data, str) else dict(data or {})
+        except Exception:  # noqa: BLE001
+            continue
+        if str((d or {}).get("session") or "") != sid:
+            continue
+        rid = str((d or {}).get("run_id") or "")
+        if rid and rid not in out:
+            out.append(rid)
+    return out
+
+
+def mark_resumed(sessions, status="resumed", note="continued by the [Harness restart] turn"):
+    """A run interrupted by a restart SURVIVED: its session was continued.
+
+    Called at boot AFTER `inflight.recover` reports `resumed`. Only a row this
+    boot already closed as `interrupted` can become `resumed`, so a run that
+    really died keeps that status. A `restart.resumed` span records when and
+    what took over. Idempotent; never raises.
+    """
+    marked = []
+    try:
+        for sid in sessions or []:
+            for rid in run_ids_for_session(sid):
+                with _db_lock:
+                    row = db().execute(
+                        "SELECT status, spans FROM runs WHERE id=?", (rid,)).fetchone()
+                    if not row or str(row[0]) != "interrupted":
+                        continue
+                    try:
+                        spans = json.loads(row[1] or "[]")
+                        if not isinstance(spans, list):
+                            spans = []
+                    except Exception:  # noqa: BLE001
+                        spans = []
+                    spans.append({"name": "restart.resumed",
+                                  "ts": round(time.time(), 3),
+                                  "session": str(sid), "note": str(note)})
+                    db().execute(
+                        "UPDATE runs SET status=?, spans=? WHERE id=? AND status='interrupted'",
+                        (status, json.dumps(spans, ensure_ascii=False), rid))
+                    db().commit()
+                marked.append(rid)
+        return {"ok": True, "marked": len(marked), "ids": marked, "status": status}
+    except Exception as e:  # noqa: BLE001 — the sweep must never stop the boot
+        return {"ok": False, "marked": len(marked), "ids": marked, "error": str(e)}
 

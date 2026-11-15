@@ -146,6 +146,16 @@ a `[Harness restart]` continuation is **not** a pivot (`inflight.is_resume_text`
 because it is the same task resuming and must not inherit the stale-plan
 exception. Locked by `v1008`.
 
+**A run survives a restart, and its audit row says so** (2026-11-16). Operator: *"i want runs
+survive restart — it's a tech spec prerequisite"*. The `runs` row belongs to the process that
+opened it, so a restart ends that INSTANCE (and an old row must never be served as `running`
+forever — measured 182 such rows, the oldest three weeks old): boot closes every row older than the
+new process with `tracing.reconcile_orphans`, emitting `runs.reconciled`. The WORK is not in the
+row — it is the `[Harness restart]` turn `inflight.recover` starts and the task graph file — so
+when a session is actually continued, `tracing.mark_resumed()` turns its rows into **`resumed`**
+and appends a `restart.resumed` span naming the session (`runs.resumed`); `interrupted` remains
+only for a run the harness could NOT continue. Locked by `v1065`.
+
 **The `harness → LLM` chat label is the wire** (2026-11-05). One chip exists per
 message actually appended to the outgoing list, its body is that message verbatim
 (role + `[harness] ` prefix), and a suppressed repeat is only a counter on the

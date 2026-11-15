@@ -43,19 +43,25 @@ All notable changes to Longrun are documented here. The format follows
   both spellings and the badge reads `748/748` (two test files had been added without it).
 
 ### Added
-- **A run killed by a restart is closed, and an interrupted turn says it will be resumed.**
-  Operator: *"there are agents that stop unexpectedly that's the worst thing can happen"*. Every
-  other owner already closed its own orphans (sessions, jobs, subjobs); `runs` had no sweep —
-  `Run.finish()` was the only writer of the status — so a process killed mid-turn left the row
-  `running` forever: measured 2026-11-16, **182 rows**, the oldest 2026-09-29, four of them turns
-  killed by that evening's restarts, all served by `/api/runs` and the trace/cost reads as if live.
-  Boot now runs `tracing.reconcile_orphans(before=<boot ts>)`, closing only rows older than the
-  current process as `interrupted` (a run started by this boot is never touched; idempotent) and
-  emitting `runs.reconciled`. The interrupted-turn notice no longer reads as "the work is lost": it
-  names the automatic `[Harness restart]` resume and only then "send a new message". Project rule
+- **A run SURVIVES a restart, and the audit row says so.** Operator: *"a run killed by a restart
+  is killed instead of running? that's wrong — i want runs survive restart! it's a tech spec
+  prerequisite"*. The row belongs to the process that opened it, so a restart ends the INSTANCE:
+  every other owner already closed its own orphans (sessions, jobs, subjobs) and `runs` had no
+  sweep — `Run.finish()` was the only writer of the status — so a killed process left the row
+  `running` forever (measured 2026-11-16: **182 rows**, the oldest 2026-09-29, four of them turns
+  killed by that evening's restarts, all served by `/api/runs` and the trace/cost reads as if
+  live). Boot now runs `tracing.reconcile_orphans(before=<boot ts>)` — only rows older than the
+  current process, never one this boot started, idempotent — and emits `runs.reconciled`. But the
+  WORK is not in the row: `inflight.recover` starts the `[Harness restart]` turn and the task graph
+  is a file, so when a session is actually continued `tracing.mark_resumed()` — called after the
+  recovery, event `runs.resumed` — turns its rows into **`resumed`** with a `restart.resumed` span
+  naming the session. `interrupted` stays only for a run the harness could NOT continue; it is
+  never the status of work that survived (measured: 21 `[Harness restart]` continuation runs
+  already finished on this host). The interrupted-turn notice no longer reads as "the work is
+  lost": it names the automatic resume and only then "send a new message". Project rule
   `.trae/rules/agent-turns.md`: proof of idleness before a restart (`/api/chat/live` must be
   empty), read `service.resume` afterwards, and never declare an agent dead without quoting the
-  session id, the message index and the resume marker. (Locked by `v1065` 8/8.)
+  session id, the message index and the resume marker. (Locked by `v1065` 13/13.)
 - **Installing a plugin now ACTIVATES it, and `/plugin:<name>` reports what is really running.**
   Operator: *"the plugin installation already has to automatically install everything needed …
   if plugins contain skills and MCP they shall be installed in longrun according to longrun

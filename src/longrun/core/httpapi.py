@@ -3536,6 +3536,7 @@ def main():
     # SIGTERM marker = systemctl restart). A deliberate stop is never resumed.
     try:
         from longrun.core import inflight as _inflight
+        _rep = {}
         _rt = (registry.load_config() or {}).get("runtime") or {}
         _rep = _inflight.recover(
             window_secs=float(_rt.get("restart_resume_window_secs", 60) or 0),
@@ -3545,6 +3546,18 @@ def main():
                     resumed=_rep.get("resumed"), skipped=_rep.get("skipped"),
                     stopped=bool(_rep.get("stopped")))
     except Exception:  # noqa: BLE001 — recovery must never block startup
+        pass
+    try:
+        # 2026-11-16 (operator: "i want runs survive restart — it's a tech spec
+        # prerequisite"): the sweep above CLOSED the audit row of the instance that
+        # died; where the harness actually continued the work, the run did not end —
+        # it survived as the `[Harness restart]` turn. Record that, so the run list
+        # can never read "stopped" for work that is running.
+        from longrun.util import tracing as _tracing_resumed
+        _res = _tracing_resumed.mark_resumed((_rep or {}).get("resumed") or [])
+        if _res.get("marked"):
+            publish("runs.resumed", marked=_res["marked"], ids=_res["ids"][:20])
+    except Exception:  # noqa: BLE001 — a bookkeeping step must never block startup
         pass
     publish("service.start", host=args.host, port=args.port, router=ROUTER_BASE)
     try:
