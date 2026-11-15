@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg viewBox="0 0 1250 1138" role="img" lang="en" aria-labelledby="archify-diagram-title archify-diagram-description" data-animation="trace" data-preset="classic" data-quality-profile="standard" data-node-ui="" data-reader-fit="intrinsic-height" data-reader-min-text="7.5" data-reader-primary-text="14" style="--flow-cycle: 7.725s; width: 1250px; height: 1138px; min-width: 0px;" width="1250" height="1138" xmlns="http://www.w3.org/2000/svg"><style>
+<svg viewBox="0 0 1250 1138" role="img" lang="en" aria-labelledby="archify-diagram-title archify-diagram-description" data-animation="trace" data-preset="classic" data-quality-profile="standard" data-node-ui="" data-reader-fit="intrinsic-height" data-reader-min-text="7.5" data-reader-primary-text="14" style="--flow-cycle: 8.836s; width: 1250px; height: 1138px; min-width: 0px;" width="1250" height="1138" xmlns="http://www.w3.org/2000/svg"><style>
 /*
 JetBrains Mono variable WOFF2 subsets from Google Fonts service revision v24.
 These fixed bytes are shared by the viewer and its SVG/raster exports.
@@ -399,563 +399,619 @@ svg[data-preset="editorial"] { --flow-halo-peak: 0.07; --flow-glow-peak: 0.28; -
 }
 @keyframes archify-relay-ripple { 
   0% { r: 2px; opacity: var(--flow-peak, 0.6); }
-  9.709%, 100% { r: 20px; opacity: 0; }
+  8.488%, 100% { r: 20px; opacity: 0; }
 }
 @keyframes archify-relay-comet-0 { 
   0% { stroke-dashoffset: calc(var(--flow-len, 0px) + var(--flow-shift, 0px)); opacity: 0; animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  1.087% { opacity: var(--flow-peak, 0.9); }
-  5.437% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
-  7.508%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
+  0.951% { opacity: var(--flow-peak, 0.9); }
+  4.753% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
+  6.564%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
 }
 @keyframes archify-relay-wake-0 { 
   0% { stroke-dashoffset: var(--flow-len, 0px); opacity: var(--flow-peak, 0.3); animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  5.437% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
-  17.088%, 100% { stroke-dashoffset: 0px; opacity: 0; }
+  4.753% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
+  14.939%, 100% { stroke-dashoffset: 0px; opacity: 0; }
 }
 @keyframes archify-relay-comet-1 { 
   0% { stroke-dashoffset: calc(var(--flow-len, 0px) + var(--flow-shift, 0px)); opacity: 0; animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  1.087% { opacity: var(--flow-peak, 0.9); }
-  5.437% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
-  7.508%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
+  0.951% { opacity: var(--flow-peak, 0.9); }
+  4.753% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
+  6.564%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
 }
 @keyframes archify-relay-wake-1 { 
   0% { stroke-dashoffset: var(--flow-len, 0px); opacity: var(--flow-peak, 0.3); animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  5.437% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
-  17.088%, 100% { stroke-dashoffset: 0px; opacity: 0; }
+  4.753% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
+  14.939%, 100% { stroke-dashoffset: 0px; opacity: 0; }
 }
 @keyframes archify-relay-comet-2 { 
   0% { stroke-dashoffset: calc(var(--flow-len, 0px) + var(--flow-shift, 0px)); opacity: 0; animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  1.087% { opacity: var(--flow-peak, 0.9); }
-  5.437% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
-  7.508%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
+  0.951% { opacity: var(--flow-peak, 0.9); }
+  4.753% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
+  6.564%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
 }
 @keyframes archify-relay-wake-2 { 
   0% { stroke-dashoffset: var(--flow-len, 0px); opacity: var(--flow-peak, 0.3); animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  5.437% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
-  17.088%, 100% { stroke-dashoffset: 0px; opacity: 0; }
+  4.753% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
+  14.939%, 100% { stroke-dashoffset: 0px; opacity: 0; }
 }
 @keyframes archify-relay-comet-3 { 
   0% { stroke-dashoffset: calc(var(--flow-len, 0px) + var(--flow-shift, 0px)); opacity: 0; animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  1.087% { opacity: var(--flow-peak, 0.9); }
-  5.437% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
-  7.508%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
+  0.951% { opacity: var(--flow-peak, 0.9); }
+  4.753% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
+  6.564%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
 }
 @keyframes archify-relay-wake-3 { 
   0% { stroke-dashoffset: var(--flow-len, 0px); opacity: var(--flow-peak, 0.3); animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  5.437% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
-  17.088%, 100% { stroke-dashoffset: 0px; opacity: 0; }
+  4.753% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
+  14.939%, 100% { stroke-dashoffset: 0px; opacity: 0; }
 }
 @keyframes archify-relay-comet-4 { 
   0% { stroke-dashoffset: calc(var(--flow-len, 0px) + var(--flow-shift, 0px)); opacity: 0; animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  1.087% { opacity: var(--flow-peak, 0.9); }
-  5.437% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
-  7.508%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
+  0.951% { opacity: var(--flow-peak, 0.9); }
+  4.753% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
+  6.564%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
 }
 @keyframes archify-relay-wake-4 { 
   0% { stroke-dashoffset: var(--flow-len, 0px); opacity: var(--flow-peak, 0.3); animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  5.437% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
-  17.088%, 100% { stroke-dashoffset: 0px; opacity: 0; }
+  4.753% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
+  14.939%, 100% { stroke-dashoffset: 0px; opacity: 0; }
 }
 @keyframes archify-relay-comet-5 { 
   0% { stroke-dashoffset: calc(var(--flow-len, 0px) + var(--flow-shift, 0px)); opacity: 0; animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  1.087% { opacity: var(--flow-peak, 0.9); }
-  5.437% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
-  7.508%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
+  0.951% { opacity: var(--flow-peak, 0.9); }
+  4.753% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
+  6.564%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
 }
 @keyframes archify-relay-wake-5 { 
   0% { stroke-dashoffset: var(--flow-len, 0px); opacity: var(--flow-peak, 0.3); animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  5.437% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
-  17.088%, 100% { stroke-dashoffset: 0px; opacity: 0; }
+  4.753% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
+  14.939%, 100% { stroke-dashoffset: 0px; opacity: 0; }
 }
 @keyframes archify-relay-comet-6 { 
   0% { stroke-dashoffset: calc(var(--flow-len, 0px) + var(--flow-shift, 0px)); opacity: 0; animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  1.087% { opacity: var(--flow-peak, 0.9); }
-  5.437% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
-  7.508%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
+  0.951% { opacity: var(--flow-peak, 0.9); }
+  4.753% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
+  6.564%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
 }
 @keyframes archify-relay-wake-6 { 
   0% { stroke-dashoffset: var(--flow-len, 0px); opacity: var(--flow-peak, 0.3); animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  5.437% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
-  17.088%, 100% { stroke-dashoffset: 0px; opacity: 0; }
+  4.753% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
+  14.939%, 100% { stroke-dashoffset: 0px; opacity: 0; }
 }
 @keyframes archify-relay-comet-7 { 
   0% { stroke-dashoffset: calc(var(--flow-len, 0px) + var(--flow-shift, 0px)); opacity: 0; animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  1.087% { opacity: var(--flow-peak, 0.9); }
-  5.437% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
-  7.508%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
+  0.951% { opacity: var(--flow-peak, 0.9); }
+  4.753% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
+  6.564%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
 }
 @keyframes archify-relay-wake-7 { 
   0% { stroke-dashoffset: var(--flow-len, 0px); opacity: var(--flow-peak, 0.3); animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  5.437% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
-  17.088%, 100% { stroke-dashoffset: 0px; opacity: 0; }
+  4.753% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
+  14.939%, 100% { stroke-dashoffset: 0px; opacity: 0; }
 }
 @keyframes archify-relay-comet-8 { 
   0% { stroke-dashoffset: calc(var(--flow-len, 0px) + var(--flow-shift, 0px)); opacity: 0; animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  1.553% { opacity: var(--flow-peak, 0.9); }
-  15.857% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
-  17.928%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
+  1.358% { opacity: var(--flow-peak, 0.9); }
+  13.862% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
+  15.673%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
 }
 @keyframes archify-relay-wake-8 { 
   0% { stroke-dashoffset: var(--flow-len, 0px); opacity: var(--flow-peak, 0.3); animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  15.857% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
-  27.507%, 100% { stroke-dashoffset: 0px; opacity: 0; }
+  13.862% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
+  24.048%, 100% { stroke-dashoffset: 0px; opacity: 0; }
 }
 @keyframes archify-relay-comet-9 { 
   0% { stroke-dashoffset: calc(var(--flow-len, 0px) + var(--flow-shift, 0px)); opacity: 0; animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  1.553% { opacity: var(--flow-peak, 0.9); }
-  9.198% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
-  11.269%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
+  1.358% { opacity: var(--flow-peak, 0.9); }
+  8.041% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
+  9.852%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
 }
 @keyframes archify-relay-wake-9 { 
   0% { stroke-dashoffset: var(--flow-len, 0px); opacity: var(--flow-peak, 0.3); animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  9.198% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
-  20.848%, 100% { stroke-dashoffset: 0px; opacity: 0; }
+  8.041% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
+  18.226%, 100% { stroke-dashoffset: 0px; opacity: 0; }
 }
 @keyframes archify-relay-comet-10 { 
   0% { stroke-dashoffset: calc(var(--flow-len, 0px) + var(--flow-shift, 0px)); opacity: 0; animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  1.553% { opacity: var(--flow-peak, 0.9); }
-  15.857% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
-  17.928%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
+  1.358% { opacity: var(--flow-peak, 0.9); }
+  13.862% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
+  15.673%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
 }
 @keyframes archify-relay-wake-10 { 
   0% { stroke-dashoffset: var(--flow-len, 0px); opacity: var(--flow-peak, 0.3); animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  15.857% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
-  27.507%, 100% { stroke-dashoffset: 0px; opacity: 0; }
+  13.862% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
+  24.048%, 100% { stroke-dashoffset: 0px; opacity: 0; }
 }
 @keyframes archify-relay-comet-11 { 
   0% { stroke-dashoffset: calc(var(--flow-len, 0px) + var(--flow-shift, 0px)); opacity: 0; animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  1.087% { opacity: var(--flow-peak, 0.9); }
-  5.437% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
-  7.508%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
+  0.951% { opacity: var(--flow-peak, 0.9); }
+  4.753% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
+  6.564%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
 }
 @keyframes archify-relay-wake-11 { 
   0% { stroke-dashoffset: var(--flow-len, 0px); opacity: var(--flow-peak, 0.3); animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  5.437% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
-  17.088%, 100% { stroke-dashoffset: 0px; opacity: 0; }
+  4.753% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
+  14.939%, 100% { stroke-dashoffset: 0px; opacity: 0; }
 }
 @keyframes archify-relay-comet-12 { 
   0% { stroke-dashoffset: calc(var(--flow-len, 0px) + var(--flow-shift, 0px)); opacity: 0; animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  1.553% { opacity: var(--flow-peak, 0.9); }
-  8.644% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
-  10.715%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
+  1.358% { opacity: var(--flow-peak, 0.9); }
+  7.557% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
+  9.368%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
 }
 @keyframes archify-relay-wake-12 { 
   0% { stroke-dashoffset: var(--flow-len, 0px); opacity: var(--flow-peak, 0.3); animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  8.644% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
-  20.295%, 100% { stroke-dashoffset: 0px; opacity: 0; }
+  7.557% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
+  17.742%, 100% { stroke-dashoffset: 0px; opacity: 0; }
 }
 @keyframes archify-relay-comet-13 { 
   0% { stroke-dashoffset: calc(var(--flow-len, 0px) + var(--flow-shift, 0px)); opacity: 0; animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  1.553% { opacity: var(--flow-peak, 0.9); }
-  9.384% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
-  11.455%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
+  1.358% { opacity: var(--flow-peak, 0.9); }
+  8.204% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
+  10.014%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
 }
 @keyframes archify-relay-wake-13 { 
   0% { stroke-dashoffset: var(--flow-len, 0px); opacity: var(--flow-peak, 0.3); animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  9.384% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
-  21.035%, 100% { stroke-dashoffset: 0px; opacity: 0; }
+  8.204% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
+  18.389%, 100% { stroke-dashoffset: 0px; opacity: 0; }
 }
 @keyframes archify-relay-comet-14 { 
   0% { stroke-dashoffset: calc(var(--flow-len, 0px) + var(--flow-shift, 0px)); opacity: 0; animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  1.553% { opacity: var(--flow-peak, 0.9); }
-  13.913% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
-  15.985%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
+  1.358% { opacity: var(--flow-peak, 0.9); }
+  12.164% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
+  13.974%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
 }
 @keyframes archify-relay-wake-14 { 
-  0%, 4.174% { opacity: 0; }
-  13.913% { opacity: var(--flow-peak, 0.3); }
-  25.564%, 100% { stroke-dashoffset: 0px; opacity: 0; }
+  0%, 3.649% { opacity: 0; }
+  12.164% { opacity: var(--flow-peak, 0.3); }
+  22.349%, 100% { stroke-dashoffset: 0px; opacity: 0; }
 }
 @keyframes archify-relay-comet-15 { 
   0% { stroke-dashoffset: calc(var(--flow-len, 0px) + var(--flow-shift, 0px)); opacity: 0; animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  1.553% { opacity: var(--flow-peak, 0.9); }
-  7.952% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
-  10.023%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
+  1.358% { opacity: var(--flow-peak, 0.9); }
+  6.952% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
+  8.763%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
 }
 @keyframes archify-relay-wake-15 { 
-  0%, 2.386% { opacity: 0; }
-  7.952% { opacity: var(--flow-peak, 0.3); }
-  19.603%, 100% { stroke-dashoffset: 0px; opacity: 0; }
+  0%, 2.086% { opacity: 0; }
+  6.952% { opacity: var(--flow-peak, 0.3); }
+  17.137%, 100% { stroke-dashoffset: 0px; opacity: 0; }
 }
 @keyframes archify-relay-comet-16 { 
   0% { stroke-dashoffset: calc(var(--flow-len, 0px) + var(--flow-shift, 0px)); opacity: 0; animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  1.553% { opacity: var(--flow-peak, 0.9); }
-  13.592% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
-  15.663%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
+  1.358% { opacity: var(--flow-peak, 0.9); }
+  11.882% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
+  13.693%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
 }
 @keyframes archify-relay-wake-16 { 
-  0%, 4.078% { opacity: 0; }
-  13.592% { opacity: var(--flow-peak, 0.3); }
-  25.242%, 100% { stroke-dashoffset: 0px; opacity: 0; }
+  0%, 3.565% { opacity: 0; }
+  11.882% { opacity: var(--flow-peak, 0.3); }
+  22.068%, 100% { stroke-dashoffset: 0px; opacity: 0; }
 }
 @keyframes archify-relay-comet-17 { 
   0% { stroke-dashoffset: calc(var(--flow-len, 0px) + var(--flow-shift, 0px)); opacity: 0; animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  1.553% { opacity: var(--flow-peak, 0.9); }
-  9.013% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
-  11.084%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
+  1.358% { opacity: var(--flow-peak, 0.9); }
+  7.879% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
+  9.69%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
 }
 @keyframes archify-relay-wake-17 { 
   0% { stroke-dashoffset: var(--flow-len, 0px); opacity: var(--flow-peak, 0.3); animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  9.013% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
-  20.663%, 100% { stroke-dashoffset: 0px; opacity: 0; }
+  7.879% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
+  18.065%, 100% { stroke-dashoffset: 0px; opacity: 0; }
 }
 @keyframes archify-relay-comet-18 { 
   0% { stroke-dashoffset: calc(var(--flow-len, 0px) + var(--flow-shift, 0px)); opacity: 0; animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  1.553% { opacity: var(--flow-peak, 0.9); }
-  9.013% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
-  11.084%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
+  1.358% { opacity: var(--flow-peak, 0.9); }
+  7.879% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
+  9.69%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
 }
 @keyframes archify-relay-wake-18 { 
   0% { stroke-dashoffset: var(--flow-len, 0px); opacity: var(--flow-peak, 0.3); animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  9.013% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
-  20.663%, 100% { stroke-dashoffset: 0px; opacity: 0; }
+  7.879% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
+  18.065%, 100% { stroke-dashoffset: 0px; opacity: 0; }
 }
 @keyframes archify-relay-comet-19 { 
   0% { stroke-dashoffset: calc(var(--flow-len, 0px) + var(--flow-shift, 0px)); opacity: 0; animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  1.553% { opacity: var(--flow-peak, 0.9); }
-  19.418% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
-  21.489%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
+  1.358% { opacity: var(--flow-peak, 0.9); }
+  16.976% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
+  18.786%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
 }
 @keyframes archify-relay-wake-19 { 
   0% { stroke-dashoffset: var(--flow-len, 0px); opacity: var(--flow-peak, 0.3); animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  19.418% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
-  31.068%, 100% { stroke-dashoffset: 0px; opacity: 0; }
+  16.976% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
+  27.161%, 100% { stroke-dashoffset: 0px; opacity: 0; }
 }
 @keyframes archify-relay-comet-20 { 
   0% { stroke-dashoffset: calc(var(--flow-len, 0px) + var(--flow-shift, 0px)); opacity: 0; animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  1.553% { opacity: var(--flow-peak, 0.9); }
-  9.198% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
-  11.269%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
+  1.358% { opacity: var(--flow-peak, 0.9); }
+  8.041% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
+  9.852%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
 }
 @keyframes archify-relay-wake-20 { 
   0% { stroke-dashoffset: var(--flow-len, 0px); opacity: var(--flow-peak, 0.3); animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  9.198% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
-  20.848%, 100% { stroke-dashoffset: 0px; opacity: 0; }
+  8.041% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
+  18.226%, 100% { stroke-dashoffset: 0px; opacity: 0; }
 }
 @keyframes archify-relay-comet-21 { 
   0% { stroke-dashoffset: calc(var(--flow-len, 0px) + var(--flow-shift, 0px)); opacity: 0; animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  1.087% { opacity: var(--flow-peak, 0.9); }
-  5.437% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
-  7.508%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
+  0.951% { opacity: var(--flow-peak, 0.9); }
+  4.753% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
+  6.564%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
 }
 @keyframes archify-relay-wake-21 { 
   0% { stroke-dashoffset: var(--flow-len, 0px); opacity: var(--flow-peak, 0.3); animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  5.437% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
-  17.088%, 100% { stroke-dashoffset: 0px; opacity: 0; }
+  4.753% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
+  14.939%, 100% { stroke-dashoffset: 0px; opacity: 0; }
 }
 @keyframes archify-relay-comet-22 { 
   0% { stroke-dashoffset: calc(var(--flow-len, 0px) + var(--flow-shift, 0px)); opacity: 0; animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  1.553% { opacity: var(--flow-peak, 0.9); }
-  9.198% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
-  11.269%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
+  1.358% { opacity: var(--flow-peak, 0.9); }
+  8.041% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
+  9.852%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
 }
 @keyframes archify-relay-wake-22 { 
   0% { stroke-dashoffset: var(--flow-len, 0px); opacity: var(--flow-peak, 0.3); animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  9.198% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
-  20.848%, 100% { stroke-dashoffset: 0px; opacity: 0; }
+  8.041% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
+  18.226%, 100% { stroke-dashoffset: 0px; opacity: 0; }
 }
 @keyframes archify-relay-comet-23 { 
   0% { stroke-dashoffset: calc(var(--flow-len, 0px) + var(--flow-shift, 0px)); opacity: 0; animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  1.553% { opacity: var(--flow-peak, 0.9); }
-  15.44% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
-  17.512%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
+  1.358% { opacity: var(--flow-peak, 0.9); }
+  13.498% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
+  15.309%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
 }
 @keyframes archify-relay-wake-23 { 
   0% { stroke-dashoffset: var(--flow-len, 0px); opacity: var(--flow-peak, 0.3); animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  15.44% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
-  27.091%, 100% { stroke-dashoffset: 0px; opacity: 0; }
+  13.498% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
+  23.684%, 100% { stroke-dashoffset: 0px; opacity: 0; }
 }
 @keyframes archify-relay-comet-24 { 
   0% { stroke-dashoffset: calc(var(--flow-len, 0px) + var(--flow-shift, 0px)); opacity: 0; animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  1.553% { opacity: var(--flow-peak, 0.9); }
-  19.418% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
-  21.489%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
+  1.358% { opacity: var(--flow-peak, 0.9); }
+  16.976% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
+  18.786%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
 }
 @keyframes archify-relay-wake-24 { 
   0% { stroke-dashoffset: var(--flow-len, 0px); opacity: var(--flow-peak, 0.3); animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  19.418% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
-  31.068%, 100% { stroke-dashoffset: 0px; opacity: 0; }
+  16.976% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
+  27.161%, 100% { stroke-dashoffset: 0px; opacity: 0; }
 }
 @keyframes archify-relay-comet-25 { 
   0% { stroke-dashoffset: calc(var(--flow-len, 0px) + var(--flow-shift, 0px)); opacity: 0; animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  1.479% { opacity: var(--flow-peak, 0.9); }
-  7.397% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
-  9.468%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
+  1.293% { opacity: var(--flow-peak, 0.9); }
+  6.467% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
+  8.278%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
 }
 @keyframes archify-relay-wake-25 { 
   0% { stroke-dashoffset: var(--flow-len, 0px); opacity: var(--flow-peak, 0.3); animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  7.397% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
-  19.048%, 100% { stroke-dashoffset: 0px; opacity: 0; }
+  6.467% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
+  16.652%, 100% { stroke-dashoffset: 0px; opacity: 0; }
 }
 @keyframes archify-relay-comet-26 { 
   0% { stroke-dashoffset: calc(var(--flow-len, 0px) + var(--flow-shift, 0px)); opacity: 0; animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  1.553% { opacity: var(--flow-peak, 0.9); }
-  16.087% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
-  18.158%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
+  1.358% { opacity: var(--flow-peak, 0.9); }
+  14.064% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
+  15.874%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
 }
 @keyframes archify-relay-wake-26 { 
   0% { stroke-dashoffset: var(--flow-len, 0px); opacity: var(--flow-peak, 0.3); animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  16.087% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
-  27.738%, 100% { stroke-dashoffset: 0px; opacity: 0; }
+  14.064% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
+  24.249%, 100% { stroke-dashoffset: 0px; opacity: 0; }
 }
 @keyframes archify-relay-comet-27 { 
   0% { stroke-dashoffset: calc(var(--flow-len, 0px) + var(--flow-shift, 0px)); opacity: 0; animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  1.553% { opacity: var(--flow-peak, 0.9); }
-  9.384% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
-  11.455%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
+  1.358% { opacity: var(--flow-peak, 0.9); }
+  8.204% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
+  10.014%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
 }
 @keyframes archify-relay-wake-27 { 
   0% { stroke-dashoffset: var(--flow-len, 0px); opacity: var(--flow-peak, 0.3); animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  9.384% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
-  21.035%, 100% { stroke-dashoffset: 0px; opacity: 0; }
+  8.204% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
+  18.389%, 100% { stroke-dashoffset: 0px; opacity: 0; }
 }
 @keyframes archify-relay-comet-28 { 
   0% { stroke-dashoffset: calc(var(--flow-len, 0px) + var(--flow-shift, 0px)); opacity: 0; animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  1.553% { opacity: var(--flow-peak, 0.9); }
-  19.418% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
-  21.489%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
+  1.358% { opacity: var(--flow-peak, 0.9); }
+  16.976% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
+  18.786%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
 }
 @keyframes archify-relay-wake-28 { 
   0% { stroke-dashoffset: var(--flow-len, 0px); opacity: var(--flow-peak, 0.3); animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  19.418% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
-  31.068%, 100% { stroke-dashoffset: 0px; opacity: 0; }
+  16.976% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
+  27.161%, 100% { stroke-dashoffset: 0px; opacity: 0; }
 }
 @keyframes archify-relay-comet-29 { 
   0% { stroke-dashoffset: calc(var(--flow-len, 0px) + var(--flow-shift, 0px)); opacity: 0; animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  1.553% { opacity: var(--flow-peak, 0.9); }
-  19.418% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
-  21.489%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
+  1.358% { opacity: var(--flow-peak, 0.9); }
+  16.976% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
+  18.786%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
 }
 @keyframes archify-relay-wake-29 { 
   0% { stroke-dashoffset: var(--flow-len, 0px); opacity: var(--flow-peak, 0.3); animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  19.418% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
-  31.068%, 100% { stroke-dashoffset: 0px; opacity: 0; }
+  16.976% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
+  27.161%, 100% { stroke-dashoffset: 0px; opacity: 0; }
 }
 @keyframes archify-relay-comet-30 { 
   0% { stroke-dashoffset: calc(var(--flow-len, 0px) + var(--flow-shift, 0px)); opacity: 0; animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  1.553% { opacity: var(--flow-peak, 0.9); }
-  7.86% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
-  9.931%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
+  1.358% { opacity: var(--flow-peak, 0.9); }
+  6.871% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
+  8.682%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
 }
 @keyframes archify-relay-wake-30 { 
-  0%, 2.358% { opacity: 0; }
-  7.86% { opacity: var(--flow-peak, 0.3); }
-  19.51%, 100% { stroke-dashoffset: 0px; opacity: 0; }
+  0%, 2.061% { opacity: 0; }
+  6.871% { opacity: var(--flow-peak, 0.3); }
+  17.056%, 100% { stroke-dashoffset: 0px; opacity: 0; }
 }
 @keyframes archify-relay-comet-31 { 
   0% { stroke-dashoffset: calc(var(--flow-len, 0px) + var(--flow-shift, 0px)); opacity: 0; animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  1.553% { opacity: var(--flow-peak, 0.9); }
-  19.418% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
-  21.489%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
+  1.358% { opacity: var(--flow-peak, 0.9); }
+  16.976% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
+  18.786%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
 }
 @keyframes archify-relay-wake-31 { 
-  0%, 5.825% { opacity: 0; }
-  19.418% { opacity: var(--flow-peak, 0.3); }
-  31.068%, 100% { stroke-dashoffset: 0px; opacity: 0; }
+  0%, 5.093% { opacity: 0; }
+  16.976% { opacity: var(--flow-peak, 0.3); }
+  27.161%, 100% { stroke-dashoffset: 0px; opacity: 0; }
 }
 @keyframes archify-relay-comet-32 { 
   0% { stroke-dashoffset: calc(var(--flow-len, 0px) + var(--flow-shift, 0px)); opacity: 0; animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  1.553% { opacity: var(--flow-peak, 0.9); }
-  19.418% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
-  21.489%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
+  1.358% { opacity: var(--flow-peak, 0.9); }
+  16.976% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
+  18.786%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
 }
 @keyframes archify-relay-wake-32 { 
-  0%, 5.825% { opacity: 0; }
-  19.418% { opacity: var(--flow-peak, 0.3); }
-  31.068%, 100% { stroke-dashoffset: 0px; opacity: 0; }
+  0%, 5.093% { opacity: 0; }
+  16.976% { opacity: var(--flow-peak, 0.3); }
+  27.161%, 100% { stroke-dashoffset: 0px; opacity: 0; }
 }
 @keyframes archify-relay-comet-33 { 
   0% { stroke-dashoffset: calc(var(--flow-len, 0px) + var(--flow-shift, 0px)); opacity: 0; animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  1.553% { opacity: var(--flow-peak, 0.9); }
-  15.44% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
-  17.512%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
+  1.358% { opacity: var(--flow-peak, 0.9); }
+  13.498% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
+  15.309%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
 }
 @keyframes archify-relay-wake-33 { 
   0% { stroke-dashoffset: var(--flow-len, 0px); opacity: var(--flow-peak, 0.3); animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  15.44% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
-  27.091%, 100% { stroke-dashoffset: 0px; opacity: 0; }
+  13.498% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
+  23.684%, 100% { stroke-dashoffset: 0px; opacity: 0; }
 }
 @keyframes archify-relay-comet-34 { 
   0% { stroke-dashoffset: calc(var(--flow-len, 0px) + var(--flow-shift, 0px)); opacity: 0; animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  1.479% { opacity: var(--flow-peak, 0.9); }
-  7.397% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
-  9.468%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
+  1.293% { opacity: var(--flow-peak, 0.9); }
+  6.467% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
+  8.278%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
 }
 @keyframes archify-relay-wake-34 { 
   0% { stroke-dashoffset: var(--flow-len, 0px); opacity: var(--flow-peak, 0.3); animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  7.397% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
-  19.048%, 100% { stroke-dashoffset: 0px; opacity: 0; }
+  6.467% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
+  16.652%, 100% { stroke-dashoffset: 0px; opacity: 0; }
 }
 @keyframes archify-relay-comet-35 { 
   0% { stroke-dashoffset: calc(var(--flow-len, 0px) + var(--flow-shift, 0px)); opacity: 0; animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  1.553% { opacity: var(--flow-peak, 0.9); }
-  9.198% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
-  11.269%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
+  1.358% { opacity: var(--flow-peak, 0.9); }
+  8.041% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
+  9.852%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
 }
 @keyframes archify-relay-wake-35 { 
   0% { stroke-dashoffset: var(--flow-len, 0px); opacity: var(--flow-peak, 0.3); animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  9.198% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
-  20.848%, 100% { stroke-dashoffset: 0px; opacity: 0; }
+  8.041% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
+  18.226%, 100% { stroke-dashoffset: 0px; opacity: 0; }
 }
 @keyframes archify-relay-comet-36 { 
   0% { stroke-dashoffset: calc(var(--flow-len, 0px) + var(--flow-shift, 0px)); opacity: 0; animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  1.553% { opacity: var(--flow-peak, 0.9); }
-  9.198% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
-  11.269%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
+  1.358% { opacity: var(--flow-peak, 0.9); }
+  8.041% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
+  9.852%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
 }
 @keyframes archify-relay-wake-36 { 
-  0%, 2.759% { opacity: 0; }
-  9.198% { opacity: var(--flow-peak, 0.3); }
-  20.848%, 100% { stroke-dashoffset: 0px; opacity: 0; }
+  0%, 2.412% { opacity: 0; }
+  8.041% { opacity: var(--flow-peak, 0.3); }
+  18.226%, 100% { stroke-dashoffset: 0px; opacity: 0; }
 }
 @keyframes archify-relay-comet-37 { 
   0% { stroke-dashoffset: calc(var(--flow-len, 0px) + var(--flow-shift, 0px)); opacity: 0; animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
-  1.087% { opacity: var(--flow-peak, 0.9); }
-  5.437% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
-  7.508%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
+  0.951% { opacity: var(--flow-peak, 0.9); }
+  4.753% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
+  6.564%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
 }
 @keyframes archify-relay-wake-37 { 
-  0%, 1.631% { opacity: 0; }
-  5.437% { opacity: var(--flow-peak, 0.3); }
-  17.088%, 100% { stroke-dashoffset: 0px; opacity: 0; }
+  0%, 1.426% { opacity: 0; }
+  4.753% { opacity: var(--flow-peak, 0.3); }
+  14.939%, 100% { stroke-dashoffset: 0px; opacity: 0; }
+}
+@keyframes archify-relay-comet-38 { 
+  0% { stroke-dashoffset: calc(var(--flow-len, 0px) + var(--flow-shift, 0px)); opacity: 0; animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
+  1.358% { opacity: var(--flow-peak, 0.9); }
+  16.976% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
+  18.786%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
+}
+@keyframes archify-relay-wake-38 { 
+  0%, 5.093% { opacity: 0; }
+  16.976% { opacity: var(--flow-peak, 0.3); }
+  27.161%, 100% { stroke-dashoffset: 0px; opacity: 0; }
+}
+@keyframes archify-relay-comet-39 { 
+  0% { stroke-dashoffset: calc(var(--flow-len, 0px) + var(--flow-shift, 0px)); opacity: 0; animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
+  0.951% { opacity: var(--flow-peak, 0.9); }
+  4.753% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
+  6.564%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
+}
+@keyframes archify-relay-wake-39 { 
+  0% { stroke-dashoffset: var(--flow-len, 0px); opacity: var(--flow-peak, 0.3); animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
+  4.753% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
+  14.939%, 100% { stroke-dashoffset: 0px; opacity: 0; }
+}
+@keyframes archify-relay-comet-40 { 
+  0% { stroke-dashoffset: calc(var(--flow-len, 0px) + var(--flow-shift, 0px)); opacity: 0; animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
+  1.358% { opacity: var(--flow-peak, 0.9); }
+  16.976% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
+  18.786%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
+}
+@keyframes archify-relay-wake-40 { 
+  0% { stroke-dashoffset: var(--flow-len, 0px); opacity: var(--flow-peak, 0.3); animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
+  16.976% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
+  27.161%, 100% { stroke-dashoffset: 0px; opacity: 0; }
+}
+@keyframes archify-relay-comet-41 { 
+  0% { stroke-dashoffset: calc(var(--flow-len, 0px) + var(--flow-shift, 0px)); opacity: 0; animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
+  1.358% { opacity: var(--flow-peak, 0.9); }
+  16.976% { stroke-dashoffset: var(--flow-shift, 0px); opacity: var(--flow-peak, 0.9); }
+  18.786%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
+}
+@keyframes archify-relay-wake-41 { 
+  0% { stroke-dashoffset: var(--flow-len, 0px); opacity: var(--flow-peak, 0.3); animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
+  16.976% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
+  27.161%, 100% { stroke-dashoffset: 0px; opacity: 0; }
 }
 @keyframes archify-relay-node-0 { 
   0%, 100% { filter: var(--ambient-node-base-filter, none); }
   0% { filter: var(--ambient-node-base-filter, none); }
-  1.553%, 5.437% { filter: var(--ambient-node-base-filter,) drop-shadow(0 0 10px var(--arrow-emphasis)); }
-  15.534% { filter: var(--ambient-node-base-filter, none); }
+  1.358%, 4.753% { filter: var(--ambient-node-base-filter,) drop-shadow(0 0 10px var(--arrow-emphasis)); }
+  13.58% { filter: var(--ambient-node-base-filter, none); }
 }
 @keyframes archify-relay-node-1 { 
   0%, 100% { filter: var(--ambient-node-base-filter, none); }
-  5.437% { filter: var(--ambient-node-base-filter, none); }
-  6.99%, 10.874% { filter: var(--ambient-node-base-filter,) drop-shadow(0 0 10px var(--arrow-emphasis)); }
-  20.971% { filter: var(--ambient-node-base-filter, none); }
+  4.753% { filter: var(--ambient-node-base-filter, none); }
+  6.111%, 9.506% { filter: var(--ambient-node-base-filter,) drop-shadow(0 0 10px var(--arrow-emphasis)); }
+  18.334% { filter: var(--ambient-node-base-filter, none); }
 }
 @keyframes archify-relay-node-2 { 
   0%, 100% { filter: var(--ambient-node-base-filter, none); }
-  12.168% { filter: var(--ambient-node-base-filter, none); }
-  13.722%, 17.605% { filter: var(--ambient-node-base-filter,) drop-shadow(0 0 10px var(--arrow-emphasis)); }
-  27.703% { filter: var(--ambient-node-base-filter, none); }
+  22.86% { filter: var(--ambient-node-base-filter, none); }
+  24.218%, 27.614% { filter: var(--ambient-node-base-filter,) drop-shadow(0 0 10px var(--arrow-emphasis)); }
+  36.441% { filter: var(--ambient-node-base-filter, none); }
 }
 @keyframes archify-relay-node-3 { 
   0%, 100% { filter: var(--ambient-node-base-filter, none); }
-  14.684% { filter: var(--ambient-node-base-filter, none); }
-  16.237%, 20.12% { filter: var(--ambient-node-base-filter,) drop-shadow(0 0 10px var(--arrow-emphasis)); }
-  30.218% { filter: var(--ambient-node-base-filter, none); }
+  16.976% { filter: var(--ambient-node-base-filter, none); }
+  18.334%, 21.729% { filter: var(--ambient-node-base-filter,) drop-shadow(0 0 10px var(--arrow-emphasis)); }
+  30.556% { filter: var(--ambient-node-base-filter, none); }
 }
 @keyframes archify-relay-node-4 { 
   0%, 100% { filter: var(--ambient-node-base-filter, none); }
-  14.591% { filter: var(--ambient-node-base-filter, none); }
-  16.144%, 20.028% { filter: var(--ambient-node-base-filter,) drop-shadow(0 0 10px var(--arrow-emphasis)); }
-  30.125% { filter: var(--ambient-node-base-filter, none); }
+  32.033% { filter: var(--ambient-node-base-filter, none); }
+  33.391%, 36.786% { filter: var(--ambient-node-base-filter,) drop-shadow(0 0 10px var(--arrow-emphasis)); }
+  45.614% { filter: var(--ambient-node-base-filter, none); }
 }
 @keyframes archify-relay-node-5 { 
   0%, 100% { filter: var(--ambient-node-base-filter, none); }
-  26.149% { filter: var(--ambient-node-base-filter, none); }
-  27.703%, 31.586% { filter: var(--ambient-node-base-filter,) drop-shadow(0 0 10px var(--arrow-emphasis)); }
-  41.683% { filter: var(--ambient-node-base-filter, none); }
+  25.987% { filter: var(--ambient-node-base-filter, none); }
+  27.345%, 30.74% { filter: var(--ambient-node-base-filter,) drop-shadow(0 0 10px var(--arrow-emphasis)); }
+  39.567% { filter: var(--ambient-node-base-filter, none); }
 }
 @keyframes archify-relay-node-6 { 
   0%, 100% { filter: var(--ambient-node-base-filter, none); }
-  26.149% { filter: var(--ambient-node-base-filter, none); }
-  27.703%, 31.586% { filter: var(--ambient-node-base-filter,) drop-shadow(0 0 10px var(--arrow-emphasis)); }
-  41.683% { filter: var(--ambient-node-base-filter, none); }
+  31.871% { filter: var(--ambient-node-base-filter, none); }
+  33.229%, 36.625% { filter: var(--ambient-node-base-filter,) drop-shadow(0 0 10px var(--arrow-emphasis)); }
+  45.452% { filter: var(--ambient-node-base-filter, none); }
 }
 @keyframes archify-relay-node-7 { 
   0%, 100% { filter: var(--ambient-node-base-filter, none); }
-  22.172% { filter: var(--ambient-node-base-filter, none); }
-  23.725%, 27.609% { filter: var(--ambient-node-base-filter,) drop-shadow(0 0 10px var(--arrow-emphasis)); }
-  37.706% { filter: var(--ambient-node-base-filter, none); }
+  31.871% { filter: var(--ambient-node-base-filter, none); }
+  33.229%, 36.625% { filter: var(--ambient-node-base-filter,) drop-shadow(0 0 10px var(--arrow-emphasis)); }
+  45.452% { filter: var(--ambient-node-base-filter, none); }
 }
 @keyframes archify-relay-node-8 { 
   0%, 100% { filter: var(--ambient-node-base-filter, none); }
-  18.9% { filter: var(--ambient-node-base-filter, none); }
-  20.453%, 24.337% { filter: var(--ambient-node-base-filter,) drop-shadow(0 0 10px var(--arrow-emphasis)); }
-  34.434% { filter: var(--ambient-node-base-filter, none); }
+  40.98% { filter: var(--ambient-node-base-filter, none); }
+  42.339%, 45.734% { filter: var(--ambient-node-base-filter,) drop-shadow(0 0 10px var(--arrow-emphasis)); }
+  54.561% { filter: var(--ambient-node-base-filter, none); }
 }
 @keyframes archify-relay-node-9 { 
   0%, 100% { filter: var(--ambient-node-base-filter, none); }
-  29.319% { filter: var(--ambient-node-base-filter, none); }
-  30.873%, 34.756% { filter: var(--ambient-node-base-filter,) drop-shadow(0 0 10px var(--arrow-emphasis)); }
-  44.854% { filter: var(--ambient-node-base-filter, none); }
+  37.918% { filter: var(--ambient-node-base-filter, none); }
+  39.276%, 42.671% { filter: var(--ambient-node-base-filter,) drop-shadow(0 0 10px var(--arrow-emphasis)); }
+  51.498% { filter: var(--ambient-node-base-filter, none); }
 }
 @keyframes archify-relay-node-10 { 
   0%, 100% { filter: var(--ambient-node-base-filter, none); }
-  19.418% { filter: var(--ambient-node-base-filter, none); }
-  20.971%, 24.855% { filter: var(--ambient-node-base-filter,) drop-shadow(0 0 10px var(--arrow-emphasis)); }
-  34.952% { filter: var(--ambient-node-base-filter, none); }
+  37.756% { filter: var(--ambient-node-base-filter, none); }
+  39.114%, 42.509% { filter: var(--ambient-node-base-filter,) drop-shadow(0 0 10px var(--arrow-emphasis)); }
+  51.337% { filter: var(--ambient-node-base-filter, none); }
 }
 @keyframes archify-relay-node-11 { 
   0%, 100% { filter: var(--ambient-node-base-filter, none); }
-  29.392% { filter: var(--ambient-node-base-filter, none); }
-  30.946%, 34.829% { filter: var(--ambient-node-base-filter,) drop-shadow(0 0 10px var(--arrow-emphasis)); }
-  44.926% { filter: var(--ambient-node-base-filter, none); }
+  39.955% { filter: var(--ambient-node-base-filter, none); }
+  41.313%, 44.708% { filter: var(--ambient-node-base-filter,) drop-shadow(0 0 10px var(--arrow-emphasis)); }
+  53.535% { filter: var(--ambient-node-base-filter, none); }
 }
 @keyframes archify-relay-node-12 { 
   0%, 100% { filter: var(--ambient-node-base-filter, none); }
-  25.631% { filter: var(--ambient-node-base-filter, none); }
-  27.185%, 31.068% { filter: var(--ambient-node-base-filter,) drop-shadow(0 0 10px var(--arrow-emphasis)); }
-  41.166% { filter: var(--ambient-node-base-filter, none); }
+  39.874% { filter: var(--ambient-node-base-filter, none); }
+  41.232%, 44.627% { filter: var(--ambient-node-base-filter,) drop-shadow(0 0 10px var(--arrow-emphasis)); }
+  53.455% { filter: var(--ambient-node-base-filter, none); }
 }
 @keyframes archify-relay-node-13 { 
   0%, 100% { filter: var(--ambient-node-base-filter, none); }
-  32.363% { filter: var(--ambient-node-base-filter, none); }
-  33.916%, 37.8% { filter: var(--ambient-node-base-filter,) drop-shadow(0 0 10px var(--arrow-emphasis)); }
-  47.897% { filter: var(--ambient-node-base-filter, none); }
+  49.979% { filter: var(--ambient-node-base-filter, none); }
+  51.337%, 54.732% { filter: var(--ambient-node-base-filter,) drop-shadow(0 0 10px var(--arrow-emphasis)); }
+  63.559% { filter: var(--ambient-node-base-filter, none); }
 }
 @keyframes archify-relay-node-14 { 
   0%, 100% { filter: var(--ambient-node-base-filter, none); }
-  36.124% { filter: var(--ambient-node-base-filter, none); }
-  37.677%, 41.561% { filter: var(--ambient-node-base-filter,) drop-shadow(0 0 10px var(--arrow-emphasis)); }
-  51.658% { filter: var(--ambient-node-base-filter, none); }
+  49.979% { filter: var(--ambient-node-base-filter, none); }
+  51.337%, 54.732% { filter: var(--ambient-node-base-filter,) drop-shadow(0 0 10px var(--arrow-emphasis)); }
+  63.559% { filter: var(--ambient-node-base-filter, none); }
 }
 @keyframes archify-relay-node-15 { 
   0%, 100% { filter: var(--ambient-node-base-filter, none); }
-  46.861% { filter: var(--ambient-node-base-filter, none); }
-  48.415%, 52.298% { filter: var(--ambient-node-base-filter,) drop-shadow(0 0 10px var(--arrow-emphasis)); }
-  62.396% { filter: var(--ambient-node-base-filter, none); }
+  46.502% { filter: var(--ambient-node-base-filter, none); }
+  47.86%, 51.255% { filter: var(--ambient-node-base-filter,) drop-shadow(0 0 10px var(--arrow-emphasis)); }
+  60.082% { filter: var(--ambient-node-base-filter, none); }
 }
 @keyframes archify-relay-node-16 { 
   0%, 100% { filter: var(--ambient-node-base-filter, none); }
-  36.051% { filter: var(--ambient-node-base-filter, none); }
-  37.604%, 41.488% { filter: var(--ambient-node-base-filter,) drop-shadow(0 0 10px var(--arrow-emphasis)); }
-  51.585% { filter: var(--ambient-node-base-filter, none); }
+  41.044% { filter: var(--ambient-node-base-filter, none); }
+  42.402%, 45.797% { filter: var(--ambient-node-base-filter,) drop-shadow(0 0 10px var(--arrow-emphasis)); }
+  54.624% { filter: var(--ambient-node-base-filter, none); }
 }
 @keyframes archify-relay-node-17 { 
   0%, 100% { filter: var(--ambient-node-base-filter, none); }
-  39.094% { filter: var(--ambient-node-base-filter, none); }
-  40.648%, 44.531% { filter: var(--ambient-node-base-filter,) drop-shadow(0 0 10px var(--arrow-emphasis)); }
-  54.629% { filter: var(--ambient-node-base-filter, none); }
+  43.803% { filter: var(--ambient-node-base-filter, none); }
+  45.161%, 48.556% { filter: var(--ambient-node-base-filter,) drop-shadow(0 0 10px var(--arrow-emphasis)); }
+  57.383% { filter: var(--ambient-node-base-filter, none); }
 }
 @keyframes archify-relay-node-18 { 
   0%, 100% { filter: var(--ambient-node-base-filter, none); }
-  49.514% { filter: var(--ambient-node-base-filter, none); }
-  51.067%, 54.951% { filter: var(--ambient-node-base-filter,) drop-shadow(0 0 10px var(--arrow-emphasis)); }
-  65.048% { filter: var(--ambient-node-base-filter, none); }
+  52.912% { filter: var(--ambient-node-base-filter, none); }
+  54.27%, 57.665% { filter: var(--ambient-node-base-filter,) drop-shadow(0 0 10px var(--arrow-emphasis)); }
+  66.492% { filter: var(--ambient-node-base-filter, none); }
 }
 @keyframes archify-relay-node-19 { 
   0%, 100% { filter: var(--ambient-node-base-filter, none); }
-  42.855% { filter: var(--ambient-node-base-filter, none); }
-  44.409%, 48.292% { filter: var(--ambient-node-base-filter,) drop-shadow(0 0 10px var(--arrow-emphasis)); }
-  58.389% { filter: var(--ambient-node-base-filter, none); }
+  47.091% { filter: var(--ambient-node-base-filter, none); }
+  48.449%, 51.844% { filter: var(--ambient-node-base-filter,) drop-shadow(0 0 10px var(--arrow-emphasis)); }
+  60.671% { filter: var(--ambient-node-base-filter, none); }
 }
 @keyframes archify-relay-node-20 { 
   0%, 100% { filter: var(--ambient-node-base-filter, none); }
-  43.041% { filter: var(--ambient-node-base-filter, none); }
-  44.595%, 48.478% { filter: var(--ambient-node-base-filter,) drop-shadow(0 0 10px var(--arrow-emphasis)); }
-  58.576% { filter: var(--ambient-node-base-filter, none); }
+  47.253% { filter: var(--ambient-node-base-filter, none); }
+  48.611%, 52.006% { filter: var(--ambient-node-base-filter,) drop-shadow(0 0 10px var(--arrow-emphasis)); }
+  60.834% { filter: var(--ambient-node-base-filter, none); }
 }
 @keyframes archify-relay-node-21 { 
   0%, 100% { filter: var(--ambient-node-base-filter, none); }
-  0% { filter: var(--ambient-node-base-filter, none); }
-  1.553%, 5.437% { filter: var(--ambient-node-base-filter,) drop-shadow(0 0 10px var(--arrow-emphasis)); }
-  15.534% { filter: var(--ambient-node-base-filter, none); }
+  46.865% { filter: var(--ambient-node-base-filter, none); }
+  48.223%, 51.618% { filter: var(--ambient-node-base-filter,) drop-shadow(0 0 10px var(--arrow-emphasis)); }
+  60.446% { filter: var(--ambient-node-base-filter, none); }
 }
 @keyframes archify-relay-node-22 { 
   0%, 100% { filter: var(--ambient-node-base-filter, none); }
-  7.397% { filter: var(--ambient-node-base-filter, none); }
-  8.951%, 12.834% { filter: var(--ambient-node-base-filter,) drop-shadow(0 0 10px var(--arrow-emphasis)); }
-  22.931% { filter: var(--ambient-node-base-filter, none); }
+  68.086% { filter: var(--ambient-node-base-filter, none); }
+  69.444%, 72.839% { filter: var(--ambient-node-base-filter,) drop-shadow(0 0 10px var(--arrow-emphasis)); }
+  81.666% { filter: var(--ambient-node-base-filter, none); }
+}
+@keyframes archify-relay-node-23 { 
+  0%, 100% { filter: var(--ambient-node-base-filter, none); }
+  0% { filter: var(--ambient-node-base-filter, none); }
+  1.358%, 4.753% { filter: var(--ambient-node-base-filter,) drop-shadow(0 0 10px var(--arrow-emphasis)); }
+  13.58% { filter: var(--ambient-node-base-filter, none); }
+}
+@keyframes archify-relay-node-24 { 
+  0%, 100% { filter: var(--ambient-node-base-filter, none); }
+  6.467% { filter: var(--ambient-node-base-filter, none); }
+  7.825%, 11.22% { filter: var(--ambient-node-base-filter,) drop-shadow(0 0 10px var(--arrow-emphasis)); }
+  20.047% { filter: var(--ambient-node-base-filter, none); }
 }
 svg[data-node-ui] [data-node-id] &gt; rect:not(.c-mask) { stroke-width: 1.25px; }
 :is([data-theme="dark"] svg[data-node-ui], svg[data-node-ui][data-theme="dark"]) [data-node-id] &gt; rect:not(.c-mask).c-frontend { fill: color-mix(in srgb, var(--frontend-stroke) 13%, var(--mask)); stroke: color-mix(in srgb, var(--frontend-stroke) 72%, var(--mask)); }
@@ -1446,8 +1502,8 @@ been cleared for every commercial, promotional, or redistributive use.</metadata
           <path data-edge-from="store" data-edge-to="agentloop" data-edge-label="read context (mem · todo)" data-edge-key="18" data-composition-points="426,560;426,536;442,536;442,414;421,414;421,390" data-composition-crossover="halo" d="M 426 560 L 426 544 Q 426 536 434 536 L 434 536 Q 442 536 442 528 L 442 422 Q 442 414 434 414 L 429 414 Q 421 414 421 406 L 421 390" class="a-default" data-animate="edge" style="--step: 12;" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         </g>
         <g data-graph-role="automatic-crossover" style="--step:19">
-          <path data-graph-role="automatic-crossover-underlay" d="M 1040 360 L 1024 360 Q 1016 360 1016 352 L 1016 322 Q 1016 314 1008 314 L 514 314 Q 506 314 506 322 L 506 352 Q 506 360 498 360 L 482 360" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
-          <path data-edge-from="sandbox" data-edge-to="agentloop" data-edge-label="observation · tool result" data-edge-key="19" data-composition-points="1040,360;1016,360;1016,314;506,314;506,360;482,360" data-composition-crossover="halo" d="M 1040 360 L 1024 360 Q 1016 360 1016 352 L 1016 322 Q 1016 314 1008 314 L 514 314 Q 506 314 506 322 L 506 352 Q 506 360 498 360 L 482 360" class="a-default" data-animate="edge" style="--step: 12;" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+          <path data-graph-role="automatic-crossover-underlay" d="M 1040 360 L 1003 360 Q 995 360 995 352 L 995 322 Q 995 314 987 314 L 514 314 Q 506 314 506 322 L 506 352 Q 506 360 498 360 L 482 360" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
+          <path data-edge-from="sandbox" data-edge-to="agentloop" data-edge-label="observation · tool result" data-edge-key="19" data-composition-points="1040,360;995,360;995,314;506,314;506,360;482,360" data-composition-crossover="halo" d="M 1040 360 L 1003 360 Q 995 360 995 352 L 995 322 Q 995 314 987 314 L 514 314 Q 506 314 506 322 L 506 352 Q 506 360 498 360 L 482 360" class="a-default" data-animate="edge" style="--step: 12;" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         </g>
         <g data-graph-role="automatic-crossover" style="--step:20">
           <path data-graph-role="automatic-crossover-underlay" d="M 591 390 L 591 406 Q 591 414 599 414 L 608 414 Q 616 414 616 422 L 616 528 Q 616 536 608 536 L 608 536 Q 600 536 600 544 L 600 560" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
@@ -1466,8 +1522,8 @@ been cleared for every commercial, promotional, or redistributive use.</metadata
           <path data-edge-from="integrations" data-edge-to="gateway" data-edge-label="bearer POST-SSE :8790" data-edge-key="23" data-composition-points="88,560;88,475;258,475;258,390" data-composition-crossover="halo" data-composition-independent="true" d="M 88 560 L 88 483 Q 88 475 96 475 L 250 475 Q 258 475 258 467 L 258 390" class="a-default" data-animate="edge" style="--step: 12;" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         </g>
         <g data-graph-role="automatic-crossover" style="--step:24">
-          <path data-graph-role="automatic-crossover-underlay" d="M 81 790 L 81 707 Q 81 699 89 699 L 418 699 Q 426 699 426 691 L 426 620" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
-          <path data-edge-from="orchestrate" data-edge-to="store" data-edge-label="agents.json · jobs.json" data-edge-key="24" data-composition-points="81,790;81,699;426,699;426,620" data-composition-crossover="halo" data-composition-independent="true" d="M 81 790 L 81 707 Q 81 699 89 699 L 418 699 Q 426 699 426 691 L 426 620" class="a-default" data-animate="edge" style="--step: 12;" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+          <path data-graph-role="automatic-crossover-underlay" d="M 81 790 L 81 707 Q 81 699 89 699 L 411 699 Q 419 699 419 691 L 419 620" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
+          <path data-edge-from="orchestrate" data-edge-to="store" data-edge-label="agents.json · jobs.json" data-edge-key="24" data-composition-points="81,790;81,699;419,699;419,620" data-composition-crossover="halo" data-composition-independent="true" d="M 81 790 L 81 707 Q 81 699 89 699 L 411 699 Q 419 699 419 691 L 419 620" class="a-default" data-animate="edge" style="--step: 12;" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         </g>
         <g data-graph-role="automatic-crossover" style="--step:25">
           <path data-graph-role="automatic-crossover-underlay" d="M 81 1010 L 81 850" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
@@ -1518,12 +1574,28 @@ been cleared for every commercial, promotional, or redistributive use.</metadata
           <path data-graph-role="automatic-crossover-underlay" d="M 715 130 L 699 130 Q 691 130 691 138 L 691 138 Q 691 146 699 146 L 702 146 Q 710 146 710 138 L 710 137 Q 710 129 702 129 L 686 129" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
           <path data-edge-from="knowledge" data-edge-to="prompt" data-edge-label="retrieved chunks · rerank" data-edge-key="37" data-composition-points="715,130;691,130;691,146;710,146;710,129;686,129" data-composition-crossover="halo" data-composition-independent="true" d="M 715 130 L 699 130 Q 691 130 691 138 L 691 138 Q 691 146 699 146 L 702 146 Q 710 146 710 138 L 710 137 Q 710 129 702 129 L 686 129" class="a-dashed" data-animate="edge" style="--step: 12;" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
         </g>
+        <g data-graph-role="automatic-crossover" style="--step:38">
+          <path data-graph-role="automatic-crossover-underlay" d="M 251 390 L 251 549 Q 251 557 259 557 L 516.4 557 Q 524.4 557 524.4 565 L 524.4 779 Q 524.4 787 532.4 787 L 665 787 Q 673 787 673 795 L 673 922 Q 673 930 681 930 L 890 930" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
+          <path data-edge-from="gateway" data-edge-to="market" data-edge-label="/api/market/* · sync job" data-edge-key="38" data-composition-points="251,390;251,557;524.4,557;524.4,787;673,787;673,930;890,930" data-composition-crossover="halo" d="M 251 390 L 251 549 Q 251 557 259 557 L 516.4 557 Q 524.4 557 524.4 565 L 524.4 779 Q 524.4 787 532.4 787 L 665 787 Q 673 787 673 795 L 673 922 Q 673 930 681 930 L 890 930" class="a-dashed" data-animate="edge" style="--step: 12;" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
+        </g>
+        <g data-graph-role="automatic-crossover" style="--step:39">
+          <path data-graph-role="automatic-crossover-underlay" d="M 975 1010 L 975 960" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
+          <path data-edge-from="registries" data-edge-to="market" data-edge-label="registry pages · ClawHub API" data-edge-key="39" data-composition-points="975,1010;975,960" data-composition-crossover="halo" data-composition-independent="true" d="M 975 1010 L 975 960" class="a-default" data-animate="edge" style="--step: 12;" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        </g>
+        <g data-graph-role="automatic-crossover" style="--step:40">
+          <path data-graph-role="automatic-crossover-underlay" d="M 982 900 L 982 707 Q 982 699 974 699 L 872 699 Q 864 699 864 691 L 864 598 Q 864 590 856 590 L 840 590" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
+          <path data-edge-from="market" data-edge-to="mcp" data-edge-label="install server config" data-edge-key="40" data-composition-points="982,900;982,699;864,699;864,590;840,590" data-composition-crossover="halo" data-composition-independent="true" d="M 982 900 L 982 707 Q 982 699 974 699 L 872 699 Q 864 699 864 691 L 864 598 Q 864 590 856 590 L 840 590" class="a-default" data-animate="edge" style="--step: 12;" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        </g>
+        <g data-graph-role="automatic-crossover" style="--step:41">
+          <path data-graph-role="automatic-crossover-underlay" d="M 968 900 L 968 699 Q 968 691 960 691 L 532.4 691 Q 524.4 691 524.4 683 L 524.4 544 Q 524.4 536 516.4 536 L 434 536 Q 426 536 426 544 L 426 560" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
+          <path data-edge-from="market" data-edge-to="store" data-edge-label="catalog · install record · skill files" data-edge-key="41" data-composition-points="968,900;968,691;524.4,691;524.4,536;426,536;426,560" data-composition-crossover="halo" data-composition-independent="true" d="M 968 900 L 968 699 Q 968 691 960 691 L 532.4 691 Q 524.4 691 524.4 683 L 524.4 544 Q 524.4 536 516.4 536 L 434 536 Q 426 536 426 544 L 426 560" class="a-default" data-animate="edge" style="--step: 12;" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        </g>
 
         <!-- Components -->
         <g id="node-clients" data-node-id="clients" data-node-label="Client" tabindex="0" role="button" aria-label="Focus Client, WebUI · console · CLI · Mobile, Architecture component" aria-pressed="false" data-node-kind="external" data-node-sublabel="WebUI · console · CLI · Mobile" data-node-context="Architecture component">
           <title>Client · WebUI · console · CLI · Mobile · Architecture component</title>
           <rect x="20" y="330" width="122" height="60" rx="8" class="c-mask"/>
-          <rect x="20" y="330" width="122" height="60" rx="8" class="c-external" data-animate="node" style="--step: 0; --flow-node-name: archify-relay-node-0;" stroke-width="1.5"/>
+          <rect x="20" y="330" width="122" height="60" rx="8" class="c-external" data-animate="node" style="--step: 0; --flow-node-name: archify-relay-node-10;" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(26 336) scale(0.6875)">
             <rect x="2.5" y="5" width="8.5" height="8" rx="1.5"/>
             <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
@@ -1535,7 +1607,7 @@ been cleared for every commercial, promotional, or redistributive use.</metadata
         <g id="node-gateway" data-node-id="gateway" data-node-label="HTTP + SSE Gateway" tabindex="0" role="button" aria-label="Focus HTTP + SSE Gateway, http · https (Bearer), Architecture component" aria-pressed="false" data-node-kind="security" data-node-sublabel="http · https (Bearer)" data-node-context="Architecture component">
           <title>HTTP + SSE Gateway · http · https (Bearer) · Architecture component</title>
           <rect x="190" y="330" width="122" height="60" rx="8" class="c-mask"/>
-          <rect x="190" y="330" width="122" height="60" rx="8" class="c-security" data-animate="node" style="--step: 1; --flow-node-name: archify-relay-node-1;" stroke-width="1.5"/>
+          <rect x="190" y="330" width="122" height="60" rx="8" class="c-security" data-animate="node" style="--step: 1; --flow-node-name: archify-relay-node-6;" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(196 336) scale(0.6875)">
             <path d="M8 2.2 13 4v3.5c0 3.1-1.8 5.4-5 6.5-3.2-1.1-5-3.4-5-6.5V4Z"/>
             <path d="m5.8 8 1.5 1.5 3-3"/>
@@ -1547,7 +1619,7 @@ been cleared for every commercial, promotional, or redistributive use.</metadata
         <g id="node-agentloop" data-node-id="agentloop" data-node-label="Agent Loop" tabindex="0" role="button" aria-label="Focus Agent Loop, think → act → observe, Architecture component" aria-pressed="false" data-node-kind="backend" data-node-sublabel="think → act → observe" data-node-context="Architecture component">
           <title>Agent Loop · think → act → observe · Architecture component</title>
           <rect x="360" y="330" width="122" height="60" rx="8" class="c-mask"/>
-          <rect x="360" y="330" width="122" height="60" rx="8" class="c-backend" data-animate="node" style="--step: 3; --flow-node-name: archify-relay-node-2;" stroke-width="1.5"/>
+          <rect x="360" y="330" width="122" height="60" rx="8" class="c-backend" data-animate="node" style="--step: 3; --flow-node-name: archify-relay-node-5;" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(366 336) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
@@ -1558,7 +1630,7 @@ been cleared for every commercial, promotional, or redistributive use.</metadata
         <g id="node-control" data-node-id="control" data-node-label="Harness Control" tabindex="0" role="button" aria-label="Focus Harness Control, budget · best-of-N, Architecture component" aria-pressed="false" data-node-kind="backend" data-node-sublabel="budget · best-of-N" data-node-context="Architecture component">
           <title>Harness Control · budget · best-of-N · Architecture component</title>
           <rect x="530" y="330" width="122" height="60" rx="8" class="c-mask"/>
-          <rect x="530" y="330" width="122" height="60" rx="8" class="c-backend" data-animate="node" style="--step: 5; --flow-node-name: archify-relay-node-8;" stroke-width="1.5"/>
+          <rect x="530" y="330" width="122" height="60" rx="8" class="c-backend" data-animate="node" style="--step: 5; --flow-node-name: archify-relay-node-7;" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(536 336) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
@@ -1569,7 +1641,7 @@ been cleared for every commercial, promotional, or redistributive use.</metadata
         <g id="node-registry" data-node-id="registry" data-node-label="Tool Registry" tabindex="0" role="button" aria-label="Focus Tool Registry, allowlist · approval, approval &amp; policy gate" aria-pressed="false" data-node-kind="security" data-node-sublabel="allowlist · approval" data-node-context="approval &amp; policy gate">
           <title>Tool Registry · allowlist · approval · approval &amp; policy gate</title>
           <rect x="700" y="330" width="122" height="60" rx="8" class="c-mask"/>
-          <rect x="700" y="330" width="122" height="60" rx="8" class="c-security" data-animate="node" style="--step: 6; --flow-node-name: archify-relay-node-12;" stroke-width="1.5"/>
+          <rect x="700" y="330" width="122" height="60" rx="8" class="c-security" data-animate="node" style="--step: 6; --flow-node-name: archify-relay-node-4;" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(706 336) scale(0.6875)">
             <path d="M8 2.2 13 4v3.5c0 3.1-1.8 5.4-5 6.5-3.2-1.1-5-3.4-5-6.5V4Z"/>
             <path d="m5.8 8 1.5 1.5 3-3"/>
@@ -1581,7 +1653,7 @@ been cleared for every commercial, promotional, or redistributive use.</metadata
         <g id="node-tools" data-node-id="tools" data-node-label="Tool Executor" tabindex="0" role="button" aria-label="Focus Tool Executor, fs · git · web · sessions, Architecture component" aria-pressed="false" data-node-kind="backend" data-node-sublabel="fs · git · web · sessions" data-node-context="Architecture component">
           <title>Tool Executor · fs · git · web · sessions · Architecture component</title>
           <rect x="870" y="330" width="122" height="60" rx="8" class="c-mask"/>
-          <rect x="870" y="330" width="122" height="60" rx="8" class="c-backend" data-animate="node" style="--step: 7; --flow-node-name: archify-relay-node-13;" stroke-width="1.5"/>
+          <rect x="870" y="330" width="122" height="60" rx="8" class="c-backend" data-animate="node" style="--step: 7; --flow-node-name: archify-relay-node-9;" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(876 336) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
@@ -1604,7 +1676,7 @@ been cleared for every commercial, promotional, or redistributive use.</metadata
         <g id="node-observe" data-node-id="observe" data-node-label="Observability" tabindex="0" role="button" aria-label="Focus Observability, metrics · OTel · trace tree, Architecture component" aria-pressed="false" data-node-kind="external" data-node-sublabel="metrics · OTel · trace tree" data-node-context="Architecture component">
           <title>Observability · metrics · OTel · trace tree · Architecture component</title>
           <rect x="190" y="100" width="122" height="58" rx="8" class="c-mask"/>
-          <rect x="190" y="100" width="122" height="58" rx="8" class="c-external" data-animate="node" style="--step: 12; --flow-node-name: archify-relay-node-3;" stroke-width="1.5"/>
+          <rect x="190" y="100" width="122" height="58" rx="8" class="c-external" data-animate="node" style="--step: 12; --flow-node-name: archify-relay-node-11;" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(196 106) scale(0.6875)">
             <rect x="2.5" y="5" width="8.5" height="8" rx="1.5"/>
             <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
@@ -1616,7 +1688,7 @@ been cleared for every commercial, promotional, or redistributive use.</metadata
         <g id="node-router" data-node-id="router" data-node-label="LLM Router" tabindex="0" role="button" aria-label="Focus LLM Router, local + hosted, Architecture component" aria-pressed="false" data-node-kind="cloud" data-node-sublabel="local + hosted" data-node-context="Architecture component">
           <title>LLM Router · local + hosted · Architecture component</title>
           <rect x="330" y="100" width="140" height="58" rx="8" class="c-mask"/>
-          <rect x="330" y="100" width="140" height="58" rx="8" class="c-cloud" data-animate="node" style="--step: 12; --flow-node-name: archify-relay-node-16;" stroke-width="1.5"/>
+          <rect x="330" y="100" width="140" height="58" rx="8" class="c-cloud" data-animate="node" style="--step: 12; --flow-node-name: archify-relay-node-21;" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="cloud" class="semantic-sigil s-cloud" transform="translate(336 106) scale(0.6875)">
             <path d="M4.3 12.5h7.3a2.4 2.4 0 0 0 .2-4.8 4 4 0 0 0-7.5-1.3A3.1 3.1 0 0 0 4.3 12.5Z"/>
           </g>
@@ -1627,7 +1699,7 @@ been cleared for every commercial, promotional, or redistributive use.</metadata
         <g id="node-prompt" data-node-id="prompt" data-node-label="Prompt Assembly" tabindex="0" role="button" aria-label="Focus Prompt Assembly, self · tools · rules · skills · mem · todo, Architecture component" aria-pressed="false" data-node-kind="backend" data-node-sublabel="self · tools · rules · skills · mem · todo" data-node-context="Architecture component">
           <title>Prompt Assembly · self · tools · rules · skills · mem · todo · Architecture component</title>
           <rect x="510" y="100" width="176" height="58" rx="8" class="c-mask"/>
-          <rect x="510" y="100" width="176" height="58" rx="8" class="c-backend" data-animate="node" style="--step: 11; --flow-node-name: archify-relay-node-9;" stroke-width="1.5"/>
+          <rect x="510" y="100" width="176" height="58" rx="8" class="c-backend" data-animate="node" style="--step: 11; --flow-node-name: archify-relay-node-8;" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(516 106) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
@@ -1650,7 +1722,7 @@ been cleared for every commercial, promotional, or redistributive use.</metadata
         <g id="node-store" data-node-id="store" data-node-label="Harness state" tabindex="0" role="button" aria-label="Focus Harness state, sessions · graph · memory, Architecture component" aria-pressed="false" data-node-kind="database" data-node-sublabel="sessions · graph · memory" data-node-context="Architecture component">
           <title>Harness state · sessions · graph · memory · Architecture component</title>
           <rect x="360" y="560" width="132" height="60" rx="8" class="c-mask"/>
-          <rect x="360" y="560" width="132" height="60" rx="8" class="c-database" data-animate="node" style="--step: 12; --flow-node-name: archify-relay-node-10;" stroke-width="1.5"/>
+          <rect x="360" y="560" width="132" height="60" rx="8" class="c-database" data-animate="node" style="--step: 12; --flow-node-name: archify-relay-node-3;" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(366 566) scale(0.6875)">
             <ellipse cx="8" cy="4" rx="5" ry="2"/>
             <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
@@ -1662,7 +1734,7 @@ been cleared for every commercial, promotional, or redistributive use.</metadata
         <g id="node-evolve" data-node-id="evolve" data-node-label="Self-Evolution" tabindex="0" role="button" aria-label="Focus Self-Evolution, mine · draft · promote · judge, Architecture component" aria-pressed="false" data-node-kind="backend" data-node-sublabel="mine · draft · promote · judge" data-node-context="Architecture component">
           <title>Self-Evolution · mine · draft · promote · judge · Architecture component</title>
           <rect x="530" y="560" width="140" height="60" rx="8" class="c-mask"/>
-          <rect x="530" y="560" width="140" height="60" rx="8" class="c-backend" data-animate="node" style="--step: 12; --flow-node-name: archify-relay-node-11;" stroke-width="1.5"/>
+          <rect x="530" y="560" width="140" height="60" rx="8" class="c-backend" data-animate="node" style="--step: 12; --flow-node-name: archify-relay-node-16;" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(536 566) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
@@ -1673,7 +1745,7 @@ been cleared for every commercial, promotional, or redistributive use.</metadata
         <g id="node-mcp" data-node-id="mcp" data-node-label="MCP Bridge" tabindex="0" role="button" aria-label="Focus MCP Bridge, external ↔ harness, Architecture component" aria-pressed="false" data-node-kind="messagebus" data-node-sublabel="external ↔ harness" data-node-context="Architecture component">
           <title>MCP Bridge · external ↔ harness · Architecture component</title>
           <rect x="700" y="560" width="140" height="60" rx="8" class="c-mask"/>
-          <rect x="700" y="560" width="140" height="60" rx="8" class="c-messagebus" data-animate="node" style="--step: 12; --flow-node-name: archify-relay-node-14;" stroke-width="1.5"/>
+          <rect x="700" y="560" width="140" height="60" rx="8" class="c-messagebus" data-animate="node" style="--step: 12; --flow-node-name: archify-relay-node-2;" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="messagebus" class="semantic-sigil s-messagebus" transform="translate(706 566) scale(0.6875)">
             <path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11"/>
             <circle cx="5" cy="4.5" r="1" class="sigil-fill"/>
@@ -1699,7 +1771,7 @@ been cleared for every commercial, promotional, or redistributive use.</metadata
         <g id="node-orchestrate" data-node-id="orchestrate" data-node-label="Orchestration" tabindex="0" role="button" aria-label="Focus Orchestration, teams · jobs · agent roles, Architecture component" aria-pressed="false" data-node-kind="backend" data-node-sublabel="teams · jobs · agent roles" data-node-context="Architecture component">
           <title>Orchestration · teams · jobs · agent roles · Architecture component</title>
           <rect x="6" y="790" width="150" height="60" rx="8" class="c-mask"/>
-          <rect x="6" y="790" width="150" height="60" rx="8" class="c-backend" data-animate="node" style="--step: 12; --flow-node-name: archify-relay-node-21;" stroke-width="1.5"/>
+          <rect x="6" y="790" width="150" height="60" rx="8" class="c-backend" data-animate="node" style="--step: 12; --flow-node-name: archify-relay-node-23;" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(12 796) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
@@ -1710,7 +1782,7 @@ been cleared for every commercial, promotional, or redistributive use.</metadata
         <g id="node-knowledge" data-node-id="knowledge" data-node-label="Knowledge &amp; index" tabindex="0" role="button" aria-label="Focus Knowledge &amp; index, FTS · vectors · rerank, Architecture component" aria-pressed="false" data-node-kind="database" data-node-sublabel="FTS · vectors · rerank" data-node-context="Architecture component">
           <title>Knowledge &amp; index · FTS · vectors · rerank · Architecture component</title>
           <rect x="715" y="100" width="160" height="60" rx="8" class="c-mask"/>
-          <rect x="715" y="100" width="160" height="60" rx="8" class="c-database" data-animate="node" style="--step: 12; --flow-node-name: archify-relay-node-15;" stroke-width="1.5"/>
+          <rect x="715" y="100" width="160" height="60" rx="8" class="c-database" data-animate="node" style="--step: 12; --flow-node-name: archify-relay-node-22;" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(721 106) scale(0.6875)">
             <ellipse cx="8" cy="4" rx="5" ry="2"/>
             <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
@@ -1733,7 +1805,7 @@ been cleared for every commercial, promotional, or redistributive use.</metadata
         <g id="node-harness" data-node-id="harness" data-node-label="Harness runner" tabindex="0" role="button" aria-label="Focus Harness runner, record · contrast · compose · cycle, Architecture component" aria-pressed="false" data-node-kind="backend" data-node-sublabel="record · contrast · compose · cycle" data-node-context="Architecture component">
           <title>Harness runner · record · contrast · compose · cycle · Architecture component</title>
           <rect x="166" y="560" width="170" height="60" rx="8" class="c-mask"/>
-          <rect x="166" y="560" width="170" height="60" rx="8" class="c-backend" data-animate="node" style="--step: 12; --flow-node-name: archify-relay-node-4;" stroke-width="1.5"/>
+          <rect x="166" y="560" width="170" height="60" rx="8" class="c-backend" data-animate="node" style="--step: 12; --flow-node-name: archify-relay-node-12;" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(172 566) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
@@ -1744,7 +1816,7 @@ been cleared for every commercial, promotional, or redistributive use.</metadata
         <g id="node-research" data-node-id="research" data-node-label="Research pipeline" tabindex="0" role="button" aria-label="Focus Research pipeline, multi-round · web-grounded, Architecture component" aria-pressed="false" data-node-kind="backend" data-node-sublabel="multi-round · web-grounded" data-node-context="Architecture component">
           <title>Research pipeline · multi-round · web-grounded · Architecture component</title>
           <rect x="700" y="790" width="170" height="60" rx="8" class="c-mask"/>
-          <rect x="700" y="790" width="170" height="60" rx="8" class="c-backend" data-animate="node" style="--step: 12; --flow-node-name: archify-relay-node-5;" stroke-width="1.5"/>
+          <rect x="700" y="790" width="170" height="60" rx="8" class="c-backend" data-animate="node" style="--step: 12; --flow-node-name: archify-relay-node-13;" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(706 796) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
@@ -1755,7 +1827,7 @@ been cleared for every commercial, promotional, or redistributive use.</metadata
         <g id="node-gen" data-node-id="gen" data-node-label="Generated surfaces" tabindex="0" role="button" aria-label="Focus Generated surfaces, generate controls · surfaces, Architecture component" aria-pressed="false" data-node-kind="backend" data-node-sublabel="generate controls · surfaces" data-node-context="Architecture component">
           <title>Generated surfaces · generate controls · surfaces · Architecture component</title>
           <rect x="380" y="790" width="170" height="60" rx="8" class="c-mask"/>
-          <rect x="380" y="790" width="170" height="60" rx="8" class="c-backend" data-animate="node" style="--step: 12; --flow-node-name: archify-relay-node-6;" stroke-width="1.5"/>
+          <rect x="380" y="790" width="170" height="60" rx="8" class="c-backend" data-animate="node" style="--step: 12; --flow-node-name: archify-relay-node-14;" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(386 796) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
@@ -1766,7 +1838,7 @@ been cleared for every commercial, promotional, or redistributive use.</metadata
         <g id="node-orbit" data-node-id="orbit" data-node-label="Control deck (Orbit)" tabindex="0" role="button" aria-label="Focus Control deck (Orbit), constellation · dispatch, Architecture component" aria-pressed="false" data-node-kind="backend" data-node-sublabel="constellation · dispatch" data-node-context="Architecture component">
           <title>Control deck (Orbit) · constellation · dispatch · Architecture component</title>
           <rect x="6" y="1010" width="150" height="60" rx="8" class="c-mask"/>
-          <rect x="6" y="1010" width="150" height="60" rx="8" class="c-backend" data-animate="node" style="--step: 12; --flow-node-name: archify-relay-node-22;" stroke-width="1.5"/>
+          <rect x="6" y="1010" width="150" height="60" rx="8" class="c-backend" data-animate="node" style="--step: 12; --flow-node-name: archify-relay-node-24;" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(12 1016) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
@@ -1777,13 +1849,36 @@ been cleared for every commercial, promotional, or redistributive use.</metadata
         <g id="node-integrations" data-node-id="integrations" data-node-label="Integrations" tabindex="0" role="button" aria-label="Focus Integrations, Paperclip adapter · bot, Architecture component" aria-pressed="false" data-node-kind="external" data-node-sublabel="Paperclip adapter · bot" data-node-context="Architecture component">
           <title>Integrations · Paperclip adapter · bot · Architecture component</title>
           <rect x="6" y="560" width="150" height="60" rx="8" class="c-mask"/>
-          <rect x="6" y="560" width="150" height="60" rx="8" class="c-external" data-animate="node" style="--step: 12; --flow-node-name: archify-relay-node-7;" stroke-width="1.5"/>
+          <rect x="6" y="560" width="150" height="60" rx="8" class="c-external" data-animate="node" style="--step: 12; --flow-node-name: archify-relay-node-15;" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(12 566) scale(0.6875)">
             <rect x="2.5" y="5" width="8.5" height="8" rx="1.5"/>
             <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
           </g>
           <text data-node-label="" x="81" y="588" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Integrations</text>
         <text x="81" y="604" class="t-muted" font-size="9" text-anchor="middle">Paperclip adapter · bot</text>
+        </g>
+
+        <g id="node-market" data-node-id="market" data-node-label="Marketplace" tabindex="0" role="button" aria-label="Focus Marketplace, catalogue · digest · install, Architecture component" aria-pressed="false" data-node-kind="backend" data-node-sublabel="catalogue · digest · install" data-node-context="Architecture component">
+          <title>Marketplace · catalogue · digest · install · Architecture component</title>
+          <rect x="890" y="900" width="170" height="60" rx="8" class="c-mask"/>
+          <rect x="890" y="900" width="170" height="60" rx="8" class="c-backend" data-animate="node" style="--step: 12; --flow-node-name: archify-relay-node-1;" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(896 906) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-node-label="" x="975" y="928" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Marketplace</text>
+        <text x="975" y="944" class="t-muted" font-size="9" text-anchor="middle">catalogue · digest · install</text>
+        </g>
+
+        <g id="node-registries" data-node-id="registries" data-node-label="MCP registry &amp; ClawHub" tabindex="0" role="button" aria-label="Focus MCP registry &amp; ClawHub, pub. registry · clawhub.ai, Architecture component" aria-pressed="false" data-node-kind="external" data-node-sublabel="pub. registry · clawhub.ai" data-node-context="Architecture component">
+          <title>MCP registry &amp; ClawHub · pub. registry · clawhub.ai · Architecture component</title>
+          <rect x="890" y="1010" width="170" height="60" rx="8" class="c-mask"/>
+          <rect x="890" y="1010" width="170" height="60" rx="8" class="c-external" data-animate="node" style="--step: 12; --flow-node-name: archify-relay-node-0;" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(896 1016) scale(0.6875)">
+            <rect x="2.5" y="5" width="8.5" height="8" rx="1.5"/>
+            <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
+          </g>
+          <text data-node-label="" x="975" y="1038" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">MCP registry &amp; ClawHub</text>
+        <text x="975" y="1054" class="t-muted" font-size="9" text-anchor="middle">pub. registry · clawhub.ai</text>
         </g>
 
         <!-- Connection labels -->
@@ -1884,8 +1979,8 @@ been cleared for every commercial, promotional, or redistributive use.</metadata
           <text x="173" y="465" class="t-edge-default" font-size="8" text-anchor="middle">bearer POST-SSE :8790</text>
         </g>
         <g data-edge-from="orchestrate" data-edge-to="store" data-edge-label="agents.json · jobs.json" data-edge-key="24">
-          <rect x="193.3" y="679" width="120.39999999999999" height="14" rx="3" class="c-mask"/>
-          <text x="253.5" y="689" class="t-edge-default" font-size="8" text-anchor="middle">agents.json · jobs.json</text>
+          <rect x="189.8" y="679" width="120.39999999999999" height="14" rx="3" class="c-mask"/>
+          <text x="250" y="689" class="t-edge-default" font-size="8" text-anchor="middle">agents.json · jobs.json</text>
         </g>
         <g data-edge-from="orbit" data-edge-to="orchestrate" data-edge-label="dispatch goal · subjobs" data-edge-key="25">
           <rect x="87.80000000000001" y="918" width="120.39999999999999" height="14" rx="3" class="c-mask"/>
@@ -1938,6 +2033,22 @@ been cleared for every commercial, promotional, or redistributive use.</metadata
         <g data-edge-from="knowledge" data-edge-to="prompt" data-edge-label="retrieved chunks · rerank" data-edge-key="37">
           <rect x="626" y="198" width="130" height="14" rx="3" class="c-mask"/>
           <text x="691" y="208" class="t-edge-dashed" font-size="8" text-anchor="middle">retrieved chunks · rerank</text>
+        </g>
+        <g data-edge-from="gateway" data-edge-to="market" data-edge-label="/api/market/* · sync job" data-edge-key="38">
+          <rect x="727.4" y="902" width="125.19999999999999" height="14" rx="3" class="c-mask"/>
+          <text x="790" y="912" class="t-edge-dashed" font-size="8" text-anchor="middle">/api/market/* · sync job</text>
+        </g>
+        <g data-edge-from="registries" data-edge-to="market" data-edge-label="registry pages · ClawHub API" data-edge-key="39">
+          <rect x="902.8" y="990" width="144.4" height="14" rx="3" class="c-mask"/>
+          <text x="975" y="1000" class="t-edge-default" font-size="8" text-anchor="middle">registry pages · ClawHub API</text>
+        </g>
+        <g data-edge-from="market" data-edge-to="mcp" data-edge-label="install server config" data-edge-key="40">
+          <rect x="867.6" y="679" width="110.8" height="14" rx="3" class="c-mask"/>
+          <text x="923" y="689" class="t-edge-default" font-size="8" text-anchor="middle">install server config</text>
+        </g>
+        <g data-edge-from="market" data-edge-to="store" data-edge-label="catalog · install record · skill files" data-edge-key="41">
+          <rect x="650" y="671" width="192.4" height="14" rx="3" class="c-mask"/>
+          <text x="746.2" y="681" class="t-edge-default" font-size="8" text-anchor="middle">catalog · install record · skill files</text>
         </g>
 
         <!-- Boundary labels (foreground masks keep routes out of titles) -->

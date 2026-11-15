@@ -571,20 +571,25 @@ re-derived from it afterwards.
 |---|---|---|
 | `architecture.svg` | **yes** | the figure the README embeds; one self-theming file (light and dark from the reader's own preference) |
 | `longrun-architecture.architecture.json` | no | the checked spec — components, relationships, boundaries, card text |
-| `longrun-architecture.html` | no | the interactive build: five focus views (request path, test-time control, security, state and evidence, orchestration), route probe, zoom |
+| `longrun-architecture.html` | no | the interactive build: five focus views (request path, test-time control, security and the marketplace's digest gate, state and evidence, orchestration), route probe, zoom |
 | `longrun-turn-workflow.html` | no | one agent turn end to end: assemble → model → parse → gate → tool → observe → keepgoing |
 
 Everything except the image is gitignored on purpose (`.gitignore`), because a
 bundle is regenerable in seconds and would otherwise churn the repository. Both
-pages were regenerated against `32f46c4` on 2026-11-15 and pass the full gate set
+pages were regenerated against `c08780b` on 2026-11-15 and pass the full gate set
 (`validate` → `deliver` → `check` → `browser-check`) with no composition
-diagnostics: 23 components, 38 labelled relationships, every block both entered
-and leaving a trace.
+diagnostics: 25 components, 42 labelled relationships, every block both entered
+and leaving a trace. The marketplace is one block (`market`) plus the external
+catalogues it mirrors (`registries`), so the picture shows where an installed
+skill or MCP server came from. The turn workflow is unchanged by it — an install
+happens on the API, not inside a turn — so that page moved only with the revision.
 
 Regenerate with `node <archify>/bin/archify.mjs finalize <type>
 <.archify/…/candidate.json> docs/diagrams/<name>.html --repo-root . --quality
-showcase --json`, then re-export `architecture.svg` from the page's own Export ▸
-SVG (the default variant, which self-themes).
+<profile> --json`, passing the profile the candidate declares (`standard` for the
+dense architecture, `showcase` for the turn workflow), then re-export
+`architecture.svg` from the page's own Export ▸ SVG ▸ **SVG · Auto** (the
+self-theming variant).
 
 ## Entry points
 
