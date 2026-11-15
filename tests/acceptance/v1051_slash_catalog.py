@@ -109,8 +109,10 @@ check("C6 /plugin:<name> builds a bounded member manifest",
       and "demo-skill" in slash.plugin_block("demo")
       and len(slash.plugin_block("demo").encode("utf-8")) <= slash.MAX_BLOCK,
       slash.plugin_block("demo")[:200])
-check("C7 an unknown plugin is prose, not an empty activation",
-      slash.plugin_block("no-such-plugin") == "")
+check("C7 an unknown plugin is an explicit refusal, never prose",
+      "no installed plugin named" in slash.plugin_block("no-such-plugin")
+      and len(slash.plugin_block("no-such-plugin").encode("utf-8")) <= slash.MAX_BLOCK,
+      slash.plugin_block("no-such-plugin")[:120])
 
 # ------------------------------------------------------------- D: route wiring
 check("D1 GET /api/slash dispatches the catalogue",

@@ -190,9 +190,15 @@ check("F1 the package installs as ONE plugin record",
       res.get("ok") is True and res.get("target") == "2 members", res)
 check("F2 the skill is on disk", os.path.isdir(
     os.path.join(os.environ["LONGRUN_SKILLS_DIR"], "local", "alpha")))
-check("F3 the MCP server landed DISABLED",
+check("F3 the MCP server landed DISABLED (it is a connector with no key)",
       (mcp_client.load_doc().get("clients") or {}).get("alpha-server", {}).get("enabled") is False)
 rec = [r for r in market.installed()["installed"] if r["id"] == "plugin/trae-demo"]
+# v1060: an install now ACTIVATES its servers. A connector whose key is unset is the
+# one member that stays off — as `needs-key`, naming the key, not as a failure.
+_a = [m for m in (rec[0].get("members") if rec else []) or [] if m.get("name") == "alpha-server"]
+check("F3b the unkeyed connector is recorded as needs-key, naming the key",
+      bool(_a) and _a[0].get("state") == "needs-key"
+      and "ALPHA_TOKEN" in str(_a[0].get("error")), _a)
 check("F4 the record carries both members and its origin",
       len(rec) == 1 and len(rec[0]["members"]) == 2 and rec[0]["origin_label"] == "Trae", rec)
 check("F5 audit agrees with the owners", market.audit()["drift"] == 0)

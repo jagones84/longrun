@@ -71,7 +71,7 @@ check("E2 the disabled button carries the reason",
 
 # ── F: Manage is a view over the installed record ───────────────────────────
 check("F1 Manage renders the installed record",
-      "function manageRow(rec)" in JS and "state.installed" in JS)
+      "function manageRow(rec, st)" in JS and "state.installed" in JS)
 check("F2 an installed item shows its version, source and digest",
       'rec.version && "v" + rec.version' in JS and "rec.sha256" in JS and "rec.source" in JS)
 check("F3 an update is surfaced when the catalogue moved",

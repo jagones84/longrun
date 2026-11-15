@@ -574,6 +574,7 @@ def _record(item, target, members=None):
     rows = [r for r in _read_installed() if r.get("id") != item["id"]]
     rec = {
         "id": item["id"], "kind": item["kind"], "name": item["name"],
+        "title": str(item.get("title") or ""), "description": str(item.get("description") or ""),
         "version": item["version"], "sha256": item["sha256"],
         "publisher": item["publisher"], "source": item["source"].get("url") or "",
         # Provenance: WHICH catalogue the entry came from (see origin_label()).
@@ -585,12 +586,18 @@ def _record(item, target, members=None):
         "target": target or "",
     }
     if members:
-        # A plugin's members ARE its installation: per-member target and whether
-        # this install created it (an uninstall never removes a pre-existing one).
+        # A plugin's members ARE its installation: per-member target, whether
+        # this install created it (an uninstall never removes a pre-existing one),
+        # what it was before (`prev_enabled`) and the state the activation found.
         rec["members"] = [{"kind": m.get("kind"), "name": m.get("name"),
+                           "title": m.get("title") or "",
                            "target": m.get("target") or "",
                            "created": bool(m.get("created")),
-                           "enabled": bool(m.get("enabled", True))} for m in members]
+                           "enabled": bool(m.get("enabled", True)),
+                           "state": str(m.get("state") or ""),
+                           "tools": int(m.get("tools") or 0),
+                           "error": str(m.get("error") or ""),
+                           "prev_enabled": m.get("prev_enabled")} for m in members]
     rows.append(rec)
     rows.sort(key=lambda r: (r.get("kind", ""), r.get("id", "")))
     _write_installed(rows)
@@ -702,6 +709,73 @@ def installed_map():
     return out
 
 
+def plugin_states(recs=None, status=None):
+    """`{plugin_id: {ready, live, total, members:[{kind,name,state,tools,error}]}}`.
+
+    The record says what SHOULD be there; this says what IS. One `status()` per
+    call (it reads the MCP config and never spawns a server), so the Marketplace
+    row, the Manage audit and `/plugin:<name>` cannot disagree about a member.
+
+    States: `ready`, `missing` (gone from its owner), `disabled` (installed but
+    the flag is off), `needs-key` (a connector whose `${KEY}` is unset),
+    `starting` (enabled, the manager has not started yet) and `error` (enabled,
+    started and not connected — `error` carries the server's own words).
+    """
+    if recs is None:
+        recs = installed()["installed"]
+    try:
+        from longrun.interop import mcp_client
+        st = status if status is not None else mcp_client.status()
+    except Exception:  # noqa: BLE001 — an unreadable owner is not a verdict
+        st = {}
+    clients = st.get("clients") or {}
+    started = bool(st.get("started"))
+    out = {}
+    for rec in recs or []:
+        if str(rec.get("kind") or "") != "plugin":
+            continue
+        rows = []
+        for member in rec.get("members") or []:
+            kind = str(member.get("kind") or "")
+            name = str(member.get("name") or "")
+            row = {"kind": kind, "name": name, "state": "unknown", "tools": 0, "error": ""}
+            if kind == "skill":
+                # A skill target is stored as the owner wrote it (usually relative
+                # to the repository), so it is resolved before it is called gone.
+                target = str(member.get("target") or "")
+                path = target if os.path.isabs(target) else os.path.join(paths.REPO_ROOT, target)
+                row["state"] = "ready" if target and os.path.isdir(path) else "missing"
+            else:
+                client = clients.get(name) or {}
+                row["tools"] = int(client.get("tools") or 0)
+                row["error"] = str(client.get("error") or member.get("error") or "")
+                if not client:
+                    row["state"] = "missing"
+                elif client.get("connected"):
+                    row["state"] = "ready"
+                elif str(member.get("state") or "") == "needs-key":
+                    row["state"] = "needs-key"
+                elif not client.get("enabled"):
+                    row["state"] = "disabled"
+                elif not started:
+                    # The manager starts clients lazily (first tool listing). Until
+                    # then an enabled member is "starting" — unless the install
+                    # already saw it fail, in which case that verdict survives.
+                    row["state"] = ("error" if str(member.get("state") or "") == "error"
+                                    else "starting")
+                    if row["state"] == "error":
+                        row["error"] = str(member.get("error") or row["error"])
+                else:
+                    row["state"] = "error"
+            rows.append(row)
+        out[str(rec.get("id") or "")] = {
+            "ready": bool(rows) and all(r["state"] in ("ready", "starting") for r in rows),
+            "live": sum(1 for r in rows if r["state"] == "ready"),
+            "total": len(rows), "members": rows,
+        }
+    return out
+
+
 def forget(item_id, remove_target=False):
     rows = _read_installed()
     rec = next((r for r in rows if r.get("id") == item_id), None)
@@ -737,8 +811,10 @@ def audit():
     """Installed rows against their owner. Reports drift; never repairs it."""
     from longrun.interop import mcp_client
     clients = (mcp_client.load_doc().get("clients") or {})
+    recs = installed()["installed"]
+    states = plugin_states(recs)
     out = []
-    for rec in installed()["installed"]:
+    for rec in recs:
         row = {"id": rec.get("id"), "kind": rec.get("kind"), "owner": "", "state": "ok",
                "detail": "", "origin": rec.get("origin") or "",
                "origin_label": rec.get("origin_label") or "Unknown"}
@@ -767,7 +843,18 @@ def audit():
                     row.update(state="missing",
                                detail="missing member(s): %s" % ", ".join(str(n) for n in missing))
                 else:
-                    row.update(detail="%d members live" % len(members))
+                    # Presence is not readiness: a server that is installed but
+                    # disabled (or cannot start) is named here with its reason.
+                    off = [m for m in (states.get(rec.get("id")) or {}).get("members") or []
+                           if str(m.get("kind") or "") != "skill"
+                           and m.get("state") not in ("ready", "starting")]
+                    if off:
+                        row.update(state="disabled", detail="; ".join(
+                            "%s (%s) is %s%s" % (m.get("name"), m.get("kind"), m.get("state"),
+                                                 (": " + m["error"]) if m.get("error") else "")
+                            for m in off))
+                    else:
+                        row.update(detail="%d members live" % len(members))
         elif kind == "matrix":
             row["owner"] = "core.matrix"
             row.update(detail="owner not probed")
@@ -832,7 +919,16 @@ def _install_skill(item, cfg, overwrite):
     return {"ok": True, "target": res.get("path") or res.get("dir") or ""}
 
 
-def _install_server(item):
+def _install_server(item, activate=False):
+    """Write one server block into the MCP config; return what it means.
+
+    `activate` is for a PLUGIN member: the operator installed one capability, so
+    its servers are enabled (and verified by `_install_bundle`). A standalone
+    mcp/connector catalogue entry keeps its opt-in default (JAG-80), exactly
+    like a pasted one. A connector whose `${KEY}` is unset is never enabled — it
+    would fail on every reload — and the missing names travel back so the caller
+    can say which key to set.
+    """
     server = item.get("server") or {}
     if not (server.get("command") or server.get("url")):
         return {"ok": False, "error": "item has no server.command or server.url"}
@@ -840,12 +936,15 @@ def _install_server(item):
     converted = mcp_client._servers_to_clients({item["name"]: server})
     if not converted:
         return {"ok": False, "error": "server block was rejected by the MCP client schema"}
-    for spec in converted.values():
-        spec["enabled"] = False  # an installed server is opt-in, exactly like a pasted one
+    spec = next(iter(converted.values()))
+    blocked = mcp_client.missing_credentials(spec) if activate else []
+    for s in converted.values():
+        s["enabled"] = bool(activate) and not blocked
     doc = mcp_client.load_doc()
     doc.setdefault("clients", {}).update(converted)
     path = mcp_client._save_local_doc(doc)
-    return {"ok": True, "target": path, "enabled": False}
+    return {"ok": True, "target": path, "enabled": bool(activate) and not blocked,
+            "blocked": blocked}
 
 
 def _install_matrix(item):
@@ -918,6 +1017,15 @@ def _undo_members(members):
     """Remove ONLY what this install created. A pre-existing object is never touched."""
     for member in reversed(members or []):
         if not member.get("created"):
+            # The plugin did not create it, but it may have ENABLED it: put the
+            # flag back so an uninstall leaves the machine as it found it.
+            if (str(member.get("kind") or "") in ("mcp", "connector")
+                    and member.get("prev_enabled") is False):
+                try:
+                    from longrun.interop import mcp_client
+                    mcp_client.set_client_enabled(member["name"], False)
+                except Exception:  # noqa: BLE001 — an undo failure must not mask the reason
+                    pass
             continue
         try:
             if member.get("kind") == "skill":
@@ -943,8 +1051,10 @@ def _install_bundle(item, cfg, overwrite):
     except Exception:  # noqa: BLE001 — an unreadable owner is not a pre-existing member
         clients_before = {}
     done, failed = [], ""
+    activate = []          # (name, member): server members this install turns on
     for member in members:
         name = member["name"]
+        prev = None
         if member["kind"] == "skill":
             # An already-installed member is SATISFIED, never re-written: the
             # skill installer refuses to clobber, and a bundle must not fail
@@ -955,22 +1065,62 @@ def _install_bundle(item, cfg, overwrite):
                 res = _install_skill(dict(member, id="skill/" + name), cfg, overwrite)
             created = name not in existing
         else:
-            if name in clients_before and not overwrite:
-                res = {"ok": True, "target": "",
-                       "enabled": bool((clients_before.get(name) or {}).get("enabled", False))}
+            if name in clients_before:
+                # An EXISTING client is never rewritten: it may be the operator's
+                # hand-fixed spec (the manifest's may not even start on this
+                # host), and `overwrite` is not a licence to break a live server.
+                prev = bool((clients_before.get(name) or {}).get("enabled", False))
+                res = {"ok": True, "target": "", "enabled": prev, "blocked": []}
             else:
-                res = _install_server(dict(member, id=member["kind"] + "/" + name))
+                res = _install_server(dict(member, id=member["kind"] + "/" + name),
+                                      activate=True)
             created = name not in clients_before
+            if res.get("ok") and not res.get("blocked"):
+                activate.append((name, member))
         if not res.get("ok"):
             failed = "member %s (%s): %s" % (name, member["kind"],
                                              res.get("error") or "install failed")
             break
         done.append({"kind": member["kind"], "name": name,
                      "target": res.get("target") or "", "created": bool(created),
-                     "enabled": res.get("enabled", True)})
+                     "enabled": res.get("enabled", True),
+                     "prev_enabled": prev,
+                     "blocked": res.get("blocked") or []})
     if failed:
         _undo_members(done)
         return {"ok": False, "error": failed}
+    # Activation: ONE reload for every server member, then the live state of
+    # each. A server that cannot start is a RECORDED state, never a rollback —
+    # the files are installed and the reason is what the operator needs.
+    if activate:
+        specs = {}
+        for name, member in activate:
+            conv = mcp_client._servers_to_clients({name: member.get("server") or {}})
+            specs[name] = conv.get(name) or {}
+        try:
+            live = mcp_client.activate_clients(specs)
+        except Exception as exc:  # noqa: BLE001 — an activation fault is a state
+            live = {name: {"enabled": True, "connected": False, "tools": 0,
+                           "error": "activation failed: %s" % exc}
+                    for name, _member in activate}
+        for row in done:
+            if row["kind"] == "skill":
+                row["state"] = "ready"
+                continue
+            st = live.get(row["name"]) or {}
+            row["enabled"] = bool(st.get("enabled", row.get("enabled", True)))
+            row["tools"] = int(st.get("tools") or 0)
+            row["error"] = str(st.get("error") or "")
+            row["state"] = ("ready" if st.get("connected")
+                            else ("error" if row["enabled"] else "disabled"))
+    else:
+        for row in done:
+            if row["kind"] == "skill":
+                row["state"] = "ready"
+            else:
+                row["state"] = "needs-key" if row.get("blocked") else "disabled"
+                if row.get("blocked"):
+                    row["error"] = ("missing credential: %s" % ", ".join(row["blocked"]))
     return {"ok": True, "target": "%d members" % len(done), "members": done}
 
 

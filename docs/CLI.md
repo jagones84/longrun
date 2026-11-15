@@ -368,7 +368,7 @@ Five kinds, and `--kind` takes any of them: `plugin` (a bundle whose members are
 | `market installed` | `GET /api/market/installed` | the install RECORD with its catalogue label |
 | `market rm <id> [--files]` | `DELETE /api/market/installed/<id>` (`?files=1`) | removes the record; `--files` also removes what THAT install created — a plugin's skills and MCP servers, while a pre-existing one stays |
 | `market plugin-scan` | `GET /api/market/plugin-scan` | Trae / Claude / OpenClaw packages found on this machine, converted but not installed |
-| `market plugin-add <path\|url> [--overwrite]` | `POST /api/market/plugin-import` | converts one package (a local directory or an https ZIP) into its skill + MCP members, then installs it |
+| `market plugin-add <path\|url> [--overwrite]` | `POST /api/market/plugin-import` | converts one package (a local directory or an https ZIP) into its skill + MCP members, installs it, and ACTIVATES the servers: each one is enabled and verified in the same call. A connector waits for its key; a server that cannot start is reported with its own stderr, not rolled back |
 
 ```bash
 python3 forge.py market sources                                   # is the mirror current?

@@ -19,6 +19,7 @@ const COLLAPSE_KEY = "lrmkt.collapsed";
 const state = {
   kind: "all", q: "", category: "", source: "", manage: false,
   items: [], stats: {}, sources: [], installed: [], errors: [], audit: null,
+  pluginStates: {},
   online: [], onlineFor: "", onlineSource: "clawhub", job: null, loading: false,
   local: [],
 };
@@ -136,7 +137,9 @@ function localSection() {
   if (!rows.length) return "";
   return `<h3 class="mkt-sect-h"><span class="mkt-sect-static">Found on this machine \u00b7 ${rows.length}</span></h3>
     <div class="mkt-src">Plugins installed for another harness, converted to their skills and MCP
-      servers. A code plugin contributes only its skills: the JavaScript part is named as ignored.</div>
+      servers. Installing one also enables its MCP servers and verifies them (a connector
+      waits for its key). A code plugin contributes only its skills: the JavaScript part is
+      named as ignored.</div>
     <div class="mkt-grid">${rows.map(localCard).join("")}</div>`;
 }
 
@@ -216,7 +219,7 @@ function card(item, have) {
   </article>`;
 }
 
-function manageRow(rec) {
+function manageRow(rec, st) {
   const meta = [rec.publisher, rec.version && "v" + rec.version, rec.sha256 && ("sha256 " + shortDigest(rec.sha256)),
     rec.installed && ("installed " + String(rec.installed).slice(0, 10)), rec.source]
     .filter(Boolean).map(esc).join(" \u00b7 ");
@@ -232,7 +235,17 @@ function manageRow(rec) {
     .join(" \u00b7 ");
   const memberBits = (rec.kind === "plugin" && members.length)
     ? members.length + (members.length === 1 ? " member" : " members") : "";
-  const line = [meta, memberBits].filter(Boolean).join(" \u00b7 ");
+  /* Installed is not READY: a member that was not started (or has no key) is a
+     fact about the plugin, so it belongs on the row, with the owner's reason. */
+  const live = rec.kind === "plugin" ? (st || null) : null;
+  const readyBits = live ? (live.ready ? `ready ${live.live}/${live.total}`
+    : `not ready ${live.live}/${live.total}`) : "";
+  const offTip = (live && !live.ready)
+    ? (live.members || []).filter(m => m.state !== "ready")
+      .map(m => `${m.kind}:${m.name} \u2014 ${m.state}` + (m.error ? " (" + m.error + ")" : ""))
+      .join(" \u00b7 ")
+    : "";
+  const line = [meta, readyBits, memberBits].filter(Boolean).join(" \u00b7 ");
   const remTip = rec.kind === "plugin"
     ? "uninstall: removes this record AND the skills/MCP servers it created"
     : "remove the record; the " + (rec.kind === "skill" ? "skill" : "server") +
@@ -245,8 +258,8 @@ function manageRow(rec) {
     <div class="mkt-ico" aria-hidden="true">${KIND_ICON[rec.kind] || "\u25CB"}</div>
     <div class="mkt-body">
       <div class="mkt-name">${esc(rec.name || rec.id)} ${flag}</div>
-      <div class="mkt-desc">${esc(KIND_LABEL[rec.kind] || rec.kind)}${rec.enabled === false ? " \u00b7 disabled" : ""}</div>
-      <div class="mkt-meta" title="${esc([line, memberTip].filter(Boolean).join(" \u00b7 "))}">${badge} ${esc(line)}</div>
+      <div class="mkt-desc">${esc(KIND_LABEL[rec.kind] || rec.kind)}${rec.enabled === false ? " \u00b7 disabled" : ""}${live && !live.ready ? " \u00b7 not ready" : ""}</div>
+      <div class="mkt-meta" title="${esc([line, offTip, memberTip].filter(Boolean).join(" \u00b7 "))}">${badge} ${esc(line)}</div>
     </div>
     <div class="mkt-act">
       ${upd}
@@ -269,7 +282,7 @@ function render() {
           .map(r => esc(r.id) + " \u2014 " + esc(r.state) + (r.detail ? " (" + esc(r.detail) + ")" : "")).join("<br>")}</div>`
       : "";
     body.innerHTML = banner + (rows.length
-      ? `<div class="mkt-sect">Installed \u00b7 ${rows.length}</div><div class="mkt-grid">${rows.map(manageRow).join("")}</div>`
+      ? `<div class="mkt-sect">Installed \u00b7 ${rows.length}</div><div class="mkt-grid">${rows.map(r => manageRow(r, state.pluginStates[r.id])).join("")}</div>`
       : `<div class="mkt-empty">Nothing installed from the catalogue yet.</div>`);
     return;
   }
@@ -412,6 +425,7 @@ async function load(opts) {
   state.stats = (cat && cat.stats) || {};
   state.errors = (cat && cat.errors) || [];
   state.installed = (inst && inst.installed) || [];
+  state.pluginStates = (inst && inst.states) || {};
   state.sources = (srcs && srcs.sources) || [];
   state.audit = aud || null;
   state.local = [];

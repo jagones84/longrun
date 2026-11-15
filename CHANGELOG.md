@@ -7,6 +7,23 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Installing a plugin now ACTIVATES it, and `/plugin:<name>` reports what is really running.**
+  Operator: *"the plugin installation already has to automatically install everything needed …
+  if plugins contain skills and MCP they shall be installed in longrun according to longrun
+  structure during its install process"*. A `plugin` bundle's MCP members are enabled and
+  verified in the same install call (`mcp_client.activate_clients`: one reload, each client's
+  tools enabled with `approval: required`), and the record keeps per-member `state` / `tools` /
+  `error` / `prev_enabled` plus the package's `title`/`description`. A connector whose `${KEY}` is
+  unset stays OFF as `needs-key`, naming the key, instead of failing the bundle; a server that
+  cannot start is a recorded `error`, never a rollback; an existing client is never re-written by
+  an install, and `rm --files` restores one the plugin had enabled. `/plugin:<name>` opens with
+  `Status: READY — n/n members live (N tools)` or `NOT READY` and the reason, names the
+  provenance and forbids the model from installing a member itself; an unknown name is an
+  explicit refusal instead of prose. Fixed the two defects that made an activated plugin
+  unusable: the gate injected `workspace` into every external MCP tool (strict servers answered
+  `Unrecognized key: "workspace"`) and the child's stderr was `DEVNULL`, so
+  `initialize returned no response` hid the server's own reason (now quoted). (Locked by `v1060`
+  37/37; `v1040` 32/32, `v1051` 18/18.)
 - **The `/` menu is a real command surface, and `/plan` / `/spec` write reviewed documents.** The
   composer menu was three hardcoded rows; it now renders the TRAE-style groups **plugins · commands ·
   skills** from one backend catalogue (`GET /api/slash`, `core/slash.py`), with icons, one-line hints,

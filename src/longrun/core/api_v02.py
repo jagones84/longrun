@@ -276,12 +276,20 @@ def _workspace_is_object_field(tool):
     object: an `agent.update {agent, model}` also moved that agent's folder to
     the caller's, and an agent created without an explicit workspace was born in
     the caller's folder instead of its dedicated one.
+
+    2026-11-16: an EXTERNAL MCP tool (`origin: "mcp"`) is the same case for a
+    different reason — its `workspace` is the remote server's business. The key
+    used to be injected here too and a strict server rejected the whole call
+    (`Unrecognized key: "workspace"`), so every plugin-provided tool failed
+    through the gate while working when called directly.
     """
     try:
-        schema = (registry.tool_spec(str(tool)) or {}).get("schema") or {}
+        spec = registry.tool_spec(str(tool)) or {}
     except Exception:  # noqa: BLE001 — an unknown tool keeps the old injection
         return False
+    schema = spec.get("schema") or {}
     return (schema.get("_origin") in ("exclusive", "delegation")
+            or spec.get("origin") == "mcp"
             or str(tool).startswith("workspace."))
 
 
@@ -2016,7 +2024,11 @@ def handle(handler, method, path, qs, body):
                 qs.get("source") or None, _int(qs.get("offset"), 0)))
         if path == "/api/market/installed":
             from longrun.core import market as _mkt
-            return _r(handler, 200, _mkt.installed())
+            res = _mkt.installed()
+            # A plugin installed is not a plugin READY: the row also carries the
+            # live state of every member, from the owner that runs it.
+            res["states"] = _mkt.plugin_states(res.get("installed") or [])
+            return _r(handler, 200, res)
         if path == "/api/market/item":
             from longrun.core import market as _mkt
             items, _, _ = _mkt.catalog()

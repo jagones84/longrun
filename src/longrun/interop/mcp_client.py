@@ -35,6 +35,7 @@ Usage:
     manager.call_tool("filesystem__read", {"path": "/etc/hostname"})
 """
 
+import collections
 import json
 import os
 import queue
@@ -151,6 +152,12 @@ class MCPSession:
         self._http_base = None    # HTTP transport base URL
         self._http_headers = {}   # extra HTTP headers (e.g. Authorization)
         self._http_session_id = None  # MCP streamable-HTTP session id
+        # 2026-11-16: the child's stderr used to be DEVNULL, so a server that
+        # refused to start (wrong Node, missing binary, bad flag) answered
+        # "initialize returned no response" and the reason was unreachable. The
+        # last lines are kept and quoted in `connection_error`.
+        self._stderr = collections.deque(maxlen=40)
+        self._stderr_thread = None
 
     @property
     def connected(self):
@@ -189,13 +196,35 @@ class MCPSession:
         resolved_command = shutil.which(command, path=full_env.get("PATH")) or command
         self.proc = subprocess.Popen(
             [osutil.resolve_script(resolved_command)] + args, stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, env=full_env,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=full_env,
             cwd=self.config.get("cwd", REPO), **osutil.popen_kwargs())
         log("%s: spawned pid=%d", self.name, self.proc.pid)
 
         self._reader = threading.Thread(target=self._read_stdio, daemon=True)
         self._reader.start()
+        if getattr(self.proc, "stderr", None) is not None:
+            self._stderr_thread = threading.Thread(target=self._read_stderr, daemon=True)
+            self._stderr_thread.start()
         return True
+
+    def _read_stderr(self) -> None:
+        """Keep the child's last stderr lines (see `_stderr_hint`). Never raises."""
+        stream = getattr(self.proc, "stderr", None)
+        if stream is None:
+            return
+        try:
+            for line in stream:
+                line = (line or "").strip()
+                if line:
+                    self._stderr.append(line)
+        except Exception:  # noqa: BLE001 — a drained pipe is not an error
+            pass
+
+    def _stderr_hint(self) -> str:
+        """The last thing the server said before it stopped answering."""
+        for line in reversed(list(self._stderr)):
+            return "server stderr: %s" % line[:200]
+        return ""
 
     def _read_stdio(self) -> None:
         """Route stdio responses and release pending requests when the child exits."""
@@ -227,11 +256,20 @@ class MCPSession:
 
     def _stdio_closed(self) -> None:
         """Wake every stdio request when its child closes stdout."""
+        # The stderr pipe usually reaches EOF a moment after stdout: wait for it
+        # so the reason the child printed is part of the error, not a race.
+        if self._stderr_thread is not None:
+            try:
+                self._stderr_thread.join(0.5)
+            except RuntimeError:  # noqa: BLE001 — joining self/current is not fatal
+                pass
         with self._lock:
             was_connected = self._connected
             self._connected = False
             if (was_connected and not self._stop and not self.connection_error):
-                self.connection_error = "stdio server closed stdout"
+                hint = self._stderr_hint()
+                self.connection_error = ("stdio server closed stdout"
+                                         + ((" — " + hint) if hint else ""))
             pending = list(self._pending.values())
             self._pending.clear()
         for response_queue in pending:
@@ -391,7 +429,11 @@ class MCPSession:
         resp = self._send_raw({"method": "initialize", "params": params}, timeout=30,
                               _retry=False)
         if resp is None:
-            self.connection_error = "initialize returned no response"
+            # The child refused to answer: the reason it printed is the useful
+            # part ("does not support Node v22.11.0"), not this sentence.
+            hint = self._stderr_hint()
+            base = self.connection_error or "initialize returned no response"
+            self.connection_error = base + ((" — " + hint) if hint and hint not in base else "")
             return False
         error = resp.get("error")
         if isinstance(error, dict):
@@ -880,6 +922,7 @@ class MCPClientManager:
         with _EXTERNAL_TOOLS_LOCK:
             external_tool_count = len(_EXTERNAL_TOOLS)
         return {"clients": clients, "external_tools": external_tool_count,
+                "started": bool(self._started),
                 "runtime": runtimes(),
                 "config": CONFIG_PATH, "local_config": CONFIG_LOCAL_JSON_PATH}
 
@@ -923,6 +966,103 @@ def reload():
     m.disconnect_all()
     m.start_all()
     return m.status()
+
+
+def missing_credentials(spec):
+    """The `${VAR}` names this client spec still cannot resolve on this host.
+
+    Scans exactly the fields the transports expand at connect time (`args` and
+    `env` for stdio, `headers` for HTTP) so "has its key" here means the same
+    thing it means there. The env files the MCP config declares are loaded
+    first, so a key that lives in `.env` counts as present.
+    """
+    try:
+        _load_env_files((load_doc() or {}).get("env_files"))
+    except Exception:  # noqa: BLE001 — a missing env file must not block the check
+        pass
+    out = []
+
+    def _scan(value):
+        for m in _ENV_REF_RE.finditer(str(value or "")):
+            name = m.group(1) or m.group(2)
+            if name and name not in os.environ and name not in out:
+                out.append(name)
+
+    spec = spec or {}
+    for value in (spec.get("args") or []):
+        _scan(value)
+    for value in (spec.get("env") or {}).values():
+        _scan(value)
+    for value in (spec.get("headers") or {}).values():
+        _scan(value)
+    return out
+
+
+def _local_doc_with_env_files():
+    """The user document, keeping the env-file list the merged one declares."""
+    doc = _load_local_doc()
+    if not doc.get("env_files"):
+        doc["env_files"] = list((load_doc() or {}).get("env_files") or [])
+    return doc
+
+
+def activate_clients(specs):
+    """Enable these clients, reload ONCE, and make their tools reachable.
+
+    `specs` is `{name: internal_spec}` (what a plugin member carries). An entry
+    that ALREADY exists in the merged config keeps its own command/args/url/
+    headers/env: a package is the source of a NEW client, never a way to clobber
+    one the operator fixed by hand — only `enabled` is set. Returns
+    `{name: {enabled, connected, tools, error, enabled_tools}}`.
+    """
+    merged = (load_doc() or {}).get("clients") or {}
+    doc = _local_doc_with_env_files()
+    wanted = []
+    for name, spec in (specs or {}).items():
+        name = str(name or "").strip()
+        if not name:
+            continue
+        entry = dict(merged.get(name) or {})
+        if not entry:
+            entry = {k: spec[k] for k in ALLOWED_CLIENT_KEYS if k in (spec or {})}
+        entry["enabled"] = True
+        doc["clients"][name] = entry
+        wanted.append(name)
+    if not wanted:
+        return {}
+    _save_local_doc(doc)
+    st = reload()
+    clients = st.get("clients") or {}
+    out = {}
+    for name in wanted:
+        c = clients.get(name) or {}
+        out[name] = {
+            "enabled": bool(c.get("enabled", True)),
+            "connected": bool(c.get("connected")),
+            "tools": int(c.get("tools") or 0),
+            "error": c.get("error") or "",
+            "enabled_tools": _enable_client_tools(name) if c.get("connected") else [],
+        }
+    return out
+
+
+def set_client_enabled(name, enabled):
+    """Turn ONE existing client on/off in the local config, spec untouched.
+
+    Used to restore a pre-existing server that a plugin enabled: uninstalling
+    the plugin must leave the machine as it found it.
+    """
+    name = str(name or "").strip()
+    merged = (load_doc() or {}).get("clients") or {}
+    if not name or name not in merged:
+        return {"ok": False, "error": "unknown client: %s" % (name or "<empty>")}
+    doc = _local_doc_with_env_files()
+    doc["clients"][name] = {k: merged[name][k] for k in ALLOWED_CLIENT_KEYS
+                            if k in merged[name]}
+    doc["clients"][name]["enabled"] = bool(enabled)
+    _save_local_doc(doc)
+    st = reload()
+    return {"ok": True, "name": name, **(st.get("clients") or {}).get(name, {})}
 
 
 def test_client(spec):

@@ -37,6 +37,41 @@ mcp_client.CONFIG_LOCAL_JSON_PATH = os.path.join(os.environ["LONGRUN_CONFIG_DIR"
 mcp_client.CONFIG_LOCAL_PATH = os.path.join(os.environ["LONGRUN_CONFIG_DIR"],
                                             "mcp_clients.local.yaml")
 
+
+class _StubSession:
+    """No process is spawned: v1060 makes a bundle install ACTIVATE its servers,
+    and the battery must not run `npx` (no network, no child processes)."""
+
+    def __init__(self, name, config):
+        self.name = name
+        self.config = config
+        self.tools = {"ping": {"name": "ping", "description": "",
+                               "inputSchema": {"type": "object", "properties": {}}}}
+        self._connected = False
+        self._connect_time = None
+        self.connection_error = None
+        self.tool_error = None
+
+    @property
+    def connected(self):
+        return self._connected
+
+    def _connect_stdio(self, command, args, env):
+        return True
+
+    def initialize(self):
+        self._connected = True
+        return True
+
+    def fetch_tools(self):
+        return list(self.tools.values())
+
+    def close(self):
+        self._connected = False
+
+
+mcp_client.MCPSession = _StubSession
+
 results = []
 
 
@@ -124,8 +159,9 @@ os.remove(market._local_catalog_path())
 kit = market.install("plugin/starter-kit")
 check("C1 the bundle installs", kit.get("ok") is True and kit.get("target") == "2 members", kit)
 check("C2 the skill landed through memory.skills", os.path.isdir(skill_dir("release-notes")))
-check("C3 the MCP server landed through the client document, DISABLED",
-      clients().get("filesystem", {}).get("enabled") is False, clients().get("filesystem"))
+check("C3 the MCP server landed through the client document and was ACTIVATED",
+      clients().get("filesystem", {}).get("enabled") is True
+      and "filesystem" in (mcp_client.status().get("clients") or {}), clients().get("filesystem"))
 rec = [r for r in market.installed()["installed"] if r["id"] == "plugin/starter-kit"]
 check("C4 ONE record carries both members",
       len(rec) == 1 and len(rec[0].get("members") or []) == 2, rec)
