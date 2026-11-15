@@ -48,8 +48,12 @@ _cache = {"sig": None, "cfg": None}
 
 # ── paths ─────────────────────────────────────────────────────────────────────
 
+CONFIG_PATH = os.path.join(paths.REPO_ROOT, "config", "market.yaml")
+
+
 def _config_path():
-    return os.path.join(paths.config_dir(), "market.yaml")
+    """`<repo>/config/market.yaml` — beside every other operator config file."""
+    return CONFIG_PATH
 
 
 def _market_dir():
@@ -60,6 +64,66 @@ def _market_dir():
 
 def _local_catalog_path():
     return os.path.join(_market_dir(), "catalog.json")
+
+
+def _bundled_catalog_path():
+    """The catalogue that SHIPS with the code (tracked, beside this module)."""
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "market_catalog.json")
+
+
+def _repo_file(rel):
+    """`<repo>/rel` when it really stays inside the repository, else None."""
+    rel = str(rel or "").replace("\\", "/").lstrip("/")
+    root = os.path.realpath(paths.REPO_ROOT)
+    path = os.path.realpath(os.path.join(root, rel))
+    if not rel or not (path == root or path.startswith(root + os.sep)):
+        return None
+    return path
+
+
+def _read_doc_file(path):
+    try:
+        with open(path, encoding="utf-8") as f:
+            doc = json.load(f)
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError):
+        return None
+    if isinstance(doc, list):
+        doc = {"schema": SCHEMA, "items": doc}
+    return doc if isinstance(doc, dict) else None
+
+
+def _bundled_plugins():
+    """The Matrix tools that ship with longrun, listed as PRESENT plugins.
+
+    A plugin here is a Matrix tool module: it is already hot-loaded, so the card
+    reports it as installed instead of offering an install that cannot happen.
+    """
+    root = os.path.join(paths.REPO_ROOT, "src", "Matrix", "tools")
+    out = []
+    try:
+        names = sorted(os.listdir(root))
+    except OSError:
+        return out
+    for fn in names:
+        if not fn.endswith(".py") or fn == "__init__.py":
+            continue
+        desc = ""
+        try:
+            with open(os.path.join(root, fn), encoding="utf-8", errors="replace") as f:
+                head = f.read(4000)
+            m = re.search(r'^\s*(?:"""|\'\'\')\s*(.+)$', head, re.M)
+            if m:
+                desc = m.group(1).strip().rstrip('"\'')
+        except OSError:
+            pass
+        stem = fn[:-3]
+        out.append({"id": "plugin/" + stem, "kind": "plugin", "name": stem,
+                    "title": stem.replace("_", " ").title(),
+                    "description": desc or "Matrix plugin shipped with longrun",
+                    "category": "Matrix tools", "publisher": "longrun", "version": ""})
+    return out
 
 
 def _installed_path():
@@ -210,36 +274,51 @@ def _normalize(raw, origin):
         "publisher": str(raw.get("publisher") or ""),
         "sha256": sha,
         "bytes": raw.get("bytes") if isinstance(raw.get("bytes"), int) else None,
-        "source": {"type": str(source.get("type") or ""), "url": str(source.get("url") or "")},
+        "source": {"type": str(source.get("type") or ""),
+                   "url": str(source.get("url") or ""),
+                   "path": str(source.get("path") or "")},
         "server": server,
         "keys": [str(k) for k in (raw.get("keys") or []) if str(k).strip()],
         "bundle": raw.get("bundle") if isinstance(raw.get("bundle"), list) else None,
         "requires": raw.get("requires") if isinstance(raw.get("requires"), dict) else {},
         "origin": str(origin),
+        "present": False,
     }
     if kind in ("skill", "plugin"):
-        item["installable"] = bool(item["sha256"]) and bool(item["source"]["url"])
+        bundled = item["source"]["type"] == "bundled" and bool(item["source"]["path"])
+        item["installable"] = bool(item["sha256"]) and (bool(item["source"]["url"]) or bundled)
     else:  # mcp / connector: a config preset, no artifact bytes to hash
         item["installable"] = bool(server) and bool(server.get("command") or server.get("url"))
     return item
 
 
 def load_sources():
-    """`(cfg, docs, errors)` — the local file first, then each configured URL."""
+    """`(cfg, docs, errors)` — operator file, then the shipped catalogue, then URLs.
+
+    Precedence is deliberate: the operator's `data/market/catalog.json` WINS over the
+    bundled one (an override needs no code change), and a remote catalogue can only
+    add ids the first two do not define.
+    """
     cfg = _config()
     docs, errors = [], []
-    local = None
-    try:
-        with open(_local_catalog_path(), encoding="utf-8") as f:
-            local = json.load(f)
-    except FileNotFoundError:
-        local = None
-    except (OSError, ValueError) as e:
-        errors.append("local catalog: %s" % e)
-    if isinstance(local, list):
-        local = {"schema": SCHEMA, "items": local}
-    if isinstance(local, dict):
+    local = _read_doc_file(_local_catalog_path())
+    if local is not None:
         docs.append((local, "local"))
+    bundled = _read_doc_file(_bundled_catalog_path())
+    if bundled is not None:
+        docs.append((bundled, "bundled"))
+    # Imported marketplaces sit AFTER the bundled catalogue: a curated entry keeps
+    # its place, and a sync can only add what nothing else defines. Lazy import —
+    # market_sync imports this module.
+    try:
+        from longrun.core import market_sync as _sync
+        groups = _sync._read_imported()
+    except Exception:  # noqa: BLE001 — a broken sync store must not hide the shelf
+        groups = {}
+    for src, group in (groups or {}).items():
+        rows = (group or {}).get("items") if isinstance(group, dict) else None
+        if isinstance(rows, list):
+            docs.append(({"schema": SCHEMA, "items": rows}, "imported:%s" % src))
     for url in cfg["catalogs"]:
         doc, why = _fetch_json(url, cfg)
         if doc is None:
@@ -270,8 +349,20 @@ def catalog():
                 continue
             seen[item["id"]] = item
             items.append(item)
+    # The Matrix plugins that ship with longrun are listed as PRESENT: they are
+    # already hot-loaded, so pretending they are installable would be a lie.
+    for raw in _bundled_plugins():
+        if raw["id"] in seen:
+            continue
+        item = _normalize(raw, "matrix")
+        if item is None:
+            continue
+        item["present"] = True
+        seen[item["id"]] = item
+        items.append(item)
     stats = {"sources": len(docs), "items": len(items),
-             "installable": sum(1 for i in items if i["installable"])}
+             "installable": sum(1 for i in items if i["installable"]),
+             "present": sum(1 for i in items if i["present"])}
     return items, errors, stats
 
 
@@ -354,10 +445,20 @@ def forget(item_id, remove_target=False):
         return {"ok": False, "error": "not installed: %s" % item_id}
     removed = False
     if remove_target and rec.get("target"):
-        from longrun.memory import skills
-        name = rec.get("name") or ""
-        if rec.get("kind") == "skill" and name:
-            skills.remove(name)
+        import shutil
+        from longrun.memory import skills as _skills
+        raw = str(rec["target"])
+        target = os.path.realpath(raw if os.path.isabs(raw) else os.path.join(paths.REPO_ROOT, raw))
+        # `memory.skills` owns WHERE skills live (LONGRUN_SKILLS_DIR included), so the
+        # guard asks it rather than assuming the repository root. Only a skill
+        # DIRECTORY below that root — one that still holds a SKILL.md — may go.
+        skills_root = os.path.realpath(_skills.SKILLS_DIR)
+        if (target != skills_root and target.startswith(skills_root + os.sep)
+                and os.path.isfile(os.path.join(target, "SKILL.md"))):
+            shutil.rmtree(target, ignore_errors=True)
+            removed = not os.path.exists(target)
+        elif rec.get("kind") == "skill" and rec.get("name"):
+            _skills.remove(rec["name"])
             removed = True
     _write_installed([r for r in rows if r.get("id") != item_id])
     return {"ok": True, "id": item_id, "removed_files": removed}
@@ -398,17 +499,40 @@ def _install_skill(item, cfg, overwrite):
     sha = item["sha256"]
     if not sha:
         return {"ok": False, "error": "item has no sha256 — not installable"}
-    url = item["source"].get("url")
-    if not url:
-        return {"ok": False, "error": "item has no source.url"}
-    data, why = _fetch(url, cfg, MAX_ITEM_BYTES)
-    if data is None:
-        return {"ok": False, "error": why}
+    src = item["source"] or {}
+    if str(src.get("type") or "") == "bundled":
+        # A bundled artifact lives INSIDE this repository, so the repository is the
+        # trust boundary; the digest still proves the bytes are the ones the
+        # catalogue names (a local edit to the file is caught here).
+        rel = src.get("path") or ""
+        path = _repo_file(rel)
+        if path is None:
+            return {"ok": False, "error": "bundled path is outside the repository: %s" % rel}
+        try:
+            with open(path, "rb") as f:
+                data = f.read()
+        except OSError as e:
+            return {"ok": False, "error": "bundled file unreadable: %s (%s)" % (rel, e)}
+    else:
+        url = src.get("url")
+        if not url:
+            return {"ok": False, "error": "item has no source.url"}
+        data, why = _fetch(url, cfg, MAX_ITEM_BYTES)
+        if data is None:
+            return {"ok": False, "error": why}
     got = hashlib.sha256(data).hexdigest()
     if got != sha:
         return {"ok": False,
                 "error": "digest mismatch for %s: expected %s, got %s" % (item["id"], sha, got)}
     from longrun.memory import skills
+    if overwrite:
+        skills.remove(item["name"])
+    if str(src.get("type") or "") == "bundled":
+        res = skills.install_skill_file("market", item["name"],
+                                        data.decode("utf-8", errors="replace"))
+        if res.get("error"):
+            return {"ok": False, "error": res["error"]}
+        return {"ok": True, "target": res.get("path") or ""}
     res = skills.install_zip(data, name=item["name"], overwrite=bool(overwrite))
     if res.get("error"):
         return {"ok": False, "error": res["error"]}

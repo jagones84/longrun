@@ -5,14 +5,22 @@
 # browsable and NOT installable, and an install whose bytes do not hash to that
 # value is refused by name before anything is written. No third-party code runs.
 #
-# `catalogs` is empty by default: the marketplace then serves only the local
-# `data/market/catalog.json`, which the operator may create by hand. Add a URL
-# here (and its host in `allow_hosts`) to browse a remote catalogue.
+# Read order (first id wins):
+#   1. data/market/catalog.json      operator overrides
+#   2. src/longrun/core/market_catalog.json   the curated catalogue that ships here
+#   3. data/market/imported.json     what a SYNC pulled from an external marketplace
+#   4. `catalogs` URLs below         a catalogue you host yourself
+#
+# `catalogs` is empty by default: nothing is fetched until you add a URL here and
+# run a sync. `allow_hosts` gates EVERY https fetch (a redirect is re-checked
+# against it), including the two registries the Marketplace can sync:
+#   mcp-registry  registry.modelcontextprotocol.io  (the official MCP registry)
+#   clawhub       clawhub.ai                        (OpenClaw's skill marketplace)
 catalogs: []
-# Hosts a remote catalogue (and its item sources) may be fetched from. https only.
-# An empty list means NO remote fetch is possible, whatever `catalogs` says.
-allow_hosts: []
+allow_hosts:
+  - registry.modelcontextprotocol.io
+  - clawhub.ai
 # Seconds a fetched catalogue is reused before it is fetched again.
 cache_ttl: 3600
-# How many `featured: true` items the Marketplace surfaces in its Featured row.
+# How many `featured: true` items the Marketplace surfaces in its Recommended row.
 featured_limit: 6

@@ -1,0 +1,278 @@
+{
+  "schema": "longrun.market/1",
+  "generated": "2026-11-15",
+  "items": [
+    {
+      "id": "skill/security-review",
+      "kind": "skill",
+      "name": "security-review",
+      "title": "Security Review",
+      "description": "One pass over a diff for secrets, injection, egress and widened permissions — findings cite file and line.",
+      "category": "Review & Quality",
+      "featured": true,
+      "version": "1.0.0",
+      "publisher": "longrun",
+      "sha256": "490b187402c8cc229b4bf32ef07244f72d10013a817e8f2d04e7fe43eb25616a",
+      "bytes": 2390,
+      "source": {
+        "type": "bundled",
+        "path": "market/skills/security-review/SKILL.md"
+      }
+    },
+    {
+      "id": "skill/release-notes",
+      "kind": "skill",
+      "name": "release-notes",
+      "title": "Release Notes",
+      "description": "Turn a commit range into release notes a reader can act on: what changed, why, and what breaks.",
+      "category": "Developer Tools",
+      "featured": false,
+      "version": "1.0.0",
+      "publisher": "longrun",
+      "sha256": "58cd588464583aa27bb706ab06c4f6a28050a6778088097eaa6e4d9b98c9780a",
+      "bytes": 2078,
+      "source": {
+        "type": "bundled",
+        "path": "market/skills/release-notes/SKILL.md"
+      }
+    },
+    {
+      "id": "skill/sql-review",
+      "kind": "skill",
+      "name": "sql-review",
+      "title": "Sql Review",
+      "description": "Review a query or migration for correctness first, then cost, then safety on real data.",
+      "category": "Data",
+      "featured": false,
+      "version": "1.0.0",
+      "publisher": "longrun",
+      "sha256": "8d43d00fc022b0ea1cac32ef8bb567b9cf36f60bc5749d124ca4d41873473704",
+      "bytes": 2238,
+      "source": {
+        "type": "bundled",
+        "path": "market/skills/sql-review/SKILL.md"
+      }
+    },
+    {
+      "id": "skill/pr-review",
+      "kind": "skill",
+      "name": "pr-review",
+      "title": "Pr Review",
+      "description": "Claim, evidence, decision: does the PR do what it says, is it safe, what must a human decide.",
+      "category": "Review & Quality",
+      "featured": false,
+      "version": "1.0.0",
+      "publisher": "longrun",
+      "sha256": "101b8a07c6f5ecdcd15fd80841ce5cc8de1bed13b0d17a0de9e8a71d64ac9c7a",
+      "bytes": 2070,
+      "source": {
+        "type": "bundled",
+        "path": "market/skills/pr-review/SKILL.md"
+      }
+    },
+    {
+      "id": "mcp/context7",
+      "kind": "mcp",
+      "name": "context7",
+      "title": "Context7",
+      "description": "Up-to-date library documentation for the model, served over MCP.",
+      "category": "Research & Analysis",
+      "featured": true,
+      "version": "",
+      "publisher": "modelcontextprotocol",
+      "server": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "@upstash/context7-mcp"
+        ]
+      }
+    },
+    {
+      "id": "mcp/playwright",
+      "kind": "mcp",
+      "name": "playwright",
+      "title": "Playwright",
+      "description": "Real browser automation: navigate, click, screenshot, read the DOM.",
+      "category": "Browser & Web",
+      "featured": true,
+      "version": "",
+      "publisher": "modelcontextprotocol",
+      "server": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "@playwright/mcp@latest"
+        ]
+      }
+    },
+    {
+      "id": "mcp/filesystem",
+      "kind": "mcp",
+      "name": "filesystem",
+      "title": "Filesystem",
+      "description": "Read and write files under ONE directory you choose (default /tmp — edit before enabling).",
+      "category": "Developer Tools",
+      "featured": false,
+      "version": "",
+      "publisher": "modelcontextprotocol",
+      "server": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "@modelcontextprotocol/server-filesystem",
+          "/tmp"
+        ]
+      }
+    },
+    {
+      "id": "mcp/fetch",
+      "kind": "mcp",
+      "name": "fetch",
+      "title": "Fetch",
+      "description": "Fetch a URL and convert it to markdown for the model.",
+      "category": "Browser & Web",
+      "featured": false,
+      "version": "",
+      "publisher": "modelcontextprotocol",
+      "server": {
+        "command": "uvx",
+        "args": [
+          "mcp-server-fetch"
+        ]
+      }
+    },
+    {
+      "id": "mcp/time",
+      "kind": "mcp",
+      "name": "time",
+      "title": "Time",
+      "description": "Current time and timezone conversion, no network.",
+      "category": "Developer Tools",
+      "featured": false,
+      "version": "",
+      "publisher": "modelcontextprotocol",
+      "server": {
+        "command": "uvx",
+        "args": [
+          "mcp-server-time"
+        ]
+      }
+    },
+    {
+      "id": "mcp/git",
+      "kind": "mcp",
+      "name": "git",
+      "title": "Git",
+      "description": "Read a repository's history, diffs and status through git plumbing.",
+      "category": "Developer Tools",
+      "featured": false,
+      "version": "",
+      "publisher": "modelcontextprotocol",
+      "server": {
+        "command": "uvx",
+        "args": [
+          "mcp-server-git"
+        ]
+      }
+    },
+    {
+      "id": "mcp/memory",
+      "kind": "mcp",
+      "name": "memory",
+      "title": "Memory",
+      "description": "A knowledge graph the model can write to and read back across turns.",
+      "category": "Developer Tools",
+      "featured": false,
+      "version": "",
+      "publisher": "modelcontextprotocol",
+      "server": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "@modelcontextprotocol/server-memory"
+        ]
+      }
+    },
+    {
+      "id": "mcp/sequential-thinking",
+      "kind": "mcp",
+      "name": "sequential-thinking",
+      "title": "Sequential Thinking",
+      "description": "A scratchpad for step-by-step reasoning with revision.",
+      "category": "Developer Tools",
+      "featured": false,
+      "version": "",
+      "publisher": "modelcontextprotocol",
+      "server": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "@modelcontextprotocol/server-sequential-thinking"
+        ]
+      }
+    },
+    {
+      "id": "mcp/everything",
+      "kind": "mcp",
+      "name": "everything",
+      "title": "Everything (demo)",
+      "description": "A demo server exposing every MCP primitive — useful to prove a client works.",
+      "category": "Developer Tools",
+      "featured": false,
+      "version": "",
+      "publisher": "modelcontextprotocol",
+      "server": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "@modelcontextprotocol/server-everything"
+        ]
+      }
+    },
+    {
+      "id": "connector/github",
+      "kind": "connector",
+      "name": "github",
+      "title": "GitHub",
+      "description": "Repos, issues, pull requests and code search through GitHub's remote MCP server. Needs a personal access token.",
+      "category": "Developer Tools",
+      "featured": true,
+      "version": "",
+      "publisher": "github",
+      "server": {
+        "type": "http",
+        "url": "https://api.githubcopilot.com/mcp/",
+        "headers": {
+          "Authorization": "Bearer ${GITHUB_PERSONAL_ACCESS_TOKEN}"
+        }
+      },
+      "keys": [
+        "GITHUB_PERSONAL_ACCESS_TOKEN"
+      ]
+    },
+    {
+      "id": "connector/supabase",
+      "kind": "connector",
+      "name": "supabase",
+      "title": "Supabase",
+      "description": "Projects, tables, migrations and SQL for a Supabase account. Needs an access token.",
+      "category": "Developer Tools",
+      "featured": false,
+      "version": "",
+      "publisher": "supabase",
+      "server": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "@supabase/mcp-server-supabase",
+          "--access-token",
+          "${SUPABASE_ACCESS_TOKEN}"
+        ]
+      },
+      "keys": [
+        "SUPABASE_ACCESS_TOKEN"
+      ]
+    }
+  ]
+}

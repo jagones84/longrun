@@ -1112,6 +1112,12 @@ function toggleRender() {
    side panels (and re-glue every grip) — otherwise the row can stay over-constrained
    and a panel border ends up off the screen where it cannot be dragged. */
 function _notifyLayout() { try { if (window._settleHandles) window._settleHandles(); } catch (e) {} }
+/* 2026-11-15 (operator): the rail's editor icon keeps its accent while the dock it
+   opens is on screen — the same mark the Inspector jumps use. */
+function _paintDockBtn() {
+  const b = document.getElementById("dockBtn");
+  if (b) b.classList.toggle("is-current", !!state.dock && !state.dock.hidden);
+}
 function show() {
   buildDock();
   state.dock.hidden = false;
@@ -1129,12 +1135,14 @@ function show() {
   }
   if (state.treeEl && !state.treeEl.hidden && (_treeStale() || !state.treeEl.querySelector(".ed-trow"))) loadTree();
   _notifyLayout();
+  _paintDockBtn();
 }
 function close() {
   syncActive();
   if (state.dock) state.dock.hidden = true;
   localStorage.setItem(LS_OPEN, "false");
   _notifyLayout();
+  _paintDockBtn();
 }
 function toggle(e) {
   if (!$id("editorDock")) buildDock();

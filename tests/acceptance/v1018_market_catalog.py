@@ -45,12 +45,14 @@ def write_local(items):
         json.dump({"schema": market.SCHEMA, "items": items}, f)
 
 
-# ── A: defaults are inert ────────────────────────────────────────────────────
+# ── A: defaults are inert for REMOTE sources, and the shipped catalogue is read ──
 cfg = market.config_view()
-check("A1 no catalogue source and no allowed host by default",
-      cfg["catalogs"] == [] and cfg["allow_hosts"] == [], cfg)
-check("A2 an empty catalogue returns zero items, not an error",
-      market.search()["items"] == [] and market.search()["errors"] == [])
+check("A1 no operator catalogue URL and only the two sync registries allowed",
+      cfg["catalogs"] == [] and cfg["allow_hosts"] == ["registry.modelcontextprotocol.io", "clawhub.ai"], cfg)
+base = market.search()
+check("A2 the catalogue SHIPS populated — the bundled file is read with no network",
+      len(base["items"]) >= 15 and base["errors"] == [] and base["stats"]["sources"] >= 1,
+      base["stats"])
 
 # ── B: merge + dedupe + malformed drop ───────────────────────────────────────
 write_local([
@@ -63,21 +65,22 @@ write_local([
 ])
 res = market.search()
 ids = [i["id"] for i in res["items"]]
-check("B1 duplicates collapse to ONE id and the first entry wins",
-      ids.count("skill/one") == 1 and res["items"][0]["title"] == "One", ids)
+by = {i["id"]: i for i in res["items"]}
+check("B1 the operator entry WINS over the shipped catalogue and is not duplicated",
+      ids.count("skill/one") == 1 and by["skill/one"]["title"] == "One", ids)
 check("B2 the duplicate is counted, not silently lost",
-      res["items"][0].get("duplicates") == 1, res["items"][0].get("duplicates"))
+      by["skill/one"].get("duplicates") == 1, by["skill/one"].get("duplicates"))
 check("B3 a malformed id and an unknown kind are dropped",
       "BROKEN ID" not in ids and "skill/two" not in ids, ids)
-check("B4 categories are the distinct ones the entries declare",
-      res["categories"] == ["Research"], res["categories"])
+check("B4 the operator's categories are added to the shipped ones",
+      "Research" in res["categories"], res["categories"])
 
 # ── C: no digest -> browsable, not installable ───────────────────────────────
 write_local([
     {"id": "skill/nodigest", "kind": "skill", "name": "nodigest", "title": "No digest",
      "category": "Research", "source": {"type": "https", "url": "https://h.test/n.zip"}},
 ])
-item = market.search()["items"][0]
+item = {i["id"]: i for i in market.search()["items"]}["skill/nodigest"]
 check("C1 a skill with no sha256 is listed", item["id"] == "skill/nodigest")
 check("C2 … and is NOT installable", item["installable"] is False)
 

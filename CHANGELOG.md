@@ -107,6 +107,16 @@ All notable changes to Longrun are documented here. The format follows
   model. The approval ledger still stores the raw args of the call it recorded — not model-bound.)
 
 ### Fixed
+- **A rail icon stays copper while the surface it opened is expanded (`v1026`).** Operator:
+  *"the side bar colours shall be maintained if the relevant panel session is expanded this is still
+  not true for the upper icons."* The Inspector jumps were already painted from `.insp-open`, but the
+  upper cluster went dim as soon as the pointer left: the editor door never consulted the dock, and
+  `editsBtn`/`apprBtn` are `INSP_JUMP_SKIP`, so nothing lit them; `kbSessionBtn` opened Settings ▸
+  Knowledge with no mark at all. One rule (`#toolsBar button.is-current { color: var(--acc) }`) now
+  covers every group — this also gives the PLAN toggle in the chat group the colour JS was already
+  setting — and three truthful sources feed it: `.insp-open` for the two badged Inspector doors,
+  `state.dock.hidden` for the editor (`show()`/`close()`), and the visible `knowledge` category for
+  the notebook door. (Locked by `v1026` 13/13.)
 - **A plan is never abandoned: `finish` faces the closing contract, and a restart cannot drop open
   steps (`v1008`).** Operator: *"i need resilience on any restart or any problem during the run. task
   shall not be abandoned (the plan can be modified, superseded but not forgotten). even if restart."*

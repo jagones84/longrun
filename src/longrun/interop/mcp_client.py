@@ -132,7 +132,11 @@ class MCPSession:
 
     def _connect_stdio(self, command, args, env):
         full_env = dict(os.environ)
-        full_env.update(env or {})
+        # `${VAR}` is the documented reference form for a credential, and the HTTP
+        # transport already expands it in headers (see _http_headers). Expand it here
+        # too, so an MCP preset or connector can carry `KEY=${KEY}` instead of a value.
+        full_env.update({k: os.path.expandvars(str(v)) for k, v in (env or {}).items()})
+        args = [os.path.expandvars(str(a)) for a in (args or [])]
         # A systemd user service does not carry `~/.local/bin`, where a per-user
         # Node install lives: without this the `which` below fails, `or command`
         # keeps the bare name and Popen dies with ENOENT on an installed npx.

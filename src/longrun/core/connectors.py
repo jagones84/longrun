@@ -82,4 +82,13 @@ def test(item_id):
     item = next((i for i in items if i["id"] == item_id), None)
     if item is None:
         return {"ok": False, "error": "unknown connector: %s" % item_id}
+    # A credential the entry declares but the keys store does not hold would reach the
+    # server as an unexpanded `${VAR}` and come back as a bare HTTP 400. Say WHICH key
+    # is missing instead — the operator can then set it in Settings ▸ Keys.
+    missing = [k for k in (item.get("keys") or []) if k not in _set_keys(item.get("keys") or [])]
+    if missing:
+        return {"ok": False,
+                "error": "missing credential: %s — set it in Settings › Keys, then test again"
+                         % ", ".join(missing),
+                "missing_keys": missing}
     return mcp_client.test_client({"name": item["name"]})

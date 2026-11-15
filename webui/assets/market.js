@@ -10,7 +10,7 @@
 const KIND_ICON = { plugin: "\u25C8", skill: "\u2726", mcp: "\u26AF", connector: "\u21BB" };
 const KIND_LABEL = { plugin: "Plugin", skill: "Skill", mcp: "MCP server", connector: "Connector" };
 
-const state = { kind: "all", q: "", category: "", manage: false, items: [], installed: [], errors: [], audit: null };
+const state = { kind: "all", q: "", category: "", manage: false, items: [], stats: {}, installed: [], errors: [], audit: null };
 
 function el(id) { return document.getElementById(id); }
 
@@ -38,7 +38,8 @@ function installedIds() {
 /* ── render ─────────────────────────────────────────────────────────────── */
 
 function card(item, have) {
-  const mine = have[item.id];
+  const rec = have[item.id];
+  const mine = rec || item.present;
   const icon = KIND_ICON[item.kind] || "\u25CB";
   const bits = [];
   if (item.publisher) bits.push(esc(item.publisher));
@@ -46,8 +47,9 @@ function card(item, have) {
   if (item.sha256) bits.push("sha256 " + esc(shortDigest(item.sha256)));
   else if (item.kind === "skill" || item.kind === "plugin") bits.push("no digest \u2014 not installable");
   const reason = item.installable ? "" : (item.sha256 ? "not installable" : "this entry carries no sha256");
+  const why = item.present ? "ships with longrun" : "already installed \u2014 see Manage";
   const act = mine
-    ? `<button class="ghost" disabled title="already installed \u2014 see Manage">Installed</button>`
+    ? `<button class="ghost" disabled title="${esc(why)}">Installed</button>`
     : `<button class="ghost mkt-install" data-id="${esc(item.id)}" ${item.installable ? "" : "disabled"}
          title="${esc(reason || "install " + item.title)}">Install</button>`;
   return `<article class="mkt-card" data-kind="${esc(item.kind)}">
@@ -114,7 +116,10 @@ function render() {
   const have = installedIds();
   const featured = state.items.filter(i => i.featured);
   const rest = state.items.filter(i => !i.featured);
-  let html = "";
+  const matched = Number(state.stats.matched || state.items.length);
+  let html = matched > state.items.length
+    ? `<div class="mkt-sect">Showing ${state.items.length} of ${matched} \u2014 use search or a category to narrow</div>`
+    : "";
   if (featured.length) {
     html += `<div class="mkt-sect">Recommended</div><div class="mkt-grid">${featured.map(i => card(i, have)).join("")}</div>`;
   }
@@ -150,7 +155,7 @@ function setTabs() {
 async function load() {
   const body = el("mktBody");
   if (body && !state.items.length) body.innerHTML = `<div class="mkt-empty">loading the catalogue\u2026</div>`;
-  const qs = [];
+  const qs = ["limit=500"];
   if (!state.manage && state.kind !== "all") qs.push("kind=" + encodeURIComponent(state.kind));
   if (state.q) qs.push("q=" + encodeURIComponent(state.q));
   if (state.category) qs.push("category=" + encodeURIComponent(state.category));
@@ -162,6 +167,7 @@ async function load() {
     try { aud = await window.api("GET", "/api/market/audit"); } catch (_) { aud = {}; }
   }
   state.items = (cat && cat.items) || [];
+  state.stats = (cat && cat.stats) || {};
   state.errors = (cat && cat.errors) || [];
   state.installed = (inst && inst.installed) || [];
   state.audit = aud || null;
@@ -169,7 +175,9 @@ async function load() {
   renderChips((cat && cat.categories) || []);
   setTabs();
   const n = el("mktCount");
-  if (n) n.textContent = state.manage ? `${state.installed.length} installed` : `${state.items.length} item${state.items.length === 1 ? "" : "s"}`;
+  if (n) n.textContent = state.manage
+    ? `${state.installed.length} installed`
+    : `${Number(state.stats.matched || state.items.length)} item${state.items.length === 1 ? "" : "s"}`;
 }
 
 async function install(id, overwrite) {
@@ -248,9 +256,32 @@ function toggleManage(force) {
 
 function reload() { return load(); }
 
+/* Pull an external marketplace into the catalogue (POST /api/market/sync).
+   The catalogue stays a file: a sync WRITES data/market/imported.json, and the
+   page re-reads it through the same route as everything else. Nothing installs
+   by itself, and a skill's digest was pinned by the sync. */
+async function syncSource() {
+  const sel = el("mktSource");
+  const source = (sel && sel.value) || "mcp-registry";
+  const btn = el("mktSync");
+  if (btn) { btn.disabled = true; btn.textContent = "syncing\u2026"; }
+  let res = {};
+  try { res = await window.api("POST", "/api/market/sync", { source }); }
+  catch (e) { res = { ok: false, error: String(e) }; }
+  if (btn) { btn.disabled = false; btn.textContent = "\u21E3 sync"; }
+  if (res && res.ok) {
+    const skipped = Number(res.error_count || 0);
+    toast(`synced ${source}: ${res.items} item(s)` + (skipped ? `, ${skipped} skipped` : ""), "ok");
+  } else {
+    toast((res && res.error) || "sync failed", "err");
+  }
+  await load();
+}
+
 wire();
 
 window.LRMkt = { load, reload, toggleManage, get state() { return state; } };
 /* data-call reaches only GLOBALS, so the two page buttons are published here. */
 window.mktManage = () => toggleManage();
 window.mktReload = () => { state.q = ""; const s = el("mktSearch"); if (s) s.value = ""; state.category = ""; load(); };
+window.mktSync = () => syncSource();

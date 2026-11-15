@@ -810,6 +810,11 @@
   /* v885: a jump icon is lit when its section is the one open */
   #toolsBar #inspJump button.is-current,
   #toolsBar #inspJumpRuntime button.is-current { color: var(--acc); }
+  /* 2026-11-15 (operator): "the side bar colours shall be maintained if the relevant
+     panel session is expanded … still not true for the upper icons" — ONE mark for any
+     rail button whose surface is on screen, in all four groups. This also gives the
+     PLAN toggle in the chat group the colour JS was already putting on it. */
+  #toolsBar button.is-current { color: var(--acc); }
   /* v890: a jump group with nothing in it takes no space (no empty hairline gap). */
   #toolsBar #inspJumpRuntime:empty { display: none; }
   #toolsBar button.is-busy { color: var(--acc); border-color: var(--acc); }
@@ -3288,6 +3293,15 @@
     <span class="u-f1"></span>
     <button class="ghost" id="mktManage" data-call="mktManage"
             title="installed items: version, source, digest, update">Manage</button>
+    <!-- v1025: pull an external marketplace in. Read-only against the registry; a
+         skill's digest is pinned at sync time, so the install still verifies bytes. -->
+    <select id="mktSource" class="art-sel" aria-label="external marketplace to sync"
+            title="the external marketplace a sync reads">
+      <option value="mcp-registry">MCP Registry (official)</option>
+      <option value="clawhub">ClawHub (OpenClaw skills)</option>
+    </select>
+    <button class="ghost" id="mktSync" data-call="mktSync"
+            title="fetch this marketplace into the catalogue — nothing installs by itself">⇣ sync</button>
     <button class="ghost" id="mktReload" data-call="mktReload" title="reload the catalogue"
             aria-label="reload the catalogue">↻</button>
   </div>
@@ -15324,6 +15338,16 @@ async function webhookDeliveries(id) {
     (rows || '<div class="remaining u-mt6">none yet</div>') + "</div>";
 }
 function settingsWin() { return $("settingsWin"); }
+/* 2026-11-15 (operator): this rail door opens Settings ▸ Knowledge; while that panel
+   is on screen it keeps the accent like every other rail door. */
+function _paintKbSessionBtn() {
+  const b = $("kbSessionBtn"); if (!b) return;
+  const w = settingsWin();
+  const cat = document.querySelector('#swMain .sw-cat[data-cat="knowledge"]');
+  const on = !!(w && !w.hidden && cat && !cat.hidden);
+  b.classList.toggle("is-current", on);
+  if (on) b.setAttribute("aria-current", "true"); else b.removeAttribute("aria-current");
+}
 /* JAG-2.5: the label of a Settings category, from the ONE list that declares them. */
 function panelLabel(cat) {
   const hit = SETTINGS_CATS.find(([k]) => k === cat);
@@ -15414,6 +15438,7 @@ function settingsCategory(name) {
   }
   initLlmTestBtns();
   _markApplyModes();
+  _paintKbSessionBtn();   // 2026-11-15: the notebook rail door follows this category
 }
 /* v654: a card that only writes on save SAYS so, next to its heading, and a
    picker that writes at once carries `live` (the Models cards do). The chips are
@@ -15627,7 +15652,7 @@ function openSettings(cat) {
   const known = SETTINGS_CATS.some(([k]) => k === saved);
   settingsCategory(known ? saved : "models");
 }
-function closeSettings() { settingsWin().hidden = true; }
+function closeSettings() { settingsWin().hidden = true; _paintKbSessionBtn(); }
 /* JAG-422: the ⚙ button toggles — a second click (or a click while it is open)
    closes the settings window instead of re-opening/re-focusing it. */
 function toggleSettings() {
@@ -16448,6 +16473,20 @@ function _paintInspJump() {
       b.classList.toggle("is-current", on);
       if (on) b.setAttribute("aria-current", "true"); else b.removeAttribute("aria-current");
     });
+  });
+  _paintRailObjects();   // 2026-11-15: the object doors keep their accent too
+}
+/* 2026-11-15 (operator): the two OBJECT buttons are the jump list's deliberate skips
+   (`INSP_JUMP_SKIP`) but they open a real Inspector section, so they get the same mark
+   from the same source of truth (`.insp-open`) — no second state to drift. */
+const RAIL_OBJECT_PANELS = [["editsBtn", "files"], ["apprBtn", "approvals"]];
+function _paintRailObjects() {
+  RAIL_OBJECT_PANELS.forEach(pair => {
+    const b = $(pair[0]); if (!b) return;
+    const sec = _inspSecOf(pair[1]);
+    const on = !!(sec && sec.classList.contains("insp-open"));
+    b.classList.toggle("is-current", on);
+    if (on) b.setAttribute("aria-current", "true"); else b.removeAttribute("aria-current");
   });
 }
 function toggleInsp(name) {

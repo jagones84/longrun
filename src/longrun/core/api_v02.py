@@ -2026,6 +2026,12 @@ def handle(handler, method, path, qs, body):
         if path == "/api/market/audit":
             from longrun.core import market as _mkt
             return _r(handler, 200, _mkt.audit())
+        # Which external marketplaces this build can SYNC (and the host each needs).
+        if path == "/api/market/sources":
+            from longrun.core import market as _mkt
+            from longrun.core import market_sync as _ms
+            return _r(handler, 200, {"ok": True, "sources": _ms.sources(),
+                                     "allow_hosts": _mkt.config_view()["allow_hosts"]})
         # User-defined `/` commands (data/commands.yaml) and the connector view
         # over the catalogue. Both read the ONE store their object already has.
         if path == "/api/commands":
@@ -2572,6 +2578,14 @@ def handle(handler, method, path, qs, body):
             from longrun.core import commands as _cmds
             res = _cmds.upsert(body)
             _publish("commands.save", name=body.get("name"), ok=bool(res.get("ok")))
+            return _r(handler, 200 if res.get("ok") else 400, res)
+        # Sync an external marketplace into data/market/imported.json. Read-only
+        # against the registry; every fetched artifact is pinned by digest.
+        if path == "/api/market/sync":
+            from longrun.core import market_sync as _ms
+            res = _ms.sync(body.get("source") or "mcp-registry",
+                           body.get("limit"), body.get("query") or "")
+            _publish("market.sync", source=body.get("source"), ok=bool(res.get("ok")))
             return _r(handler, 200 if res.get("ok") else 400, res)
         if path == "/api/connectors/install":
             from longrun.core import connectors as _conn

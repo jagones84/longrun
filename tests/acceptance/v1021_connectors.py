@@ -49,9 +49,11 @@ def write_catalog(items):
         json.dump({"schema": market.SCHEMA, "items": items}, f)
 
 
-# ── A: nothing to show, and the note says why ───────────────────────────────
+# ── A: the shipped connectors are listed, and the note says why ─────────────
 res = connectors.available()
-check("A1 an empty catalogue yields zero connectors", res["ok"] and res["connectors"] == [])
+bundled = [c["id"] for c in res["connectors"]]
+check("A1 the shipped connectors are listed (GitHub among them)",
+      res["ok"] and "connector/github" in bundled, bundled)
 check("A2 the note states that only key NAMES are returned",
       "names only" in res.get("note", ""), res.get("note"))
 
@@ -65,13 +67,21 @@ write_catalog([
 ])
 os.environ.pop("TEST_CONN_KEY", None)
 os.environ.pop("OTHER_CONN_KEY", None)
-row = connectors.available()["connectors"][0]
+
+
+def conn_row():
+    """The connector this test declared, by id — the shipped ones are also listed."""
+    rows = {c["id"]: c for c in connectors.available()["connectors"]}
+    return rows["connector/db"]
+
+
+row = conn_row()
 check("B1 the connector is listed with its declared keys",
       [k["name"] for k in row["keys"]] == ["TEST_CONN_KEY", "OTHER_CONN_KEY"], row["keys"])
 check("B2 a key without a value reads set=false",
       all(k["set"] is False for k in row["keys"]) and row["missing"] == ["TEST_CONN_KEY", "OTHER_CONN_KEY"])
 os.environ["TEST_CONN_KEY"] = "super-secret-value"
-row = connectors.available()["connectors"][0]
+row = conn_row()
 check("B3 a key present in the environment reads set=true",
       row["keys"][0]["set"] is True and row["missing"] == ["OTHER_CONN_KEY"])
 check("B4 the VALUE never leaves the keys owner",
@@ -101,6 +111,23 @@ check("E1 installing an unknown connector is refused by name",
       bad.get("ok") is False and "unknown item" in bad.get("error", ""), bad)
 check("E2 testing an unknown connector is refused by name",
       "unknown connector" in connectors.test("connector/ghost").get("error", ""))
+
+# ── E3: a declared key that is NOT set is named BEFORE any connection ───────
+# A missing credential used to reach the server as a literal `${VAR}` and come
+# back as a bare HTTP 400; the panel must say which key is missing instead.
+_UNSET = "LONGRUN_TEST_KEY_THAT_IS_NEVER_SET_7F3A"
+os.environ.pop(_UNSET, None)
+write_catalog([
+    {"id": "connector/nokey", "kind": "connector", "name": "nokey", "title": "Needs a key",
+     "server": {"type": "http", "url": "https://example.invalid/mcp",
+                "headers": {"Authorization": "Bearer ${%s}" % _UNSET}},
+     "keys": [_UNSET]},
+])
+res_nokey = connectors.test("connector/nokey") if connectors.install("connector/nokey")["ok"] \
+    else {"error": "install failed"}
+check("E3 an unset declared key is named, and no connection is attempted",
+      res_nokey.get("ok") is False and _UNSET in res_nokey.get("error", "")
+      and res_nokey.get("missing_keys") == [_UNSET], res_nokey)
 
 # ── F: the panel reads the same two owners ─────────────────────────────────
 check("F1 the Settings panel exists as its own category",
