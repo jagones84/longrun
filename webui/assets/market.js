@@ -224,6 +224,19 @@ function manageRow(rec) {
   const flag = rec.update_available
     ? `<span class="mkt-warn" title="a newer entry exists in the catalogue">update available</span>`
     : (rec.in_catalog ? "" : `<span class="mkt-warn" title="this item is no longer in any catalogue">not in catalogue</span>`);
+  /* A plugin's members ARE what it installed: name them (and say which ones this
+     install created) so the operator can trace a skill or server back to its plugin.
+     The meta row is one clamped line, so the count is printed and the detail is the tooltip. */
+  const members = rec.members || [];
+  const memberTip = members.map(m => `${m.kind}:${m.name}` + (m.created ? "" : " (already there)"))
+    .join(" \u00b7 ");
+  const memberBits = (rec.kind === "plugin" && members.length)
+    ? members.length + (members.length === 1 ? " member" : " members") : "";
+  const line = [meta, memberBits].filter(Boolean).join(" \u00b7 ");
+  const remTip = rec.kind === "plugin"
+    ? "uninstall: removes this record AND the skills/MCP servers it created"
+    : "remove the record; the " + (rec.kind === "skill" ? "skill" : "server") +
+      " itself stays in its own panel";
   const upd = rec.update_available
     ? `<button class="ghost mkt-update" data-id="${esc(rec.id)}"
          title="reinstall from the catalogue; the digest is verified again">Update</button>`
@@ -233,11 +246,12 @@ function manageRow(rec) {
     <div class="mkt-body">
       <div class="mkt-name">${esc(rec.name || rec.id)} ${flag}</div>
       <div class="mkt-desc">${esc(KIND_LABEL[rec.kind] || rec.kind)}${rec.enabled === false ? " \u00b7 disabled" : ""}</div>
-      <div class="mkt-meta" title="${meta}">${badge} ${meta}</div>
+      <div class="mkt-meta" title="${esc([line, memberTip].filter(Boolean).join(" \u00b7 "))}">${badge} ${esc(line)}</div>
     </div>
     <div class="mkt-act">
       ${upd}
-      <button class="ghost mkt-remove" data-id="${esc(rec.id)}" title="remove the record (files stay unless you ask)">Remove</button>
+      <button class="ghost mkt-remove" data-id="${esc(rec.id)}"
+        data-files="${rec.kind === "plugin" ? "1" : ""}" title="${esc(remTip)}">Remove</button>
     </div>
   </article>`;
 }
@@ -473,11 +487,14 @@ async function importRemote(source, slug, btn) {
   await load();
 }
 
-async function remove(id) {
+async function remove(id, files) {
   let res = {};
-  try { res = await window.api("DELETE", "/api/market/installed/" + encodeURIComponent(id)); }
+  try {
+    res = await window.api("DELETE", "/api/market/installed/" + encodeURIComponent(id)
+      + (files ? "?files=1" : ""));
+  }
   catch (e) { res = { ok: false, error: String(e) }; }
-  if (res && res.ok) toast(`removed ${id}`, "ok");
+  if (res && res.ok) toast(files ? `uninstalled ${id}` : `removed ${id}`, "ok");
   else toast((res && res.error) || "remove failed", "err");
   await load();
 }
@@ -556,7 +573,7 @@ function wire() {
       const upd = ev.target.closest(".mkt-update");
       if (upd) { install(upd.getAttribute("data-id"), true); return; }
       const rem = ev.target.closest(".mkt-remove");
-      if (rem) remove(rem.getAttribute("data-id"));
+      if (rem) remove(rem.getAttribute("data-id"), !!rem.getAttribute("data-files"));
     });
   }
   const sel = el("mktSource");

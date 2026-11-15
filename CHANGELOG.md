@@ -334,7 +334,11 @@ All notable changes to Longrun are documented here. The format follows
   WHERE IT LIVES even when it carries no manifest (the location gate runs before the format gate), and
   the reported roots are the enforced ones, repository included. Operator follow-up fixed too: a local
   card names the package (`diffs`) with its shortened location in the meta, because the full path as a
-  title painted over the neighbouring card. (Locked by `v1040` 28/28.)
+  title painted over the neighbouring card. A plugin's members now also carry their parent: the Skills
+  and MCP panels read `installed_map()`, which resolves each member to the plugin that installed it, so
+  a bundled skill says `from plugin/X` — and the Manage Remove (like the Skills panel's delete)
+  uninstalls the plugin WITH the skills and servers it created (`?files=1`), never a pre-existing one.
+  (Locked by `v1040` 31/31.)
 - **A plugin is a container, and the Matrix modules are their own kind (`v1039`).** Operator: *"plugins
   are only matrix. does they need adaption to the longrun specific harness …? plugins are combinations
   of skills and mcps? what are plugins?"* — and the answer was no in the catalogue: `plugin` named an

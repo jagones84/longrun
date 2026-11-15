@@ -2189,6 +2189,9 @@ def handle(handler, method, path, qs, body):
                 if m and m.get("kind") in ("mcp", "connector"):
                     client["market"] = {k: m[k] for k in
                                         ("id", "origin", "origin_label", "installed")}
+                    if m.get("plugin"):
+                        # Installed as a member of a plugin: say which one.
+                        client["market"]["plugin"] = m["plugin"]
             return _r(handler, 200, res)
 
         # --- JAG-109: skills (engine in skills.py) ---
@@ -2227,6 +2230,9 @@ def handle(handler, method, path, qs, body):
                     if target and here and _os.path.realpath(target) in (here, _os.path.dirname(here)):
                         it["market"] = {k: m[k] for k in
                                         ("id", "origin", "origin_label", "installed")}
+                        if m.get("plugin"):
+                            # A member skill: the panel must name the plugin it came with.
+                            it["market"]["plugin"] = m["plugin"]
             return _r(handler, 200, {"skills": items, "count": len(items),
                                      "local_dir": skills_mod._local_dir(),
                                      "discovery": disc})

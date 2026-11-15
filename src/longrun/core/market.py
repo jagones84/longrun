@@ -674,11 +674,14 @@ def installed():
 
 
 def installed_map():
-    """`{name: {id, kind, origin, origin_label, installed, target}}` for the owners.
+    """`{name: {id, kind, origin, origin_label, installed, target, plugin?}}` for the owners.
 
     The Settings panels list objects from THEIR store (skills on disk, MCP clients
     in the config). This is the one join to the marketplace RECORD, so a panel can
     say where an object came from without a second lookup or a copied field.
+    A plugin has no object of its own, so each of its MEMBERS is mapped to the
+    plugin record that installed it: that is how a skill or server shows which
+    plugin it came with (`plugin`), and whether this install created it.
     """
     out = {}
     for rec in installed()["installed"]:
@@ -687,6 +690,15 @@ def installed_map():
             out[name] = {"id": rec.get("id"), "kind": rec.get("kind"),
                          "origin": rec.get("origin"), "origin_label": rec.get("origin_label"),
                          "installed": rec.get("installed"), "target": rec.get("target") or ""}
+        for member in rec.get("members") or []:
+            mname = str(member.get("name") or "")
+            if not mname or mname in out:
+                continue  # a standalone install of the same name keeps its own record
+            out[mname] = {"id": rec.get("id"), "kind": member.get("kind"),
+                          "origin": rec.get("origin"), "origin_label": rec.get("origin_label"),
+                          "installed": rec.get("installed"),
+                          "target": member.get("target") or "",
+                          "plugin": rec.get("id"), "created": bool(member.get("created"))}
     return out
 
 

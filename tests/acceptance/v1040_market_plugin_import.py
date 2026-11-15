@@ -196,6 +196,14 @@ rec = [r for r in market.installed()["installed"] if r["id"] == "plugin/trae-dem
 check("F4 the record carries both members and its origin",
       len(rec) == 1 and len(rec[0]["members"]) == 2 and rec[0]["origin_label"] == "Trae", rec)
 check("F5 audit agrees with the owners", market.audit()["drift"] == 0)
+# Provenance: the Settings panels join the record by NAME, so a member has to resolve
+# to the PLUGIN that installed it — otherwise a bundled skill looks operator-made.
+mmap = market.installed_map()
+check("F5b each member resolves to its plugin, so a panel can say where it came from",
+      mmap.get("alpha", {}).get("plugin") == "plugin/trae-demo"
+      and mmap.get("alpha-server", {}).get("plugin") == "plugin/trae-demo"
+      and mmap.get("alpha", {}).get("origin_label") == "Trae",
+      {k: mmap.get(k) for k in ("alpha", "alpha-server")})
 check("F6 rm removes what the import created",
       market.forget("plugin/trae-demo", remove_target=True)["ok"] is True
       and not os.path.isdir(os.path.join(os.environ["LONGRUN_SKILLS_DIR"], "local", "alpha"))
@@ -207,6 +215,7 @@ check("F7 an empty source is refused, not guessed",
 # ── I: the surface is wired ────────────────────────────────────────────────
 API = open(os.path.join(REPO, "src", "longrun", "core", "api_v02.py"), encoding="utf-8").read()
 JS = open(os.path.join(REPO, "webui", "assets", "market.js"), encoding="utf-8").read()
+HTML = open(os.path.join(REPO, "webui", "index.html"), encoding="utf-8").read()
 FORGE = open(os.path.join(REPO, "src", "longrun", "core", "forge.py"), encoding="utf-8").read()
 check("I1 the scan and import routes exist",
       '"/api/market/plugin-scan"' in API and '"/api/market/plugin-import"' in API)
@@ -216,6 +225,13 @@ check("I3 the CLI exposes both verbs",
       '"plugin-scan", "plugin-add"' in FORGE)
 check("I4 a card names the package, never a full path that overflows the card",
       "p.title || p.name || base" in JS and "shortHome(" in JS)
+# The operator's question: does uninstalling a plugin take its consequences with it?
+# The record owns the members, so the UI must ask the RECORD for `?files=1`.
+check("I5 Manage uninstalls a plugin with its members, not just the record",
+      'data-files="${rec.kind === "plugin" ? "1" : ""}"' in JS and '?files=1' in JS)
+check("I6 a bundled skill says which plugin it came from, and that the plugin is the unit",
+      'it["market"]["plugin"] = m["plugin"]' in API
+      and 'came with plugin' in HTML and 'from ' in HTML)
 
 print("\n---\nv1040: %d/%d PASS" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

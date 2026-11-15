@@ -13961,7 +13961,11 @@ async function loadMcpClients() {
           esc("catalogue: " + (c.market.origin || "")) + '">' +
           esc(c.market.origin_label || "marketplace") + "</span>"
         : "";
-      sub.innerHTML = _where + esc((c.transport === "stdio"
+      // A server installed as a plugin member names its plugin, so the row says
+      // where the server came from even though its owner is the MCP document.
+      const _from = (c.market && c.market.plugin) ? esc("from " + c.market.plugin + " · ") : "";
+      sub.innerHTML = _where + (_where ? " · " : "") + _from +
+        esc((c.transport === "stdio"
         ? ((c.command || "") + " " + ((c.args || []).join(" ")))
         : (c.url || "")) + " · " + (c.tools || 0) + " tool" + _hint);
       if (_hint) sub.style.color = "var(--warn)";
@@ -14157,12 +14161,15 @@ function renderSkills() {
     // in the row. The badge carries it.
     const info = document.createElement("div"); info.style.cssText = "flex:1;min-width:0";
     const t = document.createElement("div"); t.style.fontWeight = "600"; t.textContent = s.name;
-    const badge = s.market ? '<span class="sk-badge sk-market">' + esc(s.market.origin_label || "marketplace") + '</span>'
+    const badge = s.market ? '<span class="sk-badge sk-market"' +
+        (s.market.plugin ? ' title="' + esc("installed by plugin " + s.market.plugin) + '"' : "") +
+        ">" + esc(s.market.origin_label || "marketplace") + '</span>'
       : (s.matrix ? '<span class="sk-badge sk-matrix">matrix</span>'
         : (s.auto ? '<span class="sk-badge sk-auto">self-generated</span>'
           : (s.local ? '<span class="sk-badge sk-user">uploaded</span>' : '<span class="sk-badge sk-core">registered</span>')));
     const sub = document.createElement("div"); sub.className = "remaining";
     sub.innerHTML = badge + esc(s.category || "") + " · " + esc(s.title || "") +
+      (s.market && s.market.plugin ? ' · <b>from ' + esc(s.market.plugin) + "</b>" : "") +
       (s.path ? ' · <code>' + esc(s.path) + "</code>" : "");
     info.append(t, sub);
     const ins = document.createElement("button"); ins.className = "ghost"; ins.textContent = "/";
@@ -14173,9 +14180,16 @@ function renderSkills() {
       const del = document.createElement("button"); del.className = "ghost"; del.textContent = "🗑";
       del.onclick = async e => {
         e.stopPropagation();
-        if (!(await confirmDelete("remove skill '" + s.name + "'?"))) return;
         // A marketplace skill has a RECORD; removing only the files would leave
         // it behind as drift, so the record owns the removal (`?files=1`).
+        // A skill that came with a PLUGIN is a member: the plugin is the unit, so
+        // the confirm says so and the whole bundle goes.
+        const plug = s.market && s.market.plugin;
+        const ask = plug
+          ? "remove skill '" + s.name + "'?\n\nIt came with plugin '" + plug +
+            "': the WHOLE plugin is uninstalled, with its other skills and MCP servers."
+          : "remove skill '" + s.name + "'?";
+        if (!(await confirmDelete(ask))) return;
         if (s.market) await api("DELETE", "/api/market/installed/" + encodeURIComponent(s.market.id) + "?files=1");
         else await api("DELETE", "/api/skills/" + encodeURIComponent(s.name));
         loadSkills();

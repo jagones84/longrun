@@ -403,7 +403,10 @@ def scan(max_age=30):
                 row.update(error=conv.get("error") or "not convertible",
                            ignored=conv.get("ignored") or [])
             out.append(row)
-    out.sort(key=lambda r: (r.get("format", ""), r.get("name") or r.get("path", "")))
+    # Convertible packages first: an importer that opens with six refusals buries the
+    # ones the operator can actually use.
+    out.sort(key=lambda r: (1 if r.get("error") else 0, r.get("format", ""),
+                            r.get("name") or r.get("path", "")))
     result = {"ok": True, "roots": roots(), "packages": out,
               "counts": {"found": len(out), "convertible": sum(1 for r in out if "error" not in r)}}
     _scan_cache.update(at=now, val=result)

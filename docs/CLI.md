@@ -366,7 +366,7 @@ Five kinds, and `--kind` takes any of them: `plugin` (a bundle whose members are
 | `market import <source> <slug>` | `POST /api/market/import-remote` | pins one row's digest, writes it into that source's group, then installs it |
 | `market install <id> [--overwrite]` | `POST /api/market/install` | the same digest-gated install the page uses |
 | `market installed` | `GET /api/market/installed` | the install RECORD with its catalogue label |
-| `market rm <id> [--files]` | `DELETE /api/market/installed/<id>` (`?files=1`) | removes the record, and the skill files when asked |
+| `market rm <id> [--files]` | `DELETE /api/market/installed/<id>` (`?files=1`) | removes the record; `--files` also removes what THAT install created — a plugin's skills and MCP servers, while a pre-existing one stays |
 | `market plugin-scan` | `GET /api/market/plugin-scan` | Trae / Claude / OpenClaw packages found on this machine, converted but not installed |
 | `market plugin-add <path\|url> [--overwrite]` | `POST /api/market/plugin-import` | converts one package (a local directory or an https ZIP) into its skill + MCP members, then installs it |
 
