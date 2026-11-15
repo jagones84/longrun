@@ -69,11 +69,12 @@ check("A2 it is an identifier: dim on a hairline, no second accent",
       "var(--dim)" in jid and "var(--line)" in jid
       and "acc2" not in jid and "var(--accent)" not in jid,
       jid[:120])
-check("A3 the rail meta is 11px (count) / 10.5px (role, id) — nothing at 9px",
+check("A3 the rail meta is 11px (count) / 10.5px (id) — nothing at 9px",
+      # 2026-11-16 (operator): the role label left the rail (one name per session — the
+      # title), so its `.nrl` rule is gone and the pin covers the two that remain.
       "font-size: 11px" in rule(".sess .n")
-      and "font-size: 10.5px" in rule(".sess .nrl")
       and "font-size: 10.5px" in jid
-      and "font-size: 9px" not in ui.split(".sess .nrl {")[1].split("}")[0],
+      and ".sess .nrl {" not in ui,
       rule(".sess .n")[:60])
 check("A4 the row count is declared once too (the older 10px copy is gone)",
       ui.count(".sess .n {") == 1)

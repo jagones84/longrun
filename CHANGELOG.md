@@ -18,7 +18,9 @@ All notable changes to Longrun are documented here. The format follows
   — measured live: 118/118 rows populated within 4 s of the restart. The rail paints the ctx pill on
   EVERY row (the active one keeps the live `/api/context` ids), `sessions.list` prints
   `model=… | ctx=…%` so a manager reads the agents it can dispatch, and the deck's AGENTS row gains a
-  `ctx NN%` chip beside the role. (Locked by `v1048` 11/11.)
+  `ctx NN%` chip beside the role. In the rail the meter is a bare 13px ring + 9px number — no padding,
+  border or background — placed before the ⋮, so it fits the row instead of wrapping to a second line
+  (the exact token counts live in the tooltip). (Locked by `v1048` 12/12.)
 
 ### Security
 - **The bearer token no longer lands in the systemd journal (`v940`).** `main()` printed
@@ -121,6 +123,19 @@ All notable changes to Longrun are documented here. The format follows
   model. The approval ledger still stores the raw args of the call it recorded — not model-bound.)
 
 ### Fixed
+- **One name and one compact count per rail row, and the ⋮ is a toggle.** Operator: *"each
+  session just one name … the second name example drafting agent→writer only taking space away"*,
+  *"the X msg · Y d string i hate — can it be compacted?"*, *"re-click on the tree dot menu shall
+  make the menu disappear"*, *"the agent name shall be ABOVE its code and icon … the ID shall go
+  down"*, *"the icon on left most … indicates part of a team, remove"*, and *"if going below with
+  scroll bar the team shall remain as heading"*. The row is now: **line 1 the NAME** (with 📌 / the
+  void-prompt `*`), **line 2 the A-id · ctx ring · `46m` · ⋮** — the message COUNT is gone (it cost the
+  width the ring needs beside the A-id); squeezing the rail ellipsizes the name and keeps the id below,
+  never the opposite. The ⬢ org mark and the per-row team symbols are deleted (the sticky group header
+  states the team; both names and the full count live in the tooltip), and `.sgroup-h` is
+  `position: sticky; top: 0` so the team stays visible while its agents scroll. A second click on the
+  same ⋮ (or team kebab) closes its menu. The `role` FIELD is untouched. (Locked by `v1048`
+  C1c/C1d/D3; `v765` re-pointed at the two font rules that remain, 17/17.)
 - **The ⋮ session and team menus open again after being closed.** Operator: *"if i click tree dot
   menus and close and click again it does not start anymore"*. Each open armed a one-shot document
   listener; it was still pending when the ⋮ was clicked again, so it closed the menu that click had

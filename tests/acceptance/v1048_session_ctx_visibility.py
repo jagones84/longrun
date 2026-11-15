@@ -132,6 +132,22 @@ check("C1 the rail renders the pill for a NON-active row too",
       and "const isActive = s.id === sessionId;" in _ring
       and "s.ctx_pct" in _ring, _ring[:200])
 
+# 2026-11-16 (operator): "i don't have space neither horizontal neither vertical" — the
+# rail meter is a bare 13px ring + a 10.5px number (the rail's legibility floor, v765),
+# with no padding/border/background, and it sits BEFORE the ⋮ so it is never clipped.
+check("C1b the rail meter is compact and cannot add a line to the row",
+      ".sess-ctx .pill.meter { gap: 2px; padding: 0; border: 0; background: transparent;" in HTML
+      and ".sess-ctx .mring { width: 13px; height: 13px; }" in HTML
+      and '${jid}${_ctxRingHtml(s)}<span class="n">${_sessAgeText(s)}</span>' in HTML, "")
+check("C1c one name, no message count, the ring beside the A-id",
+      "function _sessAgeText(" in HTML and "_sessCountText" not in HTML
+      and '${s.messages} msg${age}' not in HTML and "${s.messages}·" not in HTML
+      and 'class="nrl"' not in HTML and ".sess .nrl {" not in HTML, "")
+check("C1d the NAME is line 1 and the A-id below; the team glyphs are gone; headers stick",
+      '<span class="t">${pin}${voidMark}${esc(s.title || s.id)}</span>${jid}' in HTML
+      and "agtag" not in HTML and "tchips" not in HTML
+      and "position: sticky; top: 0;" in HTML, "")
+
 TOOLS_SRC = _read("src", "longrun", "tools", "tools.py")
 check("C2 sessions.list prints model and ctx for every row",
       "model=%s%s" in TOOLS_SRC and "ctx=%s%%" in TOOLS_SRC
@@ -159,6 +175,9 @@ check("D1 the ⋮ menus close from ONE persistent listener (they re-open after a
 check("D2 both rail menus are the same body-level popover, placed from their trigger",
       "document.body.appendChild(m)" in _open and "_placeMenu(m," in _open
       and "document.body.appendChild(m)" in _team and "_placeMenu(m," in _team, "")
+check("D3 a second click on the SAME ⋮ closes its menu (toggle)",
+      'if (_sessMenuFor === row && document.querySelector(".sess-menu")) { closeSessMenu(); return; }' in _open
+      and 'if (_sessMenuFor === head && document.querySelector(".sess-menu")) { closeSessMenu(); return; }' in _team, "")
 
 with open(os.environ["LONGRUN_AGENTS_FILE"], "w", encoding="utf-8") as fh:
     json.dump({"agents": {}, "seq": 0}, fh)

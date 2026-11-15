@@ -92,12 +92,19 @@
     stroke-dasharray: 100 100; stroke-dashoffset: 100; transition: stroke-dashoffset .3s, stroke .3s; }
   .pill.meter.hot .mfill { stroke: var(--err); }
   .pill.meter.hot b { color: var(--err); }
-  /* JAG-424g: the context ring is per-SESSION — it sits on the ACTIVE session's row
-     (its own context saturation), not on the shared Sessions panel header. */
-  .sess-ctx { margin-left: 6px; flex: 0 0 auto; display: inline-flex; align-items: center; }
-  #ctx-meter { margin: 0; padding: 0; gap: 4px; background: transparent; border: 0; }
-  #ctx-meter .mring { width: 14px; height: 14px; }
-  #ctx-meter b { display: none; }
+  /* 2026-11-16 (operator): the rail has neither horizontal nor vertical room, so the
+     rail meter is a 13px ring + a 9px number — NO padding, border or background. The
+     exact token counts stay in the tooltip; the ring turns red from 70%. */
+  .sess-ctx { margin-left: 3px; flex: 0 0 auto; display: inline-flex; align-items: center; }
+  .sess-ctx .pill.meter { gap: 2px; padding: 0; border: 0; background: transparent;
+    font-size: 10.5px; line-height: 1; height: 14px; color: var(--dim); }
+  .sess-ctx .mring { width: 13px; height: 13px; }
+  .sess-ctx .mring .mtrk { stroke-width: 4.5; }
+  .sess-ctx .mfill { stroke-width: 4.5; }
+  .sess-ctx .pill.meter b { font-size: 10.5px; letter-spacing: 0; }
+  .sess-ctx .pill.meter.hot { color: var(--err); }
+  #ctx-meter { margin: 0; padding: 0; gap: 2px; background: transparent; border: 0; }
+  #ctx-meter .mring { width: 13px; height: 13px; }
   .pill.sbox { display: inline-flex; align-items: center; gap: 6px; font-size: 11px;
     padding: 3px 11px; }
   /* JAG-424: on a phone the banner keeps only the sandbox DOT (no word) and drops the
@@ -447,7 +454,8 @@
   .sess .t { flex-basis: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; font-weight: 500; }
   .sess .n { margin-left: auto; color: var(--dim); font-size: 11px; letter-spacing: .02em; }
   .sess .ws { font-size: 12px; flex-shrink: 0; opacity: .85; }
-  .sess .team { font-size: 12px; line-height: 1; flex-shrink: 0; }
+  /* 2026-11-16 (operator): the per-row team symbol is gone — the sticky group header
+     states the team, so repeating its glyph on every row only cost width. */
   /* JAG-354: pinned sessions are marked in the rail (and sorted to the top). */
   .sess .pin { font-size: 11px; flex-shrink: 0; opacity: .95; }
   .sess.pinned .t { font-weight: 600; }
@@ -474,7 +482,8 @@
   .sgroup-h { display: flex; align-items: center; gap: 6px; padding: 4px 8px;
     border-radius: 8px; cursor: pointer; user-select: none; font-size: 10.5px;
     font-weight: 600; letter-spacing: .05em; text-transform: uppercase;
-    color: var(--dim); position: relative; }
+    color: var(--dim); position: sticky; top: 0; z-index: 6;
+    background: var(--bg); }
   .sgroup-h:hover { background: var(--hover); color: var(--txt); }
   /* v910: the No-team header carries the SAME bulk kebab as the Control deck's
      team headers — glyph control, no frame (rule 9), named for a11y (rule 2). */
@@ -540,9 +549,8 @@
   /* AGENTS-panel parity: an EMPTY ROLE.md is a real state and stays visible. */
   .sess .req { color: var(--warn, var(--acc)); font-size: 11px; flex-shrink: 0;
     line-height: 1; }
-  /* JAG-2.8: agent role label in the session rail (e.g. "Senior Project Manager") */
-  .sess .nrl { font-size: 10.5px; color: var(--dim); white-space: nowrap; overflow: hidden;
-    text-overflow: ellipsis; max-width: 120px; flex-shrink: 1; }
+  /* JAG-2.8: agent role label in the session rail — 2026-11-16 (operator) the rail
+     shows ONE name (the title); the role is a tooltip, so this rule is gone. */
 
   /* context meter */
   .meter { height: 6px; border-radius: 999px; background: var(--line); overflow: hidden;
@@ -7883,7 +7891,8 @@ function _togglePin(sid) {
   localStorage.setItem("sf_pinned", JSON.stringify(p.filter(x => !sys.includes(x))));
   loadSessions();
 }
-function closeSessMenu() { document.querySelectorAll(".sess-menu").forEach(m => m.remove()); document.querySelectorAll(".sess.menu-open").forEach(d => d.classList.remove("menu-open")); }
+let _sessMenuFor = null;   // the row/header that owns the open menu (toggle + outside-close)
+function closeSessMenu() { document.querySelectorAll(".sess-menu").forEach(m => m.remove()); document.querySelectorAll(".sess.menu-open").forEach(d => d.classList.remove("menu-open")); _sessMenuFor = null; }
 /* 2026-11-16 (operator): "click the ⋮ menu, close it, click again — it does not start
    anymore". Each open armed a ONE-SHOT document listener; it was still pending when
    the ⋮ was clicked again, so it closed the menu that click had just opened. ONE
@@ -7899,8 +7908,12 @@ function _wireSessMenuClose() {
   });
 }
 async function openSessMenu(row, s, ag) {
+  // 2026-11-16 (operator): the ⋮ is a TOGGLE — a second click on the row that owns the
+  // open menu closes it (rebuilding the same menu read as "it does not close").
+  if (_sessMenuFor === row && document.querySelector(".sess-menu")) { closeSessMenu(); return; }
   closeSessMenu();
   row.classList.add("menu-open");
+  _sessMenuFor = row;
   const m = document.createElement("div");
   m.className = "sess-menu";
   const pinned = _pinned().includes(s.id);
@@ -7983,7 +7996,10 @@ async function openSessMenu(row, s, ag) {
    and their copy are the SAME strings the Control deck uses, and the server walks
    the cascade — no per-session loop here. */
 function openTeamMenu(head, g) {
+  // 2026-11-16: the kebab is a TOGGLE too (same gesture as the session ⋮).
+  if (_sessMenuFor === head && document.querySelector(".sess-menu")) { closeSessMenu(); return; }
   closeSessMenu();
+  _sessMenuFor = head;
   const none = g.key === "__none__" || !g.id;
   const tid = none ? "__none__" : g.id;
   const n = (g.sessions || []).length;
@@ -8168,9 +8184,17 @@ function _ctxRingHtml(s) {
 function _repaintCtx() {
   const pill = $("ctx-meter");
   if (pill) { pill.title = _ctxTitle; pill.className = "pill meter" + (_ctxPct >= 70 ? " hot" : ""); }
-  const p = $("ctxPctTop"); if (p) p.textContent = (_ctxPct == null ? "–" : _ctxPct + "%");
+  const p = $("ctxPctTop"); if (p) p.textContent = (_ctxPct == null ? "–" : Math.round(_ctxPct) + "%");
   const ring = $("ctxRing");
   if (ring) ring.style.strokeDashoffset = String(100 - Math.max(0, Math.min(100, _ctxPct || 0)));
+}
+/* 2026-11-16 (operator): the message COUNT is gone from the rail — it cost the width
+   the ctx ring needs beside the A-id. Only the compact last-use age remains ("46m",
+   "4h", "2d"); the full sentence ("215 messages · last used 46 min") stays in the
+   row's tooltip, so nothing is lost. */
+function _sessAgeText(s) {
+  return String(s.age || "").trim().toLowerCase()
+    .replace(/\s+/g, "").replace(/min$/, "m");
 }
 /* One rail row for a session. Called once PER GROUP the session belongs to. */
 function _sessRowEl(s, pinnedIds, ag, groupKey, orderContainer) {
@@ -8179,7 +8203,6 @@ function _sessRowEl(s, pinnedIds, ag, groupKey, orderContainer) {
   d.dataset.sid = s.id;   // JAG-168: lets setRunning() toggle the busy marker (ALL copies)
   d.dataset.sessionOrderId = s.id;
   d.dataset.groupKey = groupKey || "__none__";
-  const age = s.age ? (" · " + s.age) : "";
   const fol = s.workspace ? `<span class="ws" title="workspace: ${esc(s.workspace)}">📁</span>` : "";
   const _anum = _agentNum(s);
   const _meta = _sessMeta[s.id] || {};
@@ -8188,24 +8211,27 @@ function _sessRowEl(s, pinnedIds, ag, groupKey, orderContainer) {
   // roster arrives there is no id to show — never fabricate one (UP-1).
   const jid = (ag && _anum)
     ? `<span class="jid" role="button" tabindex="0" title="agent id ${esc(ag.id)} — click to see it in the org chart">A${_anum}</span>` : "";
-  // EV-30: the ⬢ mark means "TEAM member" — a session's own identity record is not one.
-  const agtag = (ag && ag.kind !== "session") ? `<span title="org agent ${esc(ag.id)}${ag.name ? " — " + esc(ag.name) : ""}${(ag.reports && ag.reports.length) ? " · manages " + esc(ag.reports.join(", ")) : ""}" style="color:var(--acc2);flex-shrink:0">⬢</span>` : "";
-  // JAG-339: the team symbol(s) this agent belongs to (may be several).
-  const tchips = ag ? (ag.teams || []).map(id => { const t = _teamsById[id];
-    return t ? `<span class="team" title="team ${esc(t.name)} — ${esc(t.id)}" style="flex-shrink:0">${esc(t.symbol || "•")}</span>` : ""; }).join("") : "";
-  // JAG-2.8: show the agent's role from the roster (e.g. "Senior Project Manager")
-  const roleBadge = (ag && ag.role) ? `<span class="nrl" title="agent role: ${esc(ag.role)}">${esc(ag.role)}</span>` : "";
+  // 2026-11-16 (operator): the ⬢ org mark and the per-row team symbols are GONE — the
+  // A-id already says "agent" and the sticky group header says which team. Team names
+  // and the role stay in the row tooltip (one name per row: the title).
+  const teamTip = ag ? (ag.teams || []).map(id => (_teamsById[id] || {}).name || id).join(", ") : "";
+  const roleTip = (ag && ag.role) ? ("role: " + ag.role) : "";
   // The AGENTS table's VOID prompt mark: this agent runs on the bare system prompt.
   const voidMark = (_meta.prompt_chars === 0)
     ? '<span class="req" title="EMPTY ROLE.md - this agent runs on the bare system prompt">*</span>' : "";
   const pin = pinnedIds.includes(s.id) ? '<span class="pin" title="pinned session">📌</span>' : "";
-  d.title = [_model ? ("model: " + _model) : "",
+  d.title = [(s.messages != null ? (s.messages + " messages") : ""),
+             (s.age ? ("last used " + s.age) : ""), roleTip,
+             (teamTip ? ("team: " + teamTip) : ""),
+             _model ? ("model: " + _model) : "",
              (_meta.prompt_chars != null ? ("ROLE.md: " + _meta.prompt_chars + " chars") : ""),
              (ag && ag.reports && ag.reports.length ? ("manages " + ag.reports.join(", ")) : "")]
             .filter(Boolean).join(" · ");
-  // JAG-424g: the ctx ring sits on LINE 1 of the active row (before the full-width
-  // title, which always wraps to its own line) so it never lands under the title text.
-  d.innerHTML = `${pin}${agtag}${jid}${tchips}${roleBadge}${voidMark}<span class="n">${s.messages} msg${age}</span><span class="menu-btn" title="session actions">⋮</span>${_ctxRingHtml(s)}<span class="t">${esc(s.title || s.id)}</span>`;
+  // 2026-11-16 (operator): the NAME is line 1 and the code/icons line 2 — squeezing the
+  // rail shrinks the name (ellipsis) and keeps the A-id below, never the opposite. The
+  // ctx ring sits IMMEDIATELY after the A-id (no count between them); the age is pushed
+  // right, so line 2 is one row: A-id · ring · age · ⋮.
+  d.innerHTML = `<span class="t">${pin}${voidMark}${esc(s.title || s.id)}</span>${jid}${_ctxRingHtml(s)}<span class="n">${_sessAgeText(s)}</span><span class="menu-btn" title="session actions">⋮</span>`;
   if (!_isSystemSess(s)) {
     _bindSidebarDrag(d.querySelector(".t"), "session", s.id,
       d.dataset.groupKey, orderContainer || d.parentElement);
@@ -9205,7 +9231,7 @@ async function loadCtx() {
     _ctxPct = pct; _ctxTitle = d.detail || d.short || "context tokens / budget";
     const pill = $("ctx-meter");
     if (pill) { pill.title = _ctxTitle; pill.className = "pill meter" + (pct >= 70 ? " hot" : ""); }
-    const pctEl = $("ctxPctTop"); if (pctEl) pctEl.textContent = pct + "%";
+    const pctEl = $("ctxPctTop"); if (pctEl) pctEl.textContent = Math.round(pct) + "%";
     const ring = $("ctxRing");
     if (ring) ring.style.strokeDashoffset = String(100 - Math.max(0, Math.min(100, pct)));
   } catch {

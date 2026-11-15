@@ -39,7 +39,9 @@ check("A3 the harness/tools cards use tokens, not raw slate hexes",
 
 # --- B: the topbar indicators are graphics -----------------------------------
 check("B1 the ctx meter carries a ring svg + a % readout",
-      'class="pill meter" id="ctx-meter"' in HTML and 'class="mring"' in HTML
+      # 2026-11-16: the hot class is interpolated ("pill meter" + hot), so the pin reads
+      # the two parts instead of one frozen literal.
+      'class="pill meter' in HTML and 'id="ctx-meter"' in HTML and 'class="mring"' in HTML
       and 'id="ctxRing"' in HTML and 'id="ctxPct"' in HTML, "")
 check("B2 the ctx JS drives the ring and the 70% red threshold",
       'pill.className = "pill meter" + (pct >= 70 ? " hot" : "")' in HTML
