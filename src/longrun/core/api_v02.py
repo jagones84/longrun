@@ -50,6 +50,9 @@ def _srv():
 
 
 def _publish(kind, **data):
+    """Fan an event out to the feed. `kind` is the EVENT's own kind: a payload key
+    of the same name is a TypeError here and would abort the HTTP handler after
+    its side effect was already committed, so use a domain name (`doc_kind`)."""
     try:
         return _srv().publish(kind, **data)
     except Exception:  # feed must never break the run
@@ -317,7 +320,11 @@ def tool_action(st, tool, args, on_event, workspace=None, hist=None):
 
     decision, reason = registry.classify(tool, args, workspace, hist,
                                          allow=getattr(st, "tool_allow", None),
-                                         scope_name=getattr(st, "role", None))
+                                         scope_name=getattr(st, "role", None),
+                                         # v1051b: the plan lock keys on the
+                                         # SESSION, which this door never passed.
+                                         session=(getattr(st, "session", None)
+                                                  or run_id))
     if decision == "auto":
         _tp_rule, _tp_reason = _trace_escalation(tool, args, st)
         if _tp_reason:
@@ -551,7 +558,11 @@ def gated_call(tool, args, run_id=None, wait=True, by="api", timeout=None, works
     if allow is None:
         allow, scope_name = _session_scope(run_id)
     decision, reason = registry.classify(tool, args, workspace, hist,
-                                         allow=allow, scope_name=scope_name)
+                                         allow=allow, scope_name=scope_name,
+                                         # v1051b: /api/tools/call passed its
+                                         # session but classify never saw it, so a
+                                         # locked session could still write.
+                                         session=run_id)
     if decision in ("disabled", "denied"):
         _publish("tool.blocked", run=run_id, tool=tool, args=args, reason=reason)
         # F-1 (2026-11-04): the reason travels in BOTH fields. A hard denial creates
@@ -2541,8 +2552,12 @@ def handle(handler, method, path, qs, body):
             except Exception as exc:  # noqa: BLE001 — report, never drop the connection
                 return _r(handler, 502, {"ok": False,
                                          "error": "document generation failed: %s" % exc})
-            _publish("docs.created", session=b.get("session"), kind=res.get("kind"),
-                     path=res.get("path"))
+            # NEVER `kind=`: `_publish(kind, **data)` owns that name (the event's
+            # own kind), and passing it here raised TypeError AFTER the document
+            # was written — the response died, the card spun forever, and the
+            # session stayed locked with no answer (live 2026-11-16).
+            _publish("docs.created", session=b.get("session"),
+                     doc_kind=res.get("kind"), path=res.get("path"))
             return _r(handler, 200, res)
         if path in ("/api/docs/approve", "/api/docs/reject", "/api/docs/unlock"):
             from longrun.plan import docs as _docs

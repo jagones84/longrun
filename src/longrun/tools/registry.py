@@ -2651,7 +2651,8 @@ def in_scope(tool, allow):
     return False
 
 
-def classify(tool, args, workspace=None, hist=None, allow=None, scope_name=None):
+def classify(tool, args, workspace=None, hist=None, allow=None, scope_name=None,
+             session=None):
     """Approval decision for a concrete action.
 
     JAG-388: when a session `workspace` is given, ANY action — a file op, a git
@@ -2665,6 +2666,10 @@ def classify(tool, args, workspace=None, hist=None, allow=None, scope_name=None)
     `allow` (I-1) is a delegated role's tool scope: a tool outside it is
     `denied` BEFORE every other rule, including `approvals.mode=full`, because
     the scope is the delegation contract, not a convenience gate.
+    `session` (v1051b) is the SESSION whose `plan_mode` applies. It must be
+    passed explicitly by the two production doors: reading it out of `args` only
+    ever worked for tests, so a locked chat could still write (live 2026-11-16).
+    The args fallback stays for callers that carry `_session`/`run_id`.
     """
     # The call is judged under the SAME name the execute door runs it as, so an
     # action alias cannot reach a gated row through the plain namespace (see
@@ -2716,7 +2721,7 @@ def classify(tool, args, workspace=None, hist=None, allow=None, scope_name=None)
     # only EXPLORE — mutating tools are denied until the operator approves the
     # proposed plan (`stores.approve_plan`). An explicit lock: even
     # approvals.mode=full never bypasses it (matrix-promote precedent).
-    _sess = (args or {}).get("_session") or (args or {}).get("run_id")
+    _sess = session or (args or {}).get("_session") or (args or {}).get("run_id")
     if tool in PLAN_GATED_TOOLS and session_plan_locked(_sess):
         return "denied", (
             "plan mode: session %r has an unapproved plan — propose the plan "

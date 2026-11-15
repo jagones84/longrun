@@ -7,6 +7,15 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Fixed
+- **`/plan` and `/spec` answer again (they never did).** The create route published its event with
+  `kind=`, a name `_publish(kind, **data)` already owns, so the handler raised `TypeError` **after**
+  the document was written and the session locked: no HTTP response ever reached the browser, the
+  composer card stayed at "generating plan…" indefinitely, and the chat was silently read-only. The
+  payload key is now `doc_kind` (the envelope keeps its own `kind`), and a planner that does not
+  answer in 4 minutes turns its card into a dismissible **failed** card naming the reason instead of
+  spinning for ever. Live: `POST /api/docs/plan` → `200` in 7.8 s and `POST /api/docs/spec` → `200`
+  in 2 m 10 s (three-file set on disk), `GET /api/docs` shows the proposal, and no traceback since.
+  (Locked by `v1052` J1–J4; `v1053` 40/40.)
 - **An external MCP tool is callable from a normal turn again.** The gate injected
   `args["workspace"] = <session workspace>` into every tool whose `_origin` was not
   `exclusive`/`delegation`; external tools are registered `origin: "mcp"`, so a strict server

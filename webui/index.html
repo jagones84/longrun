@@ -1273,6 +1273,8 @@
     border-radius: 10px; padding: 8px 10px; margin: 6px 0;
     background: color-mix(in srgb, var(--acc) 5%, transparent); }
   .docCard.pending { opacity: .85; }
+  .docCard.failed { border-left-color: #c0563f; }
+  .docCard.failed .dc-head b { color: #c0563f; }
   .docCard .dc-head { display: flex; align-items: center; gap: 7px; font-size: 12px; }
   .docCard .dc-ico { flex: 0 0 auto; }
   .docCard .dc-badge { margin-left: auto; font-size: 10px; text-transform: uppercase;
@@ -8311,9 +8313,9 @@ function _bindRenderStream(es, live, adopt) {
   es.addEventListener("bestofn.chosen", e => { if (!live()) return; const d = JSON.parse(e.data); who("ai", "\ud83c\udfb2 best-of-N: picked the best of " + d.n + " samples"); });
 }
 
-async function api(method, path, body) {
+async function api(method, path, body, opts) {
   const r = await fetch(path, { method, headers: {...authHeaders(), "Content-Type": "application/json"},
-                                body: body ? JSON.stringify(body) : undefined });
+                                body: body ? JSON.stringify(body) : undefined, ...(opts || {}) });
   if (!r.ok) { try { const ee = await r.json(); return ee; } catch(e) { return { error: r.status + " " + r.statusText }; } }
   // JAG-431r4: a 2xx with an empty/non-JSON body (common for POST/DELETE) made
   // `r.json()` throw a SyntaxError that callers did not catch — the action then
@@ -11051,15 +11053,39 @@ function _renderDocCard(r) {
   _logAppend(d); scroll();
   return d;
 }
+/* v1051b: a pending card must NEVER be the end state. A planner request that
+   hangs (a provider that never answers, or a service restart mid-call) used to
+   leave "generating …" on screen for ever and the operator had no way to know it
+   had died. The card becomes an explicit failure with the reason. */
+function _docFailCard(kind, why) {
+  const d = document.createElement("div");
+  d.className = "docCard failed";
+  d.innerHTML = '<div class="dc-head"><span class="dc-ico" aria-hidden="true">✕</span><b>/' +
+    esc(kind) + ' failed</b></div><div class="dc-meta">' + esc(why) + '</div>' +
+    '<div class="dc-acts"><button type="button" class="ghost dc-dismiss">dismiss</button></div>';
+  d.querySelector(".dc-dismiss").onclick = () => d.remove();
+  _logAppend(d); scroll();
+  return d;
+}
+const DOC_WAIT_MS = 240000;      // the planner is 1-3 model calls; 4 min is the ceiling
 async function _runDocCommand(kind, ask) {
   const sid = sessionId;
   who("user", "/" + kind + " " + ask);
   const pending = _docPendingCard(kind);
   let r = {};
-  try { r = await api("POST", "/api/docs/" + kind, { session: sid, prompt: ask }); }
-  catch (e) { r = { ok: false, error: String(e) }; }
+  const ctl = (typeof AbortController !== "undefined") ? new AbortController() : null;
+  const timer = ctl ? setTimeout(() => { try { ctl.abort(); } catch (_) {} }, DOC_WAIT_MS) : null;
+  try { r = await api("POST", "/api/docs/" + kind, { session: sid, prompt: ask },
+                      ctl ? { signal: ctl.signal } : undefined); }
+  catch (e) {
+    r = { ok: false, error: (e && e.name === "AbortError")
+      ? "the planner did not answer within 4 minutes — it may still be running; reload this session to see the document"
+      : String((e && e.message) || e) };
+  }
+  finally { if (timer) clearTimeout(timer); }
   if (pending && pending.parentNode) pending.remove();
   if (!r || r.ok === false || r.error) {
+    _docFailCard(kind, (r && r.error) || "document generation failed");
     toast((r && r.error) || "document generation failed", "err");
     if (sid === sessionId) {
       const inp = $("inp");

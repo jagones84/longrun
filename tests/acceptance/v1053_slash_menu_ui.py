@@ -86,7 +86,10 @@ check("D2 the queue path still owns a command sent while a turn runs",
 check("D3 an empty /plan keeps the text and says why",
       'toast("type the request after /" + _docKind, "warn"); return;' in UI)
 check("D4 the call goes to the document endpoint, never to the chat stream",
-      'api("POST", "/api/docs/" + kind, { session: sid, prompt: ask })' in UI)
+      # v1051b re-pin: the POST carries an abort signal so a dead planner cannot
+      # leave the pending card spinning for ever.
+      'api("POST", "/api/docs/" + kind, { session: sid, prompt: ask }' in UI
+      and '/api/chat' not in UI.split("async function _runDocCommand")[1][:900])
 check("D5 a failure restores the request in the composer",
       'inp.value = "/" + kind + " " + ask;' in UI)
 check("D6 a real skill with the same name still wins",

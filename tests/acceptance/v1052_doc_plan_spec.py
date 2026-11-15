@@ -295,6 +295,45 @@ check("I2 every decision publishes its event",
       '"docs.created"' in HTTPAPI and '"docs.approved"' in HTTPAPI
       and '"docs.rejected"' in HTTPAPI and '"docs.unlocked"' in HTTPAPI)
 
+# ------------------------------------------------ J: the live hang (2026-11-16)
+# The create route published `kind=` — which `_publish(kind, **data)` already owns —
+# so the handler raised TypeError AFTER the document was written and the session
+# locked: no response ever reached the browser, the card spun forever and the
+# operator saw "generating plan…" from the previous night.
+from longrun.core import api_v02  # noqa: E402
+check("J1 no publish call passes the RESERVED envelope key `kind`",
+      'doc_kind=res.get("kind")' in HTTPAPI
+      and " kind=res.get(" not in HTTPAPI and ", kind=res.get(" not in HTTPAPI)
+_ev = api_v02._publish("docs.created", session="S-J1", doc_kind="plan",
+                       path="/tmp/plan.md")
+check("J2 the docs event publishes and keeps its own kind",
+      isinstance(_ev, dict) and _ev.get("kind") == "docs.created"
+      and _ev.get("doc_kind") == "plan", _ev)
+UI1052 = read("webui", "index.html")
+check("J3 a hung planner ends in an explicit, dismissible failure card",
+      "_docFailCard" in UI1052 and "_docFailCard(kind," in UI1052
+      and "AbortController" in UI1052 and "DOC_WAIT_MS" in UI1052
+      and "dc-dismiss" in UI1052 and ".docCard.failed" in UI1052)
+check("J4 the timeout says the planner may still be running (no false promise)",
+      "may still be running" in UI1052)
+# The lock was COSMETIC: classify() read the session out of `args`, which no
+# production door fills — so a locked chat (and /api/tools/call) could still
+# write. It now takes the session explicitly, and both doors pass it.
+from longrun.tools import registry  # noqa: E402
+_lock_sid = stores.get_or_create_session(None, title="v1052 J5")["id"]
+stores.set_plan_mode(_lock_sid, True)
+_d1, _r1 = registry.classify("fs.write", {"path": "/tmp/x", "content": "y"},
+                             session=_lock_sid)
+stores.set_plan_mode(_lock_sid, False)
+_d2, _r2 = registry.classify("fs.write", {"path": "/tmp/x", "content": "y"},
+                             session=_lock_sid)
+check("J5 classify() takes the SESSION itself, so the lock is real",
+      _d1 == "denied" and "plan mode" in _r1 and "plan mode" not in str(_r2),
+      (_d1, _r1[:60], _d2))
+check("J6 both production doors hand classify() the session",
+      'session=(getattr(st, "session", None)' in HTTPAPI
+      and "session=run_id" in HTTPAPI)
+
 docs._generate_plan_doc = _orig_plan
 docs._generate_spec_docs = _orig_spec
 
