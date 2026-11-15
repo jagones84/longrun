@@ -1229,13 +1229,98 @@ def reset_stateless_session():
     return sess
 
 
+def _is_top_leader(sid):
+    """A team's TOP boss: nobody above it in the org AND at least one agent below it.
+
+    The "has reports" half is load-bearing: EV-30 gives EVERY session an agent record
+    with no manager, so "no manager" alone would grant every plain chat. It is also the
+    same coordinator test the `job.*` gate already uses (`REGISTRY.reports_of`), so
+    "boss" means one thing in the codebase.
+    """
+    try:
+        from longrun.agent import agents as _agents
+        reg = _agents.REGISTRY
+        rec = reg.resolve(sid)
+        if not rec or str(rec.get("reports_to") or "").strip():
+            return False
+        return bool(reg.reports_of(sid))
+    except Exception:  # noqa: BLE001 — a roster must never break the gate
+        return False
+
+
+def access_from_record(sess):
+    """Effective Teamorg/Architect access for ONE session record.
+
+    Three states, not two (operator, 2026-11-16): *"why grant Teamorg/Architect to
+    the orchestrator, the total boss of the team, if it is already enabled by
+    default? … the boss of the ORG shall have it naturally, then I can revoke."*
+
+      1. the `architect` system session (and its stateless `architect_*` runs): always;
+      2. an explicit `allow_architect` bool on the record WINS — that is the grant or
+         the revoke the operator performed;
+      3. no explicit value: a TOP leader (no manager in the org chart) is granted by
+         default.
+
+    A plain chat session has no org record, so it keeps the old behaviour (no access
+    until granted).
+    """
+    if not isinstance(sess, dict):
+        return False
+    sid = str(sess.get("id") or "").strip()
+    if not sid:
+        return False
+    if sid == ARCHITECT_SESSION_ID or sid.startswith(ARCHITECT_SESSION_ID + "_"):
+        return True
+    explicit = sess.get("allow_architect")
+    if isinstance(explicit, bool):
+        return explicit
+    return _is_top_leader(sid)
+
+
+def effective_access_map(rows):
+    """`{session_id: bool}` for a whole roster, with ONE registry read.
+
+    `list_sessions()` serves hundreds of rows on every rail refresh, so the org is
+    read once here instead of once per row.
+    """
+    tops = set()
+    try:
+        from longrun.agent import agents as _agents
+        pool = _agents.REGISTRY.list().get("agents") or []
+        managed = set()
+        for a in pool:
+            mgr = str(a.get("reports_to") or "").strip()
+            if mgr:
+                managed.add(mgr)
+        for a in pool:
+            if str(a.get("reports_to") or "").strip():
+                continue
+            sid = str(a.get("session") or "")
+            if sid and str(a.get("id") or "") in managed:
+                tops.add(sid)
+    except Exception:  # noqa: BLE001
+        tops = set()
+    out = {}
+    for r in rows or []:
+        sid = str((r or {}).get("id") or "")
+        if not sid:
+            continue
+        if sid == ARCHITECT_SESSION_ID or sid.startswith(ARCHITECT_SESSION_ID + "_"):
+            out[sid] = True
+            continue
+        v = (r or {}).get("allow_architect")
+        out[sid] = v if isinstance(v, bool) else (sid in tops)
+    return out
+
+
 def session_has_access(sid):
     """True when `sid` is permitted to invoke the exclusive (`namespace.tool`) tools.
 
     Dual-permission model:
       1) `architect` itself (or a stateless `architect` run id
          `architect*`) always has session privilege;
-      2) any other session must have `allow_architect: True` on its session record.
+      2) any other session follows `access_from_record`: an explicit
+         `allow_architect` wins, otherwise a TOP leader is granted by default.
     """
     sid = str(sid or "").strip()
     if not sid:
@@ -1243,8 +1328,7 @@ def session_has_access(sid):
     if sid == ARCHITECT_SESSION_ID or sid.startswith(ARCHITECT_SESSION_ID + "_"):
         return True
     from longrun.memory import stores
-    sess = stores.load_session(sid)
-    return bool(isinstance(sess, dict) and sess.get("allow_architect") is True)
+    return access_from_record(stores.load_session(sid))
 
 
 def set_session_access(sid, allowed):

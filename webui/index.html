@@ -1314,7 +1314,11 @@
     box-shadow: var(--shadow-2, 0 18px 48px rgba(0,0,0,.42)); }
   #panelView[hidden] { display: none; }
   #panelView .pv-head { display: flex; align-items: center; gap: 8px; flex: 0 0 auto;
-    padding: 6px 8px; border-bottom: 1px solid var(--line); background: var(--panel2, var(--panel)); }
+    padding: 6px 8px; border-bottom: 1px solid var(--line); background: var(--panel2, var(--panel));
+    cursor: grab; }
+  /* 2026-11-16 (operator): the window is moved by hand from its head, not only
+     resized; a drag on a button/tab still clicks that control. */
+  #panelView .pv-head.dragging { cursor: grabbing; user-select: none; }
   #panelView #pvTitle { font-size: 12px; font-weight: 600; color: var(--txt); white-space: nowrap; }
   #panelView .pv-scope { font-size: 10.5px; color: var(--dim); max-width: 190px;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1331,11 +1335,17 @@
   #panelView .pv-resize { position: absolute; top: 0; right: 0; bottom: 0; width: 8px;
     cursor: col-resize; z-index: 2; }
   #panelView .pv-resize:hover { background: linear-gradient(90deg, transparent, var(--acc)); opacity: .35; }
+  #panelView .pv-grip { position: absolute; right: 0; bottom: 0; width: 16px; height: 16px;
+    cursor: nwse-resize; z-index: 3;
+    background: linear-gradient(135deg, transparent 50%, var(--line-2) 50%);
+    border-bottom-right-radius: var(--r, 12px); }
+  #panelView .pv-grip:hover { background: linear-gradient(135deg, transparent 50%, var(--acc) 50%); }
   @media (max-width: 900px) {
     #panelView { left: 0 !important; top: 0 !important; border-radius: 0; z-index: 30;
       width: calc(100vw / var(--zoom, 1)) !important;
       height: calc(100dvh / var(--zoom, 1)) !important; }
     #panelView .pv-resize { display: none; }
+    #panelView .pv-grip { display: none; }
     #panelView .pv-scope { display: none; }
   }
   @media (prefers-reduced-motion: reduce) { #panelView, #panelView * { transition: none !important; } }
@@ -3406,6 +3416,7 @@
   </div>
   <iframe id="panelFrame" title="session panel"></iframe>
   <div id="pvResize" class="pv-resize" title="drag to resize" aria-hidden="true"></div>
+  <div id="pvGrip" class="pv-grip" title="drag to resize the window" aria-hidden="true"></div>
 </div>
 <!-- MyArtifacts — files the harness (or the journaled editor save) produced,
      read from GET /api/artifacts. A PAGE, not a panel: while its tab is active it
@@ -10946,13 +10957,46 @@ async function _showJobDetail(jid, n) {
   $("jobGoControl").onclick = () => _showJobInControl(sub || parent);
   $("jobBackTodo").onclick = () => showNodeDetail(n);
 }
-/* v609: open the Control deck on the Jobs panel and hand it the job (or
-   subjob) id — the deck expands + rings that row (postMessage, same pattern
-   as _showInConstellation). Retried so the first-open iframe boot is covered. */
-function _showJobInControl(jid) {
+/* 2026-11-16 (operator): "clicking on jobs and subjobs in the webui shall cause the
+   relevant agents to activate in the AGENTS panel, the session synced, and the org
+   aligned". A job is an object with an agent: resolve the subjob's own agent first,
+   then the job's coordinator, and make it the ACTIVE object — the rail selection is
+   the one state every hosted panel follows (agents rings it, org chart aligns, map
+   focuses), so this is a sync, not a second highlight.
+   Returns the session id (or null) so the caller can report it. */
+async function _jobFocusSession(jid) {
+  const full = _fullJ(jid);
+  const parent = full.split(".")[0];
+  let j = null;
+  try { j = await api("GET", "/api/jobs/" + encodeURIComponent(parent)); } catch (e) { return null; }
+  if (!j || j.error || j.ok === false) return null;
+  const subKey = full.indexOf(".") >= 0
+    ? (full in (j.subjobs || {}) ? full : ("J" + full.replace(/^[jJ]/, ""))) : "";
+  const sub = (subKey && (j.subjobs || {})[subKey]) || {};
+  const candidates = [sub.agent, j.coordinator]
+    .concat(j.agents || []).filter(Boolean);
+  let sid = null;
+  for (const c of candidates) {
+    const label = String(c);
+    sid = _sessOfAgentLabel(label);
+    if (sid) break;
+    if (_sessTitle[label] || (_sessList || []).some(x => x.id === label)) { sid = label; break; }
+  }
+  if (!sid) return null;
+  if (sid !== sessionId) {
+    const s = (_sessList || []).find(x => x.id === sid) || { id: sid };
+    try { selectSession(s); } catch (e) {}
+  }
+  return sid;
+}
+/* v609: open the Sessions page's Jobs panel and hand it the job (or
+   subjob) id — the deck expands + rings that row. The same click also activates the
+   agent behind the job, so every panel agrees on the selected object. */
+async function _showJobInControl(jid) {
+  const full = _fullJ(jid);
+  try { await _jobFocusSession(full); } catch (e) {}
   _ensureDeckPanel("jobs");
   const f = document.getElementById("panelFrame");
-  const full = _fullJ(jid);
   let n2 = 0;
   const iv = setInterval(() => {
     try {
@@ -20288,18 +20332,44 @@ function _deckPanelUrl(panel, sid) {
     + (sid ? "&session=" + encodeURIComponent(sid) : "");
 }
 function _dpZoom() { return (typeof _zoom === "number" && _zoom > 0) ? _zoom : 1; }
+/* 2026-11-16 (operator): the floating panel is moved and resized BY HAND, and both
+   survive a reload and a server restart — one geometry, in localStorage, in layout
+   px (the page is zoomed, so every rect is divided by the zoom). */
+function _dpGeoGet() {
+  try {
+    const g = JSON.parse(localStorage.getItem("sf_panel_geo") || "null");
+    return (g && typeof g === "object") ? g : null;
+  } catch (e) { return null; }
+}
+function _dpGeoSave(left, top, width, height) {
+  try {
+    const g = { left: Math.round(left), top: Math.round(top),
+                width: Math.round(width), height: Math.round(height) };
+    localStorage.setItem("sf_panel_geo", JSON.stringify(g));
+    localStorage.setItem("sf_panel_w", String(g.width));
+    localStorage.setItem("sf_panel_h", String(g.height));
+  } catch (e) {}
+}
 function _dpAnchor() {
   const el = $("panelView"); if (!el) return;
   const z = _dpZoom();
+  const vw = Math.round(window.innerWidth / z), vh = Math.round(window.innerHeight / z);
   const aside = document.querySelector('[data-col="sessions"]');
   const hidden = !aside || getComputedStyle(aside).display === "none";
-  const left = hidden ? 8 : Math.max(8, Math.round(aside.getBoundingClientRect().right / z) + 1);
-  const top = _tabTop() + 8;
-  const maxW = Math.max(320, Math.round(window.innerWidth / z) - left - 12);
-  const saved = Number(localStorage.getItem("sf_panel_w")) || 0;
-  const want = saved || Math.min(620, maxW);
-  const w = Math.max(360, Math.min(want, maxW));
-  const h = Math.max(280, Math.round(window.innerHeight / z) - top - 8);
+  const defLeft = hidden ? 8 : Math.max(8, Math.round(aside.getBoundingClientRect().right / z) + 1);
+  const defTop = _tabTop() + 8;
+  const geo = _dpGeoGet();
+  const savedW = Number(geo && geo.width) || Number(localStorage.getItem("sf_panel_w")) || 0;
+  const savedH = Number(geo && geo.height) || Number(localStorage.getItem("sf_panel_h")) || 0;
+  let w = savedW || Math.min(620, Math.max(320, vw - defLeft - 12));
+  let h = savedH || Math.max(280, vh - defTop - 8);
+  w = Math.max(360, Math.min(w, Math.max(320, vw - 12)));
+  h = Math.max(240, Math.min(h, vh - 8));
+  let left = (geo && typeof geo.left === "number") ? geo.left : defLeft;
+  let top = (geo && typeof geo.top === "number") ? geo.top : defTop;
+  // A window dragged (or a screen since resized) out of reach is pulled back in.
+  left = Math.max(0, Math.min(left, Math.max(0, vw - w)));
+  top = Math.max(0, Math.min(top, Math.max(0, vh - h)));
   el.style.left = left + "px";
   el.style.top = top + "px";
   el.style.width = w + "px";
@@ -20353,6 +20423,22 @@ function _dpPostReady(msgs) {
     if (++n >= 30) clearInterval(iv);
   }, 150);
 }
+/* 2026-11-16 (operator): the Sessions funnel is the ONE filter control for the
+   hosted panels — in the Control deck that same state scopes agents, jobs, org and
+   constellation together, and it must do so here too ("no duplications"). The state
+   is the FilterSort object the rail already persists; the deck mirrors it. */
+function _dpFilterState() {
+  try {
+    if (window.FilterSort) return Object.assign({}, FilterSort.get("sessions"));
+  } catch (e) {}
+  return null;
+}
+function _dpPushFilter() {
+  const el = $("panelView");
+  if (!el || el.hidden) return;
+  const st = _dpFilterState();
+  if (st) _dpPostReady([{ type: "longrun-scope-filter", state: st }]);
+}
 function _dpSend(panel) {
   const sid = _DP.sid || "";
   const msgs = [{ type: "longrun-show-panel", panel: panel }];
@@ -20363,6 +20449,8 @@ function _dpSend(panel) {
   } else if (sid) {
     msgs.push({ type: "longrun-focus-agent", session: sid });
   }
+  const fst = _dpFilterState();
+  if (fst) msgs.push({ type: "longrun-scope-filter", state: fst });
   _dpPostReady(msgs);
 }
 /* Hand the deck's Agents panel a team action (edit/assign): the deck owns the
@@ -20429,27 +20517,74 @@ document.querySelectorAll("#panelView .pv-tabs button").forEach(b => {
 if ($("pvClose")) $("pvClose").onclick = () => _closeDeckPanel();
 if ($("pvControl")) $("pvControl").onclick = () => { _closeDeckPanel(true); showControl(); };
 (function _dpResize() {
-  const grip = $("pvResize"), el = $("panelView");
-  if (!grip || !el) return;
-  grip.addEventListener("pointerdown", (e) => {
-    e.preventDefault();
-    try { grip.setPointerCapture(e.pointerId); } catch (_) {}
+  const grip = $("pvResize"), corner = $("pvGrip"), el = $("panelView");
+  if (!el) return;
+  // The right edge changes the width; the corner changes width AND height. Both
+  // persist through `_dpGeoSave`, so the next open (and the next restart) keeps the
+  // window where the operator put it.
+  const bind = (handle, both) => {
+    if (!handle) return;
+    handle.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      try { handle.setPointerCapture(e.pointerId); } catch (_) {}
+      const z = _dpZoom();
+      const r = el.getBoundingClientRect();
+      const x0 = e.clientX, y0 = e.clientY;
+      const w0 = r.width / z, h0 = r.height / z;
+      const left = r.left / z, top = r.top / z;
+      const maxW = Math.max(360, Math.round(window.innerWidth / z) - left);
+      const maxH = Math.max(240, Math.round(window.innerHeight / z) - top);
+      const move = (ev) => {
+        const w = Math.max(360, Math.min(maxW, w0 + (ev.clientX - x0) / z));
+        const h = both ? Math.max(240, Math.min(maxH, h0 + (ev.clientY - y0) / z)) : h0;
+        el.style.width = w + "px";
+        if (both) el.style.height = h + "px";
+        _dpGeoSave(left, top, w, h);
+      };
+      const up = () => {
+        handle.removeEventListener("pointermove", move);
+        handle.removeEventListener("pointerup", up);
+      };
+      handle.addEventListener("pointermove", move);
+      handle.addEventListener("pointerup", up);
+    });
+  };
+  bind(grip, false);
+  bind(corner, true);
+})();
+/* Drag the window by its head (2026-11-16): a press on the title/blank area moves
+   it; a press on a tab, the Control button or × still clicks that control. */
+(function _dpDrag() {
+  const el = $("panelView"), head = el && el.querySelector(".pv-head");
+  if (!el || !head) return;
+  head.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    if (e.target.closest && e.target.closest("button, a, input, select, textarea, nav")) return;
+    if (window.matchMedia && window.matchMedia("(max-width: 900px)").matches) return;
     const z = _dpZoom();
-    const x0 = e.clientX, w0 = el.getBoundingClientRect().width / z;
-    const left = el.getBoundingClientRect().left / z;
-    const maxW = Math.max(320, Math.round(window.innerWidth / z) - left - 12);
+    const r = el.getBoundingClientRect();
+    const x0 = e.clientX, y0 = e.clientY;
+    const l0 = r.left / z, t0 = r.top / z, w = r.width / z, h = r.height / z;
+    head.classList.add("dragging");
+    try { head.setPointerCapture(e.pointerId); } catch (_) {}
+    let last = { left: l0, top: t0 };
     const move = (ev) => {
-      const w = Math.max(360, Math.min(maxW, w0 + (ev.clientX - x0) / z));
-      el.style.width = w + "px";
-      try { localStorage.setItem("sf_panel_w", String(Math.round(w))); } catch (_) {}
+      const vw = window.innerWidth / z, vh = window.innerHeight / z;
+      last = {
+        left: Math.max(0, Math.min(l0 + (ev.clientX - x0) / z, Math.max(0, vw - w))),
+        top: Math.max(0, Math.min(t0 + (ev.clientY - y0) / z, Math.max(0, vh - h)))
+      };
+      el.style.left = last.left + "px";
+      el.style.top = last.top + "px";
     };
     const up = () => {
-      grip.removeEventListener("pointermove", move);
-      grip.removeEventListener("pointerup", up);
-      _dpAnchor();
+      head.classList.remove("dragging");
+      head.removeEventListener("pointermove", move);
+      head.removeEventListener("pointerup", up);
+      _dpGeoSave(last.left, last.top, w, h);
     };
-    grip.addEventListener("pointermove", move);
-    grip.addEventListener("pointerup", up);
+    head.addEventListener("pointermove", move);
+    head.addEventListener("pointerup", up);
   });
 })();
 window.addEventListener("resize", () => {
@@ -21355,7 +21490,7 @@ function _sessTeamOptions() {
     ids: { team: "sessTeam", sort: "sessSort", dir: "sessDir",
            hideEmpty: "sessHideEmpty", running: "sessRunning" },
     teams: _sessTeamOptions,
-    onChange: (st) => { cb.checked = !!st.hideEmpty; loadSessions(); }
+    onChange: (st) => { cb.checked = !!st.hideEmpty; loadSessions(); _dpPushFilter(); }
   });
   cb.checked = !!FilterSort.get("sessions").hideEmpty;
 })();

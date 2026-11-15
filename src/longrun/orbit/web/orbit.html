@@ -691,6 +691,10 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   html.embed-panel #deckRail,
   html.embed-panel #viewBar,
   html.embed-panel #buildChip{display:none!important}
+  /* 2026-11-16 (operator): hosted in the Sessions page, the RAIL's funnel is the one
+     filter control — the same state it already applies to agents, jobs, the org chart
+     and the constellation. A second funnel here would be a second truth. */
+  html.embed-panel #agFilterBtn{display:none!important}
   html.embed-panel .wrap{max-width:none;padding:0;height:100vh}
   html.embed-panel main.view-one{height:100vh}
   html.embed-panel main.view-one .deckBody{height:100%;min-height:0}
@@ -4859,6 +4863,24 @@ window.addEventListener("message", (e) => {
           }
         } catch (_) {}
       }, 80);
+    } catch (_) {}
+    return;
+  }
+  /* 2026-11-16 (operator): the Sessions funnel drives this deck while it is hosted
+     there — "they are all synchronized in orbit … no duplications". The state lands
+     in this app's own FilterSort, and `refresh()` scopes agents, jobs, routines, the
+     org chart and the constellation by `this.team` + `fs.get()`, exactly as the
+     Control tab does. No second filter object is created. */
+  if (d && d.type === "longrun-scope-filter" && app) {
+    try {
+      const st = d.state || {};
+      if (app.fs) app.fs.setSilent(st);
+      if (typeof st.team === "string") app.team = st.team;
+      if (app.agents) {
+        if (st.sort) app.agents.sort = st.sort;
+        if (st.dir) app.agents.dir = st.dir;
+      }
+      app.refresh();
     } catch (_) {}
     return;
   }

@@ -749,7 +749,11 @@ def _session_summary_row(s):
         "system": bool(s.get("system")),
         "undeletable": bool(s.get("undeletable")),
         "stateless": bool(s.get("stateless")),
-        "allow_architect": bool(s.get("allow_architect")),
+        # 2026-11-16: TRI-state. True/False = the operator's explicit grant/revoke;
+        # None = "no decision" — the effective value (a top org leader is granted by
+        # default) is resolved once per list in `list_sessions`.
+        "allow_architect": (s.get("allow_architect")
+                            if isinstance(s.get("allow_architect"), bool) else None),
     }
 
 
@@ -829,6 +833,18 @@ def list_sessions():
                     _SESSION_SUMMARY_CACHE.pop(k, None)
     except FileNotFoundError:
         pass
+    # 2026-11-16 (operator): Teamorg/Architect is granted by DEFAULT to a team's top
+    # leader and can be revoked. The explicit bool on the record wins; only the rows
+    # with no decision consult the org chart, and that is read ONCE for the list.
+    try:
+        from longrun.agent.architect import effective_access_map
+        eff = effective_access_map(out)
+        for r in out:
+            if r.get("id") in eff:
+                r["allow_architect"] = bool(eff[r["id"]])
+    except Exception:  # noqa: BLE001 — the rail must render even if the org is unreadable
+        for r in out:
+            r["allow_architect"] = bool(r.get("allow_architect"))
     return sorted(out, key=lambda s: s.get("updated") or 0, reverse=True)
 
 

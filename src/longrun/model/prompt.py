@@ -436,7 +436,10 @@ def _provider_architect(sess, ws, ctx):
     sid = (sess or {}).get("id") if isinstance(sess, dict) else sess
     sid = str(sid or "").strip()
     is_system = sid == lra.ARCHITECT_SESSION_ID
-    granted = bool(isinstance(sess, dict) and sess.get("allow_architect"))
+    # 2026-11-16: the SAME tri-state the tool gate applies (explicit grant/revoke, and
+    # else a top org leader is granted) — the prompt must never promise less than the
+    # gate allows, nor more.
+    granted = lra.access_from_record(sess) if isinstance(sess, dict) else False
     if not is_system and not granted:
         return ""
     lines = _architect_tool_lines()
