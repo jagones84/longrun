@@ -35,6 +35,7 @@ plus PyYAML: no framework to learn, no lock-in to any provider.
 - [Why Longrun](#why-longrun)
 - [Quick start: Windows](#quick-start-windows)
 - [What Longrun does](#what-longrun-does)
+- [Architecture at a glance](#architecture-at-a-glance)
 - [Self-evolution: Nucleus vs. Matrix](#self-evolution-nucleus-vs-matrix)
 - [Quick start: Linux (x86_64 and ARM64)](#quick-start-linux-x86_64-and-arm64)
 - [Model setup](#model-setup)
@@ -111,6 +112,25 @@ and [sandbox](#sandbox).
 
 See [Architecture](docs/ARCHITECTURE.md) for system behavior and
 [CLI reference](docs/CLI.md) for commands and API routes.
+
+---
+
+## Architecture at a glance
+
+<p align="center">
+  <img src="assets/architecture.svg" alt="Longrun architecture: clients reach the HTTP/SSE gateway, which drives the agent loop through harness control, the tool registry, the executor and its sandbox; prompt assembly and the LLM router sit above, state and self-evolution below, and orchestration, research and generated surfaces underneath." width="100%">
+</p>
+
+Every arrow carries the thing that actually moves across it. The request path is
+one row — **Client → Gateway → Agent Loop → Control → Registry → Executor →
+Sandbox** — with prompt assembly and the router above it, state and
+self-evolution below, and orchestration, research and generated surfaces at the
+bottom. The three dashed gates (`hooks gate`, `approval & policy gate`,
+`sandbox isolation`) are the points where a call can be stopped.
+
+The picture is a closed graph: every block is entered and leaves a trace, and it
+is rendered from a checked spec — the same file scales to a wall, and the spec
+behind it is `docs/diagrams/longrun-architecture.architecture.json`.
 
 ---
 
