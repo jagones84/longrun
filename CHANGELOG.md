@@ -311,6 +311,26 @@ All notable changes to Longrun are documented here. The format follows
   axe: 0 violations, no static-file restart needed.)
 
 ### Added
+- **A commercial plugin package can be imported, with the adapters inside the harness (`v1040`).**
+  Operator: *"where does commercial plugins standard comes from? can be put on marketplace in longrun
+  with adapters embedded in longrun? if yes do."* Three container standards are read from the
+  package's OWN manifest — Trae (`.trae-plugin/plugin.json`: `skills: "./skills/"` + `mcp: ".mcp.json"`),
+  Claude (`.claude-plugin/plugin.json`: `skills/` + `.mcp.json`) and a bare `SKILL.md` directory —
+  and each is converted into the `plugin` entry the catalogue already installs: a skill member (the
+  directory zipped deterministically so the digest gate still applies) and an `mcp`/`connector` member
+  from `mcpServers`, with `${VAR}` making it a connector and naming its key. OpenClaw's
+  `openclaw.plugin.json` is a CODE plugin and is refused by name (tools/hooks/channels have no portable
+  member; the Longrun home for code is Matrix). Anything else a package carries (commands, agents,
+  hooks, binaries, apps) is listed as ignored, never installed, so nothing lands half-imported.
+  Split roots keep it safe: a path must live under `plugin_sources` (defaults: `~/.trae/plugins`,
+  `~/.claude/plugins`, `~/.openclaw/extensions`, `~/.openclaw/plugin-skills`, the repo), an https ZIP
+  goes through the existing allow-list fetch plus a zip-slip check, and the install reuses the SAME
+  dispatch, digest gate and record (`market.install_entry`). New `market plugin-scan` /
+  `market plugin-add <path|url>`, `GET /api/market/plugin-scan`, `POST /api/market/plugin-import`, and
+  a "Found on this machine" block in the Plugins section with an Import button. The testing head found
+  two diagnostics and both are fixed in the same change: a path outside the roots is now refused for
+  WHERE IT LIVES even when it carries no manifest (the location gate runs before the format gate), and
+  the reported roots are the enforced ones, repository included. (Locked by `v1040` 24/24.)
 - **A plugin is a container, and the Matrix modules are their own kind (`v1039`).** Operator: *"plugins
   are only matrix. does they need adaption to the longrun specific harness …? plugins are combinations
   of skills and mcps? what are plugins?"* — and the answer was no in the catalogue: `plugin` named an

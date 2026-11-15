@@ -20,6 +20,7 @@ const state = {
   kind: "all", q: "", category: "", source: "", manage: false,
   items: [], stats: {}, sources: [], installed: [], errors: [], audit: null,
   online: [], onlineFor: "", onlineSource: "clawhub", job: null, loading: false,
+  local: [],
 };
 const PAGE_SIZE = 300;
 
@@ -126,6 +127,35 @@ function sectionHtml(key, label, rows, have, shut, note, total) {
       <div class="mkt-src">${src}</div>
       <div class="mkt-grid">${rows.map(i => card(i, have)).join("")}</div>
     </div>`;
+}
+
+/* ── packages found on this machine (Trae / Claude / OpenClaw) ──────────── */
+
+function localSection() {
+  const rows = state.local || [];
+  if (!rows.length) return "";
+  return `<h3 class="mkt-sect-h"><span class="mkt-sect-static">Found on this machine \u00b7 ${rows.length}</span></h3>
+    <div class="mkt-src">Plugins installed for another harness: each is converted to its skills
+      and MCP servers. A code plugin has no portable member and is refused by name.</div>
+    <div class="mkt-grid">${rows.map(localCard).join("")}</div>`;
+}
+
+function localCard(p) {
+  const bad = !!p.error;
+  const members = (p.members || []).map(m => m.kind + ":" + m.name).join(", ");
+  const ignored = (p.ignored || []).length ? " \u00b7 ignored: " + p.ignored.join(", ") : "";
+  return `<article class="mkt-card" data-kind="plugin">
+    <div class="mkt-ico" aria-hidden="true">${bad ? "\u25CB" : KIND_ICON.plugin}</div>
+    <div class="mkt-body">
+      <div class="mkt-name">${esc(p.title || p.name || p.path)}</div>
+      <div class="mkt-desc">${esc(bad ? p.error : (p.description || members || ""))}</div>
+      <div class="mkt-meta" title="${esc(p.path)}">${esc(p.format)} \u00b7 ${esc(members || "\u2014")}${esc(ignored)}</div>
+    </div>
+    <div class="mkt-act">${bad
+      ? `<span class="mkt-warn" title="code plugins have no portable member">not portable</span>`
+      : `<button class="ghost mkt-import-local" data-path="${esc(p.path)}"
+           title="convert and install this package">Import</button>`}</div>
+  </article>`;
 }
 
 /* ── render ─────────────────────────────────────────────────────────────── */
@@ -246,6 +276,9 @@ function render() {
   if (featured.length) {
     html += sectionHtml("recommended", "Recommended", featured, have, shut, "");
   }
+  if (state.local.length && (state.kind === "plugin" || state.kind === "all")) {
+    html += localSection();
+  }
   const kinds = state.kind === "all" ? KIND_ORDER : [state.kind];
   kinds.forEach(kind => {
     const rows = rest.filter(i => i.kind === kind);
@@ -359,6 +392,13 @@ async function load(opts) {
   state.installed = (inst && inst.installed) || [];
   state.sources = (srcs && srcs.sources) || [];
   state.audit = aud || null;
+  state.local = [];
+  if (!state.manage && (state.kind === "plugin" || state.kind === "all")) {
+    try {
+      const sc = await window.api("GET", "/api/market/plugin-scan");
+      state.local = (sc && sc.packages) || [];
+    } catch (_) { state.local = []; }
+  }
   render();
   renderChips((cat && cat.categories) || [], state.stats.category_counts || {});
   renderSources();
@@ -399,6 +439,16 @@ async function install(id, overwrite) {
   catch (e) { res = { ok: false, error: String(e) }; }
   if (res && res.ok) toast(`installed ${res.name || id}`, "ok");
   else toast((res && res.error) || "install failed", "err");
+  await load();
+}
+
+async function importLocal(path, btn) {
+  if (btn) btn.disabled = true;
+  let res = {};
+  try { res = await window.api("POST", "/api/market/plugin-import", { path: path }); }
+  catch (e) { res = { ok: false, error: String(e) }; }
+  if (res && res.ok) toast(`imported ${res.name || path}`, "ok");
+  else toast((res && res.error) || "import failed", "err");
   await load();
 }
 
@@ -491,6 +541,8 @@ function wire() {
         importRemote(imp.getAttribute("data-source"), imp.getAttribute("data-slug"), imp);
         return;
       }
+      const loc = ev.target.closest(".mkt-import-local");
+      if (loc && !loc.disabled) { importLocal(loc.getAttribute("data-path"), loc); return; }
       const more = ev.target.closest("#mktMore");
       if (more) { more.disabled = true; load({ append: true }); return; }
       const upd = ev.target.closest(".mkt-update");

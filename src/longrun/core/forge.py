@@ -600,6 +600,29 @@ def cmd_market(args):
                              {"id": args.value, "overwrite": bool(args.overwrite)}),
                          indent=2, ensure_ascii=False))
         return
+    if action == "plugin-scan":
+        out = req("GET", "/api/market/plugin-scan")
+        for p in out.get("packages") or []:
+            ok = "ok  " if not p.get("error") else "no  "
+            members = ",".join("%s:%s" % (m.get("kind"), m.get("name"))
+                               for m in (p.get("members") or []))
+            print("%s %-9s %-22s %-40s %s" % (ok, p.get("format"), str(p.get("name") or "-")[:22],
+                                              members[:40] or str(p.get("error") or "")[:40],
+                                              p.get("path")))
+        print("found %s \u00b7 convertible %s \u00b7 roots %s"
+              % ((out.get("counts") or {}).get("found"),
+                 (out.get("counts") or {}).get("convertible"),
+                 ", ".join(out.get("roots") or [])))
+        return
+    if action == "plugin-add":
+        if not args.value:
+            print("usage: forge.py market plugin-add <path|https-url>", file=sys.stderr)
+            sys.exit(2)
+        key = "url" if str(args.value).startswith("https://") else "path"
+        print(json.dumps(req("POST", "/api/market/plugin-import",
+                             {key: args.value, "overwrite": bool(args.overwrite)}),
+                         indent=2, ensure_ascii=False))
+        return
     if action == "rm":
         if not args.value:
             print("usage: forge.py market rm <id> [--files]", file=sys.stderr)
@@ -1154,7 +1177,8 @@ def main():
     p = sub.add_parser("mcp"); p.add_argument("action", nargs="?", default="tools", choices=["tools", "ls", "add", "remove", "reload", "local-file"]); \
         p.add_argument("value", nargs="?"); p.add_argument("--json"); p.set_defaults(fn=cmd_mcp)
     p = sub.add_parser("market"); p.add_argument("action", nargs="?", default="ls",
-        choices=["ls", "sources", "status", "sync", "remote", "import", "install", "installed", "rm"]); \
+        choices=["ls", "sources", "status", "sync", "remote", "import", "install", "installed",
+                 "rm", "plugin-scan", "plugin-add"]); \
         p.add_argument("value", nargs="?"); p.add_argument("value2", nargs="?"); \
         p.add_argument("--kind"); p.add_argument("--category"); p.add_argument("--source"); \
         p.add_argument("--limit", type=int, default=20); p.add_argument("--offset", type=int, default=0); \

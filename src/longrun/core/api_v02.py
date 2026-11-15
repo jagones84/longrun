@@ -2045,6 +2045,11 @@ def handle(handler, method, path, qs, body):
             return _r(handler, 200, _ms.search_remote(
                 qs.get("source") or "clawhub", qs.get("q") or "",
                 _int(qs.get("limit"), _mkt.config_view().get("remote_search_limit") or 50)))
+        # Plugin packages found ON THIS MACHINE (Trae / Claude / OpenClaw), converted
+        # but not installed — the adapter reads a vendor manifest, never executes it.
+        if path == "/api/market/plugin-scan":
+            from longrun.core import market_plugins as _mp
+            return _r(handler, 200, _mp.scan())
         # User-defined `/` commands (data/commands.yaml) and the connector view
         # over the catalogue. Both read the ONE store their object already has.
         if path == "/api/commands":
@@ -2650,6 +2655,12 @@ def handle(handler, method, path, qs, body):
             from longrun.core import market_sync as _ms
             res = _ms.import_one(body.get("source") or "clawhub", body.get("slug") or "")
             _publish("market.import", source=body.get("source"), ok=bool(res.get("ok")))
+            return _r(handler, 200 if res.get("ok") else 400, res)
+        if path == "/api/market/plugin-import":
+            from longrun.core import market_plugins as _mp
+            src = body.get("path") or body.get("url") or ""
+            res = _mp.install(src, overwrite=bool(body.get("overwrite")))
+            _publish("market.plugin_import", source=str(src)[:200], ok=bool(res.get("ok")))
             return _r(handler, 200 if res.get("ok") else 400, res)
         if path == "/api/connectors/install":
             from longrun.core import connectors as _conn

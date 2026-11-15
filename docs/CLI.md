@@ -367,6 +367,8 @@ Five kinds, and `--kind` takes any of them: `plugin` (a bundle whose members are
 | `market install <id> [--overwrite]` | `POST /api/market/install` | the same digest-gated install the page uses |
 | `market installed` | `GET /api/market/installed` | the install RECORD with its catalogue label |
 | `market rm <id> [--files]` | `DELETE /api/market/installed/<id>` (`?files=1`) | removes the record, and the skill files when asked |
+| `market plugin-scan` | `GET /api/market/plugin-scan` | Trae / Claude / OpenClaw packages found on this machine, converted but not installed |
+| `market plugin-add <path\|url> [--overwrite]` | `POST /api/market/plugin-import` | converts one package (a local directory or an https ZIP) into its skill + MCP members, then installs it |
 
 ```bash
 python3 forge.py market sources                                   # is the mirror current?
@@ -375,6 +377,8 @@ python3 forge.py market sync --source mcp-registry --wait         # full registr
 python3 forge.py market remote research --limit 10                # live ClawHub search
 python3 forge.py market import clawhub research-helper            # pin that one, then install
 python3 forge.py market installed
+python3 forge.py market plugin-scan                               # what other harnesses installed here
+python3 forge.py market plugin-add ~/.trae/plugins/trae-remote-official/pdf-monster/0.1.0
 ```
 
 A remote row is **not** installable until it is pinned: `market install skill/<slug>` answers

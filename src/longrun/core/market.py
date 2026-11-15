@@ -338,8 +338,13 @@ def _member_installable(member):
     if member["kind"] not in MEMBER_KINDS:
         return False
     if member["kind"] == "skill":
-        bundled = member["source"]["type"] == "bundled" and bool(member["source"]["path"])
-        return bool(member["sha256"]) and (bool(member["source"]["url"]) or bundled)
+        src = member["source"]
+        if src["type"] == "dir":
+            # An imported package: the directory is readable AND the digest is pinned.
+            return (bool(member["sha256"]) and bool(src["path"]) and os.path.isdir(src["path"])
+                    and os.path.isfile(os.path.join(src["path"], "SKILL.md")))
+        bundled = src["type"] == "bundled" and bool(src["path"])
+        return bool(member["sha256"]) and (bool(src["url"]) or bundled)
     srv = member.get("server") or {}
     return bool(srv.get("command") or srv.get("url"))
 
@@ -393,7 +398,8 @@ def _normalize(raw, origin):
         "present": False,
     }
     bundled = item["source"]["type"] == "bundled" and bool(item["source"]["path"])
-    pinned = bool(item["sha256"]) and (bool(item["source"]["url"]) or bundled)
+    local_dir = item["source"]["type"] == "dir" and bool(item["source"]["path"])
+    pinned = bool(item["sha256"]) and (bool(item["source"]["url"]) or bundled or local_dir)
     if kind == "skill":
         item["installable"] = pinned
     elif kind == "matrix":
@@ -767,7 +773,15 @@ def _install_skill(item, cfg, overwrite):
     if not sha:
         return {"ok": False, "error": "item has no sha256 — not installable"}
     src = item["source"] or {}
-    if str(src.get("type") or "") == "bundled":
+    if str(src.get("type") or "") == "dir":
+        # An imported package: the bytes come from a local skill directory, zipped
+        # deterministically so the pinned digest still gates the install.
+        from longrun.core import market_plugins
+        try:
+            data = market_plugins.dir_zip(src.get("path"))
+        except ValueError as e:
+            return {"ok": False, "error": "dir source: %s" % e}
+    elif str(src.get("type") or "") == "bundled":
         # A bundled artifact lives INSIDE this repository, so the repository is the
         # trust boundary; the digest still proves the bytes are the ones the
         # catalogue names (a local edit to the file is caught here).
@@ -948,28 +962,53 @@ def _install_bundle(item, cfg, overwrite):
     return {"ok": True, "target": "%d members" % len(done), "members": done}
 
 
+def _install_one(item, cfg, overwrite):
+    """`(ok, payload, members)` for one entry — the ONE dispatch every install uses."""
+    kind = item["kind"]
+    if kind == "skill":
+        return _install_skill(item, cfg, overwrite)
+    if kind in ("mcp", "connector"):
+        return _install_server(item)
+    if kind == "plugin":
+        return _install_bundle(item, cfg, overwrite)
+    if kind == "matrix":
+        return _install_matrix(item)
+    return {"ok": False, "error": "unknown kind: %s" % kind}
+
+
+def _run_install(item, overwrite=False):
+    cfg = _config()
+    res = _install_one(item, cfg, overwrite)
+    if not res.get("ok"):
+        return {"ok": False, "error": res.get("error") or "install failed", "id": item["id"]}
+    _record(item, res.get("target"), res.get("members"))
+    return {"ok": True, "id": item["id"], "kind": item["kind"], "name": item["name"],
+            "target": res.get("target"), "sha256": item.get("sha256") or "",
+            "members": res.get("members") or [],
+            "enabled": res.get("enabled", True)}
+
+
 def install(item_id, overwrite=False):
     """Install one catalogue item through its owning installer."""
-    cfg = _config()
     items, _, _ = catalog()
     item = next((i for i in items if i["id"] == item_id), None)
     if item is None:
         return {"ok": False, "error": "unknown item: %s" % item_id}
-    kind = item["kind"]
-    if kind == "skill":
-        res = _install_skill(item, cfg, overwrite)
-    elif kind in ("mcp", "connector"):
-        res = _install_server(item)
-    elif kind == "plugin":
-        res = _install_bundle(item, cfg, overwrite)
-    elif kind == "matrix":
-        res = _install_matrix(item)
-    else:
-        res = {"ok": False, "error": "unknown kind: %s" % kind}
-    if not res.get("ok"):
-        return {"ok": False, "error": res.get("error") or "install failed", "id": item["id"]}
-    _record(item, res.get("target"), res.get("members"))
-    return {"ok": True, "id": item["id"], "kind": kind, "name": item["name"],
-            "target": res.get("target"), "sha256": item["sha256"],
-            "members": res.get("members") or [],
-            "enabled": res.get("enabled", True)}
+    return _run_install(item, overwrite)
+
+
+def install_entry(item, overwrite=False):
+    """Install an entry that did NOT come from a catalogue (an imported plugin).
+
+    The same dispatch, the same digest gate, the same record: an import is not a
+    second install path, it is a second SOURCE of entries.
+    """
+    item = dict(item)
+    item.setdefault("id", "plugin/" + str(item.get("name") or "imported"))
+    item.setdefault("origin", "")
+    item.setdefault("version", "")
+    item.setdefault("publisher", "")
+    item.setdefault("source", {"type": "", "url": "", "path": ""})
+    item.setdefault("members", None)
+    item.setdefault("members_declared", 0)
+    return _run_install(item, overwrite)
