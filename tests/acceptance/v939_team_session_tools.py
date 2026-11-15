@@ -8,7 +8,8 @@ di riporto … verifica se ci sono i tools e sono allowed correttamente."*
 
 `sessions.compact` / `sessions.reset` exist now, and `context.compact` can no
 longer target ANY session: the target must be BELOW the caller in the reporting
-line (transitive), never itself, never upward or sideways.
+line (transitive), never upward or sideways. 2026-11-15 (operator): the caller's
+OWN session is always allowed — "every agent can compact/reset its session".
 
 Deterministic: no model, no network, no server (the compactor is stubbed).
 
@@ -97,8 +98,14 @@ check("B5 the chief's transcript survives",
 
 out = T._sessions({"action": "reset", "session": OTHER_SID}, ROOT_SID)
 check("B6 an unrelated session is refused", out.get("ok") is False, out)
+_mk(ROOT_SID)
 out = T._sessions({"action": "reset", "session": ROOT_SID}, ROOT_SID)
-check("B7 resetting itself through this rule is refused", out.get("ok") is False, out)
+check("B7 a session resets ITSELF (operator 2026-11-15)", out.get("ok") is True, out)
+check("B7b its own transcript is the one that was cleared",
+      not (stores.load_session(ROOT_SID) or {}).get("messages"),
+      (stores.load_session(ROOT_SID) or {}).get("messages"))
+check("B7c a sibling keeps its transcript",
+      bool((stores.load_session(MID_SID) or {}).get("messages")))
 
 # --- C) compact, with the compactor stubbed -------------------------------
 from longrun.core import httpapi  # noqa: E402

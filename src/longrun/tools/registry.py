@@ -428,12 +428,13 @@ _LEGACY_SCHEMAS = {
                         "delivering the text twice. Continue other work. action=wait with that id "
                         "waits for the peer turn to finish and returns its reply; "
                         "action=read can inspect the live transcript meanwhile. "
-                        "action=compact / action=reset -> free the context of a member "
-                        "BELOW you in the reporting line (any level, same team): "
+                        "action=compact / action=reset -> free a session's context. "
+                        "Your OWN session is always allowed. ANOTHER session must be "
+                        "BELOW you in the reporting line (any level, same team); "
                         "compact shrinks the transcript (force=true bypasses the "
                         "threshold when the operator asked), reset wipes messages, "
                         "tool cards and injects and aborts a running turn. Never "
-                        "yourself, never upward or sideways."),
+                        "upward or sideways."),
         "type": "object",
         "properties": {
             "action": {"type": "string",
@@ -547,9 +548,10 @@ _LEGACY_SCHEMAS = {
                         "old turns into one summary). It REFUSES below the policy "
                         "trigger; pass force=true only when the user explicitly asked "
                         "to compact early. The harness auto-compacts at the trigger %. "
-                        "`session` may name a member BELOW you in the reporting line "
-                        "(any level, same team); compacting another session is a team "
-                        "operation and is refused upward or sideways."),
+                        "`session` defaults to this run's session (always allowed). "
+                        "Naming ANOTHER one requires it to be BELOW you in the "
+                        "reporting line (any level, same team); compacting another "
+                        "session is a team operation and is refused upward or sideways."),
         "type": "object",
         "properties": {
             "action": {"type": "string", "enum": ["status", "compact"], "default": "status"},

@@ -107,6 +107,45 @@ All notable changes to Longrun are documented here. The format follows
   model. The approval ledger still stores the raw args of the call it recorded — not model-bound.)
 
 ### Fixed
+- **A row of "Agents & unread" reveals its chat like the rail's centre button.** Operator: *"the
+  agents and unread panel if click on agents shall also make the same work as the left sidebar
+  CENTER icon that move camera to the chat session specific agents … make this quick fix, don't
+  duplicate codebase."* The popover row only called `selectSession`, so the chat switched while the
+  Sessions rail stayed where it was: the 🎯 gesture (open the panel, expand the session's group,
+  centre and flash its row) existed only for the active session. The row's click now calls the SAME
+  `revealActiveSession()` after the switch — one implementation, no copy. The row's meta line now
+  names the AGENT (`A54 · Head of Longrun Testing`), not the model it runs on; the model moved to the
+  tooltip. (Locked by `v472` B6b/B6c 30/30.)
+- **A deliberate clear outranks any transcript snapshot taken before it (`v1045`).** Operator:
+  *"reset no avvenuto vedo ancora 129 messaggi … no ha funzionato"*. `sessions.reset` answered
+  `exit 0` and `session.cleared` fired, yet the session file came back with 130 messages / 47 cards /
+  66 injects: the chat loop holds the transcript in memory and flushes it into `sess["messages"]` on
+  every `persist_tool_card`/`persist_inject` and at turn end, so the turn that had read the document
+  BEFORE the wipe wrote its copy back afterwards (`save_session` kept the longer list). `load_session`
+  now stamps the copy with a non-persisted `_loaded_at`; `clear_session` arms a per-session
+  `_CLEARED_AT` tombstone BEFORE it writes; `save_session` compares the two — a snapshot older than
+  the clear has its `messages`/`tool_cards`/`injects` dropped and carries a sticky
+  `_stale_after_clear`, so no later save from the same snapshot can resurrect the transcript, while a
+  snapshot loaded AFTER the clear appends normally. In-process keys are stripped before `write_json`.
+  (Locked by `v1045` 9/9; `v321` reset, `v947` merge, `v222`/`v315` delete still green.)
+- **A turn can reset ITSELF from a batch without deadlocking (`v1047`).** Operator: every agent can
+  reset its own session. `sessions.reset` on the caller's own session reached `clear_session`, which
+  acquires `_turn_lock(sid)`; when the model emitted the call inside a `batch` (a pool worker), the
+  turn that owns that lock was blocked waiting for the tool, so the turn froze after `approval.auto`
+  — no `tool.result`, no `session.cleared`, the transcript untouched (measured live 2026-11-15 18:38,
+  session `a04c331fca32`). `clear_session(from_turn=True)` skips the turn lock for the session's OWN
+  turn (the `v1045` tombstone plus the per-session save lock keep the write safe); every other caller
+  still serialises, so a chief's reset of a subordinate waits for that subordinate's turn. (Locked by
+  `v1047` 9/9.)
+- **Reset/compact follow one rule: own session always, then the reporting line (`v1046`).** Operator:
+  *"every agent can compact/reset its session and the boss of a team can compact/reset all the other
+  sub/dispatchable agents of the team under its line of command at any depth level."* `_may_manage`
+  refused `caller == target` ("the calling session cannot reset/compact itself"), while
+  `context.compact` allowed self through a `sid != caller` shortcut — two doors, two policies. The rule
+  now allows the caller's own session and keeps "below me in the line (any level, same team), never
+  upward or sideways" for anyone else; `context.compact` asks the same rule for its own session too,
+  and the tool description no longer claims "never yourself". (Locked by `v1046` 13/13; `v939`
+  updated to 22/22.)
 - **Every turn keeps its duration, printed under the answer (`v1042`).** Operator: *"after a work of
   the session i need to know how much time that turn took to be completed — this shall remain printed
   as a summary in the chat session, i don't like things that appear and disappear from the chat

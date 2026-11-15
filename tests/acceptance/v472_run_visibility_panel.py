@@ -164,6 +164,12 @@ check("B5 one renderer reads the two live signal maps",
       and 'Object.keys(doneSessions)' in HTML, "")
 check("B6 the panel's rows are LINKS to the chat session",
       'a.href = "#session-" + s.id' in HTML and 'selectSession({ id: s.id })' in HTML, "")
+_ROW = HTML[HTML.index("function _runsRow("):HTML.index("function _renderRunsBody(")]
+check("B6b a row click is the SAME gesture as the rail's centre button",
+      "selectSession({ id: s.id })" in _ROW and "revealActiveSession();" in _ROW, _ROW[-260:])
+check("B6c a row names the AX agent (id + name), never the model",
+      "_agentNum(s)" in _ROW and "ag.name" in _ROW
+      and "_sessModel[s.id], s.age" not in _ROW, _ROW[:320])
 check("B7 the panel lists the running and the unread sections explicitly",
       # 2026-11-01: the section headers dropped their colour emoji (slice I-1/I-6:
       # chrome carries no emoji, the row pips carry the state). The two sections and

@@ -154,6 +154,32 @@ message withdrawn by the mid-turn trim takes its chip with it (`harness.drop` +
 `stores.drop_inject`), and `sess["injects"]` records exactly the sends (no merge),
 so live, reload and wire agree.
 
+**A deliberate clear outranks any transcript snapshot taken before it** (v1045,
+2026-11-15). The running turn keeps `msgs` in memory and flushes it into
+`sess["messages"]` at turn end — and on every tool card / inject, because those are
+persisted live. `save_session` ([stores.py:390](file:///home/jagones/Repositories/longrun/src/longrun/memory/stores.py#L390))
+already merged that copy with the on-disk tail under a per-session lock, but a merge
+cannot express a DELETION: a turn that had read the document BEFORE `sessions.reset`
+wrote its copy back afterwards, so the wipe reported success and the transcript
+returned (measured 2026-11-15 18:28:50: `session.cleared` fired, then 130 messages /
+47 cards / 66 injects came back). Two facts now order the writes: `load_session`
+stamps each copy with a non-persisted `_loaded_at`
+([stores.py:72](file:///home/jagones/Repositories/longrun/src/longrun/memory/stores.py#L72)),
+and `clear_session` arms a per-session `_CLEARED_AT` tombstone **before** it writes
+([stores.py:605](file:///home/jagones/Repositories/longrun/src/longrun/memory/stores.py#L605)).
+`save_session` drops `messages` / `tool_cards` / `injects` from any snapshot older
+than the tombstone and marks it `_stale_after_clear` (sticky, so that same in-memory
+turn cannot resurrect them with a later save); a snapshot loaded AFTER the clear
+appends normally, both bookkeeping keys are stripped before `write_json`, and
+`session.cleared` stays the one event the WebUI reacts to. The clear still
+serialises with a FOREIGN session's turn (`_turn_lock`), but the session's OWN
+turn passes `from_turn=True` and takes no lock: that turn is blocked waiting for
+this very call, so a `batch` item on a pool worker deadlocked the session
+(measured 2026-11-15 18:38: the turn froze after `approval.auto`), while the
+tombstone and the save lock keep the write safe. `v1045` pins the whole order
+(9/9), `v1047` the lock rule (9/9); `v321` (reset), `v947` (merge) and `v534`
+(deliberate truncate) stay green.
+
 **Every context budget is config** (2026-11-05). How much of the harness's own text
 reaches the model — the 6000-char verbatim observation limit, the 200 000 render
 ceiling, the 1500/600 offload preview, the per-turn reference caps, the prompt
@@ -509,6 +535,12 @@ Lifecycle and retention — every store has an owner and an end:
 | Memory record | invalidate / supersede / expire → tombstone (last entry wins), restore; a harness-written kind also bounds itself on every store | `purge_invalidated` removes the dead ones; a harness-written kind keeps `memory_max_records` (300) live, lowest value first (`v972`) |
 | Trash | `_prune_trash` | newest 200 entries + 30 days; sheds files **and folders** (`v973`) |
 | Event | `prune_events` | newest 200 000 rows, every 15 minutes |
+
+A **clear** is not a delete: `sessions.reset` / `context.compact` / the Architect's
+stateless reset keep the session and empty `messages` + `tool_cards` + `injects` under
+the same save lock (the task graph and the thread ledger are reset with them), and no
+snapshot read before the clear can put the old transcript back (`v1045`, §Request /
+turn lifecycle).
 
 **Memory is operator-wide, and its report counts LIVE records** (2026-11-15). The
 store is deliberately not per-agent: an agent IS a session (`EV-30`), so an

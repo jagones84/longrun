@@ -72,7 +72,13 @@ def _valid_sid(sid):
 def load_session(sid):
     if not _valid_sid(sid):
         return None
-    return read_json(os.path.join(SESSIONS_DIR, sid + ".json"), None)
+    doc = read_json(os.path.join(SESSIONS_DIR, sid + ".json"), None)
+    if isinstance(doc, dict):
+        # v1045: stamp the SNAPSHOT (never written to disk) so `save_session` can
+        # tell a copy read BEFORE a deliberate clear from one read after it — the
+        # running turn holds the transcript in memory and saves it later.
+        doc["_loaded_at"] = time.time()
+    return doc
 
 
 # JAG-222: a session deleted WHILE its turn is running used to be RESURRECTED —
@@ -85,6 +91,13 @@ def load_session(sid):
 _DELETED_SESSIONS = set()
 _deleted_lock = threading.Lock()
 _TOMBSTONE_FILE = os.path.join(SESSIONS_DIR, ".deleted")
+# v1045: `clear_session` ran while a turn was still holding its own transcript
+# snapshot. The turn keeps the messages in memory and saves them at the end (and
+# on every tool card), so the wipe was written back over — measured 2026-11-15
+# 18:28:50: `session.cleared` fired, then the aborted turn re-saved 130 messages.
+# This records WHEN each session was cleared in this process, so a snapshot read
+# before that instant can never write its transcript again.
+_CLEARED_AT = {}
 # v947: one write lock per session id — see `_save_lock`/`save_session`.
 _SAVE_LOCKS = {}
 _SAVE_GUARD = threading.Lock()
@@ -396,21 +409,39 @@ def save_session(sess, truncate=False):
     # held it). The merge is a strict-prefix adoption: only records this copy
     # never saw are taken.
     with _save_lock(sid):
+        # v1045: a clear during the turn outranks this snapshot. The loop holds the
+        # transcript in memory and saves it at the end (and on every tool card), so
+        # a snapshot read BEFORE the clear must never write messages/cards/injects
+        # again — that is how 130 pre-clear messages came back over a `session.cleared`.
+        stamp = float(sess.get("_loaded_at") or 0.0)
+        cleared = float(_CLEARED_AT.get(sid) or 0.0)
+        stale = bool(sess.get("_stale_after_clear")) or bool(
+            stamp and cleared and stamp < cleared)
+        if stale:
+            # Sticky: every later save from this same in-memory turn is discarded
+            # too (the interrupt note, the last cards), until a NEW turn reloads.
+            sess["_stale_after_clear"] = True
         # A field the operator changed WHILE this dict was being written (the turn's
         # stale copy) must not come back: re-apply the live value the owner endpoint
         # recorded. No-op for a session nobody changed live.
         adopt_live_choices(sess)
         if not truncate:
-            if not _owns_turn(sid):
-                # A side writer (handoff/escalation) must not rewind the turn's
-                # messages. The turn itself is the authority on its own transcript.
-                _adopt_disk_tail(sess, "messages")
-            # These two are append-only by design: even the turn must not drop a
-            # record another thread wrote while it was running.
-            _adopt_disk_tail(sess, "injects")
-            _adopt_disk_tail(sess, "tool_cards")
+            if stale:
+                sess["messages"] = []
+                sess["tool_cards"] = []
+                sess["injects"] = []
+            else:
+                if not _owns_turn(sid):
+                    # A side writer (handoff/escalation) must not rewind the turn's
+                    # messages. The turn itself is the authority on its own transcript.
+                    _adopt_disk_tail(sess, "messages")
+                # These two are append-only by design: even the turn must not drop a
+                # record another thread wrote while it was running.
+                _adopt_disk_tail(sess, "injects")
+                _adopt_disk_tail(sess, "tool_cards")
             # JAG-796: a mid-run steer is a REAL user message; whichever writer saves
             # first must carry it, or the operator's own words vanish from the chat.
+            # It is keyed by its own id, so a steer typed AFTER the clear still lands.
             adopt_live_steers(sess)
         # JAG-431p: carry each TITLED free group's title/summary onto the message that
         # STARTS it, so the WebUI labels groups by data that rides the transcript (and
@@ -420,7 +451,10 @@ def save_session(sess, truncate=False):
         except Exception:  # noqa: BLE001
             pass
         p = os.path.join(SESSIONS_DIR, sid + ".json")
-        write_json(p, sess)
+        # The snapshot stamp and the stale flag are in-process bookkeeping, never
+        # part of the document a reader (or another process) sees.
+        write_json(p, {k: v for k, v in sess.items()
+                       if k not in ("_loaded_at", "_stale_after_clear")})
     try:
         st = os.stat(p)
         with _SESSION_SUMMARY_LOCK:
@@ -568,7 +602,7 @@ def _forget_session_runtime(sid):
         pass
 
 
-def clear_session(sid):
+def clear_session(sid, from_turn=False):
     """JAG-321: TRULY wipe a session's transcript — messages AND the side stores.
 
     The transcript the WebUI rebuilds on reload (`loadHistory`) is the merge of
@@ -577,18 +611,35 @@ def clear_session(sid):
     (nudge / pivot / final / retry) came straight back — a "reset" left the chat
     visibly un-cleared. Wipe all three. Returns the session dict, or None when
     the id does not exist.
+
+    `from_turn=True` is the session's OWN running turn asking to be cleared
+    (`sessions.reset` with the caller as target, v1046): that turn is blocked
+    waiting for this very call, and a batch item runs on a pool worker, so a
+    blocking `_turn_lock` acquire deadlocks it (measured 2026-11-15 18:38: the
+    turn never got its `tool.result`). The tombstone armed below plus the
+    per-session save lock keep the write safe without the turn lock.
     """
     if not _valid_sid(sid):
         return None
     push_abort(sid)
+    if from_turn:
+        return _clear_now(sid)
     with _turn_lock(sid):
-        sess = load_session(sid)
-        if not sess:
-            return None
-        sess["messages"] = []
-        sess["tool_cards"] = []
-        sess["injects"] = []
-        save_session(sess, truncate=True)
+        return _clear_now(sid)
+
+
+def _clear_now(sid):
+    """The wipe itself; the caller owns the serialisation (see `clear_session`)."""
+    sess = load_session(sid)
+    if not sess:
+        return None
+    sess["messages"] = []
+    sess["tool_cards"] = []
+    sess["injects"] = []
+    # v1045: arm the tombstone BEFORE writing, so every snapshot this process
+    # already handed out (the running turn's copy) is stale from here on.
+    _CLEARED_AT[sid] = time.time()
+    save_session(sess, truncate=True)
     try:
         taskgraph.reset(sid)
     except Exception:  # noqa: BLE001 — a missing graph must not block the clear

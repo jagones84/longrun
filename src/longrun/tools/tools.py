@@ -2470,7 +2470,10 @@ def _may_manage(caller, target):
     """(ok, why): may `caller` run a DESTRUCTIVE op on `target`'s session?
 
     2026-11-10 (operator): every chief, at every level, over its whole reporting
-    line — never itself, never upward or sideways. Unknown agents are refused.
+    line — never upward or sideways. Unknown agents are refused.
+    2026-11-15 (operator): *"every agent can compact/reset its session"* — the
+    caller acting on ITS OWN session is always allowed; this rule only governs
+    somebody else's. The Architect stays above every team.
     """
     caller = str(caller or "").strip()
     target = str(target or "").strip()
@@ -2479,7 +2482,7 @@ def _may_manage(caller, target):
     if not caller:
         return False, "no calling session in scope"
     if caller == target:
-        return False, "the calling session cannot reset/compact itself through this rule"
+        return True, ""
     try:
         from longrun.agent import architect as _arch
         if _arch.is_architect_session(caller):
@@ -2669,7 +2672,10 @@ def _sessions(args, run_id):
                     "stderr": "", "error": "reset refused: %s" % why,
                     "backend": "host", "sandboxed": False}
         from longrun.memory.stores import clear_session
-        got = clear_session(target)
+        # v1046: a turn clearing ITSELF must not queue on its own turn lock — the
+        # turn is blocked awaiting this call, and a batch item runs on a pool
+        # worker, so the blocking acquire deadlocked the turn (2026-11-15 18:38).
+        got = clear_session(target, from_turn=(str(run_id or "").strip() == target))
         if got is None:
             return {"ok": False, "exit_code": 1, "session": target, "stdout": "",
                     "stderr": "", "error": "no such session: %s" % target,
@@ -2956,13 +2962,15 @@ def _context(args, run_id):
                 "stdout": out, "backend": "host", "sandboxed": False}
     if action == "compact":
         # 2026-11-10: targeting ANOTHER session is a team operation, not a free
-        # door — the caller must be a chief above the target (any level).
+        # door — the caller must be a chief above the target (any level), and its
+        # own session is always allowed (2026-11-15). ONE permission owner for
+        # both doors: `sessions.compact` calls the same rule.
         caller = str(run_id or "").strip()
-        if caller and sid != caller:
+        if caller:
             ok, why = _may_manage(caller, sid)
             if not ok:
                 return {"ok": False, "exit_code": 1, "session": sid,
-                        "error": "not allowed to compact another session: %s" % why,
+                        "error": "not allowed to compact that session: %s" % why,
                         "backend": "host", "sandboxed": False}
         # JAG-528: a compaction is destructive and irreversible, and the transcript
         # is only worth shrinking once the policy trigger is reached. The 🗜 button
