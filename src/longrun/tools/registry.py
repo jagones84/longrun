@@ -2985,6 +2985,7 @@ def resolve_path(path, roots=None, base=None):
     if _approvals_full():
         return p, None
     for r in roots:
+        r = os.path.expanduser(str(r))
         root = os.path.realpath(r if os.path.isabs(r) else os.path.join(REPO, r))
         if p == root or p.startswith(root + os.sep):
             return p, None
