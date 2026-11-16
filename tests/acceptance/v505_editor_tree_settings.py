@@ -69,7 +69,7 @@ check("A10 never a blank tree on a session switch",          # JAG-505 guard kep
 # asked "does the pane have rows?", and the PREVIOUS session's rows satisfied it, so
 # the operator kept reading the wrong folder (live repro: session B showed
 # `harness-e2e/` while GET /api/fs/list?session=B answered
-# `/home/jagones/Repositories/TESTS`). A late reply could also paint the old root
+# `/home/jagones/Repositories/_workspace/TESTS`). A late reply could also paint the old root
 # over the new session.
 check("A11 the tree records the session it mirrors (never an empty-string guess)",
       "function _treeStale()" in ed and "state.treeSid !== SESSION()" in ed

@@ -1515,7 +1515,7 @@ All notable changes to Longrun are documented here. The format follows
   mirrors ONE session's workspace, but nothing recorded WHICH session it was showing:
   on a switch the only test was "does the pane already have rows?", and the rows of the
   PREVIOUS session satisfied it, so the reload that mattered was skipped. Live repro:
-  after selecting a session whose workspace is `/home/jagones/Repositories/TESTS` the
+  after selecting a session whose workspace is `/home/jagones/Repositories/_workspace/TESTS` the
   tree still read `harness-e2e/` (the previous session's folder) while
   `GET /api/fs/list?session=…` answered `TESTS` (8 entries). A reply that landed after
   the switch was painted too, which is how a first load with no session yet in

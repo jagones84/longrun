@@ -22,7 +22,7 @@ for line in open(ENV):
     if line.startswith("LONGRUN_TOKEN="):
         TOK = line.split("=", 1)[1].strip().strip('"').strip("'")
 BASE = "http://127.0.0.1:8790"
-WS = "/home/jagones/Repositories/TESTS/harness-e2e"
+WS = "/home/jagones/Repositories/_workspace/TESTS/harness-e2e"
 
 RESULTS = []
 
