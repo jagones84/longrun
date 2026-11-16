@@ -422,7 +422,13 @@ def _document_records(status=None):
         implement = bool(a.get("implement"))
         # Two decisions: the content (proposed → approved/rejected) and the
         # implementation (approved → implement). Either one outstanding = pending.
-        pending = (doc_status == "proposed") or (doc_status == "approved" and not implement)
+        # MIGRATION (2026-11-17): an `approved` record written BEFORE the second
+        # decision has no `decided_ts` — its gate was already released by the old
+        # `approve`, so it is DECIDED, not an outstanding ▶ (otherwise every old
+        # document reappears in the operator's inbox as a new task).
+        legacy = doc_status == "approved" and not implement and not a.get("decided_ts")
+        pending = (doc_status == "proposed") or (doc_status == "approved" and not implement
+                                                 and not legacy)
         state = "pending" if pending else "decided"
         if status and state != status:
             continue
@@ -446,7 +452,7 @@ def _document_records(status=None):
             "doc_status": doc_status,
             "implement": implement,
             "can_implement": (doc_status == "approved" and not implement
-                              and not a.get("stale")),
+                              and not legacy and not a.get("stale")),
             "path": a.get("path") or "",
             "reason": ("the plan/spec bar awaits your decision — approve the document, then ▶ to "
                        "authorise the implementation (the file stays on disk)"),

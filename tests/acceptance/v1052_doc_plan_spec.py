@@ -747,6 +747,28 @@ _appr.decide_any("doc:" + _sid_o4, "implement", "test")
 check("O5b the inbox ▶ opens the gate",
       docs.status(_sid_o4).get("plan_mode") is False
       and docs.status(_sid_o4)["active"]["implement"] is True)
+
+# O5c: MIGRATION — an `approved` record written BEFORE the second decision has no
+# `decided_ts` (the old `approve` released the gate). It must not reappear in the
+# operator's inbox as a brand-new pending ▶.
+_sid_o5c = session(_ws_o)
+docs._generate_plan_doc = lambda goal, model=None, context="": (PLAN_MD, "fake-model")
+try:
+    docs.create_plan(_sid_o5c, "legacy approved", origin="composer")
+finally:
+    docs._generate_plan_doc = _orig_plan
+_legacy = stores.load_session(_sid_o5c)
+_legacy["plan"]["status"] = "approved"
+_legacy["plan"].pop("decided_ts", None)
+_legacy["plan"].pop("decided_by", None)
+_legacy["plan"].pop("implement", None)
+_legacy["plan_mode"] = False
+stores.live_fields_changed(_sid_o5c, plan=_legacy["plan"], plan_mode=False)
+stores.save_session(_legacy)
+_legacy_rows = [r for r in _appr.list_unified("pending") if r.get("id") == "doc:" + _sid_o5c]
+check("O5c a pre-2026-11-17 approved record is decided, not a new pending ▶",
+      _legacy_rows == [] and docs.status(_sid_o5c)["active"]["implement"] is False,
+      _legacy_rows[:1])
 _set_policy("normal", False)
 
 # O6: a policy write is an OPERATOR act — token + no session in the body.
