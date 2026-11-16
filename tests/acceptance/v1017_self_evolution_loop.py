@@ -86,7 +86,7 @@ BASE = registry.CONFIG_YAML
 base_digest = digest(BASE)
 _PROBE = "^selfevolve-probe(\\s|$)"
 DELTA = {"target": "shell.exec", "field": "auto_approve",
-         "value": [_PROBE], "reason": "repeated friction on the probe command",
+         "add": [_PROBE], "reason": "repeated friction on the probe command",
          "confidence": "medium"}
 
 # =========================================================================
@@ -94,8 +94,8 @@ DELTA = {"target": "shell.exec", "field": "auto_approve",
 # =========================================================================
 check("A1 the registry base file exists", bool(base_digest), BASE)
 check("A2 the probe pattern is NOT in the shipped config",
-      _PROBE not in str(registry.shipped_tool("shell", {}).get("auto_approve") or []),
-      registry.shipped_tool("shell", {}).get("auto_approve"))
+      _PROBE not in str(registry.shipped_tool("shell").get("auto_approve") or []),
+      registry.shipped_tool("shell").get("auto_approve"))
 
 # =========================================================================
 # B — Baseline: seed a session, read the registry BEFORE evolution
@@ -140,8 +140,9 @@ check("D3 the overlay has exactly one changed row", list(tools_diff.keys()) == [
 row = tools_diff.get("shell.exec") or {}
 check("D4 that row changes exactly one field", list(row.keys()) == ["auto_approve"],
       list(row.keys()))
-check("D5 the new value is the delta's value",
-      row.get("auto_approve") == DELTA["value"], row.get("auto_approve"))
+check("D5 the probe is ADDED and the shipped patterns are retained",
+      _PROBE in (row.get("auto_approve") or [])
+      and "^ls(\\s|$)" in (row.get("auto_approve") or []), row.get("auto_approve"))
 
 reg = registry.load_config(reload=True)
 merged = (reg.get("tools", {}).get("shell.exec", {}) or {}).get("auto_approve") or []
@@ -173,7 +174,7 @@ check("E5 the overlay file still exists", os.path.exists(registry.OVERLAY_YAML),
 # F — Deny leaves the registry unchanged
 # =========================================================================
 DELTA2 = {"target": "shell.exec", "field": "auto_approve",
-          "value": ["^denied-pattern(\\s|$)"], "reason": "should not land"}
+          "add": ["^denied-pattern(\\s|$)"], "reason": "should not land"}
 p2 = improve.propose("registry", "denied delta", reason="t", origin="optimizer", delta=DELTA2)
 den = improve.decide(p2["id"], "deny")
 check("F1 deny is accepted", den.get("ok") is True, den)

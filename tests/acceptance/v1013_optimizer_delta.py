@@ -59,7 +59,7 @@ seed("s-ok")
 
 # ---- A) a valid delta is parsed and submitted as a registry proposal --------
 _delta = {"target": "shell.exec", "field": "auto_approve",
-          "value": ["^echo(\\s|$)"], "reason": "repeated friction on echo",
+          "add": ["^echo(\\s|$)"], "reason": "repeated friction on echo",
           "confidence": "medium"}
 optimizer._call_model = lambda prompt, model=None: json.dumps(_delta)
 r = optimizer.run("s-ok")
@@ -121,6 +121,43 @@ final = [p for p in proposals_on_disk() if p.get("scope") == "registry"]
 check("G1 the two valid deltas (plain + fenced) both landed", len(final) == 2, len(final))
 check("G2 no proposal was written for a skip",
       all(p.get("delta", {}).get("target") == "shell.exec" for p in final), len(final))
+
+# ---- H) a LIST is changed with add/remove, never with a whole-list `value` --
+# 2026-11-17: the optimizer's model rewrote `shell.exec.deny` from memory and
+# proposed a one-entry list — one click from deleting seven hard-deny rules
+# (LONGRUN_TOKEN, /proc/*/environ, mkfs, dd…). The owner validator now refuses a
+# whole-list replacement and a `remove` that names a rule that does not exist.
+_danger = {"target": "shell.exec", "field": "deny",
+           "value": ["rm\\s+-rf\\s+/(\\s|$)"], "reason": "drop the .env grep block"}
+_err = registry.delta_error(_danger)
+check("H1 a whole-list `value` is refused with the reason", bool(_err)
+      and "add" in _err and "remove" in _err, _err)
+
+_bogus = {"target": "shell.exec", "field": "deny",
+          "remove": ["THIS RULE DOES NOT EXIST"], "reason": "x"}
+check("H2 a `remove` naming a rule that is not live is refused",
+      "not in the live" in registry.delta_error(_bogus), registry.delta_error(_bogus))
+
+_named = {"target": "shell.exec", "field": "deny",
+          "remove": ["grep[^\\n]*\\.env"], "reason": "one named removal"}
+check("H3 a named removal validates", registry.delta_error(_named) == "", registry.delta_error(_named))
+_applied = registry.apply_delta(_named)
+_live_deny = (registry.load_config(reload=True).get("tools", {})
+              .get("shell.exec", {}) or {}).get("deny") or []
+check("H4 it removes ONLY the named rule and keeps the token guards",
+      _applied.get("ok") is True and "grep[^\\n]*\\.env" not in _live_deny
+      and "LONGRUN_TOKEN" in _live_deny
+      and any("environ" in p for p in _live_deny), _live_deny)
+
+from longrun.tools import approvals as _appr_v  # noqa: E402
+_view = _appr_v._improvement_view({
+    "id": "legacy-danger", "scope": "registry", "status": "pending",
+    "content": "replace the deny list", "reason": "x", "delta": _danger})
+check("H5 the inbox BLOCKS a pending proposal whose delta cannot apply",
+      _view.get("can_approve") is False and "cannot be applied" in (_view.get("blocked_reason") or ""),
+      (_view.get("can_approve"), _view.get("blocked_reason")))
+check("H6 the inbox carries the delta and the full text for the decision",
+      _view.get("delta") == _danger and _view.get("detail") == "replace the deny list")
 
 print("---")
 passed = sum(results)

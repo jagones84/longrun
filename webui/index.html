@@ -12434,9 +12434,25 @@ async function loadApprovals() {
       a.reason ? "reason: " + a.reason : "",
       a.draft && a.summary ? "draft: " + a.draft : ""
     ].filter(Boolean).join(" · ");
+    // 2026-11-17: an improvement that CHANGES the registry must say what changes.
+    // Before, the row showed a 200-character headline of a whole-list replacement,
+    // so the only way to know what a click would do was to read the proposal file.
+    const dl = a.delta || {};
+    const dlTxt = dl && dl.field
+      ? "change: " + dl.target + "." + dl.field
+        + ((dl.add || []).length ? " · add " + dl.add.join(", ") : "")
+        + ((dl.remove || []).length ? " · remove " + dl.remove.join(", ") : "")
+        + (dl.value !== undefined ? " · value " + JSON.stringify(dl.value) : "")
+      : "";
+    const more = (a.detail && a.detail.length > String(a.summary || "").length)
+      ? '<details style="font-size:11px;color:var(--dim);margin-top:4px"><summary style="cursor:pointer">full text</summary>' +
+        '<div style="white-space:pre-wrap;word-break:break-all;margin-top:4px">' + esc(a.detail) + "</div></details>"
+      : "";
     d.innerHTML = `<div style="font-size:11px;color:var(--dim)">${esc(kind)} · ${esc(a.tool)} · ${esc(a.id)}</div>
       <div style="margin:4px 0;white-space:pre-wrap;word-break:break-all">${esc(what)}</div>` +
-      (extra ? `<div style="font-size:11px;color:var(--dim);white-space:pre-wrap;word-break:break-all">${esc(extra)}</div>` : "");
+      (dlTxt ? `<div style="margin:4px 0;font-size:11px;color:var(--warn,#b26a00);white-space:pre-wrap;word-break:break-all">${esc(dlTxt)}</div>` : "") +
+      (extra ? `<div style="font-size:11px;color:var(--dim);white-space:pre-wrap;word-break:break-all">${esc(extra)}</div>` : "") +
+      more;
     const row = document.createElement("div"); row.style.cssText = "display:flex;gap:6px";
     // A plan/spec document is decided like a tool gate: approve releases the write
     // lock, "deny" IS the reject (the file stays on disk). Same inbox, honest verb.

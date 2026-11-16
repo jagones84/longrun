@@ -59,8 +59,8 @@ base_digest = digest(BASE)
 check("A1 the registry base file exists", bool(base_digest), BASE)
 
 DELTA = {"target": "shell.exec", "field": "auto_approve",
-         "value": ["^optimizer-probe(\\s|$)"], "reason": "repeated friction on a probe"}
-_PROBE = DELTA["value"][0]
+         "add": ["^optimizer-probe(\\s|$)"], "reason": "repeated friction on a probe"}
+_PROBE = DELTA["add"][0]
 
 # ---- B) a DENIED proposal leaves the registry byte-identical ---------------
 p1 = improve.propose("registry", "shell.auto_approve += echo", reason="t",
@@ -88,8 +88,10 @@ check("C3 the overlay has exactly one changed row", list(tools_diff.keys()) == [
 row = tools_diff.get("shell.exec") or {}
 check("C4 that row changes exactly one field", list(row.keys()) == ["auto_approve"],
       list(row.keys()))
-check("C5 the new value is the delta's value",
-      row.get("auto_approve") == DELTA["value"], row.get("auto_approve"))
+check("C5 the probe is ADDED and the shipped patterns are retained",
+      _PROBE in (row.get("auto_approve") or [])
+      and "^ls(\\s|$)" in (row.get("auto_approve") or []),
+      row.get("auto_approve"))
 
 # ---- D) the merged live config reflects the change -------------------------
 reg = registry.load_config(reload=True)

@@ -27,6 +27,19 @@ All notable changes to Longrun are documented here. The format follows
   `v763` F1–F2.)
 
 ### Fixed
+- **A registry improvement can no longer delete rules it never named.** Operator: *"is this safe? what
+  happens if I approve?"* on two `improve.registry` proposals. The optimizer's model rewrote
+  `shell.exec.deny` from memory and proposed a one-entry list: approving it would have replaced the whole
+  hard-deny set (`LONGRUN_TOKEN`, `/proc/*/environ`, mkfs, dd, the `.env` grep guard…) with a single `rm`
+  pattern — and two proposals approved on 2026-11-15 had already done exactly that, leaving the live deny
+  list with one rule. A list field is now changed with **`add`/`remove`** only (`registry.delta_error`);
+  `apply_delta` computes `live - remove + add`, and a `remove` naming a rule that is not live is refused.
+  The optimizer prompt now carries the LIVE row(s) it may edit. The inbox shows the actual delta and the
+  full proposal text, and a proposal whose delta cannot apply is rendered **blocked** (approve disabled,
+  reason shown) instead of failing at click time. The live `shell.exec.deny` was restored to its shipped
+  11 rules through the built-in reset (`POST /api/tools {"tool":"shell.exec","reset":["deny"]}`), audited
+  as `policy.changed`. (Locked by `v1013` H1–H6, `v1015` C5, `v1017` D5.)
+
 - **Plan mode gates CAPABILITIES, not a list somebody remembered.** Operator: *"the approval of plan didn't
   block the agent to do it … so spec is blocked from implementation but the plan is not blocked?
   asymmetry fix"*. Measured in session `774ac9424d2b`: `fs.write` refused twice — and the SAME turn had

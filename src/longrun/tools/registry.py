@@ -1872,12 +1872,37 @@ REGISTRY_LIST_FIELDS = ("auto_approve", "roots", "deny", "allow_hosts", "always_
 _APPROVAL_VALUES = ("auto", "required", "denied")
 
 
+def _effective_list(target, field):
+    """The LIVE list a registry delta edits, resolved through its namespace.
+
+    `shell.exec` inherits `deny`/`auto_approve` from the `shell` namespace, so
+    reading `tools[target][field]` alone would see nothing and a delta would be
+    validated against an empty list.
+    """
+    try:
+        spec = tool_spec(target) or {}
+        val = spec.get(field)
+        if not isinstance(val, list):
+            live = (load_config().get("tools") or {}).get(target) or {}
+            val = live.get(field)
+        return [str(x) for x in (val or []) if isinstance(x, str)]
+    except Exception:  # noqa: BLE001 — the validator must answer, never crash
+        return []
+
+
 def delta_error(delta):
     """Why `delta` cannot be applied as a registry-row change ('' = valid).
 
     The single validator, shared by the optimizer (to skip an unusable proposal)
     and `apply_delta` (to refuse one at apply time) — so a proposal can never
     write a row the harness would not accept.
+
+    2026-11-17: a LIST field is changed with `add`/`remove`, never with a
+    whole-list `value`. Live evidence: the optimizer's model rewrote
+    `shell.exec.deny` from memory and proposed a one-entry list, which would have
+    deleted seven hard-deny rules (`LONGRUN_TOKEN`, `/proc/*/environ`, mkfs, dd…)
+    in a single click. `add`/`remove` make the intent auditable and a rule can
+    never disappear because the model forgot to copy it.
     """
     if not isinstance(delta, dict):
         return "delta is not a JSON object"
@@ -1902,8 +1927,21 @@ def delta_error(delta):
         if value not in _APPROVAL_VALUES:
             return "`approval` must be one of %s" % "|".join(_APPROVAL_VALUES)
     elif field in REGISTRY_LIST_FIELDS:
-        if not (isinstance(value, list) and all(isinstance(x, str) for x in value)):
-            return "`%s` must be a list of strings" % field
+        add, rem = delta.get("add"), delta.get("remove")
+        if value is not None and value != []:
+            return ("a list field is changed with `add`/`remove`, not `value` — a whole-list "
+                    "replacement can silently delete rules the proposal never named")
+        if add is None and rem is None:
+            return "a list change must carry `add` and/or `remove`"
+        for key, seq in (("add", add), ("remove", rem)):
+            if seq is not None and not (isinstance(seq, list)
+                                        and all(isinstance(x, str) for x in seq)):
+                return "`%s` must be a list of strings" % key
+        current = _effective_list(target, field)
+        missing = [str(x) for x in (rem or []) if str(x) not in current]
+        if missing:
+            return ("`remove` names %d rule(s) that are not in the live `%s`: %s"
+                    % (len(missing), field, ", ".join(missing[:3])))
     return ""
 
 
@@ -1911,8 +1949,10 @@ def apply_delta(delta):
     """Apply ONE approved registry-row change. Overlay-only, reversible.
 
     Writes the change into the sparse overlay (`save_config`), which
-    `load_config()` merges on top of `config/tools.yaml`. Returns
-    {"ok": True, "target", "field", "overlay"} or {"ok": False, "error"}.
+    `load_config()` merges on top of `config/tools.yaml`. A list field is
+    COMPUTED from the live value (`live - remove + add`), never taken as a
+    replacement, so an approved addition cannot drop the rules it did not name.
+    Returns {"ok": True, "target", "field", "value", "overlay"} or an error.
     """
     err = delta_error(delta)
     if err:
@@ -1924,11 +1964,21 @@ def apply_delta(delta):
     row = tools.get(target)
     if not isinstance(row, dict):
         row = {}
-    row[field] = delta.get("value")
+    if field in REGISTRY_LIST_FIELDS:
+        current = _effective_list(target, field)
+        rem = [str(x) for x in (delta.get("remove") or [])]
+        new = [x for x in current if x not in rem]
+        for x in (str(y) for y in (delta.get("add") or [])):
+            if x not in new:
+                new.append(x)
+        row[field] = new
+    else:
+        row[field] = delta.get("value")
     tools[target] = row
     save_config(cfg)
     load_config(reload=True)
-    return {"ok": True, "target": target, "field": field, "overlay": OVERLAY_YAML}
+    return {"ok": True, "target": target, "field": field,
+            "value": row.get(field), "overlay": OVERLAY_YAML}
 
 
 def forget_tool_policies(names):

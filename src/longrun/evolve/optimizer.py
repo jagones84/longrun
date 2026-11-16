@@ -139,6 +139,36 @@ def _extract_json(text):
     return None, False
 
 
+def _policy_snapshot(policy_hits):
+    """The LIVE values of the rows the evidence names, for the model to copy.
+
+    2026-11-17: the prompt used to describe the delta shape without showing a
+    single current value, so the model rewrote `shell.exec.deny` from memory and
+    proposed a one-entry list — a click away from deleting seven hard-deny rules.
+    A model may only `add`/`remove` entries it was shown (the validator refuses
+    a `remove` that is not in the live list, and refuses a whole-list `value`).
+    """
+    names = sorted((policy_hits or {}).get("firings") or {}) or ["shell.exec"]
+    try:
+        from longrun.tools import registry as _reg
+    except Exception:  # noqa: BLE001 — no snapshot is better than no prompt
+        return ""
+    rows = []
+    for name in names[:4]:
+        try:
+            spec = _reg.tool_spec(name) or {}
+        except Exception:  # noqa: BLE001
+            continue
+        if not spec:
+            continue
+        rows.append("%s: approval=%s deny=%s always_ask=%s auto_approve=%s" % (
+            name, spec.get("approval"),
+            json.dumps(spec.get("deny") or []),
+            json.dumps(spec.get("always_ask") or []),
+            json.dumps(spec.get("auto_approve") or [])))
+    return "\n".join(rows)[:5000]
+
+
 def _build_analysis_prompt(trace, policy_hits, job_cost, feedback):
     """Build the optimizer's analysis prompt from session evidence.
 
@@ -180,20 +210,27 @@ def _build_analysis_prompt(trace, policy_hits, job_cost, feedback):
         if failed_agent:
             parts.append(f"A downstream agent that consumed this output failed: {failed_agent}")
 
+    snap = _policy_snapshot(policy_hits)
     prompt = (
         "You are a harness optimizer. Analyze this session trace and identify ONE "
         "concrete deficiency in the TOOL REGISTRY — a tool that failed, a gate that "
         "blocked a legitimate call, or a policy that created friction.\n\n"
         "Evidence:\n" + "\n".join(f"- {p}" for p in parts) + "\n\n"
+        "Current live policy of the row(s) the evidence names (the exact values; a "
+        "list is changed ONLY through add/remove, never rewritten from memory):\n"
+        + (snap or "(not available)") + "\n\n"
         "Reply with ONE JSON object and NOTHING else. Either:\n"
         '  {"skip": true, "reason": "..."}   — when no registry deficiency is evident\n'
         "or a delta naming one editable registry field:\n"
         '  {"target": "<tool row, e.g. shell.exec or the namespace shell>",\n'
         '   "field": "<one of: enabled, approval, auto_approve, roots, deny, '
         'allow_hosts, always_ask>",\n'
-        '   "value": <bool for enabled; "auto"|"required"|"denied" for approval; '
-        'a list of strings for the others>,\n'
-        '   "reason": "...", "confidence": "low"|"medium"|"high"}\n\n'
+        '   "value": <bool for enabled; "auto"|"required"|"denied" for approval>,\n'
+        '   "add": ["<exact NEW list entries>"],\n'
+        '   "remove": ["<exact EXISTING entries to delete, copied verbatim>"],\n'
+        '   "reason": "...", "confidence": "low"|"medium"|"high"}\n'
+        "For a list field use add/remove only; an entry you do not copy into `add` "
+        "is kept, so adding a rule can never delete another one.\n\n"
         "Only propose changes to the tool registry. Never propose changes to the "
         "agent loop, session management, or job dispatch."
     )

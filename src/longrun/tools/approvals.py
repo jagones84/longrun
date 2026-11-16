@@ -337,12 +337,29 @@ def _improvement_view(proposal):
         blocked = "this proposal has no draft to install — deny to clear it"
     elif scope == "matrix" and status == "pending" and not artifacts:
         blocked = "this Matrix proposal carries no artifact bundle — deny to clear it"
+    delta = (proposal or {}).get("delta") or {}
+    if scope == "registry" and status == "pending" and delta:
+        # 2026-11-17: an unusable registry delta must never be a live button. The
+        # owner validator is asked here too, so a proposal that would drop rules
+        # it never named (or names a rule that does not exist) is visibly blocked
+        # instead of failing — or damaging — at click time.
+        try:
+            from longrun.tools import registry as _reg_view
+            _derr = _reg_view.delta_error(delta)
+        except Exception:  # noqa: BLE001 — the inbox must render, never crash
+            _derr = ""
+        if _derr:
+            blocked = "this proposal cannot be applied: %s — deny it" % _derr
     return {
         "id": "imp:" + pid,
         "ts": proposal.get("ts"),
         "run_id": None,
         "tool": "improve.%s" % scope,
         "args": {"proposal": pid, "scope": scope},
+        "delta": delta,
+        # The full proposal text, so the operator can read what they decide on
+        # (the 200-char summary is a headline, not the whole case).
+        "detail": str(proposal.get("content") or "")[:4000],
         "summary": str(proposal.get("content") or "")[:200],
         "status": status,
         "reason": proposal.get("reason") or "",
