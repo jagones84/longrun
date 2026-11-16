@@ -10,7 +10,7 @@ Contract:
   A) Diagnostics is the FIRST Settings category.
   B) Info credits the handle only (`@jagones84` → github), values stay dynamic.
   C) The memory manager lives in Improvements, not in Rules.
-  D) Tools & approvals: the long FULL/exclusive/nucleus prose is a TOOLTIP; the
+  D) Tools & approvals: the long FULL/exclusive/nucleous prose is a TOOLTIP; the
      visible labels are short.
   E) Constructed Settings cards: no "Structured settings" heading, `help` is a
      tooltip, save + Automate share ONE row (`set-acts` / `.set-t`).
@@ -76,7 +76,7 @@ check("C2 opening Improvements loads it",
 check("C3 Rules no longer loads the memory panel", 'loadRules(); loadMemories();' not in UI)
 
 # ---- D. tools prose -> tooltip ----------------------------------------------
-check("D1 the FULL/exclusive/nucleus rules live in a title",
+check("D1 the FULL/exclusive/nucleous rules live in a title",
       'class="set-t" title="FULL = never ask for ordinary tools.' in UI)
 check("D2 they are no longer a visible paragraph",
       '<div class="remaining" style="margin-bottom:8px"><b>FULL</b>' not in UI)

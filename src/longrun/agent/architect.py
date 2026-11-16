@@ -10,7 +10,7 @@ substrate (Layer 2) of the Longrun harness:
   - Universal WebUI substrate automation (`webui.*`, `provider.*`, `mcp.*`,
     `skill.*`, `kb.*`): reading and updating any configurable section of the
     platform (settings forms, rules, routing, compaction) while strictly
-    enforcing safety boundaries (NEVER allowed to enable `allow_nucleus_write`
+    enforcing safety boundaries (NEVER allowed to enable `allow_nucleous_write`
     or `allow_matrix_promote` — those belong exclusively to the human operator).
   - Naming: every exclusive tool is exactly `namespace.tool` (two segments, one
     object namespace, one explicative verb: `agent.prompt_set`, `team.member_add`,
@@ -88,9 +88,9 @@ TEAM_ROLE_HEAD_CHARS = 300           # how much of a team ROLE.md the snapshot m
 
 # Safety boundary: keys that architect is strictly forbidden from mutating.
 FORBIDDEN_SAFETY_KEYS = frozenset({
-    "allow_nucleus_write",
+    "allow_nucleous_write",
     "allow_matrix_promote",
-    "approvals.allow_nucleus_write",
+    "approvals.allow_nucleous_write",
     "approvals.allow_matrix_promote",
 })
 
@@ -598,7 +598,7 @@ TOOL_SCHEMAS = {
         "_subtool": "rename",
     },
     # NO `session.list` here. Reading the session table is NOT a VEO privilege:
-    # the nucleus `sessions.list` already does it, better (query + limit + the
+    # the nucleous `sessions.list` already does it, better (query + limit + the
     # owning agent + RUNNING state). Two names for one read is a second truth —
     # the operator sees a duplicate tool and the model has to guess.
     "session.delete": {
@@ -646,7 +646,7 @@ TOOL_SCHEMAS = {
             "table, the team model policy, the subagent policy, the tool policy, the code index "
             "config and raw `config/*.yaml`. Emits live-sync SSE events. Object CRUD (providers, "
             "models, skills, MCP clients, knowledge notebooks/sources) has its OWN typed tools. "
-            "Strictly refuses the safety-gate keys (`allow_nucleus_write`, `allow_matrix_promote`)."
+            "Strictly refuses the safety-gate keys (`allow_nucleous_write`, `allow_matrix_promote`)."
         ),
         "type": "object",
         "properties": {
@@ -800,9 +800,9 @@ TOOL_SCHEMAS = {
     },
     # NO `kb.notebook_add` / `kb.source_add` here: creating a notebook and
     # attaching a source are ordinary knowledge operations that every agent can
-    # do through the nucleus `knowledge.create_notebook` / `knowledge.add_source`
+    # do through the nucleous `knowledge.create_notebook` / `knowledge.add_source`
     # (the same `kb.create_notebook` / `kb.add_sources` underneath). Only the
-    # verbs the nucleus tool genuinely LACKS stay exclusive: rename, delete,
+    # verbs the nucleous tool genuinely LACKS stay exclusive: rename, delete,
     # source removal and a full re-embed.
     "kb.notebook_rename": {
         "description": "kb.notebook_rename — Rename ONE knowledge notebook.",
@@ -2831,7 +2831,7 @@ def _contains_forbidden_safety_text(text):
     body = str(text or "")
     if not body:
         return None
-    for key in ("allow_nucleus_write", "allow_matrix_promote"):
+    for key in ("allow_nucleous_write", "allow_matrix_promote"):
         if key in body:
             return key
     return None
@@ -2846,7 +2846,7 @@ def _webui_configure(args):
             "ok": False,
             "error": (
                 "SAFETY_GUARD: architect is forbidden from modifying %r "
-                "(Nucleus write and Matrix promotion checkboxes may only be "
+                "(Nucleous write and Matrix promotion checkboxes may only be "
                 "changed manually by the human operator)." % hit
             ),
         }
@@ -2953,7 +2953,7 @@ def _webui_configure(args):
         name = args.get("file") or args.get("name")
         text = args.get("text") if args.get("text") is not None else args.get("content")
         try:
-            with matrix_guard.NUCLEUS_EXEC_LOCK:
+            with matrix_guard.NUCLEOUS_EXEC_LOCK:
                 res = configfiles.write_file(name, text)
         except ValueError as e:
             return {"ok": False, "error": str(e)}

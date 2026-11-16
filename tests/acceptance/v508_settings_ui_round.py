@@ -84,7 +84,7 @@ check("C2 namespaces are nested under one collapsible section per origin",
       "ORIGIN_SECTIONS" in TOOLS and 'class="tg-origin"' in TOOLS
       and "longrun:toolOrigins" in TOOLS, "")
 check("C3 the three origins are named",
-      '"nucleus", "Built-in"' in TOOLS and '"mcp", "MCP · external servers"' in TOOLS
+      '"nucleous", "Built-in"' in TOOLS and '"mcp", "MCP · external servers"' in TOOLS
       and '"matrix", "Matrix"' in TOOLS, "")
 
 # --- D: memory search actually searches --------------------------------------

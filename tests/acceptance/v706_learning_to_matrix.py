@@ -217,7 +217,7 @@ check("E4 the learned tool and skill are live", decision.get("ok")
       and os.path.isfile(os.path.join(MDOT, "skills", "learned-skill", "SKILL.md"))
       and not os.path.exists(os.path.join(_ROOT, "src", "longrun", "tools",
                                           "promoted", "learned.py")))
-check("E5 nothing was written into Nucleus", decision.get("ok")
+check("E5 nothing was written into Nucleous", decision.get("ok")
       and "learned" in matrix.discover_tools())
 check("E6 a second approval cannot re-apply a decided proposal",
       improve.decide(rec["id"], "approve").get("ok") is False)
@@ -258,7 +258,7 @@ check("G5 load_module refuses traversal",
       matrix.load_module("../../etc/passwd").get("ok") is False)
 ui = open(os.path.join(REPO, "webui", "index.html"), encoding="utf-8").read()
 check("G6 the panel explains what approving a Matrix bundle writes",
-      'p.scope === "matrix"' in ui and "nothing enters Nucleus" in ui)
+      'p.scope === "matrix"' in ui and "nothing enters Nucleous" in ui)
 appr = open(os.path.join(REPO, "src", "longrun", "tools", "approvals.py"),
             encoding="utf-8").read()
 check("G7 an artifact-less Matrix proposal is blocked in the inbox",

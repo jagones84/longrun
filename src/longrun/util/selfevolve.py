@@ -1946,8 +1946,8 @@ def forge_matrix(pattern, support=0, draft="", name="", description="",
           -> kept only when green; removed otherwise
 
     It never invents arguments: the caller supplies one argument object per step,
-    and every step still passes the harness's own approval policy. Nucleus is
-    untouched (`promote_to_nucleus` keeps its own checkbox).
+    and every step still passes the harness's own approval policy. Nucleous is
+    untouched (`promote_to_nucleous` keeps its own checkbox).
     """
     from longrun.core import matrix as mtx
     bnd = forge_bundle(pattern, support=support, draft=draft, name=name,

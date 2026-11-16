@@ -1,6 +1,6 @@
 """Matrix tool: toolcontract.audit.
 
-Read-only, deterministic audit of the ACTIVE Nucleus and Matrix tool registries.
+Read-only, deterministic audit of the ACTIVE Nucleous and Matrix tool registries.
 
 Design goals (defensive against harness refactors):
 
@@ -13,8 +13,8 @@ Design goals (defensive against harness refactors):
    ``schema``/``input_schema``/``parameters``, a ``function``-style wrapper and a
    JSON string are all accepted.
 3. Findings are ACCUMULATED, never overwritten. The previous version spread the
-   per-scope dict and then rebuilt the flat keys from ``result.get("nucleus",
-   {}).get(...)``; on ``scope=nucleus``/``scope=matrix`` those sub-dicts do not
+   per-scope dict and then rebuilt the flat keys from ``result.get("nucleous",
+   {}).get(...)``; on ``scope=nucleous``/``scope=matrix`` those sub-dicts do not
    exist, so every finding was silently replaced by ``[]`` and a broken registry
    was reported ``ok: True``. That is the bug this rewrite fixes.
 4. A crash is distinguishable from an invalid argument, and neither is
@@ -39,7 +39,7 @@ FINDING_KEYS = (
     "warnings",
 )
 
-VALID_SCOPES = ("all", "nucleus", "matrix")
+VALID_SCOPES = ("all", "nucleous", "matrix")
 
 # Keys under which a runtime wrapper may carry the real JSON schema.
 SCHEMA_KEYS = ("schema", "input_schema", "inputSchema", "parameters", "parameter_schema", "args_schema")
@@ -280,23 +280,23 @@ def _audit_registry(mapping):
 def _load_runtime():
     """Load both registries independently so one failure cannot hide the other."""
     env = {
-        "nucleus_kind": None,
+        "nucleous_kind": None,
         "matrix_kind": None,
         "hotload": "skipped",
         "errors": [],
     }
-    nucleus = {}
+    nucleous = {}
     matrix = {}
 
     try:
         from longrun.tools import registry
-        nucleus = getattr(registry, "TOOL_SCHEMAS", None)
-        if nucleus is None:
-            env["errors"].append("nucleus: registry.TOOL_SCHEMAS missing")
-            nucleus = {}
-        env["nucleus_kind"] = type(nucleus).__name__
+        nucleous = getattr(registry, "TOOL_SCHEMAS", None)
+        if nucleous is None:
+            env["errors"].append("nucleous: registry.TOOL_SCHEMAS missing")
+            nucleous = {}
+        env["nucleous_kind"] = type(nucleous).__name__
     except Exception as exc:  # noqa: BLE001
-        env["errors"].append("nucleus: %s: %s" % (type(exc).__name__, exc))
+        env["errors"].append("nucleous: %s: %s" % (type(exc).__name__, exc))
 
     try:
         from longrun.core.matrix import discover_tools, hotload
@@ -312,7 +312,7 @@ def _load_runtime():
     except Exception as exc:  # noqa: BLE001
         env["errors"].append("matrix: %s: %s" % (type(exc).__name__, exc))
 
-    return nucleus, matrix, env
+    return nucleous, matrix, env
 
 
 def _as_bool(value):
@@ -347,7 +347,7 @@ def _select(parts, scope):
 def audit(args=None, run_id=None, subtool=None):
     """Audit the active tool contracts.
 
-    ``scope`` selects ``all``, ``nucleus`` or ``matrix``. Malformed contracts,
+    ``scope`` selects ``all``, ``nucleous`` or ``matrix``. Malformed contracts,
     missing required properties and namespace/subtool disagreements are always
     fatal; ``strict`` additionally makes ambiguous identical subtool contracts
     fatal. ``detail=False`` returns counts only (same verdict, smaller payload).
@@ -367,13 +367,13 @@ def audit(args=None, run_id=None, subtool=None):
         strict = _as_bool(args.get("strict", False))
         detail = _as_bool(args.get("detail", True))
 
-        nucleus_map, matrix_map, env = _load_runtime()
+        nucleous_map, matrix_map, env = _load_runtime()
         parts = {
-            "nucleus": _audit_registry(nucleus_map),
+            "nucleous": _audit_registry(nucleous_map),
             "matrix": _audit_registry(matrix_map),
         }
 
-        for label, mapping in (("nucleus", nucleus_map), ("matrix", matrix_map)):
+        for label, mapping in (("nucleous", nucleous_map), ("matrix", matrix_map)):
             if not hasattr(mapping, "items") or not isinstance(_as_mapping(mapping), dict):
                 parts[label]["warnings"].append({
                     "tool": "*",
@@ -402,18 +402,18 @@ def audit(args=None, run_id=None, subtool=None):
             "matrix_tools": sorted(parts["matrix"]["tools"]),
             "namespaces": sorted({name.split(".", 1)[0] for name in tools}),
             "registry": env,
-            "nucleus": {key: parts["nucleus"][key] for key in FINDING_KEYS},
+            "nucleous": {key: parts["nucleous"][key] for key in FINDING_KEYS},
             "matrix": {key: parts["matrix"][key] for key in FINDING_KEYS},
         }
         for key in ("total", "tools", "entries", "aliases_skipped"):
-            result["nucleus"][key] = parts["nucleus"][key]
+            result["nucleous"][key] = parts["nucleous"][key]
             result["matrix"][key] = parts["matrix"][key]
 
         if not detail:
             # detail=False must actually shrink the payload: the per-registry
             # sub-dicts would otherwise re-ship every finding and defeat the
             # flag (a ~6 KB answer for a counts-only request).
-            for label in ("nucleus", "matrix"):
+            for label in ("nucleous", "matrix"):
                 part = result[label]
                 for key in FINDING_KEYS:
                     part[key] = len(part[key] or [])
@@ -453,7 +453,7 @@ def execute(args, run_id=None, subtool=None):
 
 TOOL_SCHEMA = {
     "description": (
-        "Audit the active Nucleus and Matrix tool contracts for malformed schemas, "
+        "Audit the active Nucleous and Matrix tool contracts for malformed schemas, "
         "required properties that do not exist, namespace/subtool disagreements and "
         "ambiguous identical subtool contracts. Read-only and deterministic."
     ),

@@ -71,7 +71,7 @@ check("A3 job.* is 'coordinator', not 'exclusive'",
 check("A4 writes stay 'architect'",
       _acc["agent.delete"] == "architect" and _acc["provider.remove"] == "architect"
       and _acc["mcp.upsert"] == "architect", _acc)
-check("A5 a nucleus tool has NO access class (policy is its gate)",
+check("A5 a nucleous tool has NO access class (policy is its gate)",
       _acc["fs.write"] is None and _acc["self.info"] is None, _acc)
 check("A6 the class is DERIVED, not a second list",
       {n for n in _acc if _acc_fn(n) == "everyone"} == set(LRA.READ_ONLY_EXCLUSIVE), _acc)
@@ -96,9 +96,9 @@ check("B4 every 'exclusive' row is either 'everyone' (read-only) or 'architect'"
       all(r.get("access") in ("everyone", "architect")
           for r in CAT.values() if r.get("origin") == "exclusive")
       and CAT.get("agent.delete", {}).get("access") == "architect", "")
-check("B5 MCP / Matrix / nucleus rows carry no access class",
+check("B5 MCP / Matrix / nucleous rows carry no access class",
       all(r.get("access") is None for r in CAT.values()
-          if r.get("origin") in ("mcp", "matrix", "nucleus")), "")
+          if r.get("origin") in ("mcp", "matrix", "nucleous")), "")
 
 # ---------------- C: the gate and the class agree, behaviourally -------------
 SID = "v949-ungranted"

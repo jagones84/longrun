@@ -25,7 +25,7 @@ Locks:
        update the substrate (`agents.json`, `teams.json`,
        `ROLE.md`, dedicated workspace folder) and emit live-sync SSE events.
   D  Safety boundary & WebUI automation:
-     - `webui.configure` refuses `allow_nucleus_write` and
+     - `webui.configure` refuses `allow_nucleous_write` and
        `allow_matrix_promote` (operator-only safety checkboxes);
      - Models panel offers `architectModel` (`roles.architect.model` + `@chat`);
      - `makeAutomateWidget` and Orbit `lraAutoBtn` wire UI sections to
@@ -301,7 +301,7 @@ check("C5 substrate mutations publish live-sync SSE events (teams.updated, agent
 # --- D: Safety boundary & WebUI integration ----------------------------------
 bad_nuc = T.execute(
     "webui.configure",
-    {"target": "settings", "file": "tools.yaml", "values": {"allow_nucleus_write": True}},
+    {"target": "settings", "file": "tools.yaml", "values": {"allow_nucleous_write": True}},
     run_id="architect",
 )
 bad_prom = T.execute(
@@ -309,7 +309,7 @@ bad_prom = T.execute(
     {"target": "settings", "file": "tools.yaml", "values": {"approvals.allow_matrix_promote": True}},
     run_id="architect",
 )
-check("D1 safety guard deterministically blocks allow_nucleus_write and allow_matrix_promote",
+check("D1 safety guard deterministically blocks allow_nucleous_write and allow_matrix_promote",
       bad_nuc.get("ok") is False and "SAFETY_GUARD" in str(bad_nuc.get("error"))
       and bad_prom.get("ok") is False and "SAFETY_GUARD" in str(bad_prom.get("error")),
       (bad_nuc, bad_prom))
@@ -489,7 +489,7 @@ check("F4 the section states the hard rules: reserved `action`, dual permission,
       "`action` is RESERVED" in sys_text
       and "never send it" in sys_text
       and "Dual permission" in sys_text
-      and "allow_nucleus_write" in sys_text and "allow_matrix_promote" in sys_text
+      and "allow_nucleous_write" in sys_text and "allow_matrix_promote" in sys_text
       and "reset before and after every automation turn" in sys_text)
 
 # --- G: the permanent session is ALWAYS pinned, above everything -------------

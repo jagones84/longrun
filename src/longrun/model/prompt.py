@@ -493,7 +493,7 @@ def _provider_architect(sess, ws, ctx):
         "in the global registry AND the calling session is `architect*` or carries "
         "`allow_architect`. Both halves are checked outside you \u2014 do not try to "
         "grant yourself access.\n"
-        "- REFUSED, always: `allow_nucleus_write` / `allow_matrix_promote` (the human "
+        "- REFUSED, always: `allow_nucleous_write` / `allow_matrix_promote` (the human "
         "operator alone owns those checkboxes), any change to your own exclusive "
         "tool policy, and any edit of `src/longrun` or the self-improvement policy.\n"
         "- Nothing is remembered between runs: your transcript is reset before and "

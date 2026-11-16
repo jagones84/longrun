@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""v506 — Live Matrix disable/enable toggle (pure Nucleus mode) & universal promote_to_nucleus across all src/Matrix and .Matrix artifacts."""
+"""v506 — Live Matrix disable/enable toggle (pure Nucleous mode) & universal promote_to_nucleous across all src/Matrix and .Matrix artifacts."""
 import json
 import os
 import sys
@@ -32,7 +32,7 @@ with tempfile.TemporaryDirectory() as tmp:
         os.makedirs(os.path.join(tmp, "webui", "assets"), exist_ok=True)
         nuc_html = os.path.join(tmp, "webui", "index.html")
         with open(nuc_html, "w", encoding="utf-8") as f:
-            f.write('<!doctype html><html><body><div id="app">nucleus</div></body></html>')
+            f.write('<!doctype html><html><body><div id="app">nucleous</div></body></html>')
 
         # Populate src/Matrix and .Matrix with tool, hook, rule, skill, shadow webui, plugins.js
         with open(os.path.join(tmp, "src", "Matrix", "tools", "live_probe.py"), "w", encoding="utf-8") as f:
@@ -53,7 +53,7 @@ with tempfile.TemporaryDirectory() as tmp:
             f.write("window.__MTX_PLUG = 1;\n")
         matrix.hotload(tmp)
 
-        # A: Disable Matrix live via tools.execute("matrix", {"action": "disable"}) -> only Nucleus remains active
+        # A: Disable Matrix live via tools.execute("matrix", {"action": "disable"}) -> only Nucleous remains active
         dis_res = tools.execute("matrix", {"action": "disable"})
         skills.list_skills(reload=True)
         check("A disabling Matrix live turns off all src/Matrix and .Matrix effects (tools, hooks, rules, skills, webui)",
@@ -79,7 +79,7 @@ with tempfile.TemporaryDirectory() as tmp:
               and any(s.get("name") == "mtx_skill" for s in skills.list_skills(reload=True))
               and "window.__MTX_PLUG" in matrix.webui_plugins_js(tmp))
 
-        # C: Universal promote_to_nucleus works for module, skill, rule, and webui
+        # C: Universal promote_to_nucleous works for module, skill, rule, and webui
         orig_load = registry.load_config
         cfg_cb = json.loads(json.dumps(orig_load()))
         cfg_cb.setdefault("approvals", {})["allow_matrix_promote"] = True
@@ -95,16 +95,16 @@ with tempfile.TemporaryDirectory() as tmp:
             matrix.run_test("verify_all.py", code="from Matrix.util import math_ext\nassert math_ext.triple(3) == 9\n",
                             target=tgt, repo_root=tmp)
 
-        p_mod = matrix.promote_to_nucleus("module", "util/math_ext", repo_root=tmp)
-        p_sk = matrix.promote_to_nucleus("skill", "mtx_skill", repo_root=tmp)
-        p_rul = matrix.promote_to_nucleus("rule", "20-style.md", repo_root=tmp)
-        p_wui = matrix.promote_to_nucleus("webui", "plugins.js", repo_root=tmp)
+        p_mod = matrix.promote_to_nucleous("module", "util/math_ext", repo_root=tmp)
+        p_sk = matrix.promote_to_nucleous("skill", "mtx_skill", repo_root=tmp)
+        p_rul = matrix.promote_to_nucleous("rule", "20-style.md", repo_root=tmp)
+        p_wui = matrix.promote_to_nucleous("webui", "plugins.js", repo_root=tmp)
         registry.load_config = orig_load
 
         from longrun.util import paths as _paths
         _promoted_rule = os.path.join(_paths.workspace_state_dir(tmp), "prompt.d", "20-style.md")
 
-        check("C promote_to_nucleus supports module, skill, rule, and webui (moves to Nucleus and deletes from Matrix)",
+        check("C promote_to_nucleous supports module, skill, rule, and webui (moves to Nucleous and deletes from Matrix)",
               p_mod.get("ok") is True and not os.path.exists(mod_file)
               and os.path.isfile(os.path.join(tmp, "src", "longrun", "util", "math_ext.py"))
               and p_sk.get("ok") is True and not os.path.exists(sk_dir)
@@ -120,11 +120,11 @@ with tempfile.TemporaryDirectory() as tmp:
             html = f.read()
         with open(os.path.join(REPO, "README.md"), encoding="utf-8") as f:
             readme = f.read()
-        check("D WebUI renders #apMatrixEnabled toggle and README documents Nucleus vs. Matrix self-evolution",
+        check("D WebUI renders #apMatrixEnabled toggle and README documents Nucleous vs. Matrix self-evolution",
               'id="apMatrixEnabled"' in html
               and "matrix_enabled" in html
               and "src/Matrix" in readme
-              and "promote_to_nucleus" in readme)
+              and "promote_to_nucleous" in readme)
     finally:
         os.environ.pop("LONGRUN_MATRIX_SRC", None)
         os.environ.pop("LONGRUN_MATRIX_DOT", None)

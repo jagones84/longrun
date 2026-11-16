@@ -156,7 +156,7 @@ _AUTOMATE_PROMPTS = {
         "You are `Architect` automating a structured WebUI Settings section. "
         "Inspect with `webui.inspect` (`section:'settings'`) and apply validated "
         "changes with `webui.configure` (`target:'settings'`). Never touch "
-        "safety checkboxes (`allow_nucleus_write`, `allow_matrix_promote`)."
+        "safety checkboxes (`allow_nucleous_write`, `allow_matrix_promote`)."
     ),
     "subagents": (
         "You are `Architect` automating the Settings ▸ Subagents panel. Inspect with "
@@ -204,7 +204,7 @@ _AUTOMATE_PROMPTS = {
         "You are `Architect` editing a raw `config/*.yaml` file through the Config-files panel. "
         "Inspect with `webui.inspect` (`section:'all'`) and write with "
         "`webui.configure` (`target:'config'`, file + text). Never name the "
-        "operator-only safety switches (`allow_nucleus_write`, `allow_matrix_promote`)."
+        "operator-only safety switches (`allow_nucleous_write`, `allow_matrix_promote`)."
     ),
     "routing": (
         "You are `Architect` automating the model ROUTING table (which model backs each "

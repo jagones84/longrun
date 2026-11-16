@@ -73,7 +73,7 @@ All notable changes to Longrun are documented here. The format follows
   do not implement it;
   `PROPOSED`: write tools blocked, never claim the work is done; `stale`: the file is missing on
   disk. Live on the session in the report (`1adb50b4a5a9`): after `docs approve`, the turn `"act"`
-  read the spec, tried the edit, hit the Nucleus write guard and reported the exact patch and red
+  read the spec, tried the edit, hit the Nucleous write guard and reported the exact patch and red
   test instead of inventing a plan. (Locked by `v1052` N9a–N9f.)
 - **The document commands survive the exceptions of unattended use.** `/plan` and `/spec` write the
   session object a chat turn is also writing; with nobody watching, the later save could drop the
@@ -1455,7 +1455,7 @@ All notable changes to Longrun are documented here. The format follows
   overlay after its first save. Pinned by `v487` G1–G9 (including a deterministic
   180,720-token-equivalent transcript with all 240 markers reaching map parts) and
   `v491` A1–A6.
-- **Nucleus snapshot restores no longer blame concurrent Longrun writers.**
+- **Nucleous snapshot restores no longer blame concurrent Longrun writers.**
   Protected shell/Python operations already use snapshot → execute → restore; parallel
   sessions could make one operation attribute another's edits to its own command.
   A process-wide reentrant lock now covers guarded executions, Matrix promotion, and
@@ -1479,13 +1479,13 @@ All notable changes to Longrun are documented here. The format follows
   removed file from the index but a search did not, so the agent could quote
   `_idx_probe.md:1` after `rm`. Hits are now filtered by `os.path.isfile(path)` before
   ranking/fusion. Pinned by `v399` C4a/C4b (RED at the previous commit).
-- **The Nucleus write gate no longer loses a symlink race it cannot see.** The gate
+- **The Nucleous write gate no longer loses a symlink race it cannot see.** The gate
   judges paths AS WRITTEN before the command runs, so
-  `ln -sfn <nucleus>/tools /tmp/nl && echo probe > /tmp/nl/_p.txt` passed (at check
-  time the link did not exist) and wrote through it into the Nucleus. Creating a
-  symlink whose SOURCE resolves inside the Nucleus is now refused outright. Pinned by
+  `ln -sfn <nucleous>/tools /tmp/nl && echo probe > /tmp/nl/_p.txt` passed (at check
+  time the link did not exist) and wrote through it into the Nucleous. Creating a
+  symlink whose SOURCE resolves inside the Nucleous is now refused outright. Pinned by
   `v498` P.
-- **A file created inside the Nucleus is removed whatever its extension.** The
+- **A file created inside the Nucleous is removed whatever its extension.** The
   snapshot only tracked a fixed extension list, so a created `_probe.txt` survived
   every restore while `.py`/`.md` creations were removed. The snapshot now records an
   existence set for every file and keeps content bytes only for tracked extensions;
@@ -1590,7 +1590,7 @@ All notable changes to Longrun are documented here. The format follows
 - **Matrix artifacts can be uninstalled completely and live.** `matrix.remove`
   deletes the source file, bytecode, imported module, discovery cache, matching
   tool-policy entries and verification record, then hot-reloads with post-checks.
-  Multi-subtool modules must be removed by namespace; a promoted Nucleus copy is
+  Multi-subtool modules must be removed by namespace; a promoted Nucleous copy is
   reported but never touched.
 - **Matrix lifecycle descriptions now tell the model the real sequence.** Scaffold
   responses return `next_steps` (edit schema/description → hotload → test →
@@ -3536,9 +3536,9 @@ self-extending, fully editable one.
 
 ### Added
 - **Matrix — self-evolution, live (`src/Matrix` + its runtime dir).** A second, agent-editable
-  zone beside the protected Nucleus: `src/Matrix/<subpkg>/hooks.py` is loaded fail-open on the
+  zone beside the protected Nucleous: `src/Matrix/<subpkg>/hooks.py` is loaded fail-open on the
   next call, `matrix.enable`/`disable`/`status` toggle it without a restart, and
-  `promote_to_nucleus` moves a proven artifact into the core through verification,
+  `promote_to_nucleous` moves a proven artifact into the core through verification,
   checkpoint and commit gates.
 - **longrunAgent (the VEO)** — a permanent stateless system-automation agent that drives the
   WebUI substrate itself (model picker, editing sections, session grant), plus the Teamorg
@@ -3577,9 +3577,9 @@ self-extending, fully editable one.
 
 ### Fixed
 - **A no-progress child subjob is a failed dependency, not a done one.**
-- **Compaction policy and skill search stay coherent**; peer waits are correlated and Nucleus
+- **Compaction policy and skill search stay coherent**; peer waits are correlated and Nucleous
   writes serialised.
-- **The sandbox never runs on the host under an unknown backend name**, and the Nucleus guard
+- **The sandbox never runs on the host under an unknown backend name**, and the Nucleous guard
   is deny-only (the auto-revert is gone).
 
 ### Quality

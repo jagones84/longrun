@@ -22,7 +22,7 @@ plus PyYAML: no framework to learn, no lock-in to any provider.
 |---|---|
 | **Teams of agents** | Dispatch work to teammates' own sessions — in parallel — or run coordinated jobs with dependency waves; subagents take ordered subtasks with their outputs wired in as input. |
 | **Real tools, gated** | Shell, filesystem, git, web, browser, skills, memory, knowledge — every world-changing call passes an approval gate (auto / approve / deny), with sandboxed execution for the shell. |
-| **Self-evolution** | The Matrix zone lets the harness extend itself live (tools, hooks, skills, rules); proven artifacts graduate into the protected Nucleus through verification gates. |
+| **Self-evolution** | The Matrix zone lets the harness extend itself live (tools, hooks, skills, rules); proven artifacts graduate into the protected Nucleous through verification gates. |
 | **Memory that lasts** | Session memory, a per-workspace codebase index, a shared Knowledge Base, and one compaction policy for manual and automatic summarization. |
 | **Honest costs** | Per-session model costs as exact provider charges, token-rate estimates, or explicitly unpriced calls — cached input included, attempts included. |
 | **Instruction discipline** | Every closing report is one of two shapes — **RESULT** with the inputs actually opened, or **BLOCKED** naming the missing input — and the harness checks the mechanical part (a cited path that does not exist is reported back). Measured on GAIA level 1 — 12 attachment-free questions, one model for both arms, official scorer, two identical runs — it answered **15/24** against **10/24** for openclaw; the gap was answer format, not reasoning. |
@@ -36,7 +36,7 @@ plus PyYAML: no framework to learn, no lock-in to any provider.
 - [Quick start: Windows](#quick-start-windows)
 - [What Longrun does](#what-longrun-does)
 - [Architecture at a glance](#architecture-at-a-glance)
-- [Self-evolution: Nucleus vs. Matrix](#self-evolution-nucleus-vs-matrix)
+- [Self-evolution: Nucleous vs. Matrix](#self-evolution-nucleous-vs-matrix)
 - [Quick start: Linux (x86_64 and ARM64)](#quick-start-linux-x86_64-and-arm64)
 - [Model setup](#model-setup)
 - [CLI](#cli)
@@ -55,7 +55,7 @@ plus PyYAML: no framework to learn, no lock-in to any provider.
 - **Reproducible by construction.** The same battery that guards development
   (`tests/battery.sh`) pins every user-visible behavior; a fix lands with its test.
 - **Grows without forking.** Agents add Matrix tools live; maintainers promote
-  the proven ones into the Nucleus through gates, not rewrites.
+  the proven ones into the Nucleous through gates, not rewrites.
 - **Honest about money.** Costs are exact charges where providers report them
   and labeled estimates everywhere else — never a silent "$0.00".
 - **Instruction following is enforced where it is mechanical.** The closing output
@@ -134,18 +134,18 @@ behind it is `docs/diagrams/longrun-architecture.architecture.json`.
 
 ---
 
-## Self-evolution: Nucleus vs. Matrix
+## Self-evolution: Nucleous vs. Matrix
 
 Longrun can extend *itself* without a fork and without a restart. It splits into
 two zones:
 
-- **Nucleus** — `src/longrun/`: the protected core (14 subpackages). Stable, reviewed, and hard to break.
+- **Nucleous** — `src/longrun/`: the protected core (14 subpackages). Stable, reviewed, and hard to break.
 - **Matrix** — `src/Matrix/` (Python) plus its runtime directory under the
   [data home](#where-your-data-lives-not-in-the-repository) (`matrix/`; `matrix.status.matrix_dot`
   reports it, and the in-repo `.Matrix/` is only the legacy name).
   A live, agent-editable zone. Drop a file and it takes effect on the next call — no rebuild.
 
-Eleven Nucleus seams expose a **fail-open** hook point: `agent`, `core`, `integrations`, `interop`,
+Eleven Nucleous seams expose a **fail-open** hook point: `agent`, `core`, `integrations`, `interop`,
 `memory`, `model`, `orbit`, `orchestrate`, `plan`, `research`, `util`.
 Matrix code is loaded in an isolated `try/except`; a broken Matrix file is reported and skipped
 rather than crashing the harness.
@@ -167,26 +167,26 @@ Enable or disable the whole Matrix zone **live** — from the WebUI
 (*Settings ▸ Tools & approvals ▸ Enable live Matrix zone*) or from the agent:
 
 ```jsonc
-{"tool": "matrix.disable", "args": {}}   // only the Nucleus stays active
+{"tool": "matrix.disable", "args": {}}   // only the Nucleous stays active
 {"tool": "matrix.enable", "args": {}}    // Matrix hooks come back
 {"tool": "matrix.status", "args": {}}    // {"enabled": true, "hooks": {...}, "tools": [...]}
 ```
 
-### Promote to Nucleus, deterministically
+### Promote to Nucleous, deterministically
 
 When a Matrix artifact has proven itself, move it into the protected core with
-`promote_to_nucleus`. It is universal — any kind under `src/Matrix`/`.Matrix`:
+`promote_to_nucleous`. It is universal — any kind under `src/Matrix`/`.Matrix`:
 
 ```jsonc
 {"tool": "matrix.verify_target", "args": {"kind": "tool", "name": "live_probe"}}
-{"tool": "matrix.promote_to_nucleus", "args": {"kind": "tool", "name": "live_probe"}}
+{"tool": "matrix.promote_to_nucleous", "args": {"kind": "tool", "name": "live_probe"}}
 ```
 
 `kind` ∈ `tool`, `hook`, `module`, `skill`, `rule`, `webui`. Promotion runs four gates:
 a **verified test** must pass first (an unverified target is refused), a dedicated
 **checkbox** in *Settings ▸ Tools & approvals* must be on (even `full` approval mode does
 not authorize it), the workspace is **auto-checkpointed and auto-committed**, and only then
-is the artifact moved into the Nucleus and deleted from Matrix. Broken code returns the exact
+is the artifact moved into the Nucleous and deleted from Matrix. Broken code returns the exact
 `file:line` and offending source line for fast debugging.
 
 ---

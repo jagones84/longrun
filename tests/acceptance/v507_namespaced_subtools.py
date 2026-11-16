@@ -56,7 +56,7 @@ expected_subtools = {
     "web.search", "web.fetch", "diff.files", "diff.text",
     "python.run", "process.list", "process.kill", "glob.list",
     "matrix.status", "matrix.hotload", "matrix.enable", "matrix.disable",
-    "matrix.remove", "matrix.verify_target", "matrix.promote_to_nucleus",
+    "matrix.remove", "matrix.verify_target", "matrix.promote_to_nucleous",
 }
 missing = sorted(expected_subtools - set(cat_names))
 check("B all canonical base subtools (memory.recent, skills.list, matrix.status, etc.) are registered",

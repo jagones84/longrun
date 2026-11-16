@@ -13062,7 +13062,7 @@ async function loadImprovement() {
         Object.keys(d.matrix.active_hooks || {}).length + '/' + ((d.matrix.subpackages || []).length || 13) + ' subpackage hook(s) · ' +
         ((d.matrix.skills || []).length) + ' skill(s) · ' +
         ((d.matrix.git_commits || []).length) + ' recent commit(s) · ' +
-        'WebUI: ' + (d.matrix.webui_shadow_active ? 'shadow (src/Matrix/webui)' : (d.matrix.webui_plugins_active ? 'Nucleus + plugins.js' : 'Nucleus')) +
+        'WebUI: ' + (d.matrix.webui_shadow_active ? 'shadow (src/Matrix/webui)' : (d.matrix.webui_plugins_active ? 'Nucleous + plugins.js' : 'Nucleous')) +
         '</div>'
       ) : '');
   }
@@ -13168,10 +13168,10 @@ async function loadImprovement() {
     }
     if (p.scope === "matrix") {
       // The bridge: a learned Matrix bundle is applied by core.matrix ONLY on
-      // approval, then hot-loaded. Nucleus is a separate, dedicated act.
+      // approval, then hot-loaded. Nucleous is a separate, dedicated act.
       const note = document.createElement("div"); note.className = "remaining";
       note.textContent = p.artifacts
-        ? "approve writes " + p.artifacts.length + " verified artifact(s) inside Matrix and hot-loads them (nothing enters Nucleus)"
+        ? "approve writes " + p.artifacts.length + " verified artifact(s) inside Matrix and hot-loads them (nothing enters Nucleous)"
         : "no artifact bundle — deny it in the approval inbox to clear it";
       det.appendChild(note);
     }
@@ -14520,7 +14520,7 @@ function scheduleApprovalSave(el, mode) {
     const timeout = Number((el.querySelector("#apTimeout") || {}).value);
     const matrix = el.querySelector("#apMatrixPromote");
     const matrixEnabled = el.querySelector("#apMatrixEnabled");
-    const nucleusUnlock = el.querySelector("#apNucleusUnlock");
+    const nucleousUnlock = el.querySelector("#apNucleousUnlock");
     if (!Number.isInteger(timeout) || timeout < 10 || timeout > 86400) {
       if (msg && el._approvalRevision === revision) {
         msg.textContent = "not saved — timeout must be between 10 and 86400 seconds";
@@ -14533,7 +14533,7 @@ function scheduleApprovalSave(el, mode) {
       timeout_secs: timeout,
       allow_matrix_promote: !!(matrix || {}).checked,
       matrix_enabled: matrixEnabled ? !!matrixEnabled.checked : true,
-      allow_nucleus_write: !!(nucleusUnlock || {}).checked,
+      allow_nucleous_write: !!(nucleousUnlock || {}).checked,
       auto_implement_documents: !!((el.querySelector("#apAutoDocs") || {}).checked)
     };
     // 2026-11-17: the policy write needs the operator token (never in .env). Paste
@@ -14555,7 +14555,7 @@ function scheduleApprovalSave(el, mode) {
 
 /* JAG-536: uninstall ONE Matrix tool. `matrix.remove` deletes the namespace FILE
    (src/Matrix/tools/<namespace>.py) and hot-reloads, so every `<namespace>.*`
-   sub-tool goes with it — the confirm says so before asking. A promoted Nucleus
+   sub-tool goes with it — the confirm says so before asking. A promoted Nucleous
    copy is reported by the server, never deleted, and a built-in tool has no door
    here at all (the button only exists on origin=matrix rows). */
 async function uninstallMatrixTool(name, el) {
@@ -14564,7 +14564,7 @@ async function uninstallMatrixTool(name, el) {
     "Uninstall the Matrix tool " + name + "?\n\n" +
     "This deletes src/Matrix/tools/" + ns + ".py and hot-reloads, so EVERY " +
     ns + ".* sub-tool disappears (one file holds a whole namespace).\n" +
-    "A promoted Nucleus copy is never touched. This cannot be undone from here.");
+    "A promoted Nucleous copy is never touched. This cannot be undone from here.");
   if (!go) return;
   let r = {};
   try { r = await api("POST", "/api/matrix/remove", { kind: "tool", name: name }); }
@@ -14602,7 +14602,7 @@ function renderTools(el, d) {
     return `<button class="ghost" data-pol="${k}" data-val="${v}" aria-pressed="${on}" style="${c}">${extra || v}</button>`; };
   const policyCard =
     `<div class="card" style="margin-bottom:10px">
-       <div class="set-t" title="FULL = never ask for ordinary tools. Three things stay locked even on FULL, enforced in code: gated org/WebUI tools (the Tools panel's access badge on each row states who may call it — any session · team lead · Architect or a granted session), matrix.promote_to_nucleus (needs its own checkbox below), nucleus writes (needs the red DANGEROUS toggle). Otherwise ANY action that reaches outside the session workspace (file reads/writes, shell commands, git) needs approval.">🔓 Global approval policy</div>
+       <div class="set-t" title="FULL = never ask for ordinary tools. Three things stay locked even on FULL, enforced in code: gated org/WebUI tools (the Tools panel's access badge on each row states who may call it — any session · team lead · Architect or a granted session), matrix.promote_to_nucleous (needs its own checkbox below), nucleous writes (needs the red DANGEROUS toggle). Otherwise ANY action that reaches outside the session workspace (file reads/writes, shell commands, git) needs approval.">🔓 Global approval policy</div>
        <div style="display:flex;gap:6px;align-items:center;margin-top:6px">
          <span style="font-size:11px;color:var(--dim);min-width:126px">Approval mode</span>
          ${mk("mode", "normal", mode)} ${mk("mode", "full", mode, "FULL — never ask")}
@@ -14629,17 +14629,17 @@ function renderTools(el, d) {
          </label>
        </div>
        <div class="u-mt8" style="padding-top:6px;border-top:1px solid var(--bd);display:flex;flex-direction:column;gap:6px">
-         <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer" title="Live toggle: uncheck to disable all src/Matrix and .Matrix tools, hooks, rules, skills, and shadow WebUI, leaving only the immutable Nucleus active">
+         <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer" title="Live toggle: uncheck to disable all src/Matrix and .Matrix tools, hooks, rules, skills, and shadow WebUI, leaving only the immutable Nucleous active">
            <input id="apMatrixEnabled" type="checkbox"${pol.matrix_enabled !== false ? " checked" : ""}>
            <span><b>Enable live Matrix zone</b> <code>src/Matrix</code> <code>.Matrix</code></span>
          </label>
-         <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer" title="Exclusive authorization to promote tested Matrix code permanently into Legacy Nucleus (even FULL mode does not unlock this)">
+         <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer" title="Exclusive authorization to promote tested Matrix code permanently into Legacy Nucleous (even FULL mode does not unlock this)">
            <input id="apMatrixPromote" type="checkbox"${pol.allow_matrix_promote ? " checked" : ""}>
-           <span><b>Allow Matrix → Nucleus permanent promotion</b> <code>promote_to_nucleus</code></span>
+           <span><b>Allow Matrix → Nucleous permanent promotion</b> <code>promote_to_nucleous</code></span>
          </label>
-         <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;color:var(--err)" title="DANGEROUS — unlocks writes into the immutable Nucleus for every tool: the shell write-target gate, fs.write / fs.edit and the tamper-restore all stand down, so the agent can rewrite the harness mid-run. Off by default; never unlocked by FULL approval mode.">
-           <input id="apNucleusUnlock" type="checkbox"${pol.allow_nucleus_write ? " checked" : ""}>
-           <span><b>DANGEROUS — unlock Nucleus writes</b></span>
+         <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;color:var(--err)" title="DANGEROUS — unlocks writes into the immutable Nucleous for every tool: the shell write-target gate, fs.write / fs.edit and the tamper-restore all stand down, so the agent can rewrite the harness mid-run. Off by default; never unlocked by FULL approval mode.">
+           <input id="apNucleousUnlock" type="checkbox"${pol.allow_nucleous_write ? " checked" : ""}>
+           <span><b>DANGEROUS — unlock Nucleous writes</b></span>
          </label>
        </div>
      </div>`;
@@ -14759,7 +14759,7 @@ function renderTools(el, d) {
   // JAG-463: the data-* attributes must carry the RAW name — they used to reuse
   // the esc()'d text, so a name with & or a quote POSTed a mangled tool name.
   // JAG-511: every row states WHERE the tool comes from. `origin` is already
-  // emitted by registry.catalog() (nucleus | mcp | matrix) — the panel used to hide
+  // emitted by registry.catalog() (nucleous | mcp | matrix) — the panel used to hide
   // it, so a native harness tool and a third-party MCP tool looked identical.
   // v949 (operator: "tools nominati exclusive per architect ma non è vero — anche i
   // capi dei team li usano"): the row states WHO may call the tool. The class comes
@@ -14771,17 +14771,17 @@ function renderTools(el, d) {
     architect: '<span class="sk-badge sk-core" title="needs the Architect session or a session granted allow_architect — approvals.mode=full does NOT bypass this">Architect / grant</span>'
   };
   const ORIGIN_BADGE = {
-    nucleus: '<span class="sk-badge sk-core" title="ships with the harness (registry schemas)">built-in</span>',
+    nucleous: '<span class="sk-badge sk-core" title="ships with the harness (registry schemas)">built-in</span>',
     // A row without an `access` class is an older server: state the gate, not a guess.
     exclusive: '<span class="sk-badge sk-core" title="gated built-in tool — the access badge states who may call it">gated</span>',
     // v901: `job.*` is available to every COORDINATOR — an agent with at least one
     // direct report — over its own org subtree. No grant, no FULL bypass.
     delegation: '<span class="sk-badge sk-core" title="delegation tool — any agent with at least one direct report may use it on its own org subtree (no Teamorg grant)">delegation</span>',
     mcp: '<span class="sk-badge sk-mcp" title="discovered from a configured MCP server">MCP</span>',
-    matrix: '<span class="sk-badge sk-matrix" title="Matrix zone — editable, outside the Nucleus">matrix</span>'
+    matrix: '<span class="sk-badge sk-matrix" title="Matrix zone — editable, outside the Nucleous">matrix</span>'
   };
   const originBadge = t => ACCESS_BADGE[String(t.access || "")]
-    || ORIGIN_BADGE[String(t.origin || "nucleus")] || ORIGIN_BADGE.nucleus;
+    || ORIGIN_BADGE[String(t.origin || "nucleous")] || ORIGIN_BADGE.nucleous;
   const toolRow = t => {
     const on = t.enabled !== false;
     const ap = t.approval || "auto";
@@ -14831,9 +14831,9 @@ function renderTools(el, d) {
   const _originKey = g => {
     const list = groups.get(g) || [];
     const counts = {};
-    list.forEach(t => { const o = String(t.origin || "nucleus"); counts[o] = (counts[o] || 0) + 1; });
+    list.forEach(t => { const o = String(t.origin || "nucleous"); counts[o] = (counts[o] || 0) + 1; });
     const best = Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0];
-    return best === "delegation" ? "delegation" : (best === "exclusive" ? "exclusive" : (best === "mcp" ? "mcp" : (best === "matrix" ? "matrix" : "nucleus")));
+    return best === "delegation" ? "delegation" : (best === "exclusive" ? "exclusive" : (best === "mcp" ? "mcp" : (best === "matrix" ? "matrix" : "nucleous")));
   };
   const nsTree = names => names.map(g => {
     const list = groups.get(g);
@@ -14862,15 +14862,15 @@ function renderTools(el, d) {
   try { _openO = JSON.parse(localStorage.getItem("longrun:toolOrigins") || "{}") || {}; }
   catch (_e) { _openO = {}; }
   const ORIGIN_SECTIONS = [
-    ["nucleus", "Built-in", "shipped with the harness — the registry's own tool schemas"],
+    ["nucleous", "Built-in", "shipped with the harness — the registry's own tool schemas"],
     ["exclusive", "Built-in · gated", "org and WebUI automation — the badge on each row states who may call it: any session · team lead · Architect or a granted session"],
     ["delegation", "Team jobs · coordinators", "job.* — any agent with at least one direct report, over its own subtree; job.delete still asks first"],
     ["mcp", "MCP · external servers", "discovered from the configured MCP clients; opt-in"],
-    ["matrix", "Matrix", "live zone outside the Nucleus — promote to make it permanent"],
+    ["matrix", "Matrix", "live zone outside the Nucleous — promote to make it permanent"],
   ];
   const tree = ORIGIN_SECTIONS.map(([key, title, note]) => {
     const ns = gNames.filter(g => _originKey(g) === key);
-    const flats = _flat.filter(t => String(t.origin || "nucleus") === key);
+    const flats = _flat.filter(t => String(t.origin || "nucleous") === key);
     const count = ns.reduce((n, g) => n + (groups.get(g) || []).length, 0) + flats.length;
     if (!count) return "";
     const o = _openO[key] === undefined ? true : !!_openO[key];
@@ -15119,10 +15119,10 @@ function renderTools(el, d) {
     if (m) m.textContent = v ? "operator token saved in this browser"
                              : "policy changes disabled — paste the operator token below";
   };
-  const apNucUnlock = el.querySelector("#apNucleusUnlock");
+  const apNucUnlock = el.querySelector("#apNucleousUnlock");
   if (apNucUnlock) apNucUnlock.onchange = async () => {
     if (apNucUnlock.checked && !(await uiConfirm(
-      "Unlock writes into the Nucleus?",
+      "Unlock writes into the Nucleous?",
       "This unlocks src/longrun, webui, config, deploy, tests, docs, .longrun, "
       + "Global_rules.md / Project_rules.md, AGENTS.md.\n"
       + "The shell write-target gate, fs.write / fs.edit and the tamper-restore all stand down, "
@@ -15671,7 +15671,7 @@ function renderSkills() {
   // The folders under skills/<category>/ ship with the repo but are operator-added
   // content, not harness built-ins — they are "registered". Only the two machine
   // buckets (skills/created and .Matrix/skills) are generated, and Matrix is a
-  // SEPARATE zone because it lives outside the Nucleus.
+  // SEPARATE zone because it lives outside the Nucleous.
   const auto = matches.filter(s => s.auto && !s.matrix && !s.market);
   const matrix = matches.filter(s => s.matrix && !s.market);
   const local = matches.filter(s => s.local && !s.market);
@@ -15780,7 +15780,7 @@ function renderSkills() {
   };
   section("market", "From the marketplace", market, "installed from a catalogue (bundled, or a synced registry)", true);
   section("auto", "Self-generated", auto, "mined by the harness and promoted into skills/created/", true);
-  section("matrix", "Matrix", matrix, "live zone outside the Nucleus (.Matrix/skills) — promote to make it permanent", true);
+  section("matrix", "Matrix", matrix, "live zone outside the Nucleous (.Matrix/skills) — promote to make it permanent", true);
   section("local", "Uploaded", local, "installed from a zip by you", true);
   section("core", "Registered", core, "skill folders present on disk (skills/<category>/)", false);
 }

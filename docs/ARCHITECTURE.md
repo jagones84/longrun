@@ -371,7 +371,7 @@ the model a second code lane:
   `improved` contrast for Matrix, verifies every artifact SHA256 and delegates
   the write to `core.matrix.apply_learning`: whole-bundle validation (kinds,
   containment, hashes, `compile`), a checkpoint for code, atomic writes, then a
-  hot-load whose new errors roll the entire bundle back. Nothing enters Nucleus;
+  hot-load whose new errors roll the entire bundle back. Nothing enters Nucleous;
   graduation still needs `matrix.verify_target` + the dedicated
   `allow_matrix_promote` checkbox.
 - `matrix{action:'load_module'}` imports ONE arbitrary Matrix module on demand.
@@ -452,7 +452,7 @@ owners:
 | installed skill | approval, or `evolve` when `approvals.kinds.skills=auto` **and** the sealed held-out suite is installed | `selfevolve.promote` (draft) / `skills.install_skill_file` (harness bytes) | never clobbers an existing skill — it supersedes it (retire + swap); one ledger `promote` row per install |
 | forged Matrix tool (`learned_<slug>.run`) | `improve{forge}` on a draft, `improve{evolve}` (human-approved), or the background pass when `approvals.kinds.matrix=auto` | `selfevolve.forge_target` (the naming) → `selfevolve.forge_bundle` (validation + the exact bytes) → `selfevolve.forge_matrix` → `matrix.scaffold` → `matrix.run_test` → `matrix.verify_target` | executable, but only after its own generated test and the sha-bound contract gate pass; removed when they do not. `evolve` asks `forge_target` first, so a pattern forged in an earlier pass is `skipped`, never a clobber refusal |
 | learned Matrix bundle (proposal) | background `evolve` when the `matrix` policy is not `auto` | `improve.propose(scope="matrix", artifacts=[…sha256])` → `improve.decide` → `matrix.apply_learning` | the same bytes `forge_bundle` would write, held pending until the operator approves; approving writes + hot-loads, denying writes nothing |
-| Matrix artifact | approval | `core.matrix.apply_learning` | outside Nucleus, hash-bound |
+| Matrix artifact | approval | `core.matrix.apply_learning` | outside Nucleous, hash-bound |
 
 **The sealed judge is an install step, not a built-in** (2026-11-14). `promote`
 refuses every candidate until `data/heldout/manifest.json` exists, so on a fresh

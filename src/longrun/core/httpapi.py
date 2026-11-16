@@ -1192,7 +1192,7 @@ def set_compaction_policy(body):
     from longrun.model import compaction_config as _ccfg
     from longrun.tools import matrix_guard
     try:
-        with matrix_guard.NUCLEUS_EXEC_LOCK:
+        with matrix_guard.NUCLEOUS_EXEC_LOCK:
             _ccfg.save(trigger_pct=(body or {}).get("trigger_pct"),
                        target_pct=(body or {}).get("target_pct"),
                        keep_recent=(body or {}).get("keep_recent"))
@@ -2331,7 +2331,7 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 from longrun.core import matrix as _mtx_ui
                 _ui_path = _mtx_ui.webui_index_path(
-                    prefer_nucleus=(qs.get("webui") == "nucleus")
+                    prefer_nucleous=(qs.get("webui") == "nucleous")
                 )
             except Exception:  # noqa: BLE001
                 _ui_path = os.path.join(WEBUI_DIR, "index.html")

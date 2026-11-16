@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Matrix self-evolution engine — checkpoints, local Git, dynamic tools and prompt hooks.
 
-Implements the mutable Matrix half of the Nucleus/Matrix architecture:
+Implements the mutable Matrix half of the Nucleous/Matrix architecture:
   - 3 atomic checkpoint slots (`slot_1`, `slot_2`, `slot_3`) in `.Matrix/checkpoints/`
   - Local Git repository in `src/Matrix/.git` (zero token needed, capped at 20 commits)
   - Scratch test runner & isolated venv in `.Matrix/trash/` and `.Matrix/venv`
   - Fail-open dynamic tool discovery from `src/Matrix/tools/<name>.py`
   - Hardcoded Matrix system prompt instructions + `.Matrix/rules/*.md` addenda hook
-  - Optional shadow WebUI (`src/Matrix/webui/index.html`) with automatic fallback to Nucleus
+  - Optional shadow WebUI (`src/Matrix/webui/index.html`) with automatic fallback to Nucleous
 
 The harness restart (ticket + session continuation) lives in `core/restart.py`:
 it is a harness lifecycle action, not a Matrix artifact operation (2026-11-15).
@@ -83,9 +83,9 @@ def set_enabled(enabled):
     return {"ok": True, "enabled": val}
 
 MATRIX_SYSTEM_PROMPT = (
-    "## Matrix Self-Evolution (Nucleus vs. Matrix)\n"
-    "- **NUCLEUS (Immutable):** `src/longrun/**`, `webui/**`, `config/**`, `tests/**`, `Global_rules.md` / `Project_rules.md` "
-    "are hard-protected (`NUCLEUS_PROTECTED`). Import Nucleus functions freely; never edit them.\n"
+    "## Matrix Self-Evolution (Nucleous vs. Matrix)\n"
+    "- **NUCLEOUS (Immutable):** `src/longrun/**`, `webui/**`, `config/**`, `tests/**`, `Global_rules.md` / `Project_rules.md` "
+    "are hard-protected (`NUCLEOUS_PROTECTED`). Import Nucleous functions freely; never edit them.\n"
     "- **MATRIX — code in `src/Matrix/`, runtime in the matrix dir shown by `matrix.status.matrix_dot` "
     "(default `~/.longrun/matrix`; `.Matrix/` is only its legacy name):** the %d hook subpackages (%s) "
     "are live-hooked via `src/Matrix/<subpkg>/hooks.py` (fail-open `matrix.call_hook`); `tools`, `webui`, "
@@ -98,12 +98,12 @@ MATRIX_SYSTEM_PROMPT = (
     "or `matrix.scaffold` (`kind` in `tool|hook|module|skill|rule|webui`, `name=...`) to generate a compliant skeleton "
     "(e.g. `src/Matrix/plan/hooks.py`, `src/Matrix/util/<mod>.py`, `<matrix dir>/skills/<name>/SKILL.md`, `<matrix dir>/rules/<NN>-<name>.md`, `src/Matrix/webui/plugins.js`).\n"
     "- **Lifecycle & Promotion:** test in `<matrix dir>/trash/` via `matrix.test` (`target='<kind>:<name>'`), "
-    "check with `matrix.verify_target`, and promote to Nucleus with `matrix.promote_to_nucleus`. "
+    "check with `matrix.verify_target`, and promote to Nucleous with `matrix.promote_to_nucleous`. "
     "Uninstall completely and live with `matrix.remove` (`kind`, `name`): it deletes the file, "
     "bytecode, imported module, discovery cache, policy overlay entries and verification record, "
     "then hot-reloads. "
     "Use `matrix.checkpoint_save` (slots 1..3), `matrix.git_commit` (max 20), `matrix.hotload`, `matrix.enable`/`matrix.disable`. "
-    "When a change cannot be hotloaded (promoted Nucleus code), restart the HARNESS with "
+    "When a change cannot be hotloaded (promoted Nucleous code), restart the HARNESS with "
     "`harness.restart` — it continues this session; `restart` is not a Matrix action."
 ) % (len(HOOK_SUBPACKAGES), ", ".join("`%s`" % _s for _s in HOOK_SUBPACKAGES))
 
@@ -712,7 +712,7 @@ def prompt_section_text(sess=None, ws=None, repo_root=None):
     _root, msrc, mdot = _roots(repo_root)
     parts = [MATRIX_SYSTEM_PROMPT]
     if not is_enabled():
-        parts.append("[Matrix runtime is currently DISABLED — only immutable Nucleus is active. Call matrix{action:'enable'} to re-enable.]")
+        parts.append("[Matrix runtime is currently DISABLED — only immutable Nucleous is active. Call matrix{action:'enable'} to re-enable.]")
         return "\n\n".join(parts)
     rules_dir = os.path.join(mdot, "rules")
     if os.path.isdir(rules_dir):
@@ -826,14 +826,14 @@ def discover_hooks(repo_root=None):
 
 
 def call_hook(subpkg, fn_name, *args, default=None, repo_root=None, **kwargs):
-    """Invoke promoted Nucleus hook (`src/longrun/<subpkg>/matrix_promoted_hooks.py`) then Matrix hook (`src/Matrix/<subpkg>/hooks.py`).
+    """Invoke promoted Nucleous hook (`src/longrun/<subpkg>/matrix_promoted_hooks.py`) then Matrix hook (`src/Matrix/<subpkg>/hooks.py`).
 
     Returns `default` when no hook is present, returns `None`, or raises any exception.
     Records any runtime exception with exact line number in `_HOOK_CACHE[msrc]["runtime_errors"]`.
     """
     root, msrc, _mdot = _roots(repo_root)
     cur_default = default
-    # 1. Promoted Nucleus baseline hook (if previously promoted via promote_to_nucleus)
+    # 1. Promoted Nucleous baseline hook (if previously promoted via promote_to_nucleous)
     prom_hp = os.path.join(root, "src", "longrun", subpkg, "matrix_promoted_hooks.py")
     if os.path.isfile(prom_hp):
         try:
@@ -863,7 +863,7 @@ def call_hook(subpkg, fn_name, *args, default=None, repo_root=None, **kwargs):
     try:
         res = fn(*args, **kwargs)
         return cur_default if res is None else res
-    except _ISOLATED as e:  # noqa: BLE001 — fail-open back to Nucleus default
+    except _ISOLATED as e:  # noqa: BLE001 — fail-open back to Nucleous default
         err_info = _format_matrix_error(e, hp)
         with _LOCK:
             hc = _HOOK_CACHE.setdefault(msrc, {"stamps": {}, "modules": {}, "active": {},
@@ -1080,7 +1080,7 @@ def _hotload_locked(msrc):
                 errors.append({
                     "file": bn,
                     "tool": tname,
-                    "error": "collision with built-in Nucleus tool %r is forbidden" % tname,
+                    "error": "collision with built-in Nucleous tool %r is forbidden" % tname,
                 })
                 continue
             try:
@@ -1109,7 +1109,7 @@ def _hotload_locked(msrc):
                         errors.append({
                             "file": bn,
                             "tool": full_name,
-                            "error": "collision with built-in Nucleus tool %r is forbidden" % full_name,
+                            "error": "collision with built-in Nucleous tool %r is forbidden" % full_name,
                         })
                         continue
                     loaded[full_name] = entry
@@ -1187,7 +1187,7 @@ def execute_tool(name, args, run_id=None, repo_root=None):
     # Deny-only, never revert: in-process Matrix code runs with the same
     # filesystem rights as the harness, so a post-hoc whole-tree diff could
     # not attribute a change to this call and destroyed concurrent work.
-    # Literal Nucleus writes through fs/shell/python tools are still refused
+    # Literal Nucleous writes through fs/shell/python tools are still refused
     # at those boundaries; direct open() inside Matrix code is reviewed at
     # verify/promote time, not reverted at runtime.
     res = _invoke()
@@ -1204,12 +1204,12 @@ def execute_tool(name, args, run_id=None, repo_root=None):
 # ------------------------------- Seam 4: Shadow WebUI & Warm Restart ----------
 
 def webui_init(repo_root=None):
-    """Copy Nucleus `webui/index.html` into `src/Matrix/webui/index.html` (zero LLM tokens)."""
+    """Copy Nucleous `webui/index.html` into `src/Matrix/webui/index.html` (zero LLM tokens)."""
     matrix_guard.ensure_layout(repo_root)
     root, msrc, _mdot = _roots(repo_root)
     src_html = os.path.join(root, "webui", "index.html")
     if not os.path.isfile(src_html):
-        return {"ok": False, "error": "Nucleus webui/index.html not found"}
+        return {"ok": False, "error": "Nucleous webui/index.html not found"}
     dst_dir = os.path.join(msrc, "webui")
     os.makedirs(dst_dir, exist_ok=True)
     dst_html = os.path.join(dst_dir, "index.html")
@@ -1219,7 +1219,7 @@ def webui_init(repo_root=None):
 
 
 def webui_reset(repo_root=None):
-    """Remove the shadow `src/Matrix/webui/index.html` so HTTP `/` serves Nucleus WebUI."""
+    """Remove the shadow `src/Matrix/webui/index.html` so HTTP `/` serves Nucleous WebUI."""
     _root, msrc, _mdot = _roots(repo_root)
     dst_html = os.path.join(msrc, "webui", "index.html")
     removed = False
@@ -1233,11 +1233,11 @@ def webui_reset(repo_root=None):
     return {"ok": True, "removed": removed}
 
 
-def webui_index_path(repo_root=None, prefer_nucleus=False):
-    """Return the valid `index.html` path to serve on `/` (Matrix shadow if healthy, else Nucleus)."""
+def webui_index_path(repo_root=None, prefer_nucleous=False):
+    """Return the valid `index.html` path to serve on `/` (Matrix shadow if healthy, else Nucleous)."""
     root, msrc, _mdot = _roots(repo_root)
     nuc_html = os.path.join(root, "webui", "index.html")
-    if prefer_nucleus or not is_enabled():
+    if prefer_nucleous or not is_enabled():
         return nuc_html
     shadow_html = os.path.join(msrc, "webui", "index.html")
     if os.path.isfile(shadow_html):
@@ -1373,10 +1373,10 @@ def status(repo_root=None):
     }
 
 
-# ------ PT3: Deterministic Matrix -> Nucleus Promotion & Promoted Loader ------
+# ------ PT3: Deterministic Matrix -> Nucleous Promotion & Promoted Loader ------
 
 def discover_promoted_tools(repo_root=None):
-    """Discover tools permanently promoted into Nucleus (`src/longrun/tools/promoted/*.py`)."""
+    """Discover tools permanently promoted into Nucleous (`src/longrun/tools/promoted/*.py`)."""
     root, _msrc, _mdot = _roots(repo_root)
     pdir = os.path.join(root, "src", "longrun", "tools", "promoted")
     out = _NamespacedToolMap()
@@ -1391,7 +1391,7 @@ def discover_promoted_tools(repo_root=None):
             spec = importlib.util.spec_from_file_location("longrun.tools.promoted.%s" % tname, p)
             mod = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(mod)
-            extracted = _extract_module_subtools(tname, mod, p, origin="nucleus")
+            extracted = _extract_module_subtools(tname, mod, p, origin="nucleous")
             if extracted:
                 for full_name, entry in extracted.items():
                     if entry.get("schema_error"):   # v649: same gate as Matrix tools
@@ -1407,8 +1407,8 @@ def execute_promoted_tool(name, args, run_id=None, repo_root=None):
     pmap = discover_promoted_tools(repo_root)
     entry = pmap.get(name)
     if not entry:
-        return {"ok": False, "tool": name, "origin": "nucleus",
-                "error": "unknown promoted Nucleus tool %r" % name, "exit_code": 127}
+        return {"ok": False, "tool": name, "origin": "nucleous",
+                "error": "unknown promoted Nucleous tool %r" % name, "exit_code": 127}
     t0 = time.time()
     try:
         res = _invoke_matrix_tool_fn(entry["execute"], args or {}, run_id, subtool=entry.get("subtool"))
@@ -1421,8 +1421,8 @@ def execute_promoted_tool(name, args, run_id=None, repo_root=None):
     res.setdefault("ok", res.get("exit_code", 0) == 0)
     res.setdefault("exit_code", 0 if res.get("ok") else 1)
     res["tool"] = name
-    res["origin"] = "nucleus"
-    res["backend"] = "nucleus(promoted)"
+    res["origin"] = "nucleous"
+    res["backend"] = "nucleous(promoted)"
     res["sandboxed"] = False
     res.setdefault("duration_ms", int((time.time() - t0) * 1000))
     return res
@@ -1505,7 +1505,7 @@ def apply_learning(artifacts, repo_root=None):
 
     The whole bundle is validated first (kinds, containment, hashes, syntax). A
     load error caused by the bundle restores every touched file, so a partial or
-    broken artifact never becomes live. Nucleus is never written here.
+    broken artifact never becomes live. Nucleous is never written here.
     """
     rows, why, failed = _learning_plan(artifacts, repo_root)
     if not rows:
@@ -1604,7 +1604,7 @@ def load_module(name, repo_root=None):
 
 
 def verify_target(kind, name, repo_root=None):
-    """Deterministically verify that a Matrix artifact is tested, valid, and safe to promote into Nucleus."""
+    """Deterministically verify that a Matrix artifact is tested, valid, and safe to promote into Nucleous."""
     k, nm, fpath = _resolve_target_path(kind, name, repo_root)
     if k not in ("tool", "hook", "module", "skill", "rule", "webui") or not nm:
         return {"ok": False, "error": "kind must be 'tool', 'hook', 'module', 'skill', 'rule', or 'webui' and name is required"}
@@ -1619,7 +1619,7 @@ def verify_target(kind, name, repo_root=None):
             "error": (
                 "PROMOTE_UNVERIFIED: '%s:%s' has not been tested with its current content. "
                 "You MUST first run matrix{action:'test', target:'%s:%s', ...} in the matrix "
-                "trash dir and verify it passes with exit_code=0 before promoting to Nucleus." % (k, nm, k, nm)
+                "trash dir and verify it passes with exit_code=0 before promoting to Nucleous." % (k, nm, k, nm)
             ),
         }
     if k in ("tool", "hook", "module"):
@@ -1640,7 +1640,7 @@ def verify_target(kind, name, repo_root=None):
                 if not _has_schema or not callable(getattr(mod, "execute", None)):
                     return {"ok": False, "error": "PROMOTE_UNVERIFIED: tool %r must define dict TOOL_SCHEMAS (or TOOL_SCHEMA) and callable execute" % nm}
                 # v649: promotion runs the SAME contract gate as exposure, so a
-                # malformed schema can never be blessed into Nucleus. The test
+                # malformed schema can never be blessed into Nucleous. The test
                 # proof only says "it ran", not "it is callable correctly".
                 _pairs = (_schemas if isinstance(_schemas, dict) and _schemas else
                           {nm: _single} if isinstance(_single, dict) else {})
@@ -1684,14 +1684,14 @@ def verify_target(kind, name, repo_root=None):
     return {"ok": True, "kind": k, "name": nm, "path": fpath, "sha256": cur_sha}
 
 
-def promote_to_nucleus(kind, name, repo_root=None):
-    """Deterministically import a tested Matrix artifact into Legacy Nucleus and delete it from Matrix.
+def promote_to_nucleous(kind, name, repo_root=None):
+    """Deterministically import a tested Matrix artifact into Legacy Nucleous and delete it from Matrix.
 
     Enforces:
       1. Dedicated checkbox `approvals.allow_matrix_promote == True` (even `approvals.mode == 'full'` does NOT unlock it).
       2. Mandatory pre-promotion test & syntax/contract verification (`verify_target`).
-      3. Automatic pre-promotion checkpoint + Git commit before modifying Nucleus.
-      4. Atomic copy into Nucleus + deletion from Matrix.
+      3. Automatic pre-promotion checkpoint + Git commit before modifying Nucleous.
+      4. Atomic copy into Nucleous + deletion from Matrix.
     """
     try:
         from longrun.tools import registry
@@ -1703,7 +1703,7 @@ def promote_to_nucleus(kind, name, repo_root=None):
         return {
             "ok": False,
             "error": (
-                "PROMOTE_DENIED: Matrix -> Nucleus permanent promotion requires the dedicated "
+                "PROMOTE_DENIED: Matrix -> Nucleous permanent promotion requires the dedicated "
                 "'allow_matrix_promote' checkbox in Settings > Tools & approvals (even FULL approval "
                 "mode does not authorize it)."
             ),
@@ -1716,7 +1716,7 @@ def promote_to_nucleus(kind, name, repo_root=None):
 
     # Automatic pre-promotion checkpoint & commit (both .Matrix/git and root .git when present)
     checkpoint_save(1, label="pre-promote:%s:%s" % (k, nm), repo_root=repo_root)
-    pre_msg = "chore(matrix): pre-promote snapshot before importing %s:%s to Nucleus" % (k, nm)
+    pre_msg = "chore(matrix): pre-promote snapshot before importing %s:%s to Nucleous" % (k, nm)
     pre_c = git_commit(pre_msg, repo_root=repo_root)
     pre_sha = pre_c.get("commit") or "checkpoint_slot_1"
     if os.path.isdir(os.path.join(root, ".git")):
@@ -1734,7 +1734,7 @@ def promote_to_nucleus(kind, name, repo_root=None):
             init_p = os.path.join(pdir, "__init__.py")
             if not os.path.exists(init_p):
                 with open(init_p, "w", encoding="utf-8") as f:
-                    f.write('"""Tools permanently promoted from Matrix into Nucleus."""\n')
+                    f.write('"""Tools permanently promoted from Matrix into Nucleous."""\n')
             dst_path = os.path.join(pdir, nm + ".py")
             shutil.copy2(src_path, dst_path)
             os.remove(src_path)
@@ -1764,7 +1764,7 @@ def promote_to_nucleus(kind, name, repo_root=None):
             dst_path = os.path.join(dst_pdir, "SKILL.md")
         elif k == "rule":
             # JAG-534: project addenda live in the data home, never a `.longrun/`
-            # inside the Nucleus checkout.
+            # inside the Nucleous checkout.
             pddir = os.path.join(paths.workspace_state_dir(root), "prompt.d")
             os.makedirs(pddir, exist_ok=True)
             dst_path = os.path.join(pddir, nm)
@@ -1785,7 +1785,7 @@ def promote_to_nucleus(kind, name, repo_root=None):
     except OSError as e:
         return {"ok": False, "error": "promotion file move failed: %s" % e}
 
-    post_msg = "chore(matrix): promoted %s:%s to Nucleus and removed from Matrix" % (k, nm)
+    post_msg = "chore(matrix): promoted %s:%s to Nucleous and removed from Matrix" % (k, nm)
     git_commit(post_msg, repo_root=repo_root)
     if os.path.isdir(os.path.join(root, ".git")):
         try:
@@ -1795,7 +1795,7 @@ def promote_to_nucleus(kind, name, repo_root=None):
         except Exception:  # noqa: BLE001
             pass
     hl = hotload(repo_root)
-    _ledger("matrix.promote_to_nucleus", artifact_kind=k, name=nm, promoted_to=dst_path, pre_commit=pre_sha)
+    _ledger("matrix.promote_to_nucleous", artifact_kind=k, name=nm, promoted_to=dst_path, pre_commit=pre_sha)
     _publish_tools_changed("matrix.promote", nm)
     return {
         "ok": True,
@@ -1855,7 +1855,7 @@ def remove(kind, name, repo_root=None):
     Complete removal means: the source file, compiled bytecode, imported module,
     the discovered-tool cache, matching policy entries in the tool overlay, and
     the verification record. The artifact is then absent from discovery without
-    a service restart. A promoted Nucleus copy is reported, never touched.
+    a service restart. A promoted Nucleous copy is reported, never touched.
     """
     matrix_guard.ensure_layout(repo_root)
     root, msrc, mdot = _roots(repo_root)
@@ -1964,8 +1964,8 @@ def remove(kind, name, repo_root=None):
     promoted = os.path.join(root, "src", "longrun", "tools", "promoted", norm.split(".")[0] + ".py")
     if k == "tool" and os.path.isfile(promoted):
         warned.append(
-            "a promoted Nucleus copy also exists at %s; this removal leaves it in place "
-            "and Nucleus writes require explicit authorization" % promoted
+            "a promoted Nucleous copy also exists at %s; this removal leaves it in place "
+            "and Nucleous writes require explicit authorization" % promoted
         )
     _ledger("matrix.remove", artifact_kind=k, name=nm, path=removed_path or fpath,
             existed=existed, policy_removed=policy.get("removed") or [])
@@ -2028,7 +2028,7 @@ SEAMS_SPEC = {
 
 
 def seams_catalog():
-    """Return the exact specification of every Matrix -> Nucleus seam and artifact contract.
+    """Return the exact specification of every Matrix -> Nucleous seam and artifact contract.
 
     Keys carrying `hooks` are exactly `HOOK_SUBPACKAGES` (the subpackages
     `call_hook` reaches); `tools`, `webui`, `skill` and `rule` carry a `contract`

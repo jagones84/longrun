@@ -33,13 +33,13 @@ approvals:
   # this cap and is never evicted — the store grows instead.
   max_records: 500
   # JAG-510 — DANGEROUS, leave it false. When true it unlocks writes into the
-  # immutable Nucleus (`src/longrun/`, `webui/`, `config/`, `deploy/`, `tests/`,
+  # immutable Nucleous (`src/longrun/`, `webui/`, `config/`, `deploy/`, `tests/`,
   # `docs/`, project state (the data home's `projects/`), `Global_rules.md` / `Project_rules.md`, `AGENTS.md`, ...) for EVERY tool: the shell
   # write-target gate, `fs.write`/`fs.edit` and the tamper-restore all stand down,
   # so the agent can rewrite the harness mid-run. It is the only kill-switch for
-  # the Nucleus and it is enabled exclusively from the checkbox marked DANGEROUS
+  # the Nucleous and it is enabled exclusively from the checkbox marked DANGEROUS
   # in Settings > Tools & approvals — never by `approvals.mode: full`.
-  allow_nucleus_write: false
+  allow_nucleous_write: false
   # JAG-451: approval policy BY CATEGORY — everything the harness can emit on its
   # own. auto = apply/run without asking (still recorded in the audit ledger);
   # required = raise an approval request (you decide); denied = never emitted.

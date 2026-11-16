@@ -813,7 +813,7 @@ _LEGACY_SCHEMAS = {
                         "dir from `matrix.status.matrix_dot`; `.Matrix` is its legacy name). "
                         "Full tool lifecycle: "
                         "scaffold -> edit the generated schema/description -> hotload -> "
-                        "test -> verify_target -> promote_to_nucleus, or remove to uninstall. "
+                        "test -> verify_target -> promote_to_nucleous, or remove to uninstall. "
                         "Actions: status | seams | scaffold | remove | hotload | "
                         "enable/disable | checkpoint_save/checkpoint_rollback (slot 1..3) | "
                         "git_commit/git_log/git_diff/git_reset (separate matrix git repo) | "
@@ -825,7 +825,7 @@ _LEGACY_SCHEMAS = {
                                 "checkpoint_save", "checkpoint_rollback",
                                 "git_commit", "git_log", "git_diff", "git_reset",
                                 "test", "clean_trash", "webui_init", "webui_reset",
-                                "verify_target", "promote_to_nucleus", "load_module"],
+                                "verify_target", "promote_to_nucleous", "load_module"],
                        "default": "status"},
             "description": {"type": "string", "description": "for matrix.scaffold: one sentence stating exactly what the artifact does"},
             "slot": {"type": "integer", "description": "checkpoint slot (1, 2, or 3)"},
@@ -859,7 +859,7 @@ _LEGACY_SCHEMAS = {
                         "calling session. The service manager restarts the unit; boot then "
                         "resumes the interrupted turn. Every running turn in every session "
                         "dies with the process, so use it only for a change that hotload "
-                        "cannot apply (promoted Nucleus code)."),
+                        "cannot apply (promoted Nucleous code)."),
         "type": "object",
         "properties": {
             "action": {"type": "string", "enum": ["restart"], "default": "restart"},
@@ -1004,7 +1004,7 @@ _SUBTOOL_FIELDS = {
         "test": ["script", "code", "target", "install_deps", "timeout_secs"],
         "clean_trash": ["keep_recent"], "webui_init": [], "webui_reset": [],
         "verify_target": ["kind", "name"],
-        "promote_to_nucleus": ["kind", "name"],
+        "promote_to_nucleous": ["kind", "name"],
         "load_module": ["name"],
     },
     "harness": {
@@ -1050,7 +1050,7 @@ _SUBTOOL_REQUIRED = {
     # C1: the handler refuses a scaffold without `name`.
     "matrix.scaffold": ["name"],
     "matrix.verify_target": ["name"],
-    "matrix.promote_to_nucleus": ["name"],
+    "matrix.promote_to_nucleous": ["name"],
     "matrix.load_module": ["name"],
 }
 
@@ -1229,7 +1229,7 @@ _SUBTOOL_GUIDANCE = {
         "Call this before and after creating or removing an artifact."
     ),
     "matrix.seams": (
-        "List the 13 live Matrix -> Nucleus seams with the exact file path and function "
+        "List the 13 live Matrix -> Nucleous seams with the exact file path and function "
         "signature each artifact must implement. Read this before scaffolding a hook or module."
     ),
     "matrix.scaffold": (
@@ -1239,7 +1239,7 @@ _SUBTOOL_GUIDANCE = {
         "to replace its placeholder description with a precise one (what it does, every input, "
         "the output), define real properties and required fields, then call matrix.hotload and "
         "matrix.test with target='tool:<namespace>'. The tool is live after hotload; no restart "
-        "and no manual registry edit are needed. It is not permanent until promote_to_nucleus."
+        "and no manual registry edit are needed. It is not permanent until promote_to_nucleous."
     ),
     "matrix.hotload": (
         "Rescan `src/Matrix/tools/*.py` and Matrix hook modules and replace the live tool map. "
@@ -1252,7 +1252,7 @@ _SUBTOOL_GUIDANCE = {
         "imported module, discovery cache, matching tool-policy entries, and verification record, "
         "then hotload. `kind` defaults to `tool`; `name` is required. A tool module that defines "
         "several subtools must be removed by namespace (the call says which subtools would go). "
-        "A promoted Nucleus copy is reported, never deleted. Requires approval unless the "
+        "A promoted Nucleous copy is reported, never deleted. Requires approval unless the "
         "operator explicitly selects global approvals.mode=full."
     ),
     "matrix.git_commit": (
@@ -1279,11 +1279,11 @@ _SUBTOOL_GUIDANCE = {
     ),
     "matrix.webui_reset": (
         "Delete the Matrix shadow `src/Matrix/webui/index.html`, making the "
-        "Nucleus WebUI serve at `/`. Requires approval unless the operator "
+        "Nucleous WebUI serve at `/`. Requires approval unless the operator "
         "explicitly selects global approvals.mode=full."
     ),
-    "matrix.promote_to_nucleus": (
-        "Promote a verified Matrix artifact into protected Nucleus code. Requires "
+    "matrix.promote_to_nucleous": (
+        "Promote a verified Matrix artifact into protected Nucleous code. Requires "
         "the configured dangerous-write gate and successful verification."
     ),
     # 2026-11-15: this row had no guidance, so the UI showed the whole Matrix
@@ -1295,7 +1295,7 @@ _SUBTOOL_GUIDANCE = {
         "manager (`Restart=always`) brings the process back; boot then resumes the "
         "interrupted turn. Every RUNNING turn in every session dies with the "
         "process, so use it only for a change hotload cannot apply (promoted "
-        "Nucleus code). `dry_run=true` returns the ticket a real restart would "
+        "Nucleous code). `dry_run=true` returns the ticket a real restart would "
         "write and leaves no pending resume behind."
     ),
     # R2 (2026-11-15): one actionable line per canonical action. Before this
@@ -2040,7 +2040,7 @@ def _matrix_tools():
 
 
 def _promoted_tools():
-    """Tools permanently promoted from Matrix into Nucleus (`src/longrun/tools/promoted/*.py`)."""
+    """Tools permanently promoted from Matrix into Nucleous (`src/longrun/tools/promoted/*.py`)."""
     try:
         from longrun.core import matrix
         return matrix.discover_promoted_tools()
@@ -2220,7 +2220,7 @@ def tool_spec(name, ext_snapshot=None, mtx_snapshot=None):
         "name": name,
         "origin": ("delegation" if is_delegation else
                    "exclusive" if is_exclusive else
-                   ("matrix" if mtx else ("mcp" if ext else "nucleus"))),
+                   ("matrix" if mtx else ("mcp" if ext else "nucleous"))),
         # v949: WHO may call it, in operator terms (`everyone` / `coordinator` /
         # `architect`), computed by the gate itself — the Tools panel renders this
         # instead of guessing from `origin`. None = a non-gated tool.
@@ -2550,7 +2550,7 @@ def catalog():
             continue
         row = {
             "name": name,
-            "origin": spec.get("origin", "nucleus"),
+            "origin": spec.get("origin", "nucleous"),
             "access": spec.get("access"),
             "enabled": spec["enabled"],
             "approval": spec["approval"],
@@ -2887,15 +2887,15 @@ def classify(tool, args, workspace=None, hist=None, allow=None, scope_name=None,
             "plan mode: session %r has an unapproved plan — %r is not exploration; "
             "only read-only tools work until the operator approves the plan "
             "(propose it with `docs`, then wait)" % (_sess, tool))
-    # PT3: `matrix.promote_to_nucleus` / `matrix{action:"promote_to_nucleus"}` is gated EXCLUSIVELY
+    # PT3: `matrix.promote_to_nucleous` / `matrix{action:"promote_to_nucleous"}` is gated EXCLUSIVELY
     # by the dedicated `approvals.allow_matrix_promote` checkbox — even `approvals.mode=full` never unlocks it.
-    if tool == "matrix.promote_to_nucleus" or (
-        tool == "matrix" and str((args or {}).get("action") or "").strip().lower() == "promote_to_nucleus"
+    if tool == "matrix.promote_to_nucleous" or (
+        tool == "matrix" and str((args or {}).get("action") or "").strip().lower() == "promote_to_nucleous"
     ):
         ap_mtx = load_config().get("approvals") or {}
         if not bool(ap_mtx.get("allow_matrix_promote", False)):
             return "denied", (
-                "promote_to_nucleus requires the dedicated allow_matrix_promote checkbox "
+                "promote_to_nucleous requires the dedicated allow_matrix_promote checkbox "
                 "in Settings > Tools & approvals (even FULL mode does not authorize it)"
             )
         return "auto", "allow_matrix_promote checkbox is enabled"

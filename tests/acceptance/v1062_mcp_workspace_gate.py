@@ -16,7 +16,7 @@ business is never injected.
   A1 origin=mcp is never injected
   A2 exclusive / delegation keep their old exemption
   A3 `workspace.*` keeps its own exemption
-  A4 a plain nucleus tool still receives the key
+  A4 a plain nucleous tool still receives the key
   A5 an unknown tool falls back to the old behaviour (inject)
   A6 both injection sites consult the helper
 """
@@ -50,8 +50,8 @@ _SPECS = {
     "github__get_me": {"origin": "mcp", "schema": {}},
     "agent.update": {"origin": "exclusive", "schema": {"_origin": "exclusive"}},
     "job.start": {"origin": "delegation", "schema": {"_origin": "delegation"}},
-    "workspace.set": {"origin": "nucleus", "schema": {}},
-    "shell.exec": {"origin": "nucleus", "schema": {}},
+    "workspace.set": {"origin": "nucleous", "schema": {}},
+    "shell.exec": {"origin": "nucleous", "schema": {}},
 }
 _real = R.tool_spec
 R.tool_spec = lambda name, *a, **k: _SPECS.get(str(name))

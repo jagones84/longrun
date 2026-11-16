@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""Matrix scaffold and deterministic Nucleus write-protection guard.
+"""Matrix scaffold and deterministic Nucleous write-protection guard.
 
 Enforces the strict two-zone architecture:
-  1. NUCLEUS (see `NUCLEUS_PROTECTED_REL`): fixed and immutable during agent
+  1. NUCLEOUS (see `NUCLEOUS_PROTECTED_REL`): fixed and immutable during agent
      self-evolution turns.
   2. MATRIX (`src/Matrix/**`, `.Matrix/**`): live-editable self-evolution zone.
 
 JAG-510 (red-team hardening). The first version of the shell gate matched the RAW
 COMMAND TEXT, so it was a spelling check rather than a boundary:
   * C1 `t=$(printf ... | base64 -d); printf x > "$t/f"` wrote into `src/longrun/`;
-  * C2 `tests/` and `deploy/` were declared Nucleus but absent from the token list;
-  * C3 a file CREATED inside a Nucleus directory survived `restore_*`;
+  * C2 `tests/` and `deploy/` were declared Nucleous but absent from the token list;
+  * C3 a file CREATED inside a Nucleous directory survived `restore_*`;
   * C4 the prompt-bearing surfaces (`.longrun/rules`, `AGENTS.md`) were writable;
   * C5 a `SRC/LONGRUN/...` spelling slipped past the case-sensitive compare;
   * C6 the snapshot covered only 131 files (no `deploy/`, `tests/`, `.trae/`);
@@ -22,7 +22,7 @@ The gate judges the write TARGETS (with `cd` tracking) and fails CLOSED on a
 target it cannot resolve. NOTHING is ever reverted: enforcement is deny-only,
 by operator decision — a post-hoc whole-tree diff cannot attribute a change to
 its author, so it destroyed concurrent legitimate work. Everything is
-unlocked only by the DANGEROUS `approvals.allow_nucleus_write` operator opt-in.
+unlocked only by the DANGEROUS `approvals.allow_nucleous_write` operator opt-in.
 """
 import ast
 import json
@@ -32,11 +32,11 @@ import threading
 
 from longrun.util.paths import REPO_ROOT as REPO
 
-# One process-wide critical section for the cooperative Nucleus writers (config
+# One process-wide critical section for the cooperative Nucleous writers (config
 # saves, Matrix promotions). It exists ONLY to serialize those legitimate
 # operator writes; the old snapshot/execute/restore transaction is gone and
-# nothing is ever reverted (see `run_nucleus_guarded`).
-NUCLEUS_EXEC_LOCK = threading.RLock()
+# nothing is ever reverted (see `run_nucleous_guarded`).
+NUCLEOUS_EXEC_LOCK = threading.RLock()
 
 MATRIX_SUBDIRS = (
     "agent", "core", "integrations", "interop", "memory", "model",
@@ -44,7 +44,7 @@ MATRIX_SUBDIRS = (
 )
 DOT_SUBDIRS = ("trash", "docs", "rules", "skills", "checkpoints")
 
-NUCLEUS_PROTECTED_REL = (
+NUCLEOUS_PROTECTED_REL = (
     os.path.join("src", "longrun"),
     "webui",
     "config",
@@ -52,7 +52,7 @@ NUCLEUS_PROTECTED_REL = (
     "tests",
     ".trae",
     # JAG-510/C4: the surfaces the system prompt READS. Writing here is not a code
-    # change but a persistent prompt injection, so they are part of the Nucleus.
+    # change but a persistent prompt injection, so they are part of the Nucleous.
     # JAG-534: project rules moved to the data home, so `.longrun/` is only a
     # LEGACY alias — kept protected in case such a folder reappears in a checkout.
     ".longrun",
@@ -80,7 +80,7 @@ _DEFAULT_HANDOFF = (
     "## Recent Changes & Verification\n"
     "- Initialized Matrix layout.\n\n"
     "## Failed Attempts / Do Not Repeat\n"
-    "- Never attempt to modify Nucleus files (`src/longrun/`, `webui/`, `config/`, `Global_rules.md` / `Project_rules.md`).\n"
+    "- Never attempt to modify Nucleous files (`src/longrun/`, `webui/`, `config/`, `Global_rules.md` / `Project_rules.md`).\n"
 )
 
 _DEFAULT_MANUAL = (
@@ -97,7 +97,7 @@ _DEFAULT_MANUAL = (
     "  - `rules/`: `<NN>-<section>.md` system prompt addenda automatically hooked into the prompt.\n"
     "  - `skills/`: `<name>/SKILL.md` auto-created skills segregated from external skills.\n"
     "  - `checkpoints/`: 3 atomic rollback slots (`slot_1`, `slot_2`, `slot_3`).\n\n"
-    "## 13 Live Seams into Nucleus (Fail-Open Isolated)\n"
+    "## 13 Live Seams into Nucleous (Fail-Open Isolated)\n"
     "1. `src/Matrix/tools/<namespace>.py`: define `TOOL_SCHEMAS = {'<namespace>.<subtool>': {...}}` "
     "+ `def execute(args, run_id=None, subtool=None) -> dict` (every tool MUST be namespaced `<namespace>.<subtool>`, never plain).\n"
     "2. `src/Matrix/agent/hooks.py`: `transform_turn(sess, msgs, message)`.\n"
@@ -121,7 +121,7 @@ _DEFAULT_MANUAL = (
 
 
 def _roots(repo_root=None):
-    """(repo root, Matrix nucleus dir, Matrix RUNTIME dir).
+    """(repo root, Matrix nucleous dir, Matrix RUNTIME dir).
 
     JAG-533: the runtime dir (a rewritten git checkout) is NOT part of the
     repository any more — it lives under the user data home. An explicit
@@ -195,8 +195,8 @@ def is_matrix_writable(path, repo_root=None):
     return False
 
 
-def is_nucleus_path(path, repo_root=None):
-    """True when `path` resolves inside a protected Nucleus directory or file.
+def is_nucleous_path(path, repo_root=None):
+    """True when `path` resolves inside a protected Nucleous directory or file.
 
     JAG-510/C5: the comparison is case-insensitive so a `SRC/LONGRUN/...` spelling
     cannot slip past on a case-insensitive filesystem. The Matrix zone still wins.
@@ -211,15 +211,15 @@ def is_nucleus_path(path, repo_root=None):
         return False
     if rel == ".." or rel.startswith("../"):
         return False
-    for prot in NUCLEUS_PROTECTED_REL:
+    for prot in NUCLEOUS_PROTECTED_REL:
         rel_prot = prot.replace("\\", "/").lower()
         if rel == rel_prot or rel.startswith(rel_prot + "/"):
             return True
     return False
 
 
-def nucleus_write_unlocked():
-    """True only when the operator flipped the DANGEROUS `allow_nucleus_write` opt-in.
+def nucleous_write_unlocked():
+    """True only when the operator flipped the DANGEROUS `allow_nucleous_write` opt-in.
 
     Read dynamically from the live config (like `allow_matrix_promote`) so the
     Settings checkbox applies without a restart. Anything unreadable => LOCKED.
@@ -227,7 +227,7 @@ def nucleus_write_unlocked():
     try:
         from longrun.tools import registry
         approvals = (registry.load_config() or {}).get("approvals") or {}
-        return bool(approvals.get("allow_nucleus_write", False))
+        return bool(approvals.get("allow_nucleous_write", False))
     except Exception:  # noqa: BLE001
         return False
 
@@ -238,12 +238,12 @@ def check_write_allowed(path, repo_root=None):
 
     Paths outside `repo_root` (e.g. a separate user workspace or scratch dir)
     are governed by the normal workspace policy. Paths inside `repo_root` that
-    belong to Nucleus are hard-blocked, unless the operator enabled the DANGEROUS
-    `approvals.allow_nucleus_write` opt-in (JAG-510).
+    belong to Nucleous are hard-blocked, unless the operator enabled the DANGEROUS
+    `approvals.allow_nucleous_write` opt-in (JAG-510).
     """
     if not path:
         return False, "empty path"
-    if nucleus_write_unlocked():
+    if nucleous_write_unlocked():
         return True, ""
     root, msrc, mdot = _roots(repo_root)
     p = os.path.realpath(path if os.path.isabs(path) else os.path.join(root, path))
@@ -251,13 +251,13 @@ def check_write_allowed(path, repo_root=None):
         return True, ""
     if is_matrix_writable(p, root):
         return True, ""
-    if is_nucleus_path(p, root):
+    if is_nucleous_path(p, root):
         try:
             rel = os.path.relpath(os.path.realpath(p), os.path.realpath(root)).replace("\\", "/")
         except ValueError:
             rel = str(path)
         return False, (
-            "NUCLEUS_PROTECTED: '%s' belongs to the immutable Nucleus. "
+            "NUCLEOUS_PROTECTED: '%s' belongs to the immutable Nucleous. "
             "Agent self-evolution writes are restricted to `src/Matrix/` (code) and "
             "the Matrix runtime dir (`matrix.status.matrix_dot`, default ~/.longrun/matrix)." % rel
         )
@@ -265,7 +265,7 @@ def check_write_allowed(path, repo_root=None):
 
 
 def check_python_write(code, workspace=None, repo_root=None):
-    """Refuse a Python snippet whose LITERAL write target is inside the Nucleus.
+    """Refuse a Python snippet whose LITERAL write target is inside the Nucleous.
 
     The shell gate cannot see what Python code does (`open("src/longrun/x",
     "w")` sails through target parsing), so without this `python.run` was the
@@ -281,7 +281,7 @@ def check_python_write(code, workspace=None, repo_root=None):
     src = str(code or "")
     if not src.strip():
         return True, ""
-    if nucleus_write_unlocked():
+    if nucleous_write_unlocked():
         return True, ""
     try:
         tree = ast.parse(src, mode="exec")
@@ -308,13 +308,13 @@ def check_python_write(code, workspace=None, repo_root=None):
         except ValueError:
             rel = what
         return (False,
-                "NUCLEUS_PROTECTED: python snippet %s inside the immutable "
-                "Nucleus (%s). Modify only `src/Matrix/` or the Matrix runtime dir "
+                "NUCLEOUS_PROTECTED: python snippet %s inside the immutable "
+                "Nucleous (%s). Modify only `src/Matrix/` or the Matrix runtime dir "
                 "(`matrix.status.matrix_dot`)." % (what, rel))
 
-    def _is_nucleus(resolved):
+    def _is_nucleous(resolved):
         return (resolved is not None and _under(resolved, os.path.realpath(root))
-                and is_nucleus_path(resolved, root))
+                and is_nucleous_path(resolved, root))
 
     _WRITE_MODES = ("w", "a", "x", "+")
     for node in ast.walk(tree):
@@ -335,7 +335,7 @@ def check_python_write(code, workspace=None, repo_root=None):
                 continue
             if isinstance(node.args[0], ast.Constant):
                 resolved = _resolve_literal(node.args[0].value)
-                if _is_nucleus(resolved):
+                if _is_nucleous(resolved):
                     return _deny(resolved, "writes")
             continue
         if not isinstance(func, ast.Attribute):
@@ -349,7 +349,7 @@ def check_python_write(code, workspace=None, repo_root=None):
                 for arg in list(node.args or [])[:2]:
                     if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
                         resolved = _resolve_literal(arg.value)
-                        if _is_nucleus(resolved):
+                        if _is_nucleous(resolved):
                             return _deny(resolved, "writes")
             continue
         # shutil.copy/copy2/copytree/move/rmtree(dst, ...)
@@ -358,7 +358,7 @@ def check_python_write(code, workspace=None, repo_root=None):
             if attr in ("copy", "copy2", "copytree", "move", "rmtree"):
                 if len(node.args or []) > idx and isinstance(node.args[idx], ast.Constant):
                     resolved = _resolve_literal(node.args[idx].value)
-                    if _is_nucleus(resolved):
+                    if _is_nucleous(resolved):
                         return _deny(resolved, "writes")
             continue
         # pathlib: Path("...").write_text/write_bytes/unlink/mkdir/touch/...,
@@ -380,7 +380,7 @@ def check_python_write(code, workspace=None, repo_root=None):
                     lit = recv.args[0].value
             if lit is not None:
                 resolved = _resolve_literal(lit)
-                if _is_nucleus(resolved):
+                if _is_nucleous(resolved):
                     return _deny(resolved, "writes")
             continue
     return True, ""
@@ -443,10 +443,10 @@ def _segment_link_sources(toks):
     """Sources of symlink-creating commands in one command segment.
 
     JAG-531: the target gate judges a path AS WRITTEN, before the command runs.
-    `ln -sfn <nucleus>/tools /tmp/nl && echo probe > /tmp/nl/_p.txt` therefore
+    `ln -sfn <nucleous>/tools /tmp/nl && echo probe > /tmp/nl/_p.txt` therefore
     PASSED (at check time `/tmp/nl` did not exist, so it resolved to itself) and
-    the shell then wrote THROUGH the link into the Nucleus. A symlink whose
-    source is inside the Nucleus is a write channel, so creating one is refused.
+    the shell then wrote THROUGH the link into the Nucleous. A symlink whose
+    source is inside the Nucleous is a write channel, so creating one is refused.
     """
     out = []
     for i, tok in enumerate(toks):
@@ -515,7 +515,7 @@ def _segment_writes(toks, whence):
 
 
 def check_shell_command(command, cwd=None, repo_root=None):
-    """Reject shell commands that could write inside the immutable Nucleus.
+    """Reject shell commands that could write inside the immutable Nucleous.
 
     The decision is made on the write TARGETS, never on the raw text, and an
     unresolvable target fails CLOSED. Reading (`cat`, `grep`, `pytest > /tmp/log`)
@@ -524,7 +524,7 @@ def check_shell_command(command, cwd=None, repo_root=None):
     cmd = str(command or "")
     if not cmd.strip():
         return True, ""
-    if nucleus_write_unlocked():
+    if nucleous_write_unlocked():
         return True, ""
     root, _msrc, _mdot = _roots(repo_root)
     whence = os.path.realpath(cwd or root)
@@ -537,22 +537,22 @@ def check_shell_command(command, cwd=None, repo_root=None):
             resolved = _resolve_target(source, whence)
             if not resolved or not _under(resolved, root):
                 continue
-            if is_nucleus_path(resolved, root):
+            if is_nucleous_path(resolved, root):
                 try:
                     rel = os.path.relpath(resolved, os.path.realpath(root)).replace("\\", "/")
                 except ValueError:
                     rel = source
                 return False, (
-                    "NUCLEUS_PROTECTED: a symlink whose SOURCE is inside the immutable "
-                    "Nucleus (%s) is a write channel — a later write through the link "
-                    "would land in the Nucleus. Copy or import the content instead."
+                    "NUCLEOUS_PROTECTED: a symlink whose SOURCE is inside the immutable "
+                    "Nucleous (%s) is a write channel — a later write through the link "
+                    "would land in the Nucleous. Copy or import the content instead."
                     % rel
                 )
         for target in targets:
             resolved = _resolve_target(target, whence)
             if resolved is None:
                 return False, (
-                    "NUCLEUS_PROTECTED: shell command writes to the unresolvable target %r. "
+                    "NUCLEOUS_PROTECTED: shell command writes to the unresolvable target %r. "
                     "Use an explicit path (the guard fails closed on variables and "
                     "command substitutions)." % target
                 )
@@ -560,31 +560,31 @@ def check_shell_command(command, cwd=None, repo_root=None):
                 continue
             if not _under(resolved, root):
                 continue  # outside the repository: normal workspace policy applies
-            if is_nucleus_path(resolved, root):
+            if is_nucleous_path(resolved, root):
                 try:
                     rel = os.path.relpath(resolved, os.path.realpath(root)).replace("\\", "/")
                 except ValueError:
                     rel = target
                 return False, (
-                    "NUCLEUS_PROTECTED: shell command targets immutable Nucleus path (%s). "
+                    "NUCLEOUS_PROTECTED: shell command targets immutable Nucleous path (%s). "
                     "Modify only `src/Matrix/` or the Matrix runtime dir "
                     "(`matrix.status.matrix_dot`)." % rel
                 )
     return True, ""
 
 
-def run_nucleus_guarded(operation, repo_root=None):
-    """Run one operation holding the Nucleus mutex. NEVER snapshots, NEVER reverts.
+def run_nucleous_guarded(operation, repo_root=None):
+    """Run one operation holding the Nucleous mutex. NEVER snapshots, NEVER reverts.
 
     Policy (operator decision): the harness must NEVER auto-revert files — a
     whole-tree before/after diff cannot attribute a change to the calling
     command, so a concurrent legitimate edit (another agent, the operator) was
     silently destroyed. Protection is DENY-AT-THE-BOUNDARY only
     (`check_write_allowed`, `check_shell_command`, `check_python_write`): a
-    command that targets the Nucleus is refused BEFORE it runs. What already
+    command that targets the Nucleous is refused BEFORE it runs. What already
     passed the gates runs untouched, and whatever is on disk stays on disk.
     The lock only serializes legitimate operator writers (config saves).
     Returns `(result, [])`; the empty list keeps the call shape stable.
     """
-    with NUCLEUS_EXEC_LOCK:
+    with NUCLEOUS_EXEC_LOCK:
         return operation(), []

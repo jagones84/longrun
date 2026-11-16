@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""v501 — Deep Matrix subpackage seams: universal fail-open hook engine across all Nucleus subpackages + .Matrix/docs checkpointing."""
+"""v501 — Deep Matrix subpackage seams: universal fail-open hook engine across all Nucleous subpackages + .Matrix/docs checkpointing."""
 import os
 import sys
 import tempfile
@@ -98,7 +98,7 @@ with tempfile.TemporaryDirectory() as tmp:
         base_ranked = prm.rank_text("hello world")
         kg = keepgoing.decide(open_nodes=99, rounds=100, stale=100, started=0)
         recalled = memory.governed_query(kind="agent.note", limit=5)
-        check("D Nucleus model/routing, plan/prm, plan/keepgoing, and memory/governed_query execute Matrix hooks live",
+        check("D Nucleous model/routing, plan/prm, plan/keepgoing, and memory/governed_query execute Matrix hooks live",
               picked == "matrix-model-for-coder"
               and isinstance(ranked, float) and ranked > base_ranked
               and kg.get("continue") is True and kg.get("reason") == "matrix_override"
@@ -113,7 +113,7 @@ with tempfile.TemporaryDirectory() as tmp:
         matrix.hotload(tmp)
         safe_ranked = prm.rank_text("hello world")
         st = matrix.status(tmp)
-        check("E broken subpackage hook raising RuntimeError fails open to Nucleus default and records hook_errors",
+        check("E broken subpackage hook raising RuntimeError fails open to Nucleous default and records hook_errors",
               isinstance(safe_ranked, float) and safe_ranked == base_ranked
               and any("matrix plan boom" in str(e.get("error", "")) for e in (st.get("hook_errors") or [])))
 

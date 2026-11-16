@@ -356,7 +356,7 @@ def _python(args, run_id):
     name = "_repl_%s.py" % os.urandom(4).hex()
     path = os.path.join(ws, name)
     from longrun.tools import matrix_guard
-    # Deny-only: a literal Nucleus write target is refused BEFORE anything
+    # Deny-only: a literal Nucleous write target is refused BEFORE anything
     # runs. Nothing is snapshotted or reverted afterwards.
     ok_py, err_py = matrix_guard.check_python_write(code, workspace=ws)
     if not ok_py:
@@ -974,7 +974,7 @@ def _git(args, run_id):
     if not os.path.isdir(cwd):
         return {"ok": False, "error": "cwd not found: %s" % cwd}
     # JAG-510: `git checkout/restore/rm/apply/...` writes working-tree files, so
-    # the same Nucleus write-target gate as the shell tool must run first —
+    # the same Nucleous write-target gate as the shell tool must run first —
     # otherwise this tool is a second front door into `src/longrun/`.
     from longrun.tools import matrix_guard
     ok_git, err_git = matrix_guard.check_shell_command("git " + raw, cwd=cwd)
@@ -3550,9 +3550,9 @@ def _matrix(args, run_id):
         loaded = matrix.load_module(args.get("name") or "")
         return {k: v for k, v in loaded.items() if k != "module"} | {
             "loaded": bool(loaded.get("ok"))}
-    if action == "promote_to_nucleus":
-        with matrix_guard.NUCLEUS_EXEC_LOCK:
-            return matrix.promote_to_nucleus(
+    if action == "promote_to_nucleous":
+        with matrix_guard.NUCLEOUS_EXEC_LOCK:
+            return matrix.promote_to_nucleous(
                 args.get("kind") or "tool", args.get("name") or "")
     if action == "clean_trash":
         return matrix.clean_trash(keep_recent=args.get("keep_recent") or 0)

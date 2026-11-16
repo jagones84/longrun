@@ -2772,7 +2772,7 @@ def handle(handler, method, path, qs, body):
             from longrun.core import configfiles
             from longrun.tools import matrix_guard
             try:
-                with matrix_guard.NUCLEUS_EXEC_LOCK:
+                with matrix_guard.NUCLEOUS_EXEC_LOCK:
                     res = configfiles.write_file(body.get("name"), body.get("text"))
             except ValueError as e:
                 return _r(handler, 400, {"ok": False, "error": str(e)})
@@ -2787,7 +2787,7 @@ def handle(handler, method, path, qs, body):
             from longrun.core import settings as _settings
             from longrun.tools import matrix_guard
             try:
-                with matrix_guard.NUCLEUS_EXEC_LOCK:
+                with matrix_guard.NUCLEOUS_EXEC_LOCK:
                     res = _settings.update(body)
             except ValueError as e:
                 return _r(handler, 400, {"ok": False, "error": str(e)})
@@ -3068,7 +3068,7 @@ def handle(handler, method, path, qs, body):
             # authorisation: no agent-approval round-trip. Only kind=tool is
             # exposed here — `matrix.remove` genuinely uninstalls the whole
             # namespace file and hot-reloads, and it never touches a promoted
-            # Nucleus copy. Other kinds stay on the agent/review path.
+            # Nucleous copy. Other kinds stay on the agent/review path.
             kind = str(body.get("kind") or "tool").strip()
             mx_name = str(body.get("name") or "").strip()
             if not mx_name:
@@ -3485,9 +3485,9 @@ def _update_policy(body):
                 ap[k] = body["approvals"][k]
         if "allow_matrix_promote" in body["approvals"]:
             ap["allow_matrix_promote"] = bool(body["approvals"]["allow_matrix_promote"])
-        # JAG-510: the DANGEROUS Nucleus unlock. Read live by matrix_guard.
-        if "allow_nucleus_write" in body["approvals"]:
-            ap["allow_nucleus_write"] = bool(body["approvals"]["allow_nucleus_write"])
+        # JAG-510: the DANGEROUS Nucleous unlock. Read live by matrix_guard.
+        if "allow_nucleous_write" in body["approvals"]:
+            ap["allow_nucleous_write"] = bool(body["approvals"]["allow_nucleous_write"])
         if "matrix_enabled" in body["approvals"]:
             ap["matrix_enabled"] = bool(body["approvals"]["matrix_enabled"])
             try:
@@ -4730,7 +4730,7 @@ def fs_write(body) -> dict:
         before = ""
     try:
         from longrun.tools import matrix_guard
-        with matrix_guard.NUCLEUS_EXEC_LOCK:
+        with matrix_guard.NUCLEOUS_EXEC_LOCK:
             with open(p, "w", encoding="utf-8") as f:
                 f.write(content)
     except OSError as e:

@@ -257,7 +257,7 @@ check("E5 the UI uninstall button exists and is gated on origin=matrix",
       and "function uninstallMatrixTool(" in gui)
 check("E6 the uninstall warns that a whole namespace file is removed",
       "one file holds a whole namespace" in gui
-      and "promoted Nucleus copy is never touched" in gui)
+      and "promoted Nucleous copy is never touched" in gui)
 check("E7 the uninstall button is emitted ONLY under the isMatrix conditional",
       "(isMatrix ? " in gui and gui.count("data-mtxrm") == 2)
 

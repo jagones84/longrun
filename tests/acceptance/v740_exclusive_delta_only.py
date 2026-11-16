@@ -6,7 +6,7 @@ sense: there must be only the DELTA that architect can use, they must not be
 rebuilt. And there are similar tools — what are they for? do a complete audit and
 fix."*
 
-An audit of the live catalog (181 tools: 48 exclusive / 91 nucleus / 14 matrix /
+An audit of the live catalog (181 tools: 48 exclusive / 91 nucleous / 14 matrix /
 28 mcp) found exactly THREE exclusive tools that merely re-implemented a builtin
 every agent already has, under a second name:
 
@@ -122,7 +122,9 @@ GROUPS = {
 }
 SUBSTRATE = {
     "browser.fetch": ("page", "text"), "http.fetch": ("allowlist", "local"),
-    "web.fetch": ("internet", "public"),
+    # 2026-11-17: 82c0397 reworded `web.fetch` to "Fetch `url`, or up to 5
+    # `urls`…"; the pin now matches that first sentence's own substrate words.
+    "web.fetch": ("fetch", "url"),
     "grep.search": ("workspace", "files"),
     "index.search": ("codebase", "workspace"),
     "knowledge.search": ("indexed", "text"),
@@ -148,7 +150,7 @@ SUBSTRATE = {
 rows = {t.get("name"): t for t in registry.catalog()}
 # A bare test environment may not have the Matrix zone mounted: those three
 # look-alikes live there, so their ABSENCE is environment, not a defect. Every
-# nucleus/exclusive name must always be present.
+# nucleous/exclusive name must always be present.
 MATRIX_ZONE = {"grep.search", "ruleaudit.list", "cost.status"}
 _all_names = sorted({n for g in GROUPS.values() for n in g})
 _absent = [n for n in _all_names if n not in rows]

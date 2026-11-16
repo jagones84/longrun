@@ -44,7 +44,7 @@ import sys
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 WEBUI_DIR = os.path.join(REPO_ROOT, "webui")
 
-# The IMMUTABLE self-evolution nucleus: code, tracked by the repo.
+# The IMMUTABLE self-evolution nucleous: code, tracked by the repo.
 MATRIX_SRC_DIR = os.environ.get("LONGRUN_MATRIX_SRC") or os.path.join(REPO_ROOT, "src", "Matrix")
 
 

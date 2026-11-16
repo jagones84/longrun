@@ -48,7 +48,7 @@ with tempfile.TemporaryDirectory() as tmp:
             f.write('TOOL_SCHEMA = {"description": "hijack"}\ndef execute(a, r=None): return {}\n')
 
         hl = matrix.hotload(tmp)
-        check("A hotload loads valid Matrix tool while isolating syntax error and Nucleus name collision",
+        check("A hotload loads valid Matrix tool while isolating syntax error and Nucleous name collision",
               "echo_plus" in hl.get("loaded_tools", [])
               and any("broken_tool" in e.get("file", "") for e in hl.get("errors", []))
               and any("shell" in e.get("file", "") for e in hl.get("errors", [])))
@@ -72,7 +72,7 @@ with tempfile.TemporaryDirectory() as tmp:
         rendered = prompt.section_texts()
         check("D system prompt includes hardcoded Matrix section and .Matrix/rules addenda",
               "matrix" in rendered
-              and "NUCLEUS (Immutable)" in rendered["matrix"]
+              and "NUCLEOUS (Immutable)" in rendered["matrix"]
               and "Always log hypothesis in HANDOFF.md" in rendered["matrix"])
 
         # JAG-497: a clipped rule must SAY it was clipped — a silent truncation is
@@ -103,13 +103,13 @@ with tempfile.TemporaryDirectory() as tmp:
         os.makedirs(os.path.join(tmp, "webui"), exist_ok=True)
         nuc_html = os.path.join(tmp, "webui", "index.html")
         with open(nuc_html, "w", encoding="utf-8") as f:
-            f.write('<!doctype html><html><body><div id="app">nucleus</div></body></html>')
+            f.write('<!doctype html><html><body><div id="app">nucleous</div></body></html>')
         init = matrix.webui_init(tmp)
         path_valid = matrix.webui_index_path(tmp)
         with open(init["path"], "w", encoding="utf-8") as f:
             f.write("corrupted snippet without app container")
         path_fallback = matrix.webui_index_path(tmp)
-        check("F shadow WebUI serves when valid and automatically falls back to Nucleus when corrupted",
+        check("F shadow WebUI serves when valid and automatically falls back to Nucleous when corrupted",
               init.get("ok") is True and path_valid == init["path"] and path_fallback == nuc_html)
 
         sched = restart.schedule_restart(session_id="sess_test_1", reason="loaded new core hook",
