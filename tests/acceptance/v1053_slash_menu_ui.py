@@ -152,5 +152,33 @@ check("G3 the backend catalogue owns plan/spec/plugins",
 check("G4 the chips understand the plugin token",
       't.indexOf("plugin:") === 0' in UI)
 
+# ------------------------------------- H: /reset, /unlock and the removable bar
+# Live 2026-11-16: (a) there was no /reset at all; (b) the plan/spec bar stayed on
+# screen for ever after a command and no control could remove it; (c) an attached
+# image in the composer could not be opened. Every pin below is one of those.
+check("H1 the fallback and the backend both carry /reset and /unlock",
+      'id: "reset"' in UI and 'id: "unlock"' in UI
+      and '{"id": "reset"' in SLASH and '{"id": "unlock"' in SLASH)
+check("H2 both commands run LOCALLY through the one action map",
+      "reset: () => resetChat()," in UI and "unlock: () => docUnlock()," in UI)
+check("H3 /reset reuses the ONE session-creation path (no second creator)",
+      "async function createSession(title, ws) {" in UI
+      and "async function createNewSession() {" in UI
+      and "const r = await createSession($(\"nsTitle\").value, $(\"nsWs\").value);" in UI
+      and "const r = await createSession(\"\", ws);" in UI
+      and UI.count('api("GET", "/api/sessions/new?') == 1)
+check("H4 the bar ALWAYS offers unlock (proposed and approved included)",
+      '$("docUnlock").hidden = false;' in UI
+      and '|| proposed;' not in UI.split('$("docUnlock").hidden')[1][:80])
+check("H5 /unlock is honest: it forgets the record, the file stays",
+      "leave this document's mode?" in UI and "the file stays on disk" in UI)
+check("H6 a composer attachment chip opens like its transcript twin",
+      "function _attPath(a) {" in UI
+      and '_openAttachment((a.visual || _isImage(p)) ? "img" : "file", p);' in UI
+      and 'role="\' + (p ? "button" : "group")' in UI
+      and 'chip.onkeydown = (e) => {' in UI)
+check("H7 removing an attachment does not open it (✕ stops the chip click)",
+      "if (e) e.stopPropagation();" in UI)
+
 print("\n---\nv1053: %d/%d PASS" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

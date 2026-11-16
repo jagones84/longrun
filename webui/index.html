@@ -172,6 +172,10 @@
   #attachRow[hidden] { display: none; }
   .attchip { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--txt);
     background: var(--hover); border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px; }
+  /* v1051c: a chip that carries a path is a real control (open preview/editor). */
+  .attchip[role="button"] { cursor: pointer; }
+  .attchip[role="button"]:hover { border-color: var(--acc); }
+  .attchip[role="button"]:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
   /* axe 2026-11-07: a real <button>, so Enter/Space and Tab reach it; the chip is
      the surface, so the button carries no chrome of its own. */
   .attchip .x { cursor: pointer; color: var(--dim); font-weight: 700; border: 0;
@@ -7290,15 +7294,43 @@ function _setAttachmentBusy(sid, delta) {
   if (sid === sessionId) _syncAttachmentBusyUI();
 }
 
+function _attPath(a) {
+  return (a && a.value && a.value.indexOf("file: ") === 0) ? a.value.slice(6).trim() : "";
+}
 function _renderAttach() {
   const row = $("attachRow"); if (!row) return;
   row.hidden = !_attachments.length;
-  row.innerHTML = _attachments.map((a, i) =>
-    '<span class="attchip" title="' + _attr(a.ingestError || a.value) + '">' +
-    (a.ingestError ? "⚠ " : (a.kind === "text" ? "📝" : "📎")) +
-    " " + esc(a.label) + ' <button type="button" class="x" data-i="' + i + '" aria-label="remove attachment">✕</button></span>').join("");
-  row.querySelectorAll(".x").forEach(x => x.onclick =
-    () => { _attachments.splice(+x.dataset.i, 1); _renderAttach(); _renderPendingCtxItems(); });
+  row.innerHTML = _attachments.map((a, i) => {
+    const p = _attPath(a);
+    const isImg = !!p && (a.visual || _isImage(p));
+    const ic = a.ingestError ? "⚠ " : (!p ? "📝" : (isImg ? "🖼" : "📎"));
+    // v1051c: a chip with a REAL path opens like its transcript twin (image →
+    // preview window, file → editor). The composer chips had no handler at all,
+    // so clicking an attached image did nothing ("no si apre più", 2026-11-16).
+    const title = a.ingestError || (p ? ("open " + p) : String(a.value || ""));
+    return '<span class="attchip" role="' + (p ? "button" : "group") + '"' +
+      (p ? ' tabindex="0"' : "") + ' data-i="' + i + '" title="' + _attr(title) + '">' +
+      ic + " " + esc(a.label) +
+      ' <button type="button" class="x" data-i="' + i + '" aria-label="remove attachment">✕</button></span>';
+  }).join("");
+  row.querySelectorAll(".attchip").forEach(chip => {
+    const a = _attachments[+chip.dataset.i];
+    const p = _attPath(a);
+    if (!p) return;
+    const open = (e) => {
+      if (e && e.target && e.target.closest && e.target.closest(".x")) return;
+      _openAttachment((a.visual || _isImage(p)) ? "img" : "file", p);
+    };
+    chip.onclick = open;
+    chip.onkeydown = (e) => {
+      if (e.target && e.target.closest && e.target.closest(".x")) return;
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(e); }
+    };
+  });
+  row.querySelectorAll(".x").forEach(x => x.onclick = (e) => {
+    if (e) e.stopPropagation();
+    _attachments.splice(+x.dataset.i, 1); _renderAttach(); _renderPendingCtxItems();
+  });
 }
 function addAttachment(a) {
   _attachments.push(a); _renderAttach(); _renderPendingCtxItems(); $("inp").focus();
@@ -7913,6 +7945,12 @@ let SLASH_COMMANDS = [
   { id: "compact", aliases: [], icon: "🗜", kind: "ui", insert: "",
     hint: "compact this session's context now",
     run: () => compactNow() },
+  { id: "reset", aliases: [], icon: "↺", kind: "ui", insert: "",
+    hint: "start a fresh chat (a new session in this workspace) — nothing is deleted",
+    run: () => resetChat() },
+  { id: "unlock", aliases: [], icon: "⏏", kind: "ui", insert: "",
+    hint: "leave /plan or /spec mode: release the gate and forget that document",
+    run: () => docUnlock() },
 ];
 const SLASH_BY_ID = {};
 function _indexSlash() {
@@ -7980,6 +8018,8 @@ const _SLASH_RUN = {
   skills: () => openSkillMenu(),
   plugins: () => openPluginMenu(),
   compact: () => compactNow(),
+  reset: () => resetChat(),
+  unlock: () => docUnlock(),
 };
 function _applySlashCatalog(r) {
   if (!r || r.ok === false) return;
@@ -9347,14 +9387,18 @@ async function rewindToTodo(nodeId) {
   const g = r.graph || {};
   toast("rewound to before " + nodeId + " · todo list → " + (g.nodes != null ? g.nodes : "?") + " node(s)");
 }
-async function createNewSession() {
-  const title = $("nsTitle").value.trim() || ("session " + new Date().toLocaleTimeString());
-  const p = new URLSearchParams(); p.set("title", title);
-  const ws = $("nsWs").value.trim();
-  if (ws) p.set("workspace", ws);
+/* ONE session-creation path: the New-session dialog AND `/reset` call it, so a
+   reset can never drift from a manual new chat (same workspace default, same
+   draft/attachment bookkeeping, same reload set). `title`/`ws` are explicit
+   inputs, never read from the dialog here. */
+async function createSession(title, ws) {
+  const p = new URLSearchParams();
+  p.set("title", String(title || "").trim() || ("session " + new Date().toLocaleTimeString()));
+  const w = String(ws || "").trim();
+  if (w) p.set("workspace", w);
   if (TOKEN) p.set("token", TOKEN);
   const s = await api("GET", "/api/sessions/new?" + p.toString());
-  if (s.error) { $("nsResult").textContent = "error: " + s.error; return; }
+  if (!s || s.error || !s.id) return { error: (s && s.error) || "could not create the session" };
   const _prevSid = sessionId;   // 2026-11-10: a new chat starts with an EMPTY box, never the old draft
   sessionId = s.id; localStorage.setItem("sf_session", sessionId);
   _draftSwap(_prevSid, s.id);
@@ -9362,8 +9406,27 @@ async function createNewSession() {
   _sessModel[s.id] = "";
   $("log").innerHTML = ""; curThink = curAns = null; _resetChatTree();
   if (window.SparkEditor && SparkEditor.onSessionChange) SparkEditor.onSessionChange();
-  closeNewSess(); loadSessions(); loadHistory(); loadRules(); loadCtx(); loadRole(); loadPlan(); loadCosts(); modelLabel(); closeAside();
+  loadSessions(); loadHistory(); loadRules(); loadCtx(); loadRole(); loadPlan(); loadCosts(); modelLabel(); closeAside();
   scheduleDiagnosticsRefresh();
+  return s;
+}
+async function createNewSession() {
+  const r = await createSession($("nsTitle").value, $("nsWs").value);
+  if (r.error) { $("nsResult").textContent = "error: " + r.error; return; }
+  closeNewSess();
+}
+/* `/reset`: a fresh chat in the SAME workspace, without the dialog. The old
+   session is NOT deleted — it stays in the rail with its transcript. Uses the
+   one creation path above; a distinct function would be a second truth. */
+async function resetChat() {
+  let ws = "";
+  if (sessionId) {
+    try { const w = await api("GET", "/api/workspace?session=" + encodeURIComponent(sessionId)); ws = w.workspace || ""; }
+    catch (_) {}
+  }
+  const r = await createSession("", ws);
+  if (r.error) { toast("reset: " + r.error, "err"); return; }
+  toast("new chat started — the previous session stays in the rail", "ok");
 }
 /* JAG-121: folder picker (file-browser) for the session workspace.
    JAG-496: the picker serves whoever opened it. `_dirTarget` is the input id it
@@ -11139,7 +11202,12 @@ async function loadDocBar() {
   $("docApprove").disabled = busy;
   $("docReject").hidden = !proposed;
   $("docReject").disabled = busy;
-  $("docUnlock").hidden = !(r && r.plan_mode) || proposed;
+  // v1051c: the bar must ALWAYS be removable. It used to hide `⏏` for a proposed
+  // document (approve/reject were the only exits) and for an approved one (the
+  // lock was already released) — so a generated spec/plan stayed on screen for
+  // ever with no control at all ("non si può più togliere", live 2026-11-16).
+  $("docUnlock").hidden = false;
+  $("docUnlock").disabled = busy;
   return _docState;
 }
 function docOpen() {
@@ -11173,13 +11241,13 @@ async function docReject() {
 async function docUnlock() {
   if (!sessionId) return null;
   if (typeof uiConfirm === "function"
-      && !(await uiConfirm("unlock plan mode without approving?",
-                           "The document stays on disk; you can run /plan again."))) return null;
+      && !(await uiConfirm("leave this document's mode?",
+                           "The bar closes and /plan or /spec mode is forgotten; the file stays on disk."))) return null;
   const r = await api("POST", "/api/docs/unlock", { session: sessionId });
   if (!r || r.error || r.ok === false) {
     toast("unlock: " + ((r && r.error) || "failed"), "err"); return null;
   }
-  toast("plan mode unlocked", "ok");
+  toast("mode unlocked — the document stays on disk", "ok");
   await loadDocBar();
   return r;
 }

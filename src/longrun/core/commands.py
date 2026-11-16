@@ -19,8 +19,14 @@ import yaml
 from longrun.util import paths, fswrite
 
 # The built-in tokens the composer and `agent.py` already own. A user command
-# with one of these names would be a second truth for the same token.
-RESERVED = ("goal", "skills", "skill", "compact", "plan", "spec", "plugins", "plugin")
+# with one of these names would be a second truth for the same token, so the
+# list is DERIVED from the catalogue owner (`core/slash.py:BUTILINS`) instead of
+# being a second copy that drifts (`/reset`, `/unlock` were missing here).
+def _reserved():
+    from longrun.core import slash as _slash
+    return tuple(sorted({str(c.get("id") or "") for c in _slash.BUILTINS if c.get("id")} |
+                        {str(a) for c in _slash.BUILTINS for a in (c.get("aliases") or [])}))
+RESERVED = _reserved()
 SLUG = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
 MODES = ("send", "insert")
 MAX_PROMPT = 8192

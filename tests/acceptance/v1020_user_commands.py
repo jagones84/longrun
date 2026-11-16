@@ -45,8 +45,11 @@ check("A2 the store lives under the data home (operator-owned, not shipped confi
       os.path.join("data", "commands.yaml") in lst["path"]
       or commands.path().startswith(os.environ["LONGRUN_DATA_DIR"]), commands.path())
 check("A3 the built-in tokens are declared as reserved",
+      # v1051c: `/reset` and `/unlock` are built-ins too; the list is derived from
+      # `core/slash.py:BUILTINS`, so a new built-in cannot be shadowed by a user command.
       set(commands.RESERVED) == {"goal", "skills", "skill", "compact",
-                                 "plan", "spec", "plugins", "plugin"}, commands.RESERVED)
+                                 "plan", "spec", "plugins", "plugin",
+                                 "reset", "unlock"}, commands.RESERVED)
 
 # ── B: round-trip ───────────────────────────────────────────────────────────
 res = save()

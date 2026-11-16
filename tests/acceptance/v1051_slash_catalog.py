@@ -46,8 +46,11 @@ HTTPAPI = read("src", "longrun", "core", "api_v02.py")
 
 # ---------------------------------------------------------------- A: built-ins
 ids = [c["id"] for c in slash.BUILTINS]
-check("A1 the six built-ins are declared once",
-      ids == ["goal", "plan", "spec", "plugins", "skills", "compact"], ids)
+# v1051c: `/reset` (a fresh chat) and `/unlock` (leave the plan/spec mode) joined
+# the catalogue; the order is the menu order, so this list is pinned in full.
+check("A1 the eight built-ins are declared once",
+      ids == ["goal", "plan", "spec", "plugins", "skills", "compact",
+              "reset", "unlock"], ids)
 check("A2 plan/spec are DOCUMENT commands with a doc kind",
       all(c.get("kind") == "doc" and c.get("doc") in ("plan", "spec")
           for c in slash.BUILTINS if c["id"] in ("plan", "spec")))

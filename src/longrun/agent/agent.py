@@ -3327,7 +3327,8 @@ def _improvement_pass(sess, message, answer, used_tools, work_steps, model, meta
 #: reached the model as plain prose). A UI command is not a skill and stays as
 #: written; an unknown token is prose and is never touched.
 _SKILL_SLASH_RE = re.compile(r"(^|\s)/([A-Za-z0-9_.\-:]+)")
-_UI_SLASH_TOKENS = {"goal", "skills", "skill", "compact", "plan", "spec",
+_UI_SLASH_TOKENS = {"goal", "skills", "skill", "compact", "reset", "unlock",
+                    "plan", "spec",
                     "plugins", "plugin"}
 
 

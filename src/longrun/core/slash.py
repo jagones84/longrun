@@ -37,6 +37,12 @@ BUILTINS = [
      "hint": "list the skills in this menu \u2014 the choice lands as /<name> in the message"},
     {"id": "compact", "aliases": [], "title": "Compact", "icon": "\U0001f5dc",
      "kind": "ui", "insert": "", "hint": "compact this session's context now"},
+    {"id": "reset", "aliases": [], "title": "Reset", "icon": "\u21ba", "kind": "ui",
+     "insert": "",
+     "hint": "start a fresh chat (a new session in this workspace) — nothing is deleted"},
+    {"id": "unlock", "aliases": [], "title": "Unlock", "icon": "\u23cf", "kind": "ui",
+     "insert": "",
+     "hint": "leave /plan or /spec mode: release the gate and forget that document"},
 ]
 
 #: Reserved tokens: a user command may add, never shadow a built-in.

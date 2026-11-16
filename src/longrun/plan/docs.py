@@ -425,10 +425,18 @@ def reject(session, unlock=True):
 
 
 def unlock(session):
+    """Leave `/plan`/`/spec` mode for good: release the gate AND forget the record.
+
+    The operator must never be stuck in a command's mode (live 2026-11-16: the bar
+    stayed for ever after the decision). The FILE stays on disk; only the session's
+    record of it goes away, so the next turn is a normal turn. One write.
+    """
     from longrun.memory import stores
-    _sess, sid = _session(session)
-    if not _sess:
+    sess, sid = _session(session)
+    if not sess:
         raise ValueError("unknown session: %s" % (session or ""))
     with _LOCK:
-        stores.set_plan_mode(sid, False)
+        sess["plan_mode"] = False
+        sess.pop("plan", None)
+        stores.save_session(sess)
         return status(sid)

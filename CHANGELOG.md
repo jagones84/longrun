@@ -7,6 +7,17 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Fixed
+- **The plan/spec bar can always be dismissed, and a composer attachment chip opens again.** The
+  bar hid `⏏` for a proposed document (approve/reject were the only exits) and for an approved one
+  (the gate was already released) — so a generated spec/plan stayed on screen for ever with no
+  control, exactly the operator's *"non si può più togliere"*. `⏏` is now offered in EVERY state
+  with a confirm that says the mode is forgotten and the file kept, and `/unlock` does the same from
+  the keyboard. Separately, a chip in the composer had no click handler while its transcript twin did
+  (`_renderAttach` vs `_attachmentChips`), so clicking an attached image opened nothing (*"no si apre
+  più"*); the chip is now a real control (`role=button`, Enter/Space) that opens the image preview or
+  the editor, and `✕` stops propagation so removing never opens. Live: the in-WebUI probe (12/12)
+  unlocks both a plan and a spec session, keeps the files, and shows a new session inheriting no
+  mode. (Locked by `v1052` C2, `v1053` H4–H7.)
 - **`/plan` and `/spec` answer again (they never did).** The create route published its event with
   `kind=`, a name `_publish(kind, **data)` already owns, so the handler raised `TypeError` **after**
   the document was written and the session locked: no HTTP response ever reached the browser, the
@@ -53,6 +64,17 @@ All notable changes to Longrun are documented here. The format follows
   both spellings and the badge reads `748/748` (two test files had been added without it).
 
 ### Added
+- **`/reset` — a fresh chat without the New-session dialog, and `/unlock` — leaving `/plan`/`/spec`
+  mode.** `/reset` creates a new session in the SAME workspace and leaves the old one in the rail
+  with its transcript; it reuses the one creation path the dialog already used (`createSession`,
+  with `createNewSession` as its thin wrapper), so a reset can never drift from a manual new chat.
+  `/unlock` releases the plan gate and **forgets the session's document record**, so the plan/spec
+  bar finally disappears while the file stays on disk (`plan/docs.py:unlock`). Both are built-ins in
+  `core/slash.py:BUILTINS`; `core/commands.py:RESERVED` is now DERIVED from that list instead of
+  being a second copy that had gone stale (`/reset` and `/unlock` were missing there, so a user
+  command could have shadowed them). Live: `/api/slash` lists the eight commands; the in-WebUI probe
+  (real sessions, real model, `POST /api/docs/plan|spec`) is 12/12. (Locked by `v1053` H1–H3, `v1051`
+  A1, `v1020` A3, `v775` G5.)
 - **A run SURVIVES a restart, and the audit row says so.** Operator: *"a run killed by a restart
   is killed instead of running? that's wrong — i want runs survive restart! it's a tech spec
   prerequisite"*. The row belongs to the process that opened it, so a restart ends the INSTANCE:

@@ -145,7 +145,9 @@ check("G4 the server resolves /<name> ANYWHERE in the message, not only at 0",
       and "rest = _SKILL_SLASH_RE.sub(_resolve, message)" in AGENT
       and "if not message or \"/\" not in message:" in AGENT)
 check("G5 a UI command is never mistaken for a skill",
-      '_UI_SLASH_TOKENS = {"goal", "skills", "skill", "compact", "plan", "spec",' in AGENT
+      # v1051c: `/reset` and `/unlock` are UI commands too — a message carrying
+      # them must not be resolved as a skill named "reset"/"unlock".
+      '_UI_SLASH_TOKENS = {"goal", "skills", "skill", "compact", "reset", "unlock",' in AGENT
       and '"plugins", "plugin"}' in AGENT)
 check("G6 the skill lookup is case-insensitive",
       'wanted = str(name or "").strip().lower()' in SKILLS

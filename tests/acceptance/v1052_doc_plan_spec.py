@@ -184,10 +184,12 @@ check("C1 reject marks the document and releases the lock in THIS flow",
       docs.status(sid)["active"]["status"])
 stub_plan()
 docs.create_plan(sid, "unlock me")
+_unlock_path = docs.status(sid)["active"]["path"]
 unl = docs.unlock(sid)
-check("C2 unlock releases the lock without deciding",
-      unl.get("plan_mode") is False
-      and docs.status(sid)["active"]["status"] == "proposed", unl.get("plan_mode"))
+check("C2 unlock releases the lock AND forgets the record (bar can close)",
+      unl.get("plan_mode") is False and unl.get("active") is None
+      and stores.load_session(sid).get("plan") is None
+      and os.path.isfile(_unlock_path), unl.get("active"))
 
 # ---------------------------------------------------------------- D: /spec
 ws2 = os.path.join(TMP, "ws-spec")
