@@ -355,24 +355,11 @@ def cmd_tools(args):
     elif args.action == "cancel":
         print(json.dumps(req("POST", "/api/tools/cancel", {"job": args.value}),
                          indent=2, ensure_ascii=False))
-    elif args.action == "policy":
-        body = {"tool": args.value}
-        if getattr(args, "enable", False):
-            body["enabled"] = True
-        if getattr(args, "disable", False):
-            body["enabled"] = False
-        if getattr(args, "approval", None):
-            body["approval"] = args.approval
-        print(json.dumps(req("POST", "/api/tools", body), indent=2, ensure_ascii=False))
-    elif args.action in ("runtime", "verifier", "bestofn", "difficulty", "selfevolve",
-                         "reasoning", "approvals"):
-        # mirror the WebUI: POST /api/tools with the preset object under its key
-        try:
-            obj = json.loads(args.value) if args.value else {}
-        except json.JSONDecodeError as e:
-            print("bad json:", e, file=sys.stderr); sys.exit(2)
-        print(json.dumps(req("POST", "/api/tools", {args.action: obj}),
-                         indent=2, ensure_ascii=False))
+    # 2026-11-17: the policy WRITE verbs (policy/runtime/verifier/…/approvals) are
+    # gone. Operator: "can you change it by CLI? i think not otherwise an agent can
+    # run the cli and auto change its approval policy — its anti secure". The CLI
+    # READS the policy (`tools ls`); it never writes it — the server requires the
+    # operator token for that, and no CLI path carries one.
 
 
 def cmd_approvals(args):
@@ -1030,7 +1017,8 @@ def cmd_docs(args):
             print("error:", out["error"], file=sys.stderr)
             sys.exit(1)
         a = out.get("active") or {}
-        print("plan_mode=%s status=%s" % (bool(out.get("plan_mode")), a.get("status") or "-"))
+        print("plan_mode=%s status=%s implement=%s"
+              % (bool(out.get("plan_mode")), a.get("status") or "-", bool(a.get("implement"))))
         if a:
             print("kind=%s%s" % (a.get("kind") or "?", "  FILE MISSING" if a.get("stale") else ""))
             for p in [a.get("path")] + [d for d in (a.get("documents") or []) if d != a.get("path")]:
@@ -1040,7 +1028,8 @@ def cmd_docs(args):
     # Exact route literals, not a concatenation: `v588` proves every CLI path
     # exists on the server, and the server gates these five as exact tuples.
     route = {"plan": "/api/docs/plan", "spec": "/api/docs/spec",
-             "approve": "/api/docs/approve", "reject": "/api/docs/reject",
+             "approve": "/api/docs/approve", "implement": "/api/docs/implement",
+             "reject": "/api/docs/reject",
              "unlock": "/api/docs/unlock"}[act]
     if act in ("plan", "spec"):
         ask = (args.value or "").strip()
@@ -1048,10 +1037,13 @@ def cmd_docs(args):
             print('error: a request is required: docs %s "<request>" --session %s' % (act, sid),
                   file=sys.stderr)
             sys.exit(2)
-        out = req("POST", route, {"session": sid, "prompt": ask, "model": args.model},
-                  timeout=_LONG_TIMEOUT)
+        out = req("POST", route, {"session": sid, "prompt": ask, "model": args.model,
+                                  "origin": "cli"}, timeout=_LONG_TIMEOUT)
     else:
-        out = req("POST", route, {"session": sid})
+        body = {"session": sid}
+        if act == "approve" and getattr(args, "implement", False):
+            body["implement"] = True   # approve AND authorise (the bar's ▶)
+        out = req("POST", route, body)
     if out.get("error"):
         print("error:", out["error"], file=sys.stderr)
         sys.exit(1)
@@ -1060,14 +1052,15 @@ def cmd_docs(args):
                                   out.get("rel_path") or out.get("path") or "?"))
         for d in out.get("documents") or []:
             print("  " + str(d.get("rel_path") or d.get("path") or "?"))
-        print("status=%s plan_mode=%s model=%s lines=%s"
+        print("status=%s plan_mode=%s implement=%s model=%s lines=%s"
               % (out.get("status"), bool(out.get("plan_mode")),
-                 out.get("model") or "?", out.get("lines") or "?"))
+                 bool(out.get("implement")), out.get("model") or "?", out.get("lines") or "?"))
     else:
         a = out.get("active") or {}
         print("ok: %s · plan_mode=%s%s"
               % (act, bool(out.get("plan_mode")),
-                 (" · active=" + str(a.get("status"))) if a else " · no document"))
+                 (" · active=%s implement=%s" % (a.get("status"), bool(a.get("implement"))))
+                 if a else " · no document"))
 
 
 def cmd_context(args):
@@ -1347,10 +1340,9 @@ def main():
     p = sub.add_parser("tasks"); p.add_argument("action", choices=["ls", "add", "done", "set"]); \
         p.add_argument("value", nargs="?"); p.add_argument("--status"); p.set_defaults(fn=cmd_tasks)
     p = sub.add_parser("tools"); \
-        p.add_argument("action", choices=["ls", "call", "running", "cancel", "policy", "runtime", "verifier", "bestofn", "difficulty", "selfevolve", "reasoning", "approvals"]); \
+        p.add_argument("action", choices=["ls", "call", "running", "cancel"]); \
         p.add_argument("value", nargs="?"); p.add_argument("value2", nargs="?"); \
-        p.add_argument("--enable", action="store_true"); p.add_argument("--disable", action="store_true"); \
-        p.add_argument("--approval"); p.set_defaults(fn=cmd_tools)
+        p.set_defaults(fn=cmd_tools)
     p = sub.add_parser("approvals"); \
         p.add_argument("action", choices=["ls", "show", "approve", "deny", "rm", "clear"]); \
         p.add_argument("value", nargs="?"); p.add_argument("--status"); \
@@ -1408,8 +1400,10 @@ def main():
     sub.add_parser("paperclip-bot").set_defaults(fn=cmd_paperclip_bot)
     p = sub.add_parser("sessions"); p.add_argument("action", choices=["ls", "new", "rm", "use", "current", "history", "graph", "tree", "reset", "clear", "model"]); \
         p.add_argument("value", nargs="?"); p.add_argument("--workspace"); p.set_defaults(fn=cmd_sessions)
-    p = sub.add_parser("docs"); p.add_argument("action", choices=["status", "plan", "spec", "approve", "reject", "unlock"]); \
+    p = sub.add_parser("docs"); p.add_argument("action", choices=["status", "plan", "spec", "approve", "implement", "reject", "unlock"]); \
         p.add_argument("value", nargs="?"); p.add_argument("--session"); \
+        p.add_argument("--implement", action="store_true",
+                       help="approve AND authorise the implementation (the bar's ▶)"); \
         p.add_argument("--model"); p.set_defaults(fn=cmd_docs)
     p = sub.add_parser("context"); p.add_argument("action", choices=["show", "compact", "preview", "items"]); \
         p.add_argument("value", nargs="?"); p.add_argument("--session"); p.set_defaults(fn=cmd_context)

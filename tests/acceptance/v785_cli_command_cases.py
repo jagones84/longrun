@@ -19,7 +19,8 @@ codes (1 on a server error, 2 on bad JSON).
   H  `jobs ls` renders the row
   I  `status` hits GET /api/status; `_q` URL-encodes
   J  `agents new` guards (empty name, duplicate) + the success path
-  K  `tools policy` builds the enable/approval body
+  K  the CLI cannot write the policy (`tools policy|approvals` gone) and the two
+     document decisions map to their own routes (`docs approve` / `implement`)
   L  the bad-JSON guard family exits 2 (routing update, providers add)
 
 Deterministic: `req` is stubbed, no network, no server, no model.
@@ -205,16 +206,54 @@ check("J3 the new agent is bound to its fresh session", abody == {"session": "s-
       abody)
 check("J4 the success path exits 0", code == 0, {"exit": code, "err": e})
 
-# ------------------------------------------------- K: tools policy body -------
-o, e, code, calls = run(forge.cmd_tools,
-                        Args(action="policy", value="bash", enable=True, disable=False, approval="ask"), {})
-check("K1 the policy body carries tool + enabled + approval",
-      body_of(calls, "POST", "/api/tools") == {"tool": "bash", "enabled": True, "approval": "ask"},
-      body_of(calls, "POST", "/api/tools"))
-o, e, code, calls = run(forge.cmd_tools,
-                        Args(action="policy", value="x", enable=False, disable=True, approval=None), {})
-check("K2 --disable sends enabled=False", body_of(calls, "POST", "/api/tools") == {"tool": "x", "enabled": False},
-      body_of(calls, "POST", "/api/tools"))
+# --------------------------- K: the CLI cannot write the policy ----------------
+# 2026-11-17 (operator: "can you change it by CLI? i think not otherwise an agent
+# can run the cli and auto change its approval policy — its anti secure"). The
+# write verbs are gone from the parser; the server ALSO requires the operator
+# token for those two routes (v1052 O6), so a direct curl without it is 403 too.
+def _parse(argv, routes=None):
+    """`forge.main()` with argv; returns (exit code, req calls)."""
+    calls = []
+
+    def fake_req(method, path, body=None, **kw):
+        calls.append({"method": method, "path": path, "body": body, "kw": kw})
+        return (routes or {}).get((method, path), {})
+
+    old_argv, old_req = sys.argv, forge.req
+    sys.argv = ["forge.py"] + argv
+    forge.req = fake_req
+    try:
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            try:
+                forge.main()
+                code = 0
+            except SystemExit as exc:
+                code = int(exc.code or 0)
+    finally:
+        sys.argv, forge.req = old_argv, old_req
+    return code, calls
+
+
+check("K1 `tools policy` is not a verb any more (argparse refuses it)",
+      _parse(["tools", "policy", "bash", "--enable"])[0] == 2)
+check("K2 `tools approvals` (the old policy write) is refused too",
+      _parse(["tools", "approvals", '{"mode":"full"}'])[0] == 2)
+_kc, _kcalls = _parse(["docs", "implement", "--session", "x"])
+check("K3 `docs implement` maps to POST /api/docs/implement",
+      _kc == 0
+      and body_of(_kcalls, "POST", "/api/docs/implement") == {"session": "x"},
+      (_kc, _kcalls))
+_ka, _acalls = _parse(["docs", "approve", "--session", "x"])
+_kai, _aicalls = _parse(["docs", "approve", "--implement", "--session", "x"])
+check("K4 `approve` is content-only; `--implement` also opens the gate",
+      body_of(_acalls, "POST", "/api/docs/approve") == {"session": "x"}
+      and body_of(_aicalls, "POST", "/api/docs/approve") == {"session": "x", "implement": True},
+      (body_of(_acalls, "POST", "/api/docs/approve"),
+       body_of(_aicalls, "POST", "/api/docs/approve")))
+_kp, _pcalls = _parse(["docs", "plan", "add x", "--session", "x"])
+check("K5 `docs plan` declares origin=cli (the intent is never guessed from prose)",
+      body_of(_pcalls, "POST", "/api/docs/plan").get("origin") == "cli",
+      body_of(_pcalls, "POST", "/api/docs/plan"))
 
 # ------------------------------------------------- L: bad-JSON guard family ----
 o, e, code, _ = run(forge.cmd_routing, Args(action="update", value="{bad"), {})

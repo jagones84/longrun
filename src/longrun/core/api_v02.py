@@ -29,8 +29,11 @@ Routes owned here:
 """
 
 import copy
+import hmac
 import json
+import os
 import queue
+import secrets
 import sys
 import threading
 import time
@@ -2542,7 +2545,7 @@ def handle(handler, method, path, qs, body):
             make = _docs.create_plan if path.endswith("/plan") else _docs.create_spec
             try:
                 res = make(b.get("session") or "", b.get("prompt") or "",
-                           b.get("model"))
+                           b.get("model"), origin=str(b.get("origin") or "composer"))
             except ValueError as exc:
                 return _r(handler, 400, {"ok": False, "error": str(exc)})
             except RuntimeError as exc:
@@ -2559,13 +2562,18 @@ def handle(handler, method, path, qs, body):
             _publish("docs.created", session=b.get("session"),
                      doc_kind=res.get("kind"), path=res.get("path"))
             return _r(handler, 200, res)
-        if path in ("/api/docs/approve", "/api/docs/reject", "/api/docs/unlock"):
+        if path in ("/api/docs/approve", "/api/docs/reject", "/api/docs/unlock",
+                    "/api/docs/implement"):
             from longrun.plan import docs as _docs
             b = body or {}
             sid = b.get("session") or ""
             try:
                 if path.endswith("/approve"):
-                    res = _docs.approve(sid)
+                    # 2026-11-17: the content decision. `implement` is the SECOND
+                    # one (the bar's ▶ / POST /api/docs/implement).
+                    res = _docs.approve(sid, implement=b.get("implement") is True)
+                elif path.endswith("/implement"):
+                    res = _docs.implement(sid)
                 elif path.endswith("/reject"):
                     res = _docs.reject(sid, unlock=b.get("unlock", True) is not False)
                 else:
@@ -2573,9 +2581,11 @@ def handle(handler, method, path, qs, body):
             except ValueError as exc:
                 return _r(handler, 400, {"ok": False, "error": str(exc)})
             event = ("docs.approved" if path.endswith("/approve")
+                     else "docs.implemented" if path.endswith("/implement")
                      else "docs.rejected" if path.endswith("/reject")
                      else "docs.unlocked")
-            _publish(event, session=sid, plan_mode=res.get("plan_mode"))
+            _publish(event, session=sid, plan_mode=res.get("plan_mode"),
+                     implement=bool((res.get("active") or {}).get("implement")))
             return _r(handler, 200, res)
         if path == "/api/fs/write":  # JAG-124: save the editor buffer to disk
             return _r(handler, 200, fs_write(body))
@@ -2770,6 +2780,10 @@ def handle(handler, method, path, qs, body):
             return _r(handler, 200 if res.get("ok") else 400, res)
         if path == "/api/settings":
             # JAG-491: apply ONE structured section (validated paths + types).
+            # 2026-11-17: a CONFIG/POLICY write is an operator act, never a turn's.
+            _ok, _why = _operator_ok(handler, body)
+            if not _ok:
+                return _r(handler, 403, {"ok": False, "error": _why})
             from longrun.core import settings as _settings
             from longrun.tools import matrix_guard
             try:
@@ -2779,9 +2793,19 @@ def handle(handler, method, path, qs, body):
                 return _r(handler, 400, {"ok": False, "error": str(e)})
             if res.get("ok"):
                 _publish("config.saved", name=body.get("file"), structured=True)
+                _publish("policy.changed", file=body.get("file"), actor="operator")
             return _r(handler, 200 if res.get("ok") else 400, res)
         if path == "/api/tools":
-            return _r(handler, 200, update_policy(body))
+            # 2026-11-17: flip enabled/approval/mode is an operator act (a tool call
+            # or the CLI may not rewrite its own policy).
+            _ok, _why = _operator_ok(handler, body)
+            if not _ok:
+                return _r(handler, 403, {"ok": False, "error": _why})
+            _res = update_policy(body)
+            if _res.get("ok"):
+                _changed = sorted((body.get("approvals") or {}).keys()) or [body.get("tool") or "policy"]
+                _publish("policy.changed", actor="operator", keys=_changed)
+            return _r(handler, 200, _res)
         if path == "/api/tools/call":
             tool = body.get("tool")
             if not tool:
@@ -3398,6 +3422,55 @@ def _apply_tool_fields(entry, body, name=None):
     return None
 
 
+def _operator_token():
+    """The operator-only secret for POLICY writes (2026-11-17).
+
+    Operator: *"can you change it by CLI? i think not otherwise an agent can run
+    the cli and auto change its approval policy — it's anti secure"*. The token
+    lives OUTSIDE the repo (`~/.longrun/operator.token`, 0600), never in `.env`,
+    so the CLI's own token cannot rewrite the policy. Created on first need; the
+    WebUI asks the operator to paste it once (localStorage), the file is readable
+    with `cat ~/.longrun/operator.token`.
+
+    Honest limit: an agent with unrestricted `shell` runs as the same user and can
+    read that file. This closes the documented escalation paths (CLI verb, a tool
+    call, a prompt) and records every change — it is not a sandbox.
+    """
+    try:
+        from longrun.util import paths as _paths
+        p = os.path.join(os.path.dirname(_paths.DATA_DIR), "operator.token")
+        if os.path.isfile(p):
+            with open(p, encoding="utf-8") as f:
+                return f.read().strip()
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        tok = secrets.token_urlsafe(32)
+        fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(tok + "\n")
+        return tok
+    except OSError:
+        return ""
+
+
+def _operator_ok(handler, body):
+    """True when a POLICY write comes from the operator channel.
+
+    Two conditions, both required: no `session`/`run_id` in the body (an in-turn
+    call is never an operator act) and a matching `X-Longrun-Operator` header.
+    """
+    b = body or {}
+    if b.get("session") or b.get("run_id"):
+        return False, "a policy change cannot be made from inside a session/turn"
+    want = _operator_token()
+    if not want:
+        return False, "no operator token on this host (~/.longrun/operator.token)"
+    got = str((handler.headers.get("X-Longrun-Operator") if handler else "") or "").strip()
+    if not got or not hmac.compare_digest(got, want):
+        return False, ("operator token required — paste the token from "
+                       "~/.longrun/operator.token in Settings")
+    return True, ""
+
+
 def _update_policy(body):
     # Work on a candidate: validation may fail after earlier fields were changed,
     # and load_config() returns the shared live cache.
@@ -3422,6 +3495,11 @@ def _update_policy(body):
                 _mtx_ap._ENABLED_OVERRIDE = ap["matrix_enabled"]
             except Exception:  # noqa: BLE001
                 pass
+        # 2026-11-17: the SECOND document check — with approvals.mode=full it also
+        # authorises the implementation of a document the agent itself asked for
+        # ("auto-approve plans and specs"). Off by default.
+        if "auto_implement_documents" in body["approvals"]:
+            ap["auto_implement_documents"] = bool(body["approvals"]["auto_implement_documents"])
         # JAG-451: approval policy BY CATEGORY — what the harness may emit on its
         # own. auto = apply without asking · required = raise an approval · denied =
         # never emit. Only known values are accepted (never trust the client).

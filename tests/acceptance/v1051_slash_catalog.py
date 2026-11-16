@@ -125,8 +125,9 @@ check("D2 GET /api/docs dispatches the document status",
 check("D3 the document writes are behind one route pair",
       'if path in ("/api/docs/plan", "/api/docs/spec"):' in HTTPAPI
       and "_docs.create_plan if path.endswith" in HTTPAPI)
-check("D4 approve/reject/unlock are explicit actions",
-      'if path in ("/api/docs/approve", "/api/docs/reject", "/api/docs/unlock"):' in HTTPAPI)
+check("D4 the operator decisions are explicit actions (approve, implement, reject, unlock)",
+      'if path in ("/api/docs/approve", "/api/docs/reject", "/api/docs/unlock",' in HTTPAPI
+      and '"/api/docs/implement"' in HTTPAPI)
 
 print("\n---\nv1051: %d/%d PASS" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

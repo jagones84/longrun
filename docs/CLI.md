@@ -128,22 +128,40 @@ python3 forge.py sessions reset my-session      # clears the persistent task lis
 
 The reviewed **document** behind the plan/spec bar — not the task graph of the
 section below. `plan`/`spec` write the markdown, record it on the session and
-lock the session until you approve or reject. `--session ID` is optional: it
-defaults to the CLI's current session.
+lock the session. `--session ID` is optional: it defaults to the CLI's current
+session.
+
+There are **two decisions**: `approve` accepts the CONTENT (the session stays
+locked), `implement` authorises the IMPLEMENTATION and opens the write gate. A
+spec can be approved without authorising its implementation.
 
 | Command | Endpoint |
 |---|---|
 | `docs status [--session ID]` | `GET /api/docs?session=ID` |
-| `docs plan "request" [--session ID]` | `POST /api/docs/plan` |
-| `docs spec "request" [--session ID]` | `POST /api/docs/spec` |
-| `docs approve [--session ID]` | `POST /api/docs/approve` |
+| `docs plan "request" [--session ID]` | `POST /api/docs/plan` (origin `cli`: document only) |
+| `docs spec "request" [--session ID]` | `POST /api/docs/spec` (origin `cli`: document only) |
+| `docs approve [--implement] [--session ID]` | `POST /api/docs/approve` (`--implement` also opens the gate) |
+| `docs implement [--session ID]` | `POST /api/docs/implement` (the bar's ▶; requires an approved document) |
 | `docs reject [--session ID]` | `POST /api/docs/reject` |
 | `docs unlock [--session ID]` | `POST /api/docs/unlock` (release the gate and forget the record; the file stays) |
+
+**The CLI inherits the server's policy and cannot change it.** With
+`approvals.mode=full` the server auto-approves the document as it is created; the
+"auto-approve plans and specs" checkbox (`approvals.auto_implement_documents`)
+additionally authorises the implementation — but only for a request that ASKED to
+implement, i.e. the agent's `docs` tool. The composer's `/plan`·`/spec` and the
+CLI never implement, so with `full`+checkbox they still land `approved` with the
+gate closed. There is **no CLI verb that writes the policy**: `POST /api/tools`
+and `POST /api/settings` require `X-Longrun-Operator` (the token in
+`~/.longrun/operator.token`, 0600, outside the repo), so a shell-capable agent
+cannot lift its own approval policy from the documented surfaces.
 
 ```bash
 SID=$(python3 forge.py sessions new "docs probe" --workspace /tmp/lr-probe | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
 python3 forge.py docs plan "add a /health endpoint" --session "$SID"
 python3 forge.py docs status                         # no --session: the current session
+python3 forge.py docs approve                        # content only: still locked
+python3 forge.py docs implement                      # ▶: the write gate opens
 python3 forge.py chat "Reply with exactly PONG"      # same session, id printed
 python3 forge.py docs unlock                         # bar gone, file kept
 python3 forge.py sessions rm "$SID"
@@ -447,11 +465,11 @@ architect / improvement / cost panels, and the marketplace's single-item plus `/
 `/api/connectors/*` views). The marketplace's operator actions ARE covered (see §2). Adding a verb
 for a WebUI-only route is a deliberate change with its own test, not a missing line in this table.
 
-**v1051 WebUI-only document surface** (no `forge.py` verb; the plan bar is the operator
-surface): `GET /api/slash` (the `/` catalogue), `GET /api/docs` (the active plan/spec
-document), `POST /api/docs/plan`, `POST /api/docs/spec`, `POST /api/docs/approve`,
-`POST /api/docs/reject`, `POST /api/docs/unlock`. The CLI can call them with `curl` when
-scripting, but the document lifecycle is intentionally a reviewed UI gesture.
+**Document surface** (shared by the WebUI, the CLI and the agent's `docs` tool):
+`GET /api/slash` (the `/` catalogue), `GET /api/docs` (the active plan/spec
+document), `POST /api/docs/{plan,spec,approve,implement,reject,unlock}`. One
+backend (`plan/docs.py`), no per-surface policy; the composer's `/plan`·`/spec`
+are aliases of the same verbs.
 
 | HTTP | Path | CLI |
 |---|---|---|
@@ -515,13 +533,14 @@ scripting, but the document lifecycle is intentionally a reviewed UI gesture.
 | POST | `/api/sessions` | `sessions new` |
 | POST | `/api/docs/plan` | `docs plan` |
 | POST | `/api/docs/spec` | `docs spec` |
-| POST | `/api/docs/approve` | `docs approve` |
+| POST | `/api/docs/approve` | `docs approve [--implement]` |
+| POST | `/api/docs/implement` | `docs implement` |
 | POST | `/api/docs/reject` | `docs reject` |
 | POST | `/api/docs/unlock` | `docs unlock` |
 | POST | `/api/eval/run` | `eval run` |
 | POST | `/api/voice/stt` | `voice stt` |
 | POST | `/api/voice/tts` | `voice tts` |
-| POST | `/api/tools` | `tools policy` |
+| POST | `/api/tools` | (operator token only — no CLI verb) |
 | POST | `/api/tools/call` | `tools call` |
 | POST | `/api/tools/cancel` | `tools cancel` |
 | POST | `/api/approvals/<id>` | `approvals approve/deny` |
@@ -651,12 +670,16 @@ OUT=$(forge docs status); echo "$OUT"
 need "$OUT" "plan_mode=True" "the plan did not lock the session"
 need "$OUT" "status=proposed" "the plan is not proposed"
 
-# 7. Approve: the decision is recorded and the gate opens (the operator's act).
-step "docs approve"
+# 7. Approve the CONTENT, then authorise the IMPLEMENTATION (two decisions).
+step "docs approve + docs implement"
 forge docs approve
 OUT=$(forge docs status); echo "$OUT"
-need "$OUT" "plan_mode=False" "approve did not release the gate"
+need "$OUT" "plan_mode=True" "approve alone must NOT release the gate"
 need "$OUT" "status=approved" "the decision was not recorded"
+forge docs implement
+OUT=$(forge docs status); echo "$OUT"
+need "$OUT" "plan_mode=False" "implement did not release the gate"
+need "$OUT" "implement=True" "the authorisation was not recorded"
 
 # 8. A spec: THREE files (spec.md, tasks.md, checklist.md) and the lock again.
 step "docs spec"
@@ -690,7 +713,7 @@ What each step pins:
 | 3 | a bare `chat` writes to the **current** session and prints `session: <id>` — never an anonymous row |
 | 4 | `--new` still gives a one-shot fresh session; coming back is one `use` |
 | 5 | history / tree / graph / context / ls read the current session when the id is omitted |
-| 6–10 | the six document verbs: `plan` and `spec` write + lock, `status` reads, `approve`/`reject`/`unlock` decide and release |
+| 6–10 | the seven document verbs: `plan` and `spec` write + lock, `status` reads, `approve` decides the content (gate stays closed), `implement` opens it, `reject`/`unlock` release |
 | 11 | deleting the current session clears the pointer instead of leaving a dead id |
 
 Traps this recipe is built to catch (each one was a real defect):

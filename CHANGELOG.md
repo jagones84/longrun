@@ -6,6 +6,26 @@ All notable changes to Longrun are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- **A document now carries TWO decisions, and the approval policy has ONE owner.** Operator: *"the manual
+  approval is required both plan and spec … i was in approval=FULL … a specific checkbox: auto-approve
+  plans and specs … one can be approved to do spec but not authorized to implement them … can you change
+  it by CLI? i think not otherwise an agent can run the cli and auto change its approval policy"*.
+  `approve` decides the **content** and no longer releases the gate; the new **`implement`** — the bar's ▶,
+  `POST /api/docs/implement`, `forge.py docs implement`, the inbox's `implement` — authorises the
+  **implementation** and opens it (`stores.grant_implement`, refuses before approval). `approvals.mode=full`
+  auto-approves the document; the new checkbox **"auto-approve plans and specs"**
+  (`approvals.auto_implement_documents`) is the second check and also authorises the implementation —
+  only for a request that asked to implement, and `origin` decides that, never prose: composer `/plan`·`/spec`
+  and the CLI are `document`, the agent's `docs` tool is `implement`. The model sees which half is missing
+  (`DOCUMENT` block: "APPROVED … but did NOT authorise the implementation"). Settings lists the document
+  verbs once (derived from the catalogue) with `/plan` → `docs.plan`, `/spec` → `docs.spec` as aliases.
+  The CLI can no longer write the policy (`tools policy|approvals|runtime|…` removed): `POST /api/tools`
+  and `POST /api/settings` require `X-Longrun-Operator` = the 0600 token in `~/.longrun/operator.token`
+  (outside the repo, never `.env`), a body carrying `session`/`run_id` is always 403, and every accepted
+  write publishes `policy.changed`. (Locked by `v1052` B1/B1b, N9d/N9d2, N11b/N11b2, O1–O7; `v785` K1–K5;
+  `v763` F1–F2.)
+
 ### Fixed
 - **Plan mode gates CAPABILITIES, not a list somebody remembered.** Operator: *"the approval of plan didn't
   block the agent to do it … so spec is blocked from implementation but the plan is not blocked?
@@ -25,8 +45,8 @@ All notable changes to Longrun are documented here. The format follows
   and `POST /api/approvals/doc:<sid>` routes **approve → `docs.approve`**, **deny → `docs.reject`**
   (the panel's button reads "reject" for a document), so the inbox and the bar are the same act on the
   same record. Both directions refresh the other surface. Live: the panel's endpoint listed the plan
-  from the report (`doc:774ac9424d2b`) and a spec; approving from the inbox released that session's
-  write gate (`plan_mode=False, status=approved`). (Locked by `v1052` N11a–N11c.)
+  from the report (`doc:774ac9424d2b`) and a spec; approving from the inbox records the content decision
+  and the row then offers `implement` (the gate opens there). (Locked by `v1052` N11a–N11c.)
 - **The agent finally sees the document bar's decision.** Operator: *"even if i click approve and then say
   act the agent doesn't understand what the meaning of that bar over the message chat box"*. The bar
   is real (it renders `plan_mode` + the active document and its ✓/✕/⏏ POST `/api/docs/approve|reject|
@@ -35,7 +55,9 @@ All notable changes to Longrun are documented here. The format follows
   rejected or still pending — it had to guess. Every user turn now carries a **`DOCUMENT` block**
   (`agent._document_block`, part of the per-turn `Harness state`, rebuilt from the store so no write
   races the session file): kind, status, plan mode ON/OFF, the file path, and what that MEANS —
-  `APPROVED`: write tools allowed, read the file and follow it; `REJECTED`: do not implement it;
+  `APPROVED`+implement: write tools allowed, read the file and follow it; `APPROVED` without implement:
+  the content is accepted but the implementation is NOT authorised (write tools stay blocked); `REJECTED`:
+  do not implement it;
   `PROPOSED`: write tools blocked, never claim the work is done; `stale`: the file is missing on
   disk. Live on the session in the report (`1adb50b4a5a9`): after `docs approve`, the turn `"act"`
   read the spec, tried the edit, hit the Nucleus write guard and reported the exact patch and red

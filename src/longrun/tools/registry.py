@@ -2468,7 +2468,13 @@ def session_plan_locked(sid):
         return False
     if not s or not s.get("plan_mode"):
         return False
-    return (s.get("plan") or {}).get("status") != "approved"
+    plan = s.get("plan") or {}
+    if plan.get("status") != "approved":
+        return True
+    # 2026-11-17: approving the CONTENT is not authorising the implementation.
+    # The gate opens only with `implement` (the bar's ▶, the auto-policy, or an
+    # explicit `docs implement`).
+    return not bool(plan.get("implement"))
 
 
 def catalog():

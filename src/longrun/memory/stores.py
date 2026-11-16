@@ -1169,7 +1169,7 @@ def set_plan_mode(sid, on):
     return True
 
 
-def propose_plan(sid, steps, doc=None, lock=False):
+def propose_plan(sid, steps, doc=None, lock=False, origin=None, intent=None):
     """Record the agent's proposed plan for a session (status `proposed`).
 
     v1051: `doc` optionally carries the plan/spec document metadata
@@ -1177,6 +1177,11 @@ def propose_plan(sid, steps, doc=None, lock=False):
     machine, one writer. `lock=True` sets `plan_mode` in the SAME write, so a
     document and its gate can never land separately. Empty step lists raise (a
     plan with no steps approves nothing). Returns True on success.
+
+    2026-11-17: `origin` (`composer|tool|cli|auto`) and `intent`
+    (`document|implement`) are recorded on the plan so the SECOND decision —
+    "may the agent implement it?" — never has to be guessed from prose. A fresh
+    proposal is never implemented: `implement` starts False.
     """
     s = load_session(sid)
     if not s:
@@ -1184,9 +1189,13 @@ def propose_plan(sid, steps, doc=None, lock=False):
     clean = [str(x).strip() for x in (steps or []) if str(x).strip()]
     if not clean:
         raise ValueError("propose_plan: steps must be a non-empty list of strings")
-    plan = {"steps": clean, "status": "proposed"}
+    plan = {"steps": clean, "status": "proposed", "implement": False}
     if isinstance(doc, dict):
         plan["doc"] = dict(doc)
+    if origin:
+        plan["origin"] = str(origin)
+    if intent:
+        plan["intent"] = str(intent)
     s["plan"] = plan
     if lock:
         s["plan_mode"] = True
@@ -1195,12 +1204,16 @@ def propose_plan(sid, steps, doc=None, lock=False):
     return True
 
 
-def approve_plan(sid):
-    """Approve the pending plan: status `approved`, lock released (Act).
+def approve_plan(sid, implement=False, by="operator"):
+    """Approve the pending plan's CONTENT; optionally authorise implementation.
 
-    Requires a `proposed` plan — approving twice, or with nothing proposed,
-    raises so an approval always refers to a concrete reviewed plan.
-    Returns True on success.
+    2026-11-17 (operator: "one can be approved to do spec but not authorized to
+    auto approve and implement them"): approving the document and opening the
+    write gate are two decisions. `implement=False` records `approved` and
+    LEAVES the session locked (the gate is released by `grant_implement` or by
+    the auto-policy path); `implement=True` also releases the gate in the same
+    write. Requires a `proposed` plan — an approval always refers to a concrete
+    proposal. Returns True on success.
     """
     s = load_session(sid)
     if not s:
@@ -1209,8 +1222,34 @@ def approve_plan(sid):
     if plan.get("status") != "proposed":
         raise ValueError("approve_plan: no proposed plan for session %r" % (sid,))
     plan["status"] = "approved"
+    plan["decided_by"] = plan.get("decided_by") or by
+    plan["decided_ts"] = time.time()
     if isinstance(plan.get("doc"), dict):
         plan["doc"] = dict(plan["doc"], status="approved")
+    if implement:
+        plan["implement"] = True
+        s["plan_mode"] = False
+    s["plan"] = plan
+    live_fields_changed(sid, plan=plan, **({"plan_mode": False} if implement else {}))
+    save_session(s)
+    return True
+
+
+def grant_implement(sid):
+    """Authorise the implementation of an ALREADY approved document.
+
+    The second decision: `plan["implement"]=True` and the gate opens. Refuses
+    unless the content was approved first, so "authorise to implement" can never
+    stand in for "approve the plan". Idempotent. Returns True on success.
+    """
+    s = load_session(sid)
+    if not s:
+        raise ValueError("unknown session %r" % (sid,))
+    plan = s.get("plan") or {}
+    if plan.get("status") != "approved":
+        raise ValueError("grant_implement: the document is not approved yet")
+    plan["implement"] = True
+    plan.setdefault("implemented_ts", round(time.time(), 3))
     s["plan"] = plan
     s["plan_mode"] = False
     live_fields_changed(sid, plan=plan, plan_mode=False)
@@ -1230,6 +1269,9 @@ def reject_plan(sid):
     if plan.get("status") != "proposed":
         raise ValueError("reject_plan: no proposed plan for session %r" % (sid,))
     plan["status"] = "rejected"
+    plan["implement"] = False
+    plan["decided_by"] = plan.get("decided_by") or "operator"
+    plan["decided_ts"] = time.time()
     if isinstance(plan.get("doc"), dict):
         plan["doc"] = dict(plan["doc"], status="rejected")
     s["plan"] = plan

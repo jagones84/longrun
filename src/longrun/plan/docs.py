@@ -266,10 +266,54 @@ def _context(session, kind, extra=""):
     return text
 
 
-def _record(sid, doc, steps):
+def _record(sid, doc, steps, origin="composer"):
     from longrun.memory import stores
-    # ONE write: the proposal and its lock land together.
-    stores.propose_plan(sid, steps, doc=doc, lock=True)
+    # ONE write: the proposal and its lock land together. The INTENT is derived
+    # from the origin, never from prose: the composer's `/plan`/`/spec` and the
+    # CLI ask for a DOCUMENT; the agent's `docs` tool is acting and asks to
+    # implement (operator: "if the user asked only to plan or spec then no need
+    # to proceed to implement").
+    intent = "implement" if origin == "tool" else "document"
+    stores.propose_plan(sid, steps, doc=doc, lock=True, origin=origin, intent=intent)
+    return intent
+
+
+def _policy():
+    """The operator's document-auto policy, read from the ONE config.
+
+    `mode=full` auto-approves the CONTENT of every document as it is created (the
+    operator: "if approval in full the over msg box shall be approved
+    automatically"). `auto_implement_documents` — the checkbox "auto-approve
+    plans and specs" — is the SECOND check: it also authorises the
+    implementation, and only for a request whose intent is `implement`.
+    """
+    try:
+        from longrun.tools import registry as _reg
+        ap = (_reg.load_config() or {}).get("approvals") or {}
+    except Exception:  # noqa: BLE001 — a broken config never blocks a document
+        return {"full": False, "auto_implement": False}
+    full = str(ap.get("mode", "normal")).lower() in ("full", "auto", "yolo")
+    return {"full": full, "auto_implement": bool(ap.get("auto_implement_documents"))}
+
+
+def _decide_by_policy(sid, origin, intent):
+    """Apply `approvals.mode` to the document just written. Returns the decision.
+
+    One place, so the composer, the CLI, the `docs` tool and the RH inbox inherit
+    the same rule with no surface-specific branch (operator: "i dont want to
+    duplicate things … agents calls of commands are subject to the approval laws").
+    """
+    pol = _policy()
+    if not pol["full"]:
+        return {"ok": True, "auto": False, "implement": False}
+    implement = bool(pol["auto_implement"] and intent == "implement")
+    try:
+        from longrun.memory import stores
+        stores.approve_plan(sid, implement=implement, by="policy:approvals.mode=full")
+    except Exception as exc:  # noqa: BLE001 — a policy failure must leave the doc proposed
+        return {"ok": False, "auto": False, "implement": False, "error": str(exc)}
+    return {"ok": True, "auto": True, "implement": implement,
+            "by": "policy:approvals.mode=full"}
 
 
 def _generate_plan_doc(goal, model=None, context=""):
@@ -341,8 +385,13 @@ class _Generating:
 
 # ---------------------------------------------------------------------- create --
 
-def create_plan(session, prompt, model=None, extra_context="", owner=False):
-    """Generate one markdown plan, write it, propose it and lock the session."""
+def create_plan(session, prompt, model=None, extra_context="", owner=False,
+                origin="composer"):
+    """Generate one markdown plan, write it, propose it and lock the session.
+
+    `origin` (`composer|tool|cli`) decides the INTENT: only the agent's tool acts
+    on the document, so only `tool` can be auto-authorised to implement it.
+    """
     sess, sid = _session(session)
     if not sess:
         raise ValueError("unknown session: %s" % (session or ""))
@@ -364,21 +413,28 @@ def create_plan(session, prompt, model=None, extra_context="", owner=False):
                    "folder": os.path.dirname(path), "documents": [path],
                    "workspace": _workspace(sid), "created": _now(), "status": "proposed",
                    "model": used_model, "rel_path": _safe_rel(path, sid)}
-            _record(sid, doc, steps)
+            intent = _record(sid, doc, steps, origin=origin)
+            pol = _decide_by_policy(sid, origin, intent)
         except Exception:
             try:
                 os.remove(path)
             except OSError:
                 pass
             raise
+    live = status(sid)
+    active = live.get("active") or {}
     return {"ok": True, "kind": "plan", "title": doc["title"], "path": path,
             "rel_path": doc["rel_path"], "lines": len(md.splitlines()),
             "excerpt": "\n".join(md.splitlines()[:40]),
-            "steps": steps, "plan_mode": True, "status": "proposed",
+            "steps": steps, "plan_mode": bool(live.get("plan_mode")),
+            "status": active.get("status") or "proposed",
+            "implement": bool(active.get("implement")),
+            "auto": pol.get("auto"), "origin": origin,
             "model": used_model}
 
 
-def create_spec(session, prompt, model=None, extra_context="", owner=False):
+def create_spec(session, prompt, model=None, extra_context="", owner=False,
+                origin="composer"):
     """Generate spec.md + tasks.md + checklist.md in ONE folder, atomically."""
     sess, sid = _session(session)
     if not sess:
@@ -415,10 +471,13 @@ def create_spec(session, prompt, model=None, extra_context="", owner=False):
                "workspace": _workspace(sid), "created": _now(), "status": "proposed",
                "model": used_model, "rel_path": _safe_rel(spec_md, sid)}
         try:
-            _record(sid, doc, steps)
+            intent = _record(sid, doc, steps, origin=origin)
+            pol = _decide_by_policy(sid, origin, intent)
         except Exception:
             shutil.rmtree(final, ignore_errors=True)
             raise
+    live = status(sid)
+    active = live.get("active") or {}
     return {"ok": True, "kind": "spec", "title": title, "path": spec_md,
             "folder": final, "rel_path": doc["rel_path"],
             "documents": [{"name": n, "path": os.path.join(final, n),
@@ -426,7 +485,10 @@ def create_spec(session, prompt, model=None, extra_context="", owner=False):
                           for n in SPEC_FILES],
             "lines": sum(len(docs[n].splitlines()) for n in SPEC_FILES),
             "excerpt": "\n".join(docs["spec.md"].splitlines()[:40]),
-            "steps": steps, "plan_mode": True, "status": "proposed",
+            "steps": steps, "plan_mode": bool(live.get("plan_mode")),
+            "status": active.get("status") or "proposed",
+            "implement": bool(active.get("implement")),
+            "auto": pol.get("auto"), "origin": origin,
             "model": used_model}
 
 
@@ -461,6 +523,11 @@ def status(session):
                 exists = False
         active = dict(doc)
         active["status"] = plan.get("status") or active.get("status") or ""
+        active["implement"] = bool(plan.get("implement"))
+        active["origin"] = plan.get("origin") or ""
+        active["intent"] = plan.get("intent") or ""
+        active["decided_by"] = plan.get("decided_by") or ""
+        active["decided_ts"] = plan.get("decided_ts")
         active["exists"] = exists
         active["stale"] = not exists
         active["excerpt"] = excerpt
@@ -488,15 +555,32 @@ def _decide(session, status_value):
     return status(sid)
 
 
-def approve(session):
+def approve(session, implement=False):
+    """Approve the document's CONTENT; `implement=True` also opens the write gate.
+
+    The two decisions are separate on purpose: approving a spec is not
+    authorising the agent to implement it (`stores.grant_implement` is the other).
+    """
     from longrun.memory import stores
     _sess, sid = _session(session)
     if not _sess:
         raise ValueError("unknown session: %s" % (session or ""))
     _refuse_if_busy(sid, "approve the document")
     with _LOCK:
-        stores.approve_plan(sid)
+        stores.approve_plan(sid, implement=bool(implement), by="operator")
         return _decide(sid, "approved")
+
+
+def implement(session):
+    """Authorise the implementation of an ALREADY approved document (the ▶ act)."""
+    from longrun.memory import stores
+    _sess, sid = _session(session)
+    if not _sess:
+        raise ValueError("unknown session: %s" % (session or ""))
+    _refuse_if_busy(sid, "authorise the implementation")
+    with _LOCK:
+        stores.grant_implement(sid)
+        return status(sid)
 
 
 def reject(session, unlock=True):

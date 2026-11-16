@@ -163,9 +163,14 @@ check("A7 the status view is the source the bar reads",
 before = docs.status(sid)
 app = docs.approve(sid)
 after = stores.load_session(sid)
-check("B1 approve releases the lock and keeps the document",
-      app.get("plan_mode") is False and after.get("plan_mode") is False
+check("B1 approve records the CONTENT and keeps the lock (the gate is the second decision)",
+      app.get("plan_mode") is True and after.get("plan_mode") is True
       and (after.get("plan") or {}).get("status") == "approved"
+      and (after.get("plan") or {}).get("implement") is False
+      and os.path.isfile(before["active"]["path"]))
+check("B1b implement releases the lock and keeps the document",
+      docs.implement(sid).get("plan_mode") is False
+      and stores.load_session(sid).get("plan_mode") is False
       and os.path.isfile(before["active"]["path"]))
 check("B2 the document status follows the approval",
       docs.status(sid)["active"]["status"] == "approved")
@@ -565,10 +570,15 @@ _block_proposed = _agent._document_block(_sid_doc_ctx)
 check("N9c a proposed document says PROPOSED, names the file and the block",
       "PROPOSED and not decided" in _block_proposed
       and "kind: plan" in _block_proposed and "- file: " in _block_proposed)
-docs.approve(_sid_doc_ctx)
+docs.approve(_sid_doc_ctx)   # content only: the gate stays closed (2026-11-17)
 _block_approved = _agent._document_block(_sid_doc_ctx)
-check("N9d after approve it says APPROVED and plan mode OFF",
-      "the operator APPROVED it" in _block_approved and "plan mode: OFF" in _block_approved)
+check("N9d approve alone says APPROVED but NOT authorised, plan mode ON",
+      "APPROVED the document but did NOT authorise" in _block_approved
+      and "plan mode: ON" in _block_approved)
+docs.implement(_sid_doc_ctx)
+check("N9d2 the ▶ (implement) opens the gate and the block says so",
+      "AUTHORISED" in _agent._document_block(_sid_doc_ctx)
+      and stores.load_session(_sid_doc_ctx).get("plan_mode") is False)
 # `reject` needs a PENDING document — approve closed the first one.
 docs.create_plan(_sid_doc_ctx, "second plan to reject", owner=True)
 docs.reject(_sid_doc_ctx)
@@ -619,10 +629,14 @@ check("N11a a proposed document is a pending row in the unified inbox",
       _rows[:1])
 _res = _appr.decide_any("doc:" + _sid_lock, "approve", "test")
 _st2 = docs.status(_sid_lock)
-check("N11b deciding from the inbox is the SAME act as the bar's approve",
-      _res.get("ok") is True and _st2.get("plan_mode") is False
-      and (_st2.get("active") or {}).get("status") == "approved",
+check("N11b the inbox approves the CONTENT (gate still closed, ▶ outstanding)",
+      _res.get("ok") is True and _st2.get("plan_mode") is True
+      and (_st2.get("active") or {}).get("status") == "approved"
+      and (_st2.get("active") or {}).get("implement") is False,
       (_res.get("ok"), _st2.get("plan_mode")))
+_res2 = _appr.decide_any("doc:" + _sid_lock, "implement", "test")
+check("N11b2 the inbox ▶ authorises the implementation (gate opens)",
+      _res2.get("ok") is True and docs.status(_sid_lock).get("plan_mode") is False)
 docs.create_plan(_sid_lock, "second, to reject from the inbox", owner=True)
 _appr.decide_any("doc:" + _sid_lock, "deny", "test")
 _st3 = docs.status(_sid_lock)
@@ -630,6 +644,166 @@ check("N11c 'deny' on a document rejects it and releases the gate",
       (_st3.get("active") or {}).get("status") == "rejected"
       and _st3.get("plan_mode") is False,
       (_st3.get("active") or {}).get("status"))
+
+# ------------------- O: two decisions, ONE policy authority (2026-11-17) ------
+# Operator: "the manual approval is required both plan and spec … i was in
+# approval=FULL … that shall overcome the necessity of approval … a specific
+# checkbox: auto-approve plans and specs … if the user asked only to plan or spec
+# then no need to proceed to implement … one can be approved to do spec but not
+# authorized to auto approve and implement them".
+#
+# The matrix is the whole rule: `origin` (never prose) decides the INTENT, and
+# `approvals.mode=full` + the checkbox together decide the SECOND step.
+_ORIGIN_INTENT = {"composer": "document", "cli": "document", "tool": "implement"}
+
+
+def _set_policy(mode, auto):
+    from longrun.core import api_v02 as _api
+    _api._update_policy({"approvals": {"mode": mode, "auto_implement_documents": auto}})
+    _reg.load_config(reload=True)
+
+
+_orig_gen_o = docs._generate_plan_doc
+_ws_o = os.path.join(TMP, "ws-policy")
+os.makedirs(_ws_o, exist_ok=True)
+try:
+    docs._generate_plan_doc = lambda goal, model=None, context="": (PLAN_MD, "fake-model")
+    _matrix_bad = []
+    for _mode in ("normal", "full"):
+        for _auto in (False, True):
+            for _origin in ("composer", "tool", "cli"):
+                _sid_o = session(_ws_o)
+                _set_policy(_mode, _auto)
+                _ro = docs.create_plan(_sid_o, "matrix %s %s" % (_mode, _origin),
+                                       origin=_origin)
+                _so = docs.status(_sid_o)
+                _ao = _so.get("active") or {}
+                _want_approved = _mode == "full"
+                _want_impl = bool(_mode == "full" and _auto and _origin == "tool")
+                if not (_ao.get("status") == ("approved" if _want_approved else "proposed")
+                        and bool(_ao.get("implement")) == _want_impl
+                        and bool(_ro.get("plan_mode")) == (not _want_impl)
+                        and _ao.get("origin") == _origin
+                        and _ao.get("intent") == _ORIGIN_INTENT[_origin]):
+                    _matrix_bad.append((_mode, _auto, _origin, _ao.get("status"),
+                                        _ao.get("implement"), _ro.get("plan_mode")))
+    check("O1 only full+checkbox+tool sets implement (composer/CLI never implement)",
+          _matrix_bad == [], _matrix_bad)
+finally:
+    docs._generate_plan_doc = _orig_gen_o
+    _set_policy("normal", False)
+
+# O2: the FIRST decision never opens the gate; the SECOND one does.
+_sid_o2 = session(_ws_o)
+docs._generate_plan_doc = lambda goal, model=None, context="": (PLAN_MD, "fake-model")
+try:
+    docs.create_plan(_sid_o2, "two steps", origin="composer")
+finally:
+    docs._generate_plan_doc = _orig_plan
+docs.approve(_sid_o2)
+check("O2 approve alone keeps plan_mode ON and the gate locked",
+      stores.load_session(_sid_o2).get("plan_mode") is True
+      and docs.status(_sid_o2)["active"]["implement"] is False
+      and _reg.session_plan_locked(_sid_o2) is True)
+docs.implement(_sid_o2)
+check("O2b implement opens the gate",
+      stores.load_session(_sid_o2).get("plan_mode") is False
+      and _reg.session_plan_locked(_sid_o2) is False)
+
+# O3: authorising before approving is a refusal, not a silent grant.
+_sid_o3 = session(_ws_o)
+docs._generate_plan_doc = lambda goal, model=None, context="": (PLAN_MD, "fake-model")
+try:
+    docs.create_plan(_sid_o3, "not approved yet", origin="composer")
+finally:
+    docs._generate_plan_doc = _orig_plan
+try:
+    docs.implement(_sid_o3)
+    check("O3 implement before approval raises", False, "no raise")
+except ValueError as exc:
+    check("O3 implement before approval raises", "not approved" in str(exc), str(exc))
+
+# O4: the model is told WHICH of the two decisions is missing.
+_set_policy("full", False)
+_sid_o4 = session(_ws_o)
+docs._generate_plan_doc = lambda goal, model=None, context="": (PLAN_MD, "fake-model")
+try:
+    docs.create_plan(_sid_o4, "approved by policy only", origin="tool")
+finally:
+    docs._generate_plan_doc = _orig_plan
+_block_o4 = _agent._document_block(_sid_o4)
+check("O4 FULL without the checkbox: approved, NOT authorised, and the model is told",
+      docs.status(_sid_o4)["active"]["status"] == "approved"
+      and docs.status(_sid_o4)["active"]["implement"] is False
+      and "did NOT authorise" in _block_o4 and "plan mode: ON" in _block_o4,
+      _block_o4[:220])
+
+# O5: the same two acts in the right-hand inbox.
+_rows_o5 = [r for r in _appr.list_unified("pending") if r.get("id") == "doc:" + _sid_o4]
+check("O5 an approved-but-not-implemented document is a pending inbox row with ▶",
+      len(_rows_o5) == 1 and _rows_o5[0]["implement"] is False
+      and _rows_o5[0]["can_implement"] is True, _rows_o5[:1])
+_appr.decide_any("doc:" + _sid_o4, "implement", "test")
+check("O5b the inbox ▶ opens the gate",
+      docs.status(_sid_o4).get("plan_mode") is False
+      and docs.status(_sid_o4)["active"]["implement"] is True)
+_set_policy("normal", False)
+
+# O6: a policy write is an OPERATOR act — token + no session in the body.
+from longrun.core import api_v02 as _api_o  # noqa: E402
+from longrun.util import paths as _paths_o  # noqa: E402
+
+
+class _H:
+    def __init__(self, headers=None):
+        self.headers = headers or {}
+        self.sent = None
+
+    def _send(self, code, obj):
+        self.sent = (code, obj)
+
+
+_tok = _api_o._operator_token()
+_tok_path = os.path.join(os.path.dirname(_paths_o.DATA_DIR), "operator.token")
+check("O6a the operator token is a 0600 file OUTSIDE the repo",
+      bool(_tok) and os.path.isfile(_tok_path)
+      and (os.stat(_tok_path).st_mode & 0o777) == 0o600
+      and not _tok_path.startswith(REPO), _tok_path)
+_h = _H()
+_api_o.handle(_h, "POST", "/api/tools", {}, {"approvals": {"mode": "normal"}})
+check("O6b POST /api/tools without the operator header is 403",
+      _h.sent and _h.sent[0] == 403, _h.sent)
+_ev_o = []
+_orig_pub_o = _api_o._publish
+_api_o._publish = lambda kind, **kw: (_ev_o.append((kind, kw)), {})[1]
+try:
+    _h2 = _H({"X-Longrun-Operator": _tok})
+    _api_o.handle(_h2, "POST", "/api/tools", {}, {"approvals": {"mode": "normal"}})
+    _h3 = _H({"X-Longrun-Operator": _tok})
+    _api_o.handle(_h3, "POST", "/api/tools", {},
+                  {"session": "S", "approvals": {"mode": "full"}})
+    _h4 = _H()
+    _api_o.handle(_h4, "POST", "/api/settings", {},
+                  {"file": "index.yaml", "values": {"enabled": True}})
+    _h5 = _H({"X-Longrun-Operator": _tok})
+    _api_o.handle(_h5, "POST", "/api/settings", {},
+                  {"file": "index.yaml", "values": {"enabled": True}})
+finally:
+    _api_o._publish = _orig_pub_o
+check("O6c the token lets the write through, and the change is audited",
+      _h2.sent and _h2.sent[0] == 200 and any(k == "policy.changed" for k, _ in _ev_o),
+      (_h2.sent and _h2.sent[0], _ev_o))
+check("O6d an in-turn call (body carries `session`) is 403 even WITH the token",
+      _h3.sent and _h3.sent[0] == 403, _h3.sent)
+check("O6e POST /api/settings: 403 without the token, accepted with it",
+      _h4.sent and _h4.sent[0] == 403 and _h5.sent and _h5.sent[0] == 200,
+      (_h4.sent and _h4.sent[0], _h5.sent and _h5.sent))
+
+# O7: the CLI cannot rewrite the policy (the server would also refuse it).
+check("O7 forge.py has no policy-write verb",
+      'choices=["ls", "call", "running", "cancel"]' in FORGE_SRC
+      and 'elif args.action == "policy":' not in FORGE_SRC
+      and 'elif args.action in ("runtime", "verifier"' not in FORGE_SRC)
 
 print("\n---\nv1052: %d/%d PASS" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

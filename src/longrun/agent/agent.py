@@ -582,9 +582,13 @@ def _document_block(session_id):
         out.append("- file: %s" % rel[:400])
     if active.get("stale"):
         out.append("- the recorded file is MISSING on disk: say so, never pretend to act on it.")
+    elif status == "approved" and active.get("implement"):
+        out.append("- the operator APPROVED it and AUTHORISED the implementation: write tools are "
+                   "allowed. Read the file and follow it; it is their decision, not a new plan of yours.")
     elif status == "approved":
-        out.append("- the operator APPROVED it: write tools are allowed. Read the file and follow "
-                   "it; it is their decision, not a new plan of yours.")
+        out.append("- the operator APPROVED the document but did NOT authorise the implementation: "
+                   "write tools stay blocked. Do not implement it and do not claim it is done; wait "
+                   "for the operator's ▶ (or ask them explicitly).")
     elif status == "rejected":
         out.append("- the operator REJECTED it: do NOT implement it. Ask what to change instead.")
     else:

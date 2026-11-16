@@ -3782,8 +3782,11 @@
         <span class="gb-meta" id="docMeta"></span>
         <span class="gb-badge" id="docBadge" hidden></span>
         <button class="ghost gb-act" id="docApprove" data-call="docApprove"
-                title="approve — unlock the session and switch to act"
+                title="approve the DOCUMENT (the write gate stays closed)"
                 aria-label="approve the document">✓</button>
+        <button class="ghost gb-act" id="docImplement" data-call="docImplement" hidden
+                title="authorise the implementation — opens the write gate"
+                aria-label="authorise the implementation">▶</button>
         <button class="ghost gb-act" id="docReject" data-call="docReject"
                 title="reject — keep the document, release the lock"
                 aria-label="reject the document">✕</button>
@@ -8373,14 +8376,32 @@ function _bindRenderStream(es, live, adopt) {
 }
 
 async function api(method, path, body, opts) {
-  const r = await fetch(path, { method, headers: {...authHeaders(), "Content-Type": "application/json"},
-                                body: body ? JSON.stringify(body) : undefined, ...(opts || {}) });
+  // 2026-11-17: ONE choke point for the operator token. `approvals.mode`, the
+  // policy checkboxes and every config write are operator acts; the server
+  // refuses them without `X-Longrun-Operator` (a secret in
+  // ~/.longrun/operator.token, never in `.env`, so the CLI's token cannot lift
+  // the policy). Attaching it here means every existing POST works unchanged.
+  opts = opts || {};
+  const _headers = { ...authHeaders(), "Content-Type": "application/json", ...(opts.headers || {}) };
+  if (method === "POST" && (path === "/api/tools" || path === "/api/settings")) {
+    const _t = operatorToken();
+    if (_t) _headers["X-Longrun-Operator"] = _t;
+  }
+  const r = await fetch(path, { method, headers: _headers,
+                                body: body ? JSON.stringify(body) : undefined, ...opts, headers: _headers });
   if (!r.ok) { try { const ee = await r.json(); return ee; } catch(e) { return { error: r.status + " " + r.statusText }; } }
   // JAG-431r4: a 2xx with an empty/non-JSON body (common for POST/DELETE) made
   // `r.json()` throw a SyntaxError that callers did not catch — the action then
   // failed silently. Treat an unparseable success body as `{}`.
   try { return await r.json(); } catch (e) { return {}; }
 }
+
+/* ---- operator-only policy writes (2026-11-17) ----
+   `approvals.mode`, the checkboxes and every config write are operator acts.
+   The token lives in ~/.longrun/operator.token — never in `.env`, so the CLI's
+   token cannot lift the policy. The operator pastes it once in Settings; it
+   stays in this browser and `api()` attaches it to the two policy routes. */
+function operatorToken() { return (localStorage.getItem("sf_operator") || "").trim(); }
 
 /* ---- sessions ---- */
 /* JAG-157: switch the active session and adapt ALL session-scoped state
@@ -11247,6 +11268,11 @@ async function loadDocBar() {
   const proposed = !!a && a.status === "proposed" && !a.stale;
   $("docApprove").hidden = !proposed;
   $("docApprove").disabled = busy;
+  // 2026-11-17: approving the content is NOT authorising the implementation.
+  // ▶ only when the document is approved and the gate is still closed.
+  const implementable = !!a && a.status === "approved" && !a.implement && !a.stale;
+  $("docImplement").hidden = !implementable;
+  $("docImplement").disabled = busy;
   $("docReject").hidden = !proposed;
   $("docReject").disabled = busy;
   // v1051c: the bar must ALWAYS be removable. It used to hide `⏏` for a proposed
@@ -11268,9 +11294,20 @@ async function docApprove() {
   if (!r || r.error || r.ok === false) {
     toast("approve: " + ((r && r.error) || "failed"), "err"); return null;
   }
-  toast("approved — the session is unlocked", "ok");
+  toast("approved the document — ▶ authorises the implementation", "ok");
   await loadDocBar();
   if (typeof loadApprovals === "function") loadApprovals();   // the inbox shows the decision
+  return r;
+}
+async function docImplement() {
+  if (!sessionId) return null;
+  const r = await api("POST", "/api/docs/implement", { session: sessionId });
+  if (!r || r.error || r.ok === false) {
+    toast("implement: " + ((r && r.error) || "failed"), "err"); return null;
+  }
+  toast("implementation authorised — the write gate is open", "ok");
+  await loadDocBar();
+  if (typeof loadApprovals === "function") loadApprovals();
   return r;
 }
 async function docReject() {
@@ -12404,7 +12441,11 @@ async function loadApprovals() {
     // A plan/spec document is decided like a tool gate: approve releases the write
     // lock, "deny" IS the reject (the file stays on disk). Same inbox, honest verb.
     const denyLabel = a.kind === "document" ? "reject" : "deny";
+    const implBtn = (a.kind === "document" && a.can_implement)
+      ? `<button class="ghost" style="color:var(--warn,#b26a00)" title="authorise the implementation — opens the write gate">implement</button>`
+      : "";
     row.innerHTML = `<button class="ghost" style="color:var(--ok)">approve</button>
+                     ${implBtn}
                      <button class="ghost" style="color:var(--err)">${denyLabel}</button>`;
     const feedback = document.createElement("div"); feedback.className = "remaining";
     feedback.setAttribute("role", "status");
@@ -12415,7 +12456,12 @@ async function loadApprovals() {
     }
     row.children[0].onclick = () => decide(a.id, "approve")
       .catch(e => { feedback.textContent = String(e); });
-    row.children[1].onclick = () => decide(a.id, "deny")
+    // With a document the middle button is ▶ implement; the reject/deny is LAST.
+    if (implBtn) {
+      row.children[1].onclick = () => decide(a.id, "implement")
+        .catch(e => { feedback.textContent = String(e); });
+    }
+    row.children[row.children.length - 1].onclick = () => decide(a.id, "deny")
       .catch(e => { feedback.textContent = String(e); });
     // 2026-11-16 (operator): right-click on the request offers the same two decisions
     // plus the id — the gesture never adds an action the card does not already own.
@@ -14471,8 +14517,13 @@ function scheduleApprovalSave(el, mode) {
       timeout_secs: timeout,
       allow_matrix_promote: !!(matrix || {}).checked,
       matrix_enabled: matrixEnabled ? !!matrixEnabled.checked : true,
-      allow_nucleus_write: !!(nucleusUnlock || {}).checked
+      allow_nucleus_write: !!(nucleusUnlock || {}).checked,
+      auto_implement_documents: !!((el.querySelector("#apAutoDocs") || {}).checked)
     };
+    // 2026-11-17: the policy write needs the operator token (never in .env). Paste
+    // it once here; it is kept only in this browser's localStorage.
+    const opTok = el.querySelector("#apOperator");
+    if (opTok && opTok.value.trim()) localStorage.setItem("sf_operator", opTok.value.trim());
     if (msg && el._approvalRevision === revision) msg.textContent = "saving…";
     const save = (el._approvalSaveChain || Promise.resolve()).catch(() => null)
       .then(() => api("POST", "/api/tools", {approvals}));
@@ -14548,7 +14599,18 @@ function renderTools(el, d) {
            </select></label>
          <label title="How long a run waits for a human decision.">decision timeout (s)
            <input id="apTimeout" type="number" min="10" max="86400" value="${Number(pol.timeout_secs || 300)}"></label>
-         <span class="remaining" id="apPolicyMsg" role="status" aria-live="polite">changes save automatically</span>
+         <span class="remaining" id="apPolicyMsg" role="status" aria-live="polite">${operatorToken() ? "changes save automatically" : "policy changes disabled — paste the operator token below"}</span>
+       </div>
+       <div class="u-mt8" style="padding-top:6px;border-top:1px solid var(--bd);display:flex;flex-direction:column;gap:6px">
+         <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer" title="With FULL approval, also authorise the IMPLEMENTATION of a document the agent itself asked for (the docs tool). The composer's /plan and /spec, and the CLI, only ever write the document — they never implement it.">
+           <input id="apAutoDocs" type="checkbox"${pol.auto_implement_documents ? " checked" : ""}>
+           <span><b>Auto-approve plans and specs</b> — with FULL, the agent may implement what it planned</span>
+         </label>
+         <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer" title="Policy writes (mode, checkboxes, config) are operator acts. The token lives in ~/.longrun/operator.token (never in .env); the CLI cannot write the policy.">
+           <span>operator token</span>
+           <input id="apOperator" type="password" autocomplete="off" placeholder="paste ~/.longrun/operator.token"
+                  value="${esc(operatorToken())}" style="flex:1;min-width:180px">
+         </label>
        </div>
        <div class="u-mt8" style="padding-top:6px;border-top:1px solid var(--bd);display:flex;flex-direction:column;gap:6px">
          <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer" title="Live toggle: uncheck to disable all src/Matrix and .Matrix tools, hooks, rules, skills, and shadow WebUI, leaving only the immutable Nucleus active">
@@ -14564,6 +14626,23 @@ function renderTools(el, d) {
            <span><b>DANGEROUS — unlock Nucleus writes</b></span>
          </label>
        </div>
+     </div>`;
+  // 2026-11-17 (operator: "i dont want to duplicate things … the approval for
+  // agents and users commands refer to the same backend functions"). The document
+  // commands are ONE backend (`plan/docs.py`): the agent's `docs` tool, the
+  // composer's `/plan`·`/spec` and the CLI are thin callers. This card is READ-ONLY
+  // and derives the tool verbs from the catalogue, so it cannot drift into a second
+  // policy table.
+  const docRows = tools.filter(t => String(t.name || "").startsWith("docs."));
+  const docsCard =
+    `<div class="card" style="margin-bottom:10px">
+       <div class="set-t" title="One backend (plan/docs.py). The composer's /plan and /spec, the agent's docs tool and forge.py docs call the SAME verbs — there is no second policy.">📄 Documents</div>
+       ${docRows.length ? docRows.map(t => `<div style="display:flex;align-items:center;gap:10px;margin:4px 0">
+         <code style="flex:0 0 108px">${esc(t.name)}</code>
+         <span class="remaining">${esc(t.description || "")}</span>
+         <span class="remaining" style="margin-left:auto">${t.enabled === false ? "OFF" : esc(t.approval || "auto")}</span>
+       </div>`).join("") : '<div class="remaining">no document tools in the catalogue</div>'}
+       <div class="remaining u-mt8">approve · implement · reject · unlock stay operator-only (the bar, the Approvals panel, <code>forge.py docs</code>). <code>/plan</code> → <code>docs.plan</code>, <code>/spec</code> → <code>docs.spec</code> — same backend, no separate policy.</div>
      </div>`;
   // JAG-451: approval policy BY CATEGORY — everything the harness emits on its own.
   const KINDS = [
@@ -14801,7 +14880,7 @@ function renderTools(el, d) {
       esc(String(_fp.never_used_index_chars)) + ' characters of the model-facing index on every turn">' +
       _fpN + " unused</button>"
     : "";
-  el.innerHTML = policyCard + kindsCard + (tools.length
+  el.innerHTML = policyCard + kindsCard + docsCard + (tools.length
     ? '<div class="tools-head">' +
         '<input id="toolsFilter" class="inp" type="search" autocomplete="off" spellcheck="false" ' +
           'aria-label="filter tools" placeholder="filter tools by name or description…" value="' +

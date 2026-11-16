@@ -586,7 +586,13 @@ entry into `projects/<slug>-<sha8>/` and leaves `documents/` in place. The layou
 configured in `config/documents.yaml`; the planner has no tools, receives a bounded
 workspace context and must mark assumptions. `POST /api/docs/plan|spec` writes the file
 and calls `stores.set_plan_mode` — `registry.classify` then denies mutating tools until
-`POST /api/docs/approve` (or `reject`/`unlock`). The task graph (`/api/plan`, todos) is
+the document is **approved AND its implementation authorised** (2026-11-17): `approve`
+decides the content and `POST /api/docs/implement` (the bar's ▶) opens the gate
+(`grant_implement`); `reject`/`unlock` release it. One policy evaluation inside
+`docs.create_*` reads `approvals.mode` (FULL auto-approves the content) and
+`approvals.auto_implement_documents` (the second check, only for a request whose
+`origin` is the agent's `docs` tool). Policy writes themselves need the operator token
+(`X-Longrun-Operator`, `~/.longrun/operator.token`). The task graph (`/api/plan`, todos) is
 a DIFFERENT object and is never touched: the document is the intent/decision truth, the
 graph is execution state.
 

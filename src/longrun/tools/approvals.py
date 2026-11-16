@@ -419,7 +419,11 @@ def _document_records(status=None):
             continue
         kind = str(a.get("kind") or "plan")
         doc_status = str(a.get("status") or "proposed")
-        state = "pending" if doc_status == "proposed" else "decided"
+        implement = bool(a.get("implement"))
+        # Two decisions: the content (proposed → approved/rejected) and the
+        # implementation (approved → implement). Either one outstanding = pending.
+        pending = (doc_status == "proposed") or (doc_status == "approved" and not implement)
+        state = "pending" if pending else "decided"
         if status and state != status:
             continue
         ts = a.get("ts")
@@ -440,10 +444,13 @@ def _document_records(status=None):
                        % (kind, a.get("title") or "(untitled)", a.get("rel_path") or a.get("path") or ""),
             "status": state,
             "doc_status": doc_status,
+            "implement": implement,
+            "can_implement": (doc_status == "approved" and not implement
+                              and not a.get("stale")),
             "path": a.get("path") or "",
-            "reason": ("the plan/spec bar awaits your decision — approve to release the write gate, "
-                       "deny to reject it (the file stays on disk)"),
-            "decided_by": None if state == "pending" else "operator",
+            "reason": ("the plan/spec bar awaits your decision — approve the document, then ▶ to "
+                       "authorise the implementation (the file stays on disk)"),
+            "decided_by": None if pending else "operator",
             "decided_ts": a.get("decided_ts"),
             "kind": "document",
             "source": "document",
@@ -497,7 +504,9 @@ def decide_any(aid, decision, by="human"):
         sid = key[4:]
         try:
             from longrun.plan import docs as _docs
-            if decision in ("approve", "accept"):
+            if str(decision) in ("implement", "authorise", "authorize"):
+                _docs.implement(sid)
+            elif decision in ("approve", "accept"):
                 _docs.approve(sid)
             else:
                 _docs.reject(sid)

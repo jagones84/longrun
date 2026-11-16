@@ -3769,7 +3769,9 @@ def _docs_tool(args, run_id):
             return {"ok": False, "exit_code": 1, "error": msg, "stdout": msg}
         ctx = str(args.get("context") or "")
         make = _docs.create_plan if action == "plan" else _docs.create_spec
-        res = make(target, prompt, extra_context=ctx, owner=(target == caller))
+        # origin="tool": the agent is ACTING, so this request carries the
+        # implement intent — the only origin the auto-policy may authorise.
+        res = make(target, prompt, extra_context=ctx, owner=(target == caller), origin="tool")
     except ValueError as exc:
         return {"ok": False, "exit_code": 1, "error": str(exc), "stdout": str(exc)}
     except Exception as exc:  # noqa: BLE001 — the model must see the reason, not a crash
@@ -3779,10 +3781,11 @@ def _docs_tool(args, run_id):
             "kind": res.get("kind"), "path": res.get("path"),
             "rel_path": res.get("rel_path"), "status": res.get("status"),
             "plan_mode": res.get("plan_mode"),
-            "stdout": ("%s written: %s\nstatus=%s plan_mode=%s — the operator approves it "
-                       "from the document bar (or `forge.py docs approve`)"
+            "stdout": ("%s written: %s\nstatus=%s plan_mode=%s implement=%s — the operator "
+                       "approves the document from the bar or `forge.py docs approve`, and "
+                       "authorises the implementation with ▶ / `forge.py docs implement`"
                        % (res.get("kind") or action, res.get("rel_path") or res.get("path"),
-                          res.get("status"), res.get("plan_mode")))}
+                          res.get("status"), res.get("plan_mode"), bool(res.get("implement"))))}
 
 
 _DISPATCH = {"shell": _shell_hinted, "shell.exec": _shell_hinted,

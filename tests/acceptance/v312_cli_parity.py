@@ -76,9 +76,13 @@ check("providers accepts ls/add/rm/default/rm-model",
       all(a in prov for a in ('"ls"', '"add"', '"rm"', '"default"', '"rm-model"')))
 
 tools = choices_for("tools")
-check("tools accepts the preset actions",
-      all(a in tools for a in ('"runtime"', '"verifier"', '"bestofn"', '"difficulty"',
-                               '"selfevolve"', '"reasoning"', '"approvals"')))
+# 2026-11-17: the policy WRITE presets are gone — the CLI reads the roster and
+# calls tools; the policy is an operator act (X-Longrun-Operator, v1052 O6).
+check("tools accepts ls/call/running/cancel and no longer writes the policy",
+      all(a in tools for a in ('"ls"', '"call"', '"running"', '"cancel"'))
+      and not any(a in tools for a in ('"runtime"', '"verifier"', '"bestofn"',
+                                       '"difficulty"', '"selfevolve"', '"reasoning"',
+                                       '"approvals"', '"policy"')))
 
 mark = choices_for("market")
 check("market accepts ls/sources/status/sync/remote/import/install/installed/rm",

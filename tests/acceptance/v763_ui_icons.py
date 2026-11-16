@@ -107,5 +107,18 @@ check("E2 the command palette rows carry no colour glyph (⚙ / 🗂)",
       "\\u2699" not in PAL and "\\uD83D\\uDDC2" not in PAL
       and 'label: "Open settings"' in PAL and 'label: "Settings \\u25B8 "' in PAL)
 
+# ---- F. the two document decisions are two named controls (2026-11-17) -------
+# Approving the CONTENT and authorising the IMPLEMENTATION are separate acts, so
+# the bar must show which one is missing: ✓ approves, ▶ authorises, ✕ rejects.
+DOCBAR = ui[ui.index('<div id="docBar"'):]
+DOCBAR = DOCBAR[:DOCBAR.index("</div>")]
+check("F1 the bar carries ✓ approve and ▶ implement as separate NAMED buttons",
+      'id="docApprove"' in DOCBAR and 'id="docImplement"' in DOCBAR
+      and 'aria-label="approve the document"' in DOCBAR
+      and 'aria-label="authorise the implementation"' in DOCBAR)
+check("F2 Settings carries the auto-approve checkbox and the operator token field",
+      'id="apAutoDocs"' in ui and 'id="apOperator"' in ui
+      and "auto_implement_documents" in ui and "X-Longrun-Operator" in ui)
+
 print("---\n\nv763: %d/%d PASS" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)
