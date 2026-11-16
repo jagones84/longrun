@@ -63,8 +63,8 @@ def run(fn, args, routes):
     """
     calls = []
 
-    def fake_req(method, path, body=None):
-        calls.append({"method": method, "path": path, "body": body})
+    def fake_req(method, path, body=None, **kw):
+        calls.append({"method": method, "path": path, "body": body, "kw": kw})
         return routes.get((method, path), {})
 
     out, err = io.StringIO(), io.StringIO()
@@ -304,6 +304,24 @@ forge._set_current_session("sid-4")
 o, e, code, _ = run(forge.cmd_sessions, Args(action="rm", value="other"),
                     {("DELETE", "/api/sessions/other"): {"ok": True, "deleted": "other"}})
 check("M13 deleting ANOTHER session keeps the pointer", forge._current_session() == "sid-4", o)
+
+# M14/M15: the CLI must not KILL a long turn. Measured 2026-11-16 20:48:37: the
+# 300 s socket timeout closed the connection and the server's `watch_client`
+# aborted session b7329cccf94c mid-work (chat.interrupted). A turn has no
+# 5-minute bound, so `chat` (and the planner behind `docs plan|spec`) waits.
+o, e, code, calls = run(forge.cmd_chat,
+                        Args(message="long", session="sid-5", model=None, stream=False, new=False),
+                        {("POST", "/api/chat"): {"session": "sid-5", "reply": "done"}})
+_chat_kw = next((c["kw"] for c in calls if (c["method"], c["path"]) == ("POST", "/api/chat")), {})
+check("M14 a chat turn is not killed by the CLI's own timeout",
+      _chat_kw.get("timeout", 0) >= 3600, _chat_kw)
+
+o, e, code, calls = run(forge.cmd_docs,
+                        Args(action="plan", value="add x", session="sid-5", model=None),
+                        {("POST", "/api/docs/plan"): {"kind": "plan", "status": "proposed",
+                                                      "plan_mode": True}})
+_docs_kw = next((c["kw"] for c in calls if (c["method"], c["path"]) == ("POST", "/api/docs/plan")), {})
+check("M15 docs plan waits like a turn", _docs_kw.get("timeout", 0) >= 3600, _docs_kw)
 
 print("\n---\nv785: %d/%d PASS" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

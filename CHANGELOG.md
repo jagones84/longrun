@@ -105,7 +105,12 @@ All notable changes to Longrun are documented here. The format follows
   **13/13** (new → chat lands in it → history → `*` row → REST `messages=4` → `docs plan` on the
   same session → unlock → rm clears the pointer) and `agent_docs_probe.py` **11/11** (a real turn
   calls `docs plan`, the file exists, `plan_mode=true`, `fs.write` is `blocked` with the plan-mode
-  reason, unlock releases it and the write executes). (Locked by `v785` M1–M13; `v1052` N1–N7.)
+  reason, unlock releases it and the write executes). (Locked by `v785` M1–M15; `v1052` N1–N7.)
+  **A CLI `chat` no longer kills its own turn.** Measured 2026-11-16 20:48:37: the 300 s socket
+  timeout closed the connection and the server's `watch_client` read that as "client gone" and
+  aborted a live turn (`chat.interrupted` on `b7329cccf94c`). Turns have no 5-minute bound, so
+  `chat` and `docs plan|spec` wait (6 h) — closing the socket is an abort by contract, not a
+  detach.
 - **The CLI is the WebUI's twin for the document commands.** `forge.py docs
   status|plan "request"|spec "request"|approve|reject|unlock --session ID` calls
   the same `/api/docs*` the composer calls, prints the written path (or the

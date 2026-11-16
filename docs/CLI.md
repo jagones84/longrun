@@ -64,6 +64,12 @@ wrote to — so a turn can never land in an anonymous row again. Without a store
 session, a bare `chat` creates one and adopts its id (as before); `--new` keeps the
 old one-shot behaviour explicitly.
 
+**`chat` waits for the turn, however long it runs** (up to 6 h). The client socket
+is the turn's lifeline: if it closes, the server's `watch_client` aborts the turn
+(measured 2026-11-16 20:48:37 — a 5-minute CLI timeout killed a live turn). So do not
+wrap `chat` in `timeout 60`; use `--stream` when you want to watch progress, or
+`control abort` when you mean to stop one.
+
 ### Paperclip adapter (child process)
 
 | Command | Endpoint | Notes |

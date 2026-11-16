@@ -83,13 +83,13 @@ def _q(value):
     return urllib.parse.quote("" if value is None else str(value), safe="")
 
 
-def req(method, path, body=None):
+def req(method, path, body=None, timeout=300):
     data = json.dumps(body).encode() if body is not None else None
     r = urllib.request.Request(BASE + path, data=data, method=method,
                                headers={"Content-Type": "application/json",
                                         **({"Authorization": "Bearer " + TOKEN} if TOKEN else {})})
     try:
-        with urllib.request.urlopen(r, timeout=300) as resp:
+        with urllib.request.urlopen(r, timeout=timeout) as resp:
             return json.loads(resp.read().decode() or "{}")
     except urllib.error.HTTPError as e:
         try:
@@ -112,6 +112,12 @@ def req(method, path, body=None):
 # fanno"); `chat --new` keeps the old one-shot semantics. `LONGRUN_CLI_STATE`
 # overrides the file so tests never touch the real data home.
 _CLI_STATE_ENV = "LONGRUN_CLI_STATE"
+
+# A turn is not bounded by 5 minutes: measured 2026-11-16 20:48:37 on session
+# `b7329cccf94c` — the CLI's 300 s socket timeout closed the connection and the
+# server's `watch_client` (httpapi.py) read that as "the client is gone" and
+# ABORTED the running turn. A long delegation must be waited on, not killed.
+_LONG_TIMEOUT = 6 * 3600
 
 
 def _state_path():
@@ -232,7 +238,7 @@ def cmd_chat(args):
             print("session: %s" % got)
         return
     out = req("POST", "/api/chat", {"message": args.message, "session": sid or None,
-                                    "model": args.model})
+                                    "model": args.model}, timeout=_LONG_TIMEOUT)
     if out.get("error"):
         print("error:", out["error"], file=sys.stderr)
         sys.exit(1)
@@ -1042,7 +1048,8 @@ def cmd_docs(args):
             print('error: a request is required: docs %s "<request>" --session %s' % (act, sid),
                   file=sys.stderr)
             sys.exit(2)
-        out = req("POST", route, {"session": sid, "prompt": ask, "model": args.model})
+        out = req("POST", route, {"session": sid, "prompt": ask, "model": args.model},
+                  timeout=_LONG_TIMEOUT)
     else:
         out = req("POST", route, {"session": sid})
     if out.get("error"):
