@@ -14,8 +14,9 @@ All notable changes to Longrun are documented here. The format follows
   with a confirm that says the mode is forgotten and the file kept, and `/unlock` does the same from
   the keyboard. Separately, a chip in the composer had no click handler while its transcript twin did
   (`_renderAttach` vs `_attachmentChips`), so clicking an attached image opened nothing (*"no si apre
-  più"*); the chip is now a real control (`role=button`, Enter/Space) that opens the image preview or
-  the editor, and `✕` stops propagation so removing never opens. Live: the in-WebUI probe (12/12)
+  più"*); the chip is now a container of two SIBLING buttons (`attopen` opens the image preview /
+  the editor, `✕` removes) so nothing is nested under a `role="button"` — the axe
+  `nested-interactive` defect fixed in v851. Live: the in-WebUI probe (12/12)
   unlocks both a plan and a spec session, keeps the files, and shows a new session inheriting no
   mode. (Locked by `v1052` C2, `v1053` H4–H7.)
 - **`/plan` and `/spec` answer again (they never did).** The create route published its event with

@@ -175,10 +175,12 @@ check("H5 /unlock is honest: it forgets the record, the file stays",
 check("H6 a composer attachment chip opens like its transcript twin",
       "function _attPath(a) {" in UI
       and '_openAttachment((a.visual || _isImage(p)) ? "img" : "file", p);' in UI
-      and 'role="\' + (p ? "button" : "group")' in UI
-      and 'chip.onkeydown = (e) => {' in UI)
-check("H7 removing an attachment does not open it (✕ stops the chip click)",
-      "if (e) e.stopPropagation();" in UI)
+      and 'class="attopen"' in UI)
+check("H7 open and remove are SIBLING buttons (no nested interactive control)",
+      "role=\"' + (p" not in UI
+      and "row.querySelectorAll(\".attopen\").forEach" in UI
+      and 'class="attchip" data-i="' in UI
+      and ".attchip .attopen:focus-visible" in UI)
 
 print("\n---\nv1053: %d/%d PASS" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

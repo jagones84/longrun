@@ -172,10 +172,12 @@
   #attachRow[hidden] { display: none; }
   .attchip { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--txt);
     background: var(--hover); border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px; }
-  /* v1051c: a chip that carries a path is a real control (open preview/editor). */
-  .attchip[role="button"] { cursor: pointer; }
-  .attchip[role="button"]:hover { border-color: var(--acc); }
-  .attchip[role="button"]:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+  /* v1051c: the part of the chip that carries a path is a real button (open
+     preview/editor); it and the ✕ are SIBLINGS, never nested controls. */
+  .attchip .attopen { cursor: pointer; color: inherit; border: 0; background: none;
+    padding: 0; font: inherit; line-height: 1; display: inline-flex; align-items: center; gap: 6px; }
+  .attchip .attopen:hover { color: var(--acc); }
+  .attchip .attopen:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; border-radius: 4px; }
   /* axe 2026-11-07: a real <button>, so Enter/Space and Tab reach it; the chip is
      the surface, so the button carries no chrome of its own. */
   .attchip .x { cursor: pointer; color: var(--dim); font-weight: 700; border: 0;
@@ -7307,30 +7309,23 @@ function _renderAttach() {
     // v1051c: a chip with a REAL path opens like its transcript twin (image →
     // preview window, file → editor). The composer chips had no handler at all,
     // so clicking an attached image did nothing ("no si apre più", 2026-11-16).
+    // The chip is a CONTAINER of two sibling buttons — `role="button"` around the
+    // ✕ would be a nested interactive control (axe), the defect fixed in v851.
     const title = a.ingestError || (p ? ("open " + p) : String(a.value || ""));
-    return '<span class="attchip" role="' + (p ? "button" : "group") + '"' +
-      (p ? ' tabindex="0"' : "") + ' data-i="' + i + '" title="' + _attr(title) + '">' +
-      ic + " " + esc(a.label) +
+    const body = ic + " " + esc(a.label);
+    const main = p
+      ? '<button type="button" class="attopen" data-i="' + i + '" title="' + _attr(title) + '">' + body + '</button>'
+      : '<span class="attlabel" title="' + _attr(title) + '">' + body + '</span>';
+    return '<span class="attchip" data-i="' + i + '">' + main +
       ' <button type="button" class="x" data-i="' + i + '" aria-label="remove attachment">✕</button></span>';
   }).join("");
-  row.querySelectorAll(".attchip").forEach(chip => {
-    const a = _attachments[+chip.dataset.i];
+  row.querySelectorAll(".attopen").forEach(b => {
+    const a = _attachments[+b.dataset.i];
     const p = _attPath(a);
-    if (!p) return;
-    const open = (e) => {
-      if (e && e.target && e.target.closest && e.target.closest(".x")) return;
-      _openAttachment((a.visual || _isImage(p)) ? "img" : "file", p);
-    };
-    chip.onclick = open;
-    chip.onkeydown = (e) => {
-      if (e.target && e.target.closest && e.target.closest(".x")) return;
-      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(e); }
-    };
+    b.onclick = () => _openAttachment((a.visual || _isImage(p)) ? "img" : "file", p);
   });
-  row.querySelectorAll(".x").forEach(x => x.onclick = (e) => {
-    if (e) e.stopPropagation();
-    _attachments.splice(+x.dataset.i, 1); _renderAttach(); _renderPendingCtxItems();
-  });
+  row.querySelectorAll(".x").forEach(x => x.onclick =
+    () => { _attachments.splice(+x.dataset.i, 1); _renderAttach(); _renderPendingCtxItems(); });
 }
 function addAttachment(a) {
   _attachments.push(a); _renderAttach(); _renderPendingCtxItems(); $("inp").focus();
