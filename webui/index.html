@@ -15090,6 +15090,19 @@ function renderTools(el, d) {
   if (apMtxCb) apMtxCb.onchange = () => scheduleApprovalSave(el);
   const apMtxEn = el.querySelector("#apMatrixEnabled");
   if (apMtxEn) apMtxEn.onchange = () => scheduleApprovalSave(el);
+  // 2026-11-17: the SECOND document check and the operator token are controls of
+  // this card like any other — un-wired they were decorative.
+  const apAutoDocs = el.querySelector("#apAutoDocs");
+  if (apAutoDocs) apAutoDocs.onchange = () => scheduleApprovalSave(el);
+  const apTok = el.querySelector("#apOperator");
+  if (apTok) apTok.onchange = () => {
+    const v = apTok.value.trim();
+    if (v) localStorage.setItem("sf_operator", v);
+    else localStorage.removeItem("sf_operator");
+    const m = el.querySelector("#apPolicyMsg");
+    if (m) m.textContent = v ? "operator token saved in this browser"
+                             : "policy changes disabled — paste the operator token below";
+  };
   const apNucUnlock = el.querySelector("#apNucleusUnlock");
   if (apNucUnlock) apNucUnlock.onchange = async () => {
     if (apNucUnlock.checked && !(await uiConfirm(
