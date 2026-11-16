@@ -21,10 +21,12 @@ All notable changes to Longrun are documented here. The format follows
   (`DOCUMENT` block: "APPROVED … but did NOT authorise the implementation"). Settings lists the document
   verbs once (derived from the catalogue) with `/plan` → `docs.plan`, `/spec` → `docs.spec` as aliases.
   The CLI can no longer write the policy (`tools policy|approvals|runtime|…` removed): `POST /api/tools`
-  and `POST /api/settings` require `X-Longrun-Operator` = the 0600 token in `~/.longrun/operator.token`
-  (outside the repo, never `.env`), a body carrying `session`/`run_id` is always 403, and every accepted
-  write publishes `policy.changed`. (Locked by `v1052` B1/B1b, N9d/N9d2, N11b/N11b2, O1–O7; `v785` K1–K5;
-  `v763` F1–F2.)
+  and `POST /api/settings` refuse a body carrying `session`/`run_id` (a turn's call is never an operator
+  act) and every accepted write publishes `policy.changed`. There is ONE token — the API bearer — and the
+  **permission layer** is the control (the operator rejected a second token: *"two tokens no"*): the env
+  file is a hard deny in `fs.read`/`fs.write`/`fs.edit` and in `shell.exec` (`cat`, `grep`, …), and
+  `shell.exec` can no longer `curl|wget` the control API (`/api/tools|settings|docs|fs|edits`) around the
+  tool gate. (Locked by `v1052` B1/B1b, N9d/N9d2, N11b/N11b2, O1–O7; `v785` K1–K5; `v763` F1–F2.)
 
 ### Fixed
 - **A registry improvement can no longer delete rules it never named.** Operator: *"is this safe? what

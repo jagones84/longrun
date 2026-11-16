@@ -77,7 +77,8 @@ check("providers accepts ls/add/rm/default/rm-model",
 
 tools = choices_for("tools")
 # 2026-11-17: the policy WRITE presets are gone — the CLI reads the roster and
-# calls tools; the policy is an operator act (X-Longrun-Operator, v1052 O6).
+# calls tools; a policy write is an operator act (one token, no session in the
+# body — v1052 O6), and the CLI has no verb for it.
 check("tools accepts ls/call/running/cancel and no longer writes the policy",
       all(a in tools for a in ('"ls"', '"call"', '"running"', '"cancel"'))
       and not any(a in tools for a in ('"runtime"', '"verifier"', '"bestofn"',

@@ -358,8 +358,8 @@ def cmd_tools(args):
     # 2026-11-17: the policy WRITE verbs (policy/runtime/verifier/…/approvals) are
     # gone. Operator: "can you change it by CLI? i think not otherwise an agent can
     # run the cli and auto change its approval policy — its anti secure". The CLI
-    # READS the policy (`tools ls`); it never writes it — the server requires the
-    # operator token for that, and no CLI path carries one.
+    # READS the policy (`tools ls`); it never writes it — the server refuses such a
+    # write when the body carries a session, and no CLI path does.
 
 
 def cmd_approvals(args):

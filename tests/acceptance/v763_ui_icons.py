@@ -116,9 +116,10 @@ check("F1 the bar carries ✓ approve and ▶ implement as separate NAMED button
       'id="docApprove"' in DOCBAR and 'id="docImplement"' in DOCBAR
       and 'aria-label="approve the document"' in DOCBAR
       and 'aria-label="authorise the implementation"' in DOCBAR)
-check("F2 Settings carries the auto-approve checkbox and the operator token field",
-      'id="apAutoDocs"' in ui and 'id="apOperator"' in ui
-      and "auto_implement_documents" in ui and "X-Longrun-Operator" in ui)
+check("F2 Settings carries the auto-approve checkbox, and NO operator-token field",
+      'id="apAutoDocs"' in ui and "auto_implement_documents" in ui
+      and 'id="apOperator"' not in ui and "X-Longrun-Operator" not in ui
+      and "sf_operator" not in ui)
 
 print("---\n\nv763: %d/%d PASS" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

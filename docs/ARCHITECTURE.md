@@ -591,8 +591,11 @@ decides the content and `POST /api/docs/implement` (the bar's ▶) opens the gat
 (`grant_implement`); `reject`/`unlock` release it. One policy evaluation inside
 `docs.create_*` reads `approvals.mode` (FULL auto-approves the content) and
 `approvals.auto_implement_documents` (the second check, only for a request whose
-`origin` is the agent's `docs` tool). Policy writes themselves need the operator token
-(`X-Longrun-Operator`, `~/.longrun/operator.token`). The task graph (`/api/plan`, todos) is
+`origin` is the agent's `docs` tool). Policy writes themselves are operator acts with
+ONE token (the API bearer): `POST /api/tools|settings` refuse a body that carries a
+`session`/`run_id` and publish every accepted change as `policy.changed`; the env file
+and the control API are hard-denied in the permission layer, which is what keeps a
+shell-capable agent away from both. The task graph (`/api/plan`, todos) is
 a DIFFERENT object and is never touched: the document is the intent/decision truth, the
 graph is execution state.
 

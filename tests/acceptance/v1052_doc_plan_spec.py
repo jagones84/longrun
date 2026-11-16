@@ -771,9 +771,14 @@ check("O5c a pre-2026-11-17 approved record is decided, not a new pending ▶",
       _legacy_rows[:1])
 _set_policy("normal", False)
 
-# O6: a policy write is an OPERATOR act — token + no session in the body.
+# O6: a policy write is an OPERATOR act — the PERMISSION layer is the control.
+# 2026-11-17, second decision: the operator rejected a second token (*"two tokens
+# no … dont make permission to read .env is enougt?"*). There is ONE token (the
+# API bearer); what separates an operator act from a turn is the BODY (a turn
+# carries `session`/`run_id`) plus the hard denies that keep a shell-capable
+# agent away from the env file and from the control API.
 from longrun.core import api_v02 as _api_o  # noqa: E402
-from longrun.util import paths as _paths_o  # noqa: E402
+from longrun.tools import registry as _reg_o  # noqa: E402
 
 
 class _H:
@@ -785,41 +790,52 @@ class _H:
         self.sent = (code, obj)
 
 
-_tok = _api_o._operator_token()
-_tok_path = os.path.join(os.path.dirname(_paths_o.DATA_DIR), "operator.token")
-check("O6a the operator token is a 0600 file OUTSIDE the repo",
-      bool(_tok) and os.path.isfile(_tok_path)
-      and (os.stat(_tok_path).st_mode & 0o777) == 0o600
-      and not _tok_path.startswith(REPO), _tok_path)
-_h = _H()
-_api_o.handle(_h, "POST", "/api/tools", {}, {"approvals": {"mode": "normal"}})
-check("O6b POST /api/tools without the operator header is 403",
-      _h.sent and _h.sent[0] == 403, _h.sent)
+_API_SRC = open(os.path.join(REPO, "src", "longrun", "core", "api_v02.py"),
+                encoding="utf-8").read()
+check("O6a there is ONE token: no operator-token helper, no operator.token file",
+      "_operator_token" not in _API_SRC and "operator.token" not in _API_SRC
+      and "X-Longrun-Operator" not in _API_SRC)
 _ev_o = []
 _orig_pub_o = _api_o._publish
 _api_o._publish = lambda kind, **kw: (_ev_o.append((kind, kw)), {})[1]
 try:
-    _h2 = _H({"X-Longrun-Operator": _tok})
-    _api_o.handle(_h2, "POST", "/api/tools", {}, {"approvals": {"mode": "normal"}})
-    _h3 = _H({"X-Longrun-Operator": _tok})
-    _api_o.handle(_h3, "POST", "/api/tools", {},
+    _h = _H()
+    _api_o.handle(_h, "POST", "/api/tools", {}, {"approvals": {"mode": "normal"}})
+    _h2 = _H()
+    _api_o.handle(_h2, "POST", "/api/tools", {},
                   {"session": "S", "approvals": {"mode": "full"}})
+    _h3 = _H()
+    _api_o.handle(_h3, "POST", "/api/settings", {},
+                  {"file": "index.yaml", "values": {"enabled": True}})
     _h4 = _H()
     _api_o.handle(_h4, "POST", "/api/settings", {},
-                  {"file": "index.yaml", "values": {"enabled": True}})
-    _h5 = _H({"X-Longrun-Operator": _tok})
-    _api_o.handle(_h5, "POST", "/api/settings", {},
-                  {"file": "index.yaml", "values": {"enabled": True}})
+                  {"run_id": "R", "file": "index.yaml", "values": {"enabled": True}})
 finally:
     _api_o._publish = _orig_pub_o
-check("O6c the token lets the write through, and the change is audited",
-      _h2.sent and _h2.sent[0] == 200 and any(k == "policy.changed" for k, _ in _ev_o),
-      (_h2.sent and _h2.sent[0], _ev_o))
-check("O6d an in-turn call (body carries `session`) is 403 even WITH the token",
-      _h3.sent and _h3.sent[0] == 403, _h3.sent)
-check("O6e POST /api/settings: 403 without the token, accepted with it",
-      _h4.sent and _h4.sent[0] == 403 and _h5.sent and _h5.sent[0] == 200,
-      (_h4.sent and _h4.sent[0], _h5.sent and _h5.sent))
+check("O6b POST /api/tools outside a turn is accepted and audited as policy.changed",
+      _h.sent and _h.sent[0] == 200
+      and any(k == "policy.changed" for k, _ in _ev_o),
+      (_h.sent and _h.sent[0], _ev_o))
+check("O6c an in-turn call (body carries `session`) is refused",
+      _h2.sent and _h2.sent[0] == 403, _h2.sent)
+check("O6d POST /api/settings: accepted outside a turn, refused with `run_id`",
+      _h3.sent and _h3.sent[0] == 200 and _h4.sent and _h4.sent[0] == 403,
+      (_h3.sent and _h3.sent[0], _h4.sent and _h4.sent[0]))
+# The replacing control: the env file and the control API are hard-denied in the
+# permission layer, so `approvals.mode=full` cannot lift them.
+_d_env, _r_env = _reg_o.classify("fs.read", {"path": ".env"})
+_d_tpl, _r_tpl = _reg_o.classify("fs.read", {"path": ".env.template"})
+_d_cat, _ = _reg_o.classify("shell", {"command": "cat .env"})
+_d_wr, _ = _reg_o.classify("fs.write", {"path": ".env", "content": "x"})
+check("O6e the permission layer hard-denies the env file (fs + shell), template open",
+      _d_env == "denied" and _d_wr == "denied" and _d_cat == "denied"
+      and _d_tpl != "denied", (_d_env, _d_wr, _d_cat, _d_tpl))
+_d_api, _ = _reg_o.classify("shell", {"command": "curl -s 127.0.0.1:8790/api/tools"})
+_d_doc, _ = _reg_o.classify("shell", {"command": "curl -s localhost:8790/api/docs/approve -d '{}'"})
+_d_ok, _ = _reg_o.classify("shell", {"command": "curl -s 127.0.0.1:8790/api/sessions"})
+check("O6f a shell cannot reach the control API (policy + docs), reads stay open",
+      _d_api == "denied" and _d_doc == "denied" and _d_ok != "denied",
+      (_d_api, _d_doc, _d_ok))
 
 # O7: the CLI cannot rewrite the policy (the server would also refuse it).
 check("O7 forge.py has no policy-write verb",

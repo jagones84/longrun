@@ -152,9 +152,13 @@ additionally authorises the implementation — but only for a request that ASKED
 implement, i.e. the agent's `docs` tool. The composer's `/plan`·`/spec` and the
 CLI never implement, so with `full`+checkbox they still land `approved` with the
 gate closed. There is **no CLI verb that writes the policy**: `POST /api/tools`
-and `POST /api/settings` require `X-Longrun-Operator` (the token in
-`~/.longrun/operator.token`, 0600, outside the repo), so a shell-capable agent
-cannot lift its own approval policy from the documented surfaces.
+and `POST /api/settings` refuse a body that carries a `session`/`run_id` (a turn's
+call is never an operator act) and publish every accepted change as
+`policy.changed`. There is ONE token — the API bearer in `.env` — and the
+**permission layer** is the control: `fs.read`/`fs.write`/`fs.edit` hard-deny the
+env file, `shell.exec` hard-denies reading it (`cat`, `grep`, …) and reaching the
+control API (`curl …/api/tools|settings|docs|fs|edits`). Honest limit: that is a
+set of hard denies, not a sandbox.
 
 ```bash
 SID=$(python3 forge.py sessions new "docs probe" --workspace /tmp/lr-probe | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
@@ -540,7 +544,7 @@ are aliases of the same verbs.
 | POST | `/api/eval/run` | `eval run` |
 | POST | `/api/voice/stt` | `voice stt` |
 | POST | `/api/voice/tts` | `voice tts` |
-| POST | `/api/tools` | (operator token only — no CLI verb) |
+| POST | `/api/tools` | (a web/operator write — no CLI verb; refused when the body carries a session) |
 | POST | `/api/tools/call` | `tools call` |
 | POST | `/api/tools/cancel` | `tools cancel` |
 | POST | `/api/approvals/<id>` | `approvals approve/deny` |

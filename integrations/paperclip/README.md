@@ -77,7 +77,7 @@ or stdout:
 
 ```bash
 export LONGRUN_URL=http://127.0.0.1:8790
-export LONGRUN_TOKEN=<operator token>
+export LONGRUN_TOKEN=<the API token from .env>
 ```
 
 The token is deliberately **absent** from the settings schema: it is not a

@@ -2455,6 +2455,32 @@
   #swMain .self-row > .remaining { flex: 0 0 58px; font-size: 11px; }
   #swMain .self-row code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .hrow { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+  /* 2026-11-17 (operator: "make this more ordered … graphically. its a mess"):
+     the approval card is one label column + one control column, one row height,
+     and THREE sections (policy · operator · zones) separated by one divider. */
+  .pol-card .pol-sec { margin-top: 11px; padding-top: 11px; border-top: 1px solid var(--line); }
+  .pol-card .pol-sec:first-of-type { margin-top: 2px; padding-top: 0; border-top: 0; }
+  .pol-card .pol-hd { margin-bottom: 8px; color: var(--dim); font-size: 9.5px;
+    font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+  .pol-card .pol-row, .pol-card .pol-path {
+    display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 4px 12px;
+    align-items: center; margin: 6px 0; }
+  .pol-card .pol-lbl { color: var(--dim); font-size: 11.5px; line-height: 1.3; }
+  .pol-card .pol-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+  .pol-card .pol-seg { display: inline-flex; gap: 6px; }
+  .pol-card .pol-seg .ghost { min-height: 32px; padding: 0 14px; }
+  .pol-card .pol-check { display: grid; grid-template-columns: 18px minmax(0, 1fr);
+    gap: 9px; align-items: start; margin: 7px 0; font-size: 12px; cursor: pointer; }
+  .pol-card .pol-check > input { margin: 2px 0 0; }
+  .pol-card .pol-check .remaining { display: block; margin-top: 2px; }
+  .pol-card .pol-path { align-items: baseline; margin: 4px 0; }
+  .pol-card .pol-path code { min-width: 0; padding: 2px 7px; border-radius: 5px;
+    border: 1px solid var(--line-2); background: var(--panel2); color: var(--txt);
+    font-size: 11px; overflow-wrap: anywhere; }
+  .pol-card .pol-note { color: var(--dim); font-size: 10.5px; }
+  @media (max-width: 560px) {
+    .pol-card .pol-row, .pol-card .pol-path { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  }
   /* 2026-11-05: a MERGED form shares the card of a live picker (Settings ▸ Models ▸
      Re-ranker): separated by ONE divider, its controls sized alike, and one save on
      the right. The value the picker owns is not repeated here. */
@@ -8376,32 +8402,14 @@ function _bindRenderStream(es, live, adopt) {
 }
 
 async function api(method, path, body, opts) {
-  // 2026-11-17: ONE choke point for the operator token. `approvals.mode`, the
-  // policy checkboxes and every config write are operator acts; the server
-  // refuses them without `X-Longrun-Operator` (a secret in
-  // ~/.longrun/operator.token, never in `.env`, so the CLI's token cannot lift
-  // the policy). Attaching it here means every existing POST works unchanged.
-  opts = opts || {};
-  const _headers = { ...authHeaders(), "Content-Type": "application/json", ...(opts.headers || {}) };
-  if (method === "POST" && (path === "/api/tools" || path === "/api/settings")) {
-    const _t = operatorToken();
-    if (_t) _headers["X-Longrun-Operator"] = _t;
-  }
-  const r = await fetch(path, { method, headers: _headers,
-                                body: body ? JSON.stringify(body) : undefined, ...opts, headers: _headers });
+  const r = await fetch(path, { method, headers: {...authHeaders(), "Content-Type": "application/json"},
+                                body: body ? JSON.stringify(body) : undefined, ...(opts || {}) });
   if (!r.ok) { try { const ee = await r.json(); return ee; } catch(e) { return { error: r.status + " " + r.statusText }; } }
   // JAG-431r4: a 2xx with an empty/non-JSON body (common for POST/DELETE) made
   // `r.json()` throw a SyntaxError that callers did not catch — the action then
   // failed silently. Treat an unparseable success body as `{}`.
   try { return await r.json(); } catch (e) { return {}; }
 }
-
-/* ---- operator-only policy writes (2026-11-17) ----
-   `approvals.mode`, the checkboxes and every config write are operator acts.
-   The token lives in ~/.longrun/operator.token — never in `.env`, so the CLI's
-   token cannot lift the policy. The operator pastes it once in Settings; it
-   stays in this browser and `api()` attaches it to the two policy routes. */
-function operatorToken() { return (localStorage.getItem("sf_operator") || "").trim(); }
 
 /* ---- sessions ---- */
 /* JAG-157: switch the active session and adapt ALL session-scoped state
@@ -14536,10 +14544,6 @@ function scheduleApprovalSave(el, mode) {
       allow_nucleous_write: !!(nucleousUnlock || {}).checked,
       auto_implement_documents: !!((el.querySelector("#apAutoDocs") || {}).checked)
     };
-    // 2026-11-17: the policy write needs the operator token (never in .env). Paste
-    // it once here; it is kept only in this browser's localStorage.
-    const opTok = el.querySelector("#apOperator");
-    if (opTok && opTok.value.trim()) localStorage.setItem("sf_operator", opTok.value.trim());
     if (msg && el._approvalRevision === revision) msg.textContent = "saving…";
     const save = (el._approvalSaveChain || Promise.resolve()).catch(() => null)
       .then(() => api("POST", "/api/tools", {approvals}));
@@ -14600,46 +14604,72 @@ function renderTools(el, d) {
   const mk = (k, v, cur, extra) => { const on = cur === v; const danger = v === "full";
     const c = on ? (danger ? "color:var(--err);border-color:color-mix(in srgb, var(--err) 65%, transparent)" : "color:var(--ok);border-color:color-mix(in srgb, var(--ok) 50%, transparent)") : "";
     return `<button class="ghost" data-pol="${k}" data-val="${v}" aria-pressed="${on}" style="${c}">${extra || v}</button>`; };
+  // 2026-11-17 (operator: ".matrix is not a full relative path"): print the REAL
+  // zones, absolute. `src/Matrix` is relative to the checkout; the runtime dir is
+  // `<data home>/matrix` (JAG-533, default ~/.longrun/matrix) — there is no
+  // `.Matrix` folder in the repo any more, only the legacy ignore rule.
+  const mx = (d && d.matrix) || {};
+  const shortPath = p => String(p || "")
+    .replace(/^\/(?:home|Users)\/[^/]+/, "~")
+    .replace(/^[A-Za-z]:\\Users\\[^\\]+/, "~");
+  const pathRow = (label, p) => `<div class="pol-path">
+      <span class="pol-lbl">${label}</span>
+      <code title="${_attr(p)}">${esc(shortPath(p) || "—")}</code>
+    </div>`;
   const policyCard =
-    `<div class="card" style="margin-bottom:10px">
-       <div class="set-t" title="FULL = never ask for ordinary tools. Three things stay locked even on FULL, enforced in code: gated org/WebUI tools (the Tools panel's access badge on each row states who may call it — any session · team lead · Architect or a granted session), matrix.promote_to_nucleous (needs its own checkbox below), nucleous writes (needs the red DANGEROUS toggle). Otherwise ANY action that reaches outside the session workspace (file reads/writes, shell commands, git) needs approval.">🔓 Global approval policy</div>
-       <div style="display:flex;gap:6px;align-items:center;margin-top:6px">
-         <span style="font-size:11px;color:var(--dim);min-width:126px">Approval mode</span>
-         ${mk("mode", "normal", mode)} ${mk("mode", "full", mode, "FULL — never ask")}
+    `<div class="card pol-card" style="margin-bottom:10px">
+       <div class="set-hd">
+         <div class="set-t" title="FULL = never ask for ordinary tools. Three things stay locked even on FULL, enforced in code: gated org/WebUI tools (the Tools panel's access badge on each row states who may call it — any session · team lead · Architect or a granted session), matrix.promote_to_nucleous (needs its own checkbox below), nucleous writes (needs the red DANGEROUS toggle). Otherwise ANY action that reaches outside the session workspace (file reads/writes, shell commands, git) needs approval.">🔓 Global approval policy</div>
+         <span class="remaining" id="apPolicyMsg" role="status" aria-live="polite" style="margin-left:auto">changes save automatically — each one is audited</span>
        </div>
-       <div class="hrow u-mt8">
-         <label title="Outside the session workspace: ask, or allow automatically.">outside workspace
-           <select id="apOutside">
-             <option value="required"${(pol.outside_workspace || "required") === "required" ? " selected" : ""}>ask</option>
-             <option value="auto"${pol.outside_workspace === "auto" ? " selected" : ""}>allow</option>
-           </select></label>
-         <label title="How long a run waits for a human decision.">decision timeout (s)
-           <input id="apTimeout" type="number" min="10" max="86400" value="${Number(pol.timeout_secs || 300)}"></label>
-         <span class="remaining" id="apPolicyMsg" role="status" aria-live="polite">${operatorToken() ? "changes save automatically" : "policy changes disabled — paste the operator token below"}</span>
+       <div class="pol-sec">
+         <div class="pol-row">
+           <span class="pol-lbl">Approval mode</span>
+           <div class="pol-seg">${mk("mode", "normal", mode)} ${mk("mode", "full", mode, "FULL — never ask")}</div>
+         </div>
+         <div class="pol-row">
+           <span class="pol-lbl">Outside workspace</span>
+           <div class="pol-ctl">
+             <select id="apOutside" title="Outside the session workspace: ask, or allow automatically.">
+               <option value="required"${(pol.outside_workspace || "required") === "required" ? " selected" : ""}>ask</option>
+               <option value="auto"${pol.outside_workspace === "auto" ? " selected" : ""}>allow</option>
+             </select>
+             <span class="pol-note">ask = approval dialog · allow = run automatically</span>
+           </div>
+         </div>
+         <div class="pol-row">
+           <span class="pol-lbl">Decision timeout</span>
+           <div class="pol-ctl">
+             <input id="apTimeout" type="number" min="10" max="86400" value="${Number(pol.timeout_secs || 300)}" title="How long a run waits for a human decision.">
+             <span class="pol-note">seconds a run may wait for you</span>
+           </div>
+         </div>
        </div>
-       <div class="u-mt8" style="padding-top:6px;border-top:1px solid var(--bd);display:flex;flex-direction:column;gap:6px">
-         <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer" title="With FULL approval, also authorise the IMPLEMENTATION of a document the agent itself asked for (the docs tool). The composer's /plan and /spec, and the CLI, only ever write the document — they never implement it.">
+       <div class="pol-sec">
+         <div class="pol-hd">Documents</div>
+         <label class="pol-check" title="With FULL approval, also authorise the IMPLEMENTATION of a document the agent itself asked for (the docs tool). The composer's /plan and /spec, and the CLI, only ever write the document — they never implement it.">
            <input id="apAutoDocs" type="checkbox"${pol.auto_implement_documents ? " checked" : ""}>
-           <span><b>Auto-approve plans and specs</b> — with FULL, the agent may implement what it planned</span>
-         </label>
-         <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer" title="Policy writes (mode, checkboxes, config) are operator acts. The token lives in ~/.longrun/operator.token (never in .env); the CLI cannot write the policy.">
-           <span>operator token</span>
-           <input id="apOperator" type="password" autocomplete="off" placeholder="paste ~/.longrun/operator.token"
-                  value="${esc(operatorToken())}" style="flex:1;min-width:180px">
+           <span><b>Auto-approve plans and specs</b><span class="remaining">with FULL, the agent may implement what it planned</span></span>
          </label>
        </div>
-       <div class="u-mt8" style="padding-top:6px;border-top:1px solid var(--bd);display:flex;flex-direction:column;gap:6px">
-         <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer" title="Live toggle: uncheck to disable all src/Matrix and .Matrix tools, hooks, rules, skills, and shadow WebUI, leaving only the immutable Nucleous active">
+       <div class="pol-sec">
+         <div class="pol-hd">Matrix zone — live, editable, outside the Nucleous</div>
+         ${pathRow("Code", mx.src)}
+         ${pathRow("Runtime", mx.dot)}
+         <label class="pol-check" title="Live toggle: uncheck to disable every Matrix tool, hook, rule, skill and the shadow WebUI, leaving only the immutable Nucleous active">
            <input id="apMatrixEnabled" type="checkbox"${pol.matrix_enabled !== false ? " checked" : ""}>
-           <span><b>Enable live Matrix zone</b> <code>src/Matrix</code> <code>.Matrix</code></span>
+           <span><b>Enable live Matrix zone</b><span class="remaining">tools · hooks · rules · skills · shadow WebUI</span></span>
          </label>
-         <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer" title="Exclusive authorization to promote tested Matrix code permanently into Legacy Nucleous (even FULL mode does not unlock this)">
+         <label class="pol-check" title="Exclusive authorization to promote tested Matrix code permanently into Legacy Nucleous (even FULL mode does not unlock this)">
            <input id="apMatrixPromote" type="checkbox"${pol.allow_matrix_promote ? " checked" : ""}>
-           <span><b>Allow Matrix → Nucleous permanent promotion</b> <code>promote_to_nucleous</code></span>
+           <span><b>Allow Matrix → Nucleous permanent promotion</b><span class="remaining">runs <code>promote_to_nucleous</code> after a verified test</span></span>
          </label>
-         <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;color:var(--err)" title="DANGEROUS — unlocks writes into the immutable Nucleous for every tool: the shell write-target gate, fs.write / fs.edit and the tamper-restore all stand down, so the agent can rewrite the harness mid-run. Off by default; never unlocked by FULL approval mode.">
+       </div>
+       <div class="pol-sec">
+         <div class="pol-hd" style="color:var(--err)">Danger zone</div>
+         <label class="pol-check" style="color:var(--err)" title="DANGEROUS — unlocks writes into the immutable Nucleous for every tool: the shell write-target gate, fs.write / fs.edit and the tamper-restore all stand down, so the agent can rewrite the harness mid-run. Off by default; never unlocked by FULL approval mode.">
            <input id="apNucleousUnlock" type="checkbox"${pol.allow_nucleous_write ? " checked" : ""}>
-           <span><b>DANGEROUS — unlock Nucleous writes</b></span>
+           <span><b>Unlock Nucleous writes</b><span class="remaining">the agent may rewrite the harness itself mid-run</span></span>
          </label>
        </div>
      </div>`;
@@ -15106,19 +15136,10 @@ function renderTools(el, d) {
   if (apMtxCb) apMtxCb.onchange = () => scheduleApprovalSave(el);
   const apMtxEn = el.querySelector("#apMatrixEnabled");
   if (apMtxEn) apMtxEn.onchange = () => scheduleApprovalSave(el);
-  // 2026-11-17: the SECOND document check and the operator token are controls of
-  // this card like any other — un-wired they were decorative.
+  // 2026-11-17: the SECOND document check is a control of this card like any
+  // other — un-wired it was decorative.
   const apAutoDocs = el.querySelector("#apAutoDocs");
   if (apAutoDocs) apAutoDocs.onchange = () => scheduleApprovalSave(el);
-  const apTok = el.querySelector("#apOperator");
-  if (apTok) apTok.onchange = () => {
-    const v = apTok.value.trim();
-    if (v) localStorage.setItem("sf_operator", v);
-    else localStorage.removeItem("sf_operator");
-    const m = el.querySelector("#apPolicyMsg");
-    if (m) m.textContent = v ? "operator token saved in this browser"
-                             : "policy changes disabled — paste the operator token below";
-  };
   const apNucUnlock = el.querySelector("#apNucleousUnlock");
   if (apNucUnlock) apNucUnlock.onchange = async () => {
     if (apNucUnlock.checked && !(await uiConfirm(
@@ -15780,7 +15801,7 @@ function renderSkills() {
   };
   section("market", "From the marketplace", market, "installed from a catalogue (bundled, or a synced registry)", true);
   section("auto", "Self-generated", auto, "mined by the harness and promoted into skills/created/", true);
-  section("matrix", "Matrix", matrix, "live zone outside the Nucleous (.Matrix/skills) — promote to make it permanent", true);
+  section("matrix", "Matrix", matrix, "live zone outside the Nucleous (<matrix dir>/skills) — promote to make it permanent", true);
   section("local", "Uploaded", local, "installed from a zip by you", true);
   section("core", "Registered", core, "skill folders present on disk (skills/<category>/)", false);
 }

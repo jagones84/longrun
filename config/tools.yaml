@@ -461,8 +461,20 @@ tools:
       - ">\\s*/dev/(sd|nvme|mmcblk)"
       - "LONGRUN_TOKEN"
       - "grep[^\\n]*\\.env"
-      - "curl[^\\n]*127\\.0\\.0\\.1[^\\n]*/api/(jobs|agents|teams|architect)"
-      - "curl[^\\n]*localhost[^\\n]*/api/(jobs|agents|teams|architect)"
+      # 2026-11-17 (operator: *"dont make permission to read .env is enougt?"*):
+      # the `grep` rule above left every OTHER reader open — `cat .env`,
+      # `head .env`, `base64 .env` — and the file is what the API bearer and every
+      # provider key live in. The fs tools deny it by path (below) and this covers
+      # the shell spelling. `.env.template` is tracked and stays readable.
+      - "\\b(cat|head|tail|less|more|strings|xxd|od|base64|cp|rsync|scp)\\b[^\\n]*\\.env(?:\\.(?!template\\b)[^\\s]*)?(?:\\s|$)"
+      # 2026-11-17: the same reason the orchestration endpoints were denied: a
+      # shell-capable agent must not reach the CONTROL API around the tool gate.
+      # With ONE token (no second operator key) this is the real barrier for a
+      # policy write (`/api/tools`, `/api/settings`) and for self-approving a
+      # document (`/api/docs/approve|implement`) — `_policy_refusal` only refuses
+      # a body that carries a session, and a curl body carries none.
+      - "(?:curl|wget)[^\\n]*127\\.0\\.0\\.1[^\\n]*/api/(jobs|agents|teams|architect|tools|settings|docs|fs|edits)"
+      - "(?:curl|wget)[^\\n]*localhost[^\\n]*/api/(jobs|agents|teams|architect|tools|settings|docs|fs|edits)"
 
   # read a file (host-side, constrained to allowed roots)
   fs.read:
@@ -471,6 +483,14 @@ tools:
     roots:
       - "."
       - "/home/jagones/Repositories"
+    # 2026-11-17: the env file is the ONE place the API bearer and the provider
+    # keys live, and it sits INSIDE the workspace (so it was auto-approved). The
+    # permission layer — not a second token — is the control: hard-deny it here,
+    # in every fs verb, and for the shell spellings (`shell.exec.deny`). This is
+    # a hard deny: `approvals.mode=full` never lifts it. `.env.template` is the
+    # tracked, secret-free example and stays readable.
+    deny:
+      - "(^|/)\\.env(\\.(?!template$)[^/]*)?$"
 
   # write a file (host-side, constrained to the allowed roots; JAG-59: the repo
   # root so the agent can create/edit the DGX repos it works on)
@@ -483,6 +503,8 @@ tools:
     roots:
       - "."
       - "/home/jagones/Repositories"
+    deny:
+      - "(^|/)\\.env(\\.(?!template$)[^/]*)?$"
 
   # surgical edit: exact search/replace inside a file (safer than rewriting
   # the whole file with fs.write); same roots as fs.write
@@ -492,6 +514,8 @@ tools:
     roots:
       - "."
       - "/home/jagones/Repositories"
+    deny:
+      - "(^|/)\\.env(\\.(?!template$)[^/]*)?$"
 
   # git — read-only subcommands auto-approved, mutating ones need approval
   git:
