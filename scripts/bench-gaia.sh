@@ -22,8 +22,8 @@
 # The run is detached (a benchmark outlives a terminal) and its log is the handle:
 #   tail -f .agent/logs/gaia_<arm>_<n>_<stamp>.log
 set -u
-REPO=/home/jagones/Repositories/longrun
-IE=/home/jagones/Repositories/inspect_evals
+REPO=/home/jagones/Repositories/MyRepos/longrun
+IE=/home/jagones/Repositories/third-parties/inspect_evals
 SBX="$REPO/benchmarks/inspect_sandbox/compose.yaml"
 IMAGE=inspect-arms:latest
 MODEL="${GAIA_MODEL:-openrouter/z-ai/glm-5.3-flash}"

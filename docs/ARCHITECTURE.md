@@ -167,16 +167,16 @@ so live, reload and wire agree.
 **A deliberate clear outranks any transcript snapshot taken before it** (v1045,
 2026-11-15). The running turn keeps `msgs` in memory and flushes it into
 `sess["messages"]` at turn end — and on every tool card / inject, because those are
-persisted live. `save_session` ([stores.py:390](file:///home/jagones/Repositories/longrun/src/longrun/memory/stores.py#L390))
+persisted live. `save_session` ([stores.py:390](file:///home/jagones/Repositories/MyRepos/longrun/src/longrun/memory/stores.py#L390))
 already merged that copy with the on-disk tail under a per-session lock, but a merge
 cannot express a DELETION: a turn that had read the document BEFORE `sessions.reset`
 wrote its copy back afterwards, so the wipe reported success and the transcript
 returned (measured 2026-11-15 18:28:50: `session.cleared` fired, then 130 messages /
 47 cards / 66 injects came back). Two facts now order the writes: `load_session`
 stamps each copy with a non-persisted `_loaded_at`
-([stores.py:72](file:///home/jagones/Repositories/longrun/src/longrun/memory/stores.py#L72)),
+([stores.py:72](file:///home/jagones/Repositories/MyRepos/longrun/src/longrun/memory/stores.py#L72)),
 and `clear_session` arms a per-session `_CLEARED_AT` tombstone **before** it writes
-([stores.py:605](file:///home/jagones/Repositories/longrun/src/longrun/memory/stores.py#L605)).
+([stores.py:605](file:///home/jagones/Repositories/MyRepos/longrun/src/longrun/memory/stores.py#L605)).
 `save_session` drops `messages` / `tool_cards` / `injects` from any snapshot older
 than the tombstone and marks it `_stale_after_clear` (sticky, so that same in-memory
 turn cannot resurrect them with a later save); a snapshot loaded AFTER the clear

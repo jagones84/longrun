@@ -70,7 +70,7 @@ def run_trace(messages, injects=None):
 # exactly the false positive that fired six times on the live session.
 _MARK = '<\uff5c\uff5cDSML\uff5c\uff5c'
 _shared = (_MARK + ' calls>\n' + _MARK + ' invoke name="shell.exec">\n'
-           + _MARK + ' parameter name="command">cd /home/jagones/Repositories/jevarium '
+           + _MARK + ' parameter name="command">cd /home/jagones/Repositories/MyRepos/jevarium '
            + "&& " + "x" * 220)
 call_a = _shared + " echo AAA</" + _MARK + " parameter>"
 call_b = _shared + " echo BBB</" + _MARK + " parameter>"

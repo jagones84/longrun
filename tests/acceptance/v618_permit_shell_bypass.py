@@ -75,7 +75,7 @@ check("E1e the delegation gate is one truth too (job.get)",
       and "coordinator" in _why2, _why2)
 
 # E2: shell bypass ingredients are hard-denied
-J22_CMD = ("cd /home/jagones/Repositories/longrun && TOK=$(grep -oP "
+J22_CMD = ("cd /home/jagones/Repositories/MyRepos/longrun && TOK=$(grep -oP "
            "'LONGRUN_TOKEN:\\K.*' .env | tr -d '\"'); "
            "curl -s -m 20 -X POST "
            "\"http://127.0.0.1:8790/api/jobs/J22/dispatch?token=$TOK\"")

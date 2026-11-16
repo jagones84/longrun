@@ -28,7 +28,7 @@ import sys
 from pathlib import Path
 
 DATASET_ENV = "POLYGLOT_DIR"
-DEFAULT_DATASET = Path("/home/jagones/Repositories/polyglot-benchmark")
+DEFAULT_DATASET = Path("/home/jagones/Repositories/third-parties/polyglot-benchmark")
 
 #: language -> the files that make a task, and the command that decides it.
 #: `image` set = the command runs inside that container (the host has no such

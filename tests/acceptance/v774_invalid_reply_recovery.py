@@ -68,10 +68,10 @@ check("A1 the pure form is repaired into a real action",
 
 # the EXACT bytes from the transcript (leading newlines, single quotes in the command)
 LIVE1 = ('\n\n{"action":"tool","shell.exec","args":'
-         '{"command":"cd /home/jagones/Repositories/jevarium && sed -n \'850,868p\' '
+         '{"command":"cd /home/jagones/Repositories/MyRepos/jevarium && sed -n \'850,868p\' '
          'web/index.html"}}')
 LIVE2 = ('\n\n{"action":"tool","shell.exec","args":'
-         '{"command":"cd /home/jagones/Repositories/jevarium && awk \'NR>=850 && NR<=870\' '
+         '{"command":"cd /home/jagones/Repositories/MyRepos/jevarium && awk \'NR>=850 && NR<=870\' '
          'web/index.html"}}')
 LIVE3 = ('\n\n{"action":"tool","tool":"shell.exec","args":'
          '{"command":"cd /x && node s.mjs 2>&1 | tail -6"}}')

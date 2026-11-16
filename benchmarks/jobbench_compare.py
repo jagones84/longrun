@@ -38,7 +38,7 @@ from . import jobbench_judge as JJ
 from .bare_adapter import _env_file_key, _key
 
 DEFAULT_HARNESS2 = Path(os.environ.get("HARNESS2_REPO",
-                                       "/home/jagones/Repositories/Harness2")).expanduser()
+                                       "/home/jagones/Repositories/third-parties/Harness2")).expanduser()
 
 SUITE = "jobbench"
 #: Where runs live by default. The repo ships no results; `.agent/` is local only.

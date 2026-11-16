@@ -13,7 +13,7 @@ the UI, its endpoint is reachable from here.
 ## 0. TL;DR
 
 ```bash
-cd /home/jagones/Repositories/longrun
+cd /home/jagones/Repositories/MyRepos/longrun
 export LONGRUN_URL=http://127.0.0.1:8790          # default already
 export LONGRUN_TOKEN=$(grep '^LONGRUN_TOKEN=' ~/.longrun/config/env | cut -d= -f2)
 python3 forge.py --help
@@ -613,7 +613,7 @@ These connect to a `text/event-stream` and print until `Ctrl-C` / completion:
   same policy (compaction, routing, approvals) applies as in the WebUI/app.
 * `models ensure` and `eval run` can be slow (model load / multiple turns).
 * Add a shell alias for convenience:
-  `alias forge='python3 /home/jagones/Repositories/longrun/forge.py'`.
+  `alias forge='python3 /home/jagones/Repositories/MyRepos/longrun/forge.py'`.
 
 ---
 
@@ -629,7 +629,7 @@ order, on a throwaway session and workspace. It is the executable twin of
 #!/usr/bin/env bash
 # Live smoke: sessions + documents through the CLI only. Fails loudly on the first red.
 set -euo pipefail
-cd /home/jagones/Repositories/longrun
+cd /home/jagones/Repositories/MyRepos/longrun
 forge(){ python3 forge.py "$@"; }
 step(){ printf '\n── %s\n' "$*"; }
 need(){ grep -q -- "$2" <<<"$1" || { printf 'FAIL: %s\n%s\n' "$3" "$1"; exit 1; }; }

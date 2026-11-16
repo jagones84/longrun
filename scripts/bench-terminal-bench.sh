@@ -13,9 +13,9 @@
 # gets ranked. Each arm carries its own runtime into the task container (the score
 # is the machine's end state), so both are measured on the same terms.
 set -u
-REPO="/home/jagones/Repositories/longrun"
+REPO="/home/jagones/Repositories/MyRepos/longrun"
 cd "$REPO" || exit 1
-TB_HOME="${TB_HOME:-/home/jagones/Repositories/terminal-bench}"
+TB_HOME="${TB_HOME:-/home/jagones/Repositories/third-parties/terminal-bench}"
 TB="$TB_HOME/.venv/bin/tb"
 
 # Model policy (project rule 2026-11-06): NEVER a local DGX model in a benchmark —

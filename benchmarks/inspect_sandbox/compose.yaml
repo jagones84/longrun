@@ -9,7 +9,7 @@
 # (`_sandbox/compose.py`, `network_mode: str | None`).
 #
 #   inspect eval inspect_evals/gaia \
-#     --sandbox docker:/home/jagones/Repositories/longrun/benchmarks/inspect_sandbox/compose.yaml ...
+#     --sandbox docker:/home/jagones/Repositories/MyRepos/longrun/benchmarks/inspect_sandbox/compose.yaml ...
 #
 # Trade-off: with the network the answer depends on what the web says right now, so
 # the run is no longer reproducible offline. Use it deliberately, one run at a time.

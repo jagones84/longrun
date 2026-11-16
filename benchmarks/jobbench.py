@@ -30,7 +30,7 @@ from pathlib import Path
 #: The pinned upstream checkout. Override with `JOB_BENCH_REPO` to run elsewhere.
 DEFAULT_REPO = Path(os.environ.get(
     "JOB_BENCH_REPO",
-    "/home/jagones/Repositories/Harness2/dependencies/job-bench-eval")).expanduser()
+    "/home/jagones/Repositories/third-parties/Harness2/dependencies/job-bench-eval")).expanduser()
 
 #: The instruction every arm receives (Harness² `PROMPT`, verbatim).
 PROMPT = """=== TASK FOLDER ===

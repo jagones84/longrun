@@ -79,13 +79,13 @@ describe("Longrun Paperclip adapter package", () => {
     // Operator overrides survive; unusable numbers fall back to the default.
     const overridden = resolveAdapterConfig({
       command: "python3",
-      cwd: "/home/jagones/Repositories/longrun",
+      cwd: "/home/jagones/Repositories/MyRepos/longrun",
       maxSteps: 3,
       model: "qwen3-coder",
       session: "ops",
     });
     expect(overridden.command).toBe("python3");
-    expect(overridden.cwd).toBe("/home/jagones/Repositories/longrun");
+    expect(overridden.cwd).toBe("/home/jagones/Repositories/MyRepos/longrun");
     expect(overridden.maxSteps).toBe(3);
     expect(overridden.model).toBe("qwen3-coder");
     expect(overridden.session).toBe("ops");

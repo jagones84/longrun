@@ -151,7 +151,7 @@ python3 -m benchmarks.polyglot_compare \
   `load_tasks` refuses them by name instead of scoring 0. `go/ledger` is excluded
   (`KNOWN_BAD`): its tests pass on the untouched stub, so it would pay free points.
 - **Dataset**: clone `https://github.com/Aider-AI/polyglot-benchmark` next to the
-  repo (default `/home/jagones/Repositories/polyglot-benchmark`, override with
+  repo (default `/home/jagones/Repositories/third-parties/polyglot-benchmark`, override with
   `POLYGLOT_DIR`). `run.json` records the dataset commit.
 - `--check` is the suite's own regression test: a task whose exemplar does not pass
   or whose stub does pass is a broken task, and the runner refuses it.

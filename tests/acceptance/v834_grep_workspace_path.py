@@ -5,7 +5,7 @@ Live 2026-11-06 (SWE slice, session dbaa607aa31b, `pylint-dev__pylint-6386`):
 the turn opened the benchmark repo as its workspace, and
 
     grep.search {"pattern": "verbose", "path": "pylint/config"}
-      -> ERROR: path does not exist: /home/jagones/Repositories/longrun/pylint/config
+      -> ERROR: path does not exist: /home/jagones/Repositories/MyRepos/longrun/pylint/config
 
 `grep.search` resolved the RELATIVE path against the harness checkout (`REPO`),
 while `fs.read` resolved the same kind of path against the session workspace

@@ -430,7 +430,7 @@ Shell tools run on the host unless a sandbox backend is installed and enabled in
 WebUI uses, stdlib only, no install. Full reference: [CLI reference](docs/CLI.md).
 
 ```bash
-cd /home/jagones/Repositories/longrun
+cd /home/jagones/Repositories/MyRepos/longrun
 python3 forge.py status             # server, router, versions
 python3 forge.py sessions ls        # your sessions (the current one is marked with *)
 python3 forge.py sessions new "probe"            # prints the id and makes it CURRENT

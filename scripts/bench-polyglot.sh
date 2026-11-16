@@ -20,7 +20,7 @@
 #
 # Prove the suite before spending: python3 -m benchmarks.polyglot_compare --check
 set -u
-cd /home/jagones/Repositories/longrun || exit 1
+cd /home/jagones/Repositories/MyRepos/longrun || exit 1
 
 TAG="${1:?usage: bench-polyglot.sh <tag> [limit] [arms] [language]}"
 LIMIT="${2:-10}"

@@ -113,7 +113,7 @@ check("D1 the manifest has a plumbing control first", tasks[0] == "hello-world",
 check("D2 no task is listed twice", len(tasks) == len(set(tasks)), tasks)
 check("D3 every entry is a bare task id (no paths, no flags)",
       all((" " not in t and "/" not in t) for t in tasks))
-tb_home = os.environ.get("TB_HOME", "/home/jagones/Repositories/terminal-bench")
+tb_home = os.environ.get("TB_HOME", "/home/jagones/Repositories/third-parties/terminal-bench")
 task_root = os.path.join(tb_home, "original-tasks")
 if os.path.isdir(task_root):
     missing = [t for t in tasks if not os.path.isdir(os.path.join(task_root, t))]

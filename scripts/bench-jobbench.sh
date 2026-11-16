@@ -11,7 +11,7 @@
 #   model  Longrun model id (default openrouter:z-ai/glm-5.3-flash)
 # Env: JUDGE_MODEL, MAX_STEPS, TASK_TIMEOUT, JUDGE_TIMEOUT.
 set -u
-cd /home/jagones/Repositories/longrun || exit 1
+cd /home/jagones/Repositories/MyRepos/longrun || exit 1
 
 TAG="${1:?usage: bench-jobbench.sh <tag> [tasks] [arms] [model]}"
 TASKS="${2:-1}"

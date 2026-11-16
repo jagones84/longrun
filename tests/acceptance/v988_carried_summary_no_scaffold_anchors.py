@@ -38,7 +38,7 @@ def check(name, ok, detail=""):
 BODY = CE.SUMMARY_PREFIX + "the user asked to fix the parser in src/longrun/model/prompt.py"
 HARNESS = {"role": "user",
            "content": "[harness] Observation for tool fs.read: read "
-                      "/home/jagones/Repositories/longrun/src/longrun/core/server.py"}
+                      "/home/jagones/Repositories/MyRepos/longrun/src/longrun/core/server.py"}
 PREV = {"role": "system", "content": BODY}
 
 # ---- A: the carried path is byte-identical -------------------------------

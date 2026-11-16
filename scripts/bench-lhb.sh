@@ -18,7 +18,7 @@
 # `8/8 tasks verified`. The runner refuses a non-empty --out folder, so two
 # results never share a directory.
 set -u
-cd /home/jagones/Repositories/longrun || exit 1
+cd /home/jagones/Repositories/MyRepos/longrun || exit 1
 
 MODE="${1:-check}"
 

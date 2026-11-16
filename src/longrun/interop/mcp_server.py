@@ -9,7 +9,7 @@ HTTP. Register it with any MCP client, e.g.:
       "mcpServers": {
         "longrun": {
           "command": "python3",
-          "args": ["/home/jagones/Repositories/longrun/mcp_server.py"],
+          "args": ["/home/jagones/Repositories/MyRepos/longrun/mcp_server.py"],
           "env": {"LONGRUN_URL": "http://127.0.0.1:8790"}
         }
       }

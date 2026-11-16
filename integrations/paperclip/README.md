@@ -66,7 +66,7 @@ published tarball:
 {
   "packageName": "longrun-paperclip-adapter",
   "type": "longrun",
-  "localPath": "/home/jagones/Repositories/longrun/integrations/paperclip",
+  "localPath": "/home/jagones/Repositories/MyRepos/longrun/integrations/paperclip",
   "version": "0.1.0"
 }
 ```

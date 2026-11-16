@@ -15,7 +15,7 @@
 # Usage:  bash benchmarks/inspect_sandbox/build_image.sh
 set -euo pipefail
 
-REPO=/home/jagones/Repositories/longrun
+REPO=/home/jagones/Repositories/MyRepos/longrun
 SRC=$REPO/benchmarks/inspect_sandbox
 NODE=/home/jagones/.nvm/versions/node/v24.22.1/bin/node
 OC=/home/jagones/.local/node/lib/node_modules/openclaw

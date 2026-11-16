@@ -13,7 +13,7 @@
 #
 # Env: MODEL (allow-list, same policy as LHB: no local DGX model).
 set -u
-cd /home/jagones/Repositories/longrun || exit 1
+cd /home/jagones/Repositories/MyRepos/longrun || exit 1
 
 MODE="${1:-check}"
 MODEL="${MODEL:-openrouter:z-ai/glm-5.3-flash}"

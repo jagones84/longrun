@@ -3333,7 +3333,7 @@ All notable changes to Longrun are documented here. The format follows
   inside the session workspace (`Repositories/TESTS/Jago`). `_resolve_fs_arg` now resolves a
   relative path against the workspace **and each of its ancestors** that stays inside a browse
   root (bounded to 12 levels), so a link to a sibling project under `Repositories/` resolves to
-  the real file. Verified live: the link opened `/home/jagones/Repositories/sparkpulse-server/status_server.py`.
+  the real file. Verified live: the link opened `/home/jagones/Repositories/MyRepos/sparkpulse-server/status_server.py`.
 - **The context breakdown is a list of horizontal bars (JAG-364).** Instead of a wrapping legend
   of words, each category is now a horizontal bar coloured exactly like its donut segment, sorted
   big → small, with a short label (`sys instr`, `tool out`, `harness`, …) so the bars get the
