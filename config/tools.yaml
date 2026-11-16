@@ -482,7 +482,7 @@ tools:
     approval: auto
     roots:
       - "."
-      - "/home/jagones/Repositories"
+      - "~/Repositories"
     # 2026-11-17: the env file is the ONE place the API bearer and the provider
     # keys live, and it sits INSIDE the workspace (so it was auto-approved). The
     # permission layer — not a second token — is the control: hard-deny it here,
@@ -502,7 +502,7 @@ tools:
     approval: required
     roots:
       - "."
-      - "/home/jagones/Repositories"
+      - "~/Repositories"
     deny:
       - "(^|/)\\.env(\\.(?!template$)[^/]*)?$"
 
@@ -513,7 +513,7 @@ tools:
     approval: required
     roots:
       - "."
-      - "/home/jagones/Repositories"
+      - "~/Repositories"
     deny:
       - "(^|/)\\.env(\\.(?!template$)[^/]*)?$"
 
@@ -523,7 +523,7 @@ tools:
     approval: required
     roots:
       - "."
-      - "/home/jagones/Repositories"
+      - "~/Repositories"
     auto_approve:
       - "^status(\\s|$)"
       # 2026-11-10 (bug hunt): `^(log|diff|show)` alone auto-approved
@@ -588,7 +588,7 @@ tools:
     approval: auto
     roots:
       - "."
-      - "/home/jagones/Repositories"
+      - "~/Repositories"
 
   # self-knowledge: repo/config paths, skill/MCP install recipe, systemd state
   self:
@@ -740,7 +740,7 @@ tools:
     approval: auto
     roots:
       - "."
-      - "/home/jagones/Repositories"
+      - "~/Repositories"
 
   # Ask the OPERATOR to decide (human.ask). This tool is the ONLY source of a
   # HUMAN IN THE LOOP card: the turn raises it because the AGENT asked, never

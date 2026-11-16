@@ -13,7 +13,7 @@
 # gets ranked. Each arm carries its own runtime into the task container (the score
 # is the machine's end state), so both are measured on the same terms.
 set -u
-REPO="/home/jagones/Repositories/MyRepos/longrun"
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO" || exit 1
 TB_HOME="${TB_HOME:-/home/jagones/Repositories/third-parties/terminal-bench}"
 TB="$TB_HOME/.venv/bin/tb"

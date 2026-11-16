@@ -6,9 +6,9 @@
 #
 # Usage: scripts/tb-screen.sh <out.tsv> [task-id ...]   (defaults to the manifest)
 set -u
-REPO="/home/jagones/Repositories/MyRepos/longrun"
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO" || exit 1
-TB_HOME="${TB_HOME:-/home/jagones/Repositories/third-parties/terminal-bench}"
+TB_HOME="${TB_HOME:-$(cd "$REPO/../.." && pwd)/third-parties/terminal-bench}"
 TB="$TB_HOME/.venv/bin/tb"
 OUT="${1:-$REPO/.agent/BENCHMARKS/tb_arm64_screen.tsv}"
 shift || true
