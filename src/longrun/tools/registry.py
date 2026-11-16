@@ -2394,8 +2394,65 @@ def argument_filter_hit(filters, args):
 # F4 (Cline plan-before-act direction): tools blocked while a session is
 # locked in plan mode with an unapproved plan. Both the short alias and the
 # canonical dotted name are listed (ALIASES maps shell->shell.exec, etc.).
+# 2026-11-16: this list is NO LONGER the gate for built-ins (see
+# PLAN_READ_ONLY_TOOLS) — it kept only the names somebody remembered, so
+# `matrix.scaffold` created a file inside a locked turn while `fs.write` was
+# refused. Kept for external (`server__tool`) names and for the pins.
 PLAN_GATED_TOOLS = ("fs.write", "fs.edit", "shell", "shell.exec",
                     "git", "git.run", "python", "python.run")
+
+# What a plan-locked session may still call — the EXPLORATION surface.
+# Fail-closed: a built-in tool that is not here is denied while the session is
+# locked, so a newly added write-capable tool cannot silently bypass plan mode.
+# `docs.plan|spec|status` are here on purpose: writing the plan is the point.
+# External MCP tools (`server__tool`) keep their own approval policy — plan mode
+# is about the local substrate — unless a name is pinned in PLAN_GATED_TOOLS.
+PLAN_READ_ONLY_TOOLS = frozenset({
+    "agent.get", "agent.list", "agent.prompt_get",
+    "browser.fetch",
+    "chapters.list", "chapters.read",
+    "context.status", "cost.status",
+    "diff.files", "diff.text",
+    "diskrot.scan", "diskrot.summary",
+    "docs.plan", "docs.spec", "docs.status",
+    "fs.read",
+    "glob.list", "grep.search",
+    "http.fetch", "human.ask",
+    "improve.scan",
+    "index.search", "index.status",
+    "job.get", "job.list",
+    "knowledge.list_notebooks", "knowledge.read_source",
+    "knowledge.search", "knowledge.status",
+    "matrix.git_diff", "matrix.git_log", "matrix.seams", "matrix.status",
+    "memory.core", "memory.health", "memory.recent", "memory.recall",
+    "process.list",
+    "routine.get", "routine.list",
+    "ruleaudit.list", "ruleaudit.scan",
+    "self.context", "self.diagnose", "self.diagnostics", "self.info", "self.logs",
+    "self.sj", "self.tools", "self.trace",
+    "sessions.list", "sessions.read", "sessions.wait",
+    "skills.audit", "skills.list", "skills.read", "skills.search",
+    "sysprobe.cpu", "sysprobe.disk", "sysprobe.mem", "sysprobe.runtime",
+    "team.get", "team.list",
+    "toolcontract.audit",
+    "web.fetch", "web.search", "webui.inspect",
+})
+
+
+def plan_denies(tool):
+    """True when a plan-locked session must not call `tool` (fail-closed).
+
+    One rule for both doors (`classify` for the decision, the execute path for the
+    reason): built-ins are allowed only when they are in `PLAN_READ_ONLY_TOOLS`;
+    external MCP tools are gated only when their name is pinned in
+    `PLAN_GATED_TOOLS`. Idempotent for dotted names.
+    """
+    name = str(tool or "").strip()
+    if not name:
+        return False
+    if "__" in name:
+        return name in PLAN_GATED_TOOLS
+    return name not in PLAN_READ_ONLY_TOOLS
 
 
 def session_plan_locked(sid):
@@ -2762,15 +2819,18 @@ def classify(tool, args, workspace=None, hist=None, allow=None, scope_name=None,
             if not _ok:
                 return "denied", _why
     # F4 (Cline plan-before-act direction): a session locked in plan mode may
-    # only EXPLORE — mutating tools are denied until the operator approves the
-    # proposed plan (`stores.approve_plan`). An explicit lock: even
-    # approvals.mode=full never bypasses it (matrix-promote precedent).
+    # only EXPLORE — every mutating built-in is denied until the operator approves
+    # the proposed plan (`stores.approve_plan`). FAIL-CLOSED: the allowlist is
+    # `PLAN_READ_ONLY_TOOLS`, so a tool nobody remembered cannot slip through (live
+    # 2026-11-16: `matrix.scaffold` wrote a file inside a locked turn while
+    # `fs.write` was refused). An explicit lock: even approvals.mode=full never
+    # bypasses it (matrix-promote precedent).
     _sess = session or (args or {}).get("_session") or (args or {}).get("run_id")
-    if tool in PLAN_GATED_TOOLS and session_plan_locked(_sess):
+    if session_plan_locked(_sess) and plan_denies(tool):
         return "denied", (
-            "plan mode: session %r has an unapproved plan — propose the plan "
-            "and wait for operator approval; read-only tools still work"
-            % (_sess,))
+            "plan mode: session %r has an unapproved plan — %r is not exploration; "
+            "only read-only tools work until the operator approves the plan "
+            "(propose it with `docs`, then wait)" % (_sess, tool))
     # PT3: `matrix.promote_to_nucleus` / `matrix{action:"promote_to_nucleus"}` is gated EXCLUSIVELY
     # by the dedicated `approvals.allow_matrix_promote` checkbox — even `approvals.mode=full` never unlocks it.
     if tool == "matrix.promote_to_nucleus" or (

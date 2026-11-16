@@ -578,5 +578,58 @@ docs.unlock(_sid_doc_ctx)
 check("N9f after unlock the block disappears",
       _agent._document_block(_sid_doc_ctx) == "")
 
+# N10: the plan gate is FAIL-CLOSED. Live 2026-11-16 (session 774ac9424d2b) the
+# agent completed "step 1" by `matrix.scaffold` — a file created inside a locked
+# turn — while `fs.write` was refused twice: the gate was a hand-kept list.
+check("N10a writes are denied, reads and the docs verbs are allowed",
+      _reg.plan_denies("matrix.scaffold") and _reg.plan_denies("fs.write")
+      and _reg.plan_denies("sessions.send") and _reg.plan_denies("memory.store")
+      and not _reg.plan_denies("fs.read") and not _reg.plan_denies("docs.spec")
+      and not _reg.plan_denies("self.tools"))
+check("N10b an external MCP tool is not gated by plan mode (its own policy)",
+      not _reg.plan_denies("chrome-devtools__click"))
+
+_sid_lock = session(_ws_n)
+stub_plan()
+docs.create_plan(_sid_lock, "lock me", owner=True)   # locked, proposed
+_dec, _why = _reg.classify("matrix.scaffold", {"name": "x"}, session=_sid_lock)
+_dec_read, _why_read = _reg.classify("fs.read", {"path": "x"}, session=_sid_lock)
+check("N10c classify denies matrix.scaffold and allows fs.read while locked",
+      _dec == "denied" and "plan mode" in _why and _dec_read != "denied",
+      (_dec, _why[:90], _dec_read))
+
+# The allowlist is the WHOLE gate (fail-closed), so a writer must never appear in it.
+_WRITERS = {"fs.write", "fs.edit", "shell.exec", "git.run", "python.run",
+            "matrix.scaffold", "matrix.load_module", "sessions.send", "sessions.reset",
+            "memory.store", "workspace.set", "harness.restart", "process.kill",
+            "knowledge.add_text", "index.reindex", "team.member_add", "job.create"}
+check("N10d no write tool is in the read allowlist",
+      sorted(_WRITERS & _reg.PLAN_READ_ONLY_TOOLS) == [],
+      sorted(_WRITERS & _reg.PLAN_READ_ONLY_TOOLS))
+
+# N11: the document decision is in the RIGHT-HAND Approvals inbox, not only in the
+# bar above the composer (operator: "the approval spec and plan shall appear in the
+# RH panel approval"). approve releases the gate; "deny" is the reject.
+from longrun.tools import approvals as _appr  # noqa: E402
+
+_rows = [r for r in _appr.list_unified("pending") if r.get("id") == "doc:" + _sid_lock]
+check("N11a a proposed document is a pending row in the unified inbox",
+      len(_rows) == 1 and _rows[0]["kind"] == "document"
+      and _rows[0]["tool"] == "docs.plan" and _rows[0]["can_approve"] is True,
+      _rows[:1])
+_res = _appr.decide_any("doc:" + _sid_lock, "approve", "test")
+_st2 = docs.status(_sid_lock)
+check("N11b deciding from the inbox is the SAME act as the bar's approve",
+      _res.get("ok") is True and _st2.get("plan_mode") is False
+      and (_st2.get("active") or {}).get("status") == "approved",
+      (_res.get("ok"), _st2.get("plan_mode")))
+docs.create_plan(_sid_lock, "second, to reject from the inbox", owner=True)
+_appr.decide_any("doc:" + _sid_lock, "deny", "test")
+_st3 = docs.status(_sid_lock)
+check("N11c 'deny' on a document rejects it and releases the gate",
+      (_st3.get("active") or {}).get("status") == "rejected"
+      and _st3.get("plan_mode") is False,
+      (_st3.get("active") or {}).get("status"))
+
 print("\n---\nv1052: %d/%d PASS" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

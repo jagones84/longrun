@@ -7,6 +7,26 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Fixed
+- **Plan mode gates CAPABILITIES, not a list somebody remembered.** Operator: *"the approval of plan didn't
+  block the agent to do it … so spec is blocked from implementation but the plan is not blocked?
+  asymmetry fix"*. Measured in session `774ac9424d2b`: `fs.write` refused twice — and the SAME turn had
+  created a file with `matrix.scaffold`, which was simply not in `PLAN_GATED_TOOLS`. That list was the
+  whole gate, so every write-capable tool added since the list was written worked inside a locked
+  session. The gate is now **fail-closed**: a locked session may call only `PLAN_READ_ONLY_TOOLS`
+  (the exploration surface — reads, searches, `self.*`, `sessions.read`, and `docs.plan|spec|status`
+  because writing the plan IS the point); any other built-in is denied with "`matrix.scaffold` is not
+  exploration". External MCP tools keep their own approval policy. Live: same session,
+  `matrix.scaffold` → `blocked` with that reason, `fs.read` → `executed`. (Locked by `v1052` N10a–N10d.)
+- **A plan/spec awaiting a decision now appears in the right-hand Approvals panel.** Operator: *"the
+  approval spec and plan shall appear in the RH panel approval"*. The inbox listed tool gates and
+  improvement proposals only, so a generated document was visible solely in the bar above the composer,
+  and only on its own session. `approvals.list_unified()` now also returns one `doc:<session>` row per
+  active document (kind, title, relative path, status), `stats_unified()` counts `documents_pending`,
+  and `POST /api/approvals/doc:<sid>` routes **approve → `docs.approve`**, **deny → `docs.reject`**
+  (the panel's button reads "reject" for a document), so the inbox and the bar are the same act on the
+  same record. Both directions refresh the other surface. Live: the panel's endpoint listed the plan
+  from the report (`doc:774ac9424d2b`) and a spec; approving from the inbox released that session's
+  write gate (`plan_mode=False, status=approved`). (Locked by `v1052` N11a–N11c.)
 - **The agent finally sees the document bar's decision.** Operator: *"even if i click approve and then say
   act the agent doesn't understand what the meaning of that bar over the message chat box"*. The bar
   is real (it renders `plan_mode` + the active document and its ✓/✕/⏏ POST `/api/docs/approve|reject|

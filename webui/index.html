@@ -11270,6 +11270,7 @@ async function docApprove() {
   }
   toast("approved — the session is unlocked", "ok");
   await loadDocBar();
+  if (typeof loadApprovals === "function") loadApprovals();   // the inbox shows the decision
   return r;
 }
 async function docReject() {
@@ -11283,6 +11284,7 @@ async function docReject() {
   }
   toast("rejected — the lock is released, the file stays", "ok");
   await loadDocBar();
+  if (typeof loadApprovals === "function") loadApprovals();
   return r;
 }
 async function docUnlock() {
@@ -11305,6 +11307,7 @@ async function docUnlock() {
   }
   toast("mode unlocked — the document stays on disk", "ok");
   await loadDocBar();
+  if (typeof loadApprovals === "function") loadApprovals();
   return r;
 }
 
@@ -12398,8 +12401,11 @@ async function loadApprovals() {
       <div style="margin:4px 0;white-space:pre-wrap;word-break:break-all">${esc(what)}</div>` +
       (extra ? `<div style="font-size:11px;color:var(--dim);white-space:pre-wrap;word-break:break-all">${esc(extra)}</div>` : "");
     const row = document.createElement("div"); row.style.cssText = "display:flex;gap:6px";
+    // A plan/spec document is decided like a tool gate: approve releases the write
+    // lock, "deny" IS the reject (the file stays on disk). Same inbox, honest verb.
+    const denyLabel = a.kind === "document" ? "reject" : "deny";
     row.innerHTML = `<button class="ghost" style="color:var(--ok)">approve</button>
-                     <button class="ghost" style="color:var(--err)">deny</button>`;
+                     <button class="ghost" style="color:var(--err)">${denyLabel}</button>`;
     const feedback = document.createElement("div"); feedback.className = "remaining";
     feedback.setAttribute("role", "status");
     if (a.can_approve === false) {
@@ -12418,7 +12424,7 @@ async function loadApprovals() {
       const items = [];
       if (a.can_approve !== false) items.push({ ic: "✓", label: "Approve",
         act: () => decide(a.id, "approve").catch(err => { feedback.textContent = String(err); }) });
-      items.push({ ic: "✕", label: "Deny",
+      items.push({ ic: "✕", label: a.kind === "document" ? "Reject" : "Deny",
         act: () => decide(a.id, "deny").catch(err => { feedback.textContent = String(err); }) });
       items.push({ ic: "⧉", label: "Copy the id " + a.id, act: () => _pvCopy(a.id) });
       _openCtx(e.clientX, e.clientY, kind + " · " + (a.tool || ""), items);
@@ -12430,6 +12436,9 @@ async function decide(id, decision) {
   const r = await api("POST", "/api/approvals/" + id, { decision, by: "webui" });
   if (r && r.error) throw new Error(r.error);
   loadApprovals();
+  // A `doc:<sid>` decision is the SAME act as ✓/✕ in the composer bar, so the bar
+  // must follow the inbox (and the reverse already refreshes the inbox).
+  if (String(id).startsWith("doc:") && typeof loadDocBar === "function") loadDocBar();
   if (typeof loadImprovement === "function") loadImprovement();
   if (typeof loadHarnessCycle === "function") loadHarnessCycle();
   _settleProposalCards(true);   // v648: the chat card follows the store, not its own buttons

@@ -369,7 +369,8 @@ def _improvement_records(status=None):
 
 
 def list_unified(status=None, limit=100):
-    """The operator's single approval inbox: tool gates + improvement proposals."""
+    """The operator's single approval inbox: tool gates + improvement proposals
+    + plan/spec documents awaiting a decision."""
     rows = list_all(None, 100000)
     for rec in rows:
         rec.setdefault("kind", "tool")
@@ -377,23 +378,94 @@ def list_unified(status=None, limit=100):
         rec.setdefault("can_approve", rec.get("status") == "pending")
         rec.setdefault("blocked_reason", "")
     rows.extend(_improvement_records(status))
+    rows.extend(_document_records(status))
     if status:
         rows = [r for r in rows if r.get("status") == status]
     rows.sort(key=lambda r: r.get("ts") or 0, reverse=True)
     return rows[:limit]
 
 
+def _document_records(status=None):
+    """Plan/spec documents with an ACTIVE record, in the same inbox.
+
+    Until 2026-11-16 the document decision lived ONLY in the bar above the
+    composer: the right-hand Approvals panel listed tool gates and improvement
+    proposals, so a generated plan/spec was invisible to the operator unless they
+    happened to be on that session. Operator: *"the approval spec and plan shall
+    appear in the RH panel approval"*. One row per session with a document; the
+    panel's approve/deny map to `docs.approve`/`docs.reject` (deny = reject).
+    Never raises: a broken session file is simply not a row.
+    """
+    out = []
+    try:
+        from longrun.memory import stores as _st
+        sessions = _st.list_sessions() or []
+    except Exception:  # noqa: BLE001 — the inbox must survive a broken store
+        return out
+    try:
+        from longrun.plan import docs as _docs
+    except Exception:  # noqa: BLE001
+        return out
+    for s in sessions:
+        sid = str(s.get("id") or "")
+        if not sid:
+            continue
+        try:
+            st = _docs.status(sid) or {}
+        except Exception:  # noqa: BLE001
+            continue
+        a = st.get("active") or {}
+        if not a:
+            continue
+        kind = str(a.get("kind") or "plan")
+        doc_status = str(a.get("status") or "proposed")
+        state = "pending" if doc_status == "proposed" else "decided"
+        if status and state != status:
+            continue
+        ts = a.get("ts")
+        if not ts:
+            try:
+                ts = os.path.getmtime(str(a.get("path") or ""))
+            except OSError:
+                ts = 0
+        out.append({
+            "id": "doc:" + sid,
+            "ts": ts,
+            "run_id": sid,
+            "session": sid,
+            "session_title": s.get("title") or "",
+            "tool": "docs.%s" % kind,
+            "args": {"session": sid},
+            "summary": "%s document · %s · %s"
+                       % (kind, a.get("title") or "(untitled)", a.get("rel_path") or a.get("path") or ""),
+            "status": state,
+            "doc_status": doc_status,
+            "path": a.get("path") or "",
+            "reason": ("the plan/spec bar awaits your decision — approve to release the write gate, "
+                       "deny to reject it (the file stays on disk)"),
+            "decided_by": None if state == "pending" else "operator",
+            "decided_ts": a.get("decided_ts"),
+            "kind": "document",
+            "source": "document",
+            "can_approve": doc_status == "proposed" and not a.get("stale"),
+            "blocked_reason": ("the recorded file is missing on disk" if a.get("stale") else ""),
+        })
+    return out
+
+
 def stats_unified():
-    """Tool-gate stats plus the improvement backlog, without changing old keys."""
+    """Tool-gate stats plus the improvement backlog and pending documents."""
     out = stats()
     impro = _improvement_records("pending")
+    docs_pending = _document_records("pending")
     out["improvement_pending"] = len(impro)
-    out["pending_total"] = out.get("pending", 0) + len(impro)
+    out["documents_pending"] = len(docs_pending)
+    out["pending_total"] = out.get("pending", 0) + len(impro) + len(docs_pending)
     return out
 
 
 def get_any(aid):
-    """Look up a tool approval or an `imp:<proposal-id>` improvement request."""
+    """Look up a tool approval, an `imp:<proposal-id>` request or a `doc:<sid>`."""
     key = str(aid or "")
     if key.startswith("imp:"):
         try:
@@ -402,11 +474,13 @@ def get_any(aid):
             return _improvement_view(proposal) if proposal else None
         except Exception:  # noqa: BLE001
             return None
+    if key.startswith("doc:"):
+        return next((r for r in _document_records() if r["id"] == key), None)
     return get(key)
 
 
 def decide_any(aid, decision, by="human"):
-    """Decide either queue from one entry point. Returns {ok, approval|error}."""
+    """Decide any queue from one entry point. Returns {ok, approval|error}."""
     key = str(aid or "")
     if key.startswith("imp:"):
         try:
@@ -417,6 +491,20 @@ def decide_any(aid, decision, by="human"):
         if not res.get("ok"):
             return {"ok": False, "error": res.get("error") or "proposal decision failed"}
         return {"ok": True, "approval": _improvement_view(res)}
+    if key.startswith("doc:"):
+        # `deny` on a document is the same act as `reject` in the bar: the decision
+        # is recorded and the write gate is released; the file stays on disk.
+        sid = key[4:]
+        try:
+            from longrun.plan import docs as _docs
+            if decision in ("approve", "accept"):
+                _docs.approve(sid)
+            else:
+                _docs.reject(sid)
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "error": "document decision failed: %s" % e}
+        rec = next((r for r in _document_records() if r["id"] == key), None) or {}
+        return {"ok": True, "approval": rec}
     rec = decide(key, decision, by)
     if not rec:
         return {"ok": False, "error": "approval not found"}
