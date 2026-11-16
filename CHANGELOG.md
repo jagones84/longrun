@@ -7,6 +7,19 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Fixed
+- **The agent finally sees the document bar's decision.** Operator: *"even if i click approve and then say
+  act the agent doesn't understand what the meaning of that bar over the message chat box"*. The bar
+  is real (it renders `plan_mode` + the active document and its ✓/✕/⏏ POST `/api/docs/approve|reject|
+  unlock`), but the model only learned about a document from its OWN `docs` tool result: after the
+  operator approved and said "act", the next turn had no idea whether the plan was approved,
+  rejected or still pending — it had to guess. Every user turn now carries a **`DOCUMENT` block**
+  (`agent._document_block`, part of the per-turn `Harness state`, rebuilt from the store so no write
+  races the session file): kind, status, plan mode ON/OFF, the file path, and what that MEANS —
+  `APPROVED`: write tools allowed, read the file and follow it; `REJECTED`: do not implement it;
+  `PROPOSED`: write tools blocked, never claim the work is done; `stale`: the file is missing on
+  disk. Live on the session in the report (`1adb50b4a5a9`): after `docs approve`, the turn `"act"`
+  read the spec, tried the edit, hit the Nucleus write guard and reported the exact patch and red
+  test instead of inventing a plan. (Locked by `v1052` N9a–N9f.)
 - **The document commands survive the exceptions of unattended use.** `/plan` and `/spec` write the
   session object a chat turn is also writing; with nobody watching, the later save could drop the
   other's messages or the fresh document record. Every document mutation (`create/approve/reject/

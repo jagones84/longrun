@@ -271,6 +271,9 @@ def context_summary(session_id=None, graph_key=None):
     goal_block = _goal_block(session_id or graph_key)
     if goal_block:
         lines.append(goal_block)
+    doc_block = _document_block(session_id or graph_key)
+    if doc_block:
+        lines.append(doc_block)
     # v657: EVERY user prompt re-carries the standing REFERENCE text — the project
     # rules and the session's ROLE.md. The system prompt already carries them
     # (sections `rules` and `agent-role`), but the operator wants the copies to
@@ -540,6 +543,53 @@ def _goal_block(session_id):
                        "that the work is done.")
     if rec.get("note"):
         out.append("- note: %s" % str(rec.get("note"))[:300])
+    return "\n".join(out)
+
+
+def _document_block(session_id):
+    """The plan/spec document attached to this session, as the MODEL must see it.
+
+    The bar above the composer is the OPERATOR's surface (approve / reject / unlock).
+    Until 2026-11-16 the model only learned about a document from its own `docs` tool
+    result, so after the operator clicked approve and said "act", the next turn had no
+    idea whether the plan was approved, rejected or still pending — measured on
+    session `1adb50b4a5a9`: bar `proposed`, agent asked to act, no signal in context.
+    Rebuilt from the store on EVERY turn, so a decision reaches the next turn with no
+    write racing the session file (a chat turn saves the whole dict at its end).
+    """
+    if not session_id:
+        return ""
+    try:
+        from longrun.plan import docs as docs_mod
+        st = docs_mod.status(session_id) or {}
+    except Exception:  # noqa: BLE001 — context must never break a turn
+        return ""
+    active = st.get("active") or {}
+    on = bool(st.get("plan_mode"))
+    if not active and not on:
+        return ""
+    out = ["DOCUMENT (the plan/spec file this session carries — the OPERATOR decides it):"]
+    if not active:
+        out.append("- plan mode is ON with no document: propose one with the `docs` tool "
+                   "(action=plan or action=spec); write tools stay blocked until the operator decides.")
+        return "\n".join(out)
+    kind = str(active.get("kind") or "plan")
+    status = str(active.get("status") or "proposed")
+    rel = str(active.get("rel_path") or active.get("path") or "")
+    out.append("- kind: %s · status: %s · plan mode: %s"
+               % (kind, status, "ON" if on else "OFF"))
+    if rel:
+        out.append("- file: %s" % rel[:400])
+    if active.get("stale"):
+        out.append("- the recorded file is MISSING on disk: say so, never pretend to act on it.")
+    elif status == "approved":
+        out.append("- the operator APPROVED it: write tools are allowed. Read the file and follow "
+                   "it; it is their decision, not a new plan of yours.")
+    elif status == "rejected":
+        out.append("- the operator REJECTED it: do NOT implement it. Ask what to change instead.")
+    else:
+        out.append("- PROPOSED and not decided: write tools are BLOCKED. Never claim the work is "
+                   "done; wait for the operator to approve, reject or unlock.")
     return "\n".join(out)
 
 

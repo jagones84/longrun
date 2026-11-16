@@ -547,5 +547,36 @@ check("N8 the docs tool writes a SPEC from inside a turn (three files, session l
 docs._generate_plan_doc = _orig_plan
 docs._generate_spec_docs = _orig_spec
 
+# N9: the MODEL must see the document and the operator's decision. The bar above
+# the composer is the operator's surface; the agent only knew what its own tool
+# result said, so after an approve + "act" it had no idea what was decided
+# (measured on session 1adb50b4a5a9). The block is rebuilt every turn from the store.
+from longrun.agent import agent as _agent  # noqa: E402
+
+_sid_doc_ctx = session(_ws_n)
+check("N9a no document and no plan mode -> no DOCUMENT block",
+      _agent._document_block(_sid_doc_ctx) == "", _agent._document_block(_sid_doc_ctx))
+stores.set_plan_mode(_sid_doc_ctx, True)
+check("N9b plan mode without a document says so",
+      "plan mode is ON with no document" in _agent._document_block(_sid_doc_ctx))
+stub_plan()
+docs.create_plan(_sid_doc_ctx, "context block plan", owner=True)
+_block_proposed = _agent._document_block(_sid_doc_ctx)
+check("N9c a proposed document says PROPOSED, names the file and the block",
+      "PROPOSED and not decided" in _block_proposed
+      and "kind: plan" in _block_proposed and "- file: " in _block_proposed)
+docs.approve(_sid_doc_ctx)
+_block_approved = _agent._document_block(_sid_doc_ctx)
+check("N9d after approve it says APPROVED and plan mode OFF",
+      "the operator APPROVED it" in _block_approved and "plan mode: OFF" in _block_approved)
+# `reject` needs a PENDING document — approve closed the first one.
+docs.create_plan(_sid_doc_ctx, "second plan to reject", owner=True)
+docs.reject(_sid_doc_ctx)
+check("N9e after reject it says REJECTED",
+      "the operator REJECTED it" in _agent._document_block(_sid_doc_ctx))
+docs.unlock(_sid_doc_ctx)
+check("N9f after unlock the block disappears",
+      _agent._document_block(_sid_doc_ctx) == "")
+
 print("\n---\nv1052: %d/%d PASS" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)
