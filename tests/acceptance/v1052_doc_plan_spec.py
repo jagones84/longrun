@@ -416,6 +416,16 @@ check("M4 docs/CLI.md documents the group and its endpoints",
       and "| POST | `/api/docs/plan` | `docs plan` |" in CLI_MD
       and "`sessions new \"title\" [--workspace DIR]`" in CLI_MD)
 
+# M4b: the live recipe is the documented gate for this surface, so it must name
+# EVERY verb it claims to exercise (a recipe that silently drops `spec` or
+# `reject` is how "I tested it" becomes false).
+check("M4b docs/CLI.md carries the live recipe with every session/document verb",
+      "## 6. Live test recipe" in CLI_MD
+      and all(("forge docs %s" % v) in CLI_MD
+              for v in ("plan", "spec", "status", "approve", "reject", "unlock"))
+      and all(("forge sessions %s" % v) in CLI_MD for v in ("new", "use", "current", "rm"))
+      and "forge chat \"second\" --new" in CLI_MD)
+
 # ------------------- N: the AGENT path — `docs` tool + live document fields ----
 # Operator: "gli agenti hanno i tool per entrare da soli in spec/plan e comandare
 # i team member che riportano a lui?". The tool exists now; these pins hold the two

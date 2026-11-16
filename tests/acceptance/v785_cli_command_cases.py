@@ -323,5 +323,12 @@ o, e, code, calls = run(forge.cmd_docs,
 _docs_kw = next((c["kw"] for c in calls if (c["method"], c["path"]) == ("POST", "/api/docs/plan")), {})
 check("M15 docs plan waits like a turn", _docs_kw.get("timeout", 0) >= 3600, _docs_kw)
 
+forge._set_current_session("sid-6")
+o, e, code, calls = run(forge.cmd_context, Args(action="show", session=None, value=None),
+                        {("GET", "/api/context?session=sid-6"): {"session": "sid-6", "pct": 3.5}})
+check("M16 context show without --session reads the current session",
+      code == 0 and '"pct"' in o and ("GET", "/api/context?session=sid-6") in [
+          (c["method"], c["path"]) for c in calls], (o, calls))
+
 print("\n---\nv785: %d/%d PASS" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

@@ -110,7 +110,13 @@ All notable changes to Longrun are documented here. The format follows
   timeout closed the connection and the server's `watch_client` read that as "client gone" and
   aborted a live turn (`chat.interrupted` on `b7329cccf94c`). Turns have no 5-minute bound, so
   `chat` and `docs plan|spec` wait (6 h) — closing the socket is an abort by contract, not a
-  detach.
+  detach. `context show|compact|items|preview` follow the same pointer (without it they answered
+  `{"session": null, "available": false}`), so **every** session-scoped verb now reads the current
+  session when the id is omitted. The whole surface is documented as ONE executable recipe —
+  `docs/CLI.md` §6 "Live test recipe": create → turn → look inside → all six document verbs →
+  delete, on a throwaway `$LONGRUN_CLI_STATE` and `mktemp` workspace, asserting at each step
+  (verified by running the block verbatim: green end to end); the README's CLI section points at
+  it. Locked by `v785` M14–M16 and `v1052` M4b (the recipe must name every verb).
 - **The CLI is the WebUI's twin for the document commands.** `forge.py docs
   status|plan "request"|spec "request"|approve|reject|unlock --session ID` calls
   the same `/api/docs*` the composer calls, prints the written path (or the

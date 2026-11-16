@@ -1071,7 +1071,10 @@ def cmd_docs(args):
 
 
 def cmd_context(args):
-    sid = args.session
+    # Same contract as `chat`/`docs`: no `--session` = the CLI's current session.
+    # Without it `context show` answered `{"session": null, "available": false}`,
+    # which reads as "the meter is broken" instead of "you did not name a session".
+    sid = _session_or_current(args.session)
     if args.action == "show":
         url = "/api/context" + ("?session=" + _q(sid) if sid else "")
         print(json.dumps(req("GET", url), indent=2, ensure_ascii=False))

@@ -23,6 +23,8 @@ python3 forge.py --help
 * **Streaming commands** print live text: `chat --stream`, `agent`, `feed`,
   `blackboard watch`, `swarm` finishes with a summary.
 * The token is **never** stored in the repo; it lives in `~/.longrun/config/env`.
+* **Testing the CLI against a live service:** §6 is the one recipe — every session +
+  document verb, on a throwaway pointer and workspace, failing loudly on the first red.
 
 ---
 
@@ -589,3 +591,124 @@ These connect to a `text/event-stream` and print until `Ctrl-C` / completion:
 * `models ensure` and `eval run` can be slow (model load / multiple turns).
 * Add a shell alias for convenience:
   `alias forge='python3 /home/jagones/Repositories/longrun/forge.py'`.
+
+---
+
+## 6. Live test recipe — sessions and documents, end to end
+
+The one recipe to run after touching `forge.py`, the session routes or `/api/docs*`:
+it exercises **every** session and document verb against a real running service, in
+order, on a throwaway session and workspace. It is the executable twin of
+`.agent/trash/cli_session_probe.py` (22/22 on 2026-11-16); the deterministic twin is
+`tests/acceptance/v785_cli_command_cases.py` M1–M16 + `v1052`.
+
+```bash
+#!/usr/bin/env bash
+# Live smoke: sessions + documents through the CLI only. Fails loudly on the first red.
+set -euo pipefail
+cd /home/jagones/Repositories/longrun
+forge(){ python3 forge.py "$@"; }
+step(){ printf '\n── %s\n' "$*"; }
+need(){ grep -q -- "$2" <<<"$1" || { printf 'FAIL: %s\n%s\n' "$3" "$1"; exit 1; }; }
+
+# 0. Isolate: a throwaway pointer + workspace. Your real current session and the repo stay untouched.
+export LONGRUN_CLI_STATE="$(mktemp -d)/cli_session.json"
+WS="$(mktemp -d)"
+
+# 1. Create: prints the id AND makes it current.
+step "sessions new"
+OUT=$(forge sessions new "cli smoke" --workspace "$WS"); echo "$OUT"
+SID=$(grep -o '"id": "[0-9a-f]*"' <<<"$OUT" | cut -d'"' -f4); [ -n "$SID" ] || { echo "FAIL: no id"; exit 1; }
+
+# 2. The pointer, and use = the same validation a switch runs.
+step "sessions current / use"
+[ "$(forge sessions current)" = "$SID" ] || { echo "FAIL: pointer not set"; exit 1; }
+forge sessions use "$SID"
+
+# 3. A turn lands in THAT session and prints its address (the defect this recipe was born from).
+step "chat (no --session)"
+OUT=$(forge chat "Reply with exactly PONG"); echo "$OUT"
+need "$OUT" "^session: $SID$" "the turn did not land in the current session"
+need "$OUT" "PONG" "no reply"
+
+# 4. --new: a fresh session on demand; then come back to the probe one.
+step "chat --new, then sessions use"
+forge chat "second" --new
+forge sessions use "$SID"
+
+# 5. Look inside — no id anywhere: everything reads the current session.
+step "history / tree / graph / context / ls"
+forge sessions history          # every turn, role by role
+forge sessions tree             # stage→step tree + the first failed step
+forge sessions graph            # the plan/todo graph as JSON
+forge context show              # tokens, pct, what the model actually sees
+forge sessions ls               # the current row is marked with * and shows "N msg"
+
+# 6. A plan: written under $WS/.longrun/documents/plans/, recorded, session LOCKED.
+step "docs plan + status"
+forge docs plan "Add a health endpoint that returns the build sha"
+OUT=$(forge docs status); echo "$OUT"
+need "$OUT" "plan_mode=True" "the plan did not lock the session"
+need "$OUT" "status=proposed" "the plan is not proposed"
+
+# 7. Approve: the decision is recorded and the gate opens (the operator's act).
+step "docs approve"
+forge docs approve
+OUT=$(forge docs status); echo "$OUT"
+need "$OUT" "plan_mode=False" "approve did not release the gate"
+need "$OUT" "status=approved" "the decision was not recorded"
+
+# 8. A spec: THREE files (spec.md, tasks.md, checklist.md) and the lock again.
+step "docs spec"
+forge docs spec "Tiny uptime route with a test plan"
+forge docs status               # kind=spec + the three paths
+
+# 9. Reject: recorded, gate released, the files stay.
+step "docs reject"
+forge docs reject
+OUT=$(forge docs status); echo "$OUT"
+need "$OUT" "plan_mode=False" "reject did not release the gate"
+
+# 10. Abandon: generate, then unlock — the record is dropped, the file stays on disk.
+step "docs unlock"
+forge docs spec "One more, abandoned mid-way"
+forge docs unlock
+OUT=$(forge docs status); echo "$OUT"
+need "$OUT" "plan_mode=False" "unlock did not release the gate"
+
+# 11. Delete: the pointer follows (a rm of ANOTHER session would keep it).
+step "sessions rm"
+forge sessions rm "$SID"
+forge sessions current          # -> none — run `sessions new` or `sessions use ID`
+```
+
+What each step pins:
+
+| Step | Proves |
+|---|---|
+| 1–2 | `sessions new` returns a real id and makes it current; `use` validates before switching |
+| 3 | a bare `chat` writes to the **current** session and prints `session: <id>` — never an anonymous row |
+| 4 | `--new` still gives a one-shot fresh session; coming back is one `use` |
+| 5 | history / tree / graph / context / ls read the current session when the id is omitted |
+| 6–10 | the six document verbs: `plan` and `spec` write + lock, `status` reads, `approve`/`reject`/`unlock` decide and release |
+| 11 | deleting the current session clears the pointer instead of leaving a dead id |
+
+Traps this recipe is built to catch (each one was a real defect):
+
+* **An empty session is not a chat bug.** `messages: []` means no turn was ever sent
+  to that id. Step 3 is the guard: the id is printed and it is current, so a turn
+  cannot silently land elsewhere.
+* **Never wrap `chat` in `timeout N`.** Closing the client socket makes the server
+  abort the turn (`httpapi.watch_client`). Use `--stream` to watch, `control abort`
+  to stop.
+* **A document write refuses while a turn runs in that session** (`error: a chat turn
+  is running…`, exit 1) and a second generate is refused while the first is still
+  working. Wait, then retry — do not force it.
+* **`docs plan` costs one model call (~10 s), `docs spec` about three (`~2–4 min`).**
+  A red `timeout` here is almost always the model, not the CLI: read the message.
+* **The files land in `<workspace>/.longrun/documents/`** (`plans/…md`,
+  `specs/<slug>/{spec,tasks,checklist}.md`), i.e. under the throwaway `$WS` above —
+  never in the repo when you follow the recipe.
+* **One pointer per machine.** Two CLIs in parallel share the last value; use a
+  distinct `LONGRUN_CLI_STATE` per job (as step 0 does).
+

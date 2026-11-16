@@ -432,13 +432,28 @@ WebUI uses, stdlib only, no install. Full reference: [CLI reference](docs/CLI.md
 ```bash
 cd /home/jagones/Repositories/longrun
 python3 forge.py status             # server, router, versions
-python3 forge.py sessions ls        # your sessions
-python3 forge.py chat "ping" --stream
+python3 forge.py sessions ls        # your sessions (the current one is marked with *)
+python3 forge.py sessions new "probe"            # prints the id and makes it CURRENT
+python3 forge.py chat "ping"                     # no --session: the current session, id printed
+python3 forge.py sessions history                # look inside it: every turn, role by role
+python3 forge.py sessions tree                   # stage→step tree + the first failed step
+python3 forge.py docs plan "add a /health route" # write a reviewed plan and lock the session
+python3 forge.py docs status ; python3 forge.py docs unlock
 python3 forge.py tools ls           # tools, approvals, sandbox backend
 python3 forge.py agents ls          # team org chart
 python3 forge.py jobs ls            # coordinated jobs
 python3 forge.py --help             # every command (30+ subcommands)
 ```
+
+**The current session.** The CLI remembers one session per machine, so a session you
+create is the one your next `chat` writes to — and every chat prints `session: <id>`
+as its first line, so a transcript can never land in an anonymous row. An empty
+session is not a bug: it means no turn was sent to that id. `sessions use ID` switches,
+`chat --new` forces a fresh one, and `LONGRUN_CLI_STATE` overrides the pointer file.
+
+**Testing it live.** One copy-paste recipe exercises every session and document verb
+against a running service on a throwaway pointer and workspace, asserting at each step:
+[CLI reference §6 "Live test recipe"](docs/CLI.md#6-live-test-recipe--sessions-and-documents-end-to-end).
 
 Data commands print JSON (or aligned tables for `ls`); streaming commands
 (`chat --stream`, `agent`, `feed`, `blackboard watch`) print live until
