@@ -222,5 +222,88 @@ check("L1 routing update bad JSON exits 2", code == 2 and "bad json" in e, {"exi
 o, e, code, _ = run(forge.cmd_providers, Args(action="add", value="{bad"), {})
 check("L2 providers add bad JSON exits 2", code == 2 and "bad json" in e, {"exit": code, "err": e})
 
+# --------------------------------- M: the current-session pointer (v1051d) ----
+# Operator: "vedo sessione vuota … devi poter lanciare sessioni e poterci vedere
+# dentro che fanno". A bare `chat` used to create a NEW session and throw its id
+# away; the pointer makes `sessions new` → `chat` land in the same row.
+os.environ["LONGRUN_CLI_STATE"] = os.path.join(_tmp, "cli_session.json")
+if os.path.exists(os.environ["LONGRUN_CLI_STATE"]):
+    os.remove(os.environ["LONGRUN_CLI_STATE"])
+check("M0 the CLI starts with no current session",
+      forge._current_session() == "" and forge._state_path() == os.environ["LONGRUN_CLI_STATE"])
+
+o, e, code, calls = run(forge.cmd_sessions, Args(action="new", value="probe", workspace=None),
+                        {("POST", "/api/sessions"): {"id": "sid-new", "title": "probe",
+                                                     "messages": []}})
+check("M1 sessions new makes the new session current",
+      code == 0 and forge._current_session() == "sid-new"
+      and "current session: sid-new" in o, (o, e))
+
+o, e, code, calls = run(forge.cmd_chat,
+                        Args(message="ping", session=None, model=None, stream=False, new=False),
+                        {("POST", "/api/chat"): {"session": "sid-new", "reply": "pong"}})
+check("M2 a bare chat goes to the CURRENT session and prints its id",
+      body_of(calls, "POST", "/api/chat") == {"message": "ping", "session": "sid-new", "model": None}
+      and "session: sid-new" in o and "pong" in o, (o, e, calls))
+
+os.remove(os.environ["LONGRUN_CLI_STATE"])
+o, e, code, calls = run(forge.cmd_chat,
+                        Args(message="first", session=None, model=None, stream=False, new=False),
+                        {("POST", "/api/chat"): {"session": "srv-minted", "reply": "hi"}})
+check("M3 with no pointer, chat adopts the server's id and remembers it",
+      body_of(calls, "POST", "/api/chat")["session"] is None
+      and "session: srv-minted" in o and forge._current_session() == "srv-minted", (o, calls))
+
+o, e, code, calls = run(forge.cmd_chat,
+                        Args(message="fresh", session=None, model=None, stream=False, new=True),
+                        {("POST", "/api/chat"): {"session": "another", "reply": "x"}})
+check("M4 --new forces a session-less call even with a pointer",
+      body_of(calls, "POST", "/api/chat")["session"] is None, calls)
+
+o, e, code, _ = run(forge.cmd_sessions, Args(action="use", value="sid-2"),
+                    {("GET", "/api/history?session=sid-2"): {"messages": []}})
+check("M5 sessions use validates and switches", code == 0 and forge._current_session() == "sid-2", (o, e))
+o, e, code, _ = run(forge.cmd_sessions, Args(action="use", value="nope"),
+                    {("GET", "/api/history?session=nope"): {"error": "session not found"}})
+check("M6 sessions use refuses an unknown id and keeps the pointer",
+      code == 1 and forge._current_session() == "sid-2" and "not found" in e, (o, e))
+
+o, e, code, calls = run(forge.cmd_sessions, Args(action="history", value=None),
+                        {("GET", "/api/history?session=sid-2"): {"messages": [
+                            {"role": "user", "content": "hello"}]}})
+check("M7 sessions history with no id reads the current session",
+      code == 0 and "hello" in o and ("GET", "/api/history?session=sid-2") in [
+          (c["method"], c["path"]) for c in calls], (o, calls))
+
+o, e, code, calls = run(forge.cmd_sessions, Args(action="ls", value=None),
+                        {("GET", "/api/sessions"): {"sessions": [
+                            {"id": "sid-2", "messages": 1, "title": "two"},
+                            {"id": "other", "messages": 0, "title": "other"}]}})
+lines = [ln for ln in o.splitlines() if ln.strip()]
+check("M8 sessions ls marks the current row with *",
+      len(lines) == 2 and lines[0].startswith("*") and not lines[1].startswith("*"), lines)
+
+os.remove(forge._state_path())
+o, e, code, _ = run(forge.cmd_sessions, Args(action="history", value=None), {})
+check("M9 history with no pointer exits 2 with the fix", code == 2 and "no current session" in e, (o, e))
+o, e, code, _ = run(forge.cmd_docs, Args(action="status", value=None, session=None, model=None), {})
+check("M10 docs with no pointer exits 2 instead of guessing", code == 2 and "no current session" in e, (o, e))
+
+forge._set_current_session("sid-3")
+o, e, code, calls = run(forge.cmd_docs, Args(action="status", value=None, session=None, model=None),
+                        {("GET", "/api/docs?session=sid-3"): {"ok": True, "active": None,
+                                                              "plan_mode": False}})
+check("M11 docs with no --session reads the current session",
+      code == 0 and "plan_mode=False" in o and ("GET", "/api/docs?session=sid-3") in [
+          (c["method"], c["path"]) for c in calls], (o, calls))
+
+o, e, code, _ = run(forge.cmd_sessions, Args(action="rm", value="sid-3"),
+                    {("DELETE", "/api/sessions/sid-3"): {"ok": True, "deleted": "sid-3"}})
+check("M12 deleting the current session drops the pointer", code == 0 and forge._current_session() == "", o)
+forge._set_current_session("sid-4")
+o, e, code, _ = run(forge.cmd_sessions, Args(action="rm", value="other"),
+                    {("DELETE", "/api/sessions/other"): {"ok": True, "deleted": "other"}})
+check("M13 deleting ANOTHER session keeps the pointer", forge._current_session() == "sid-4", o)
+
 print("\n---\nv785: %d/%d PASS" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

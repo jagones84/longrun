@@ -83,6 +83,29 @@ All notable changes to Longrun are documented here. The format follows
   both spellings and the badge reads `748/748` (two test files had been added without it).
 
 ### Added
+- **The CLI has a current session, and an agent can write its own plan/spec.** Operator: *"vedo
+  sessione vuota … devi poter lanciare sessioni e poterci vedere dentro che fanno"*. A bare
+  `forge.py chat "…"` sent `session: null`; the server minted a new session and the CLI **discarded
+  the id**, so a session created with `sessions new` stayed `messages: []` while the turn lived in an
+  anonymous `session <hex6>` row. The CLI now keeps a per-machine pointer
+  (`$LONGRUN_CLI_STATE`, else `<data>/cli_session.json`): `sessions new` sets it, `sessions use ID`
+  validates and switches, `sessions current` reads it, `sessions ls` marks the row with `*`,
+  `chat` without `--session` uses it (and `--new` keeps the old one-shot behaviour), every `chat`
+  prints `session: <id>` as its first stdout line and adopts the id the server returns, and
+  `sessions history|tree|graph` + `docs` work on the current session when the id is omitted.
+  `sessions rm` of the current session clears the pointer. Looking inside is the same data the WebUI
+  renders: `sessions history` (role-by-role transcript), `sessions tree`, `context show`. An empty
+  session is therefore never a chat bug: it means no turn was sent to that id.
+  **Agents gain the `docs` tool** (`action: plan|spec|status`, `prompt`, `session`, `context`) so a
+  model can enter plan mode and write a reviewed document by itself, or order a **direct report** to
+  do it (the dispatch predicate); `approve`/`reject`/`unlock` stay the operator's acts and are
+  deliberately absent. Two obstacles were fixed rather than bypassed: the busy-turn refusal got an
+  `owner=True` path used only by the tool, and `plan`/`plan_mode` joined the `stores` live fields so
+  the turn's final save can neither drop nor resurrect a document. Live: `cli_session_probe.py`
+  **13/13** (new → chat lands in it → history → `*` row → REST `messages=4` → `docs plan` on the
+  same session → unlock → rm clears the pointer) and `agent_docs_probe.py` **11/11** (a real turn
+  calls `docs plan`, the file exists, `plan_mode=true`, `fs.write` is `blocked` with the plan-mode
+  reason, unlock releases it and the write executes). (Locked by `v785` M1–M13; `v1052` N1–N7.)
 - **The CLI is the WebUI's twin for the document commands.** `forge.py docs
   status|plan "request"|spec "request"|approve|reject|unlock --session ID` calls
   the same `/api/docs*` the composer calls, prints the written path (or the

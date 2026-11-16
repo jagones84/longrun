@@ -45,16 +45,24 @@ Legend: `[x]` = optional, `<x>` = required, `A | B` = alternatives.
 
 | Command | Endpoint | Notes |
 |---|---|---|
-| `chat "msg" [--session ID] [--model ALIAS] [--stream]` | `POST /api/chat` (or `SSE /api/chat/stream`) | one-shot; `--stream` prints deltas live |
+| `chat "msg" [--session ID] [--model ALIAS] [--stream] [--new]` | `POST /api/chat` (or `SSE /api/chat/stream`) | no `--session`: this CLI's CURRENT session (printed as `session: ID`); `--new` forces a fresh one |
 | `agent "goal" [--max-steps N] [--model ALIAS]` | `SSE /api/agent/run` | tool-enabled loop, iterations printed |
 | `control pause\|resume\|abort RUN_ID` | `POST /api/agent/control` | stop/pause a running agent |
 
 ```bash
 python3 forge.py chat "spiega questo repo" --session demo
-python3 forge.py chat "ping" --stream
+python3 forge.py chat "ping" --stream          # lands in the current session, id printed
 python3 forge.py agent "trova e correggi un typo nel README" --max-steps 4
 python3 forge.py control abort run_abc123
 ```
+
+**The current session.** The CLI remembers one session per machine
+(`data/cli_session.json`, override with `LONGRUN_CLI_STATE`). `sessions new` sets it,
+`sessions use ID` switches it, `sessions current` prints it and `sessions ls` marks
+it with `*`. A `chat` without `--session` uses it, and every chat prints the id it
+wrote to — so a turn can never land in an anonymous row again. Without a stored
+session, a bare `chat` creates one and adopts its id (as before); `--new` keeps the
+old one-shot behaviour explicitly.
 
 ### Paperclip adapter (child process)
 
@@ -89,17 +97,21 @@ See `integrations/paperclip/README.md` for the adapter install and configuration
 |---|---|
 | `sessions ls` | `GET /api/sessions` |
 | `sessions new "title" [--workspace DIR]` | `POST /api/sessions` (or `GET /api/sessions/new?workspace=…` when a folder is named) |
+| `sessions use ID` | `GET /api/history?session=ID` (validates, then remembers) |
+| `sessions current` | — (the local pointer) |
 | `sessions rm ID` | `DELETE /api/sessions/<id>` |
-| `sessions history ID` | `GET /api/history?session=ID` |
-| `sessions graph ID` | `GET /api/sessions/<id>/graph` |
-| `sessions tree ID` | `GET /api/sessions/<id>/trace-tree` |
+| `sessions history [ID]` | `GET /api/history?session=ID` (ID omitted → current) |
+| `sessions graph [ID]` | `GET /api/sessions/<id>/graph` |
+| `sessions tree [ID]` | `GET /api/sessions/<id>/trace-tree` |
 | `sessions reset ID` | `POST /api/sessions/<id>/graph/reset` |
 
 ```bash
 python3 forge.py sessions ls
-python3 forge.py sessions new "probe docs" --workspace /tmp/lr-probe
-python3 forge.py sessions history 4f503dc92a29
-python3 forge.py sessions tree 4f503dc92a29     # stage→step tree + the first failed step
+python3 forge.py sessions new "probe docs" --workspace /tmp/lr-probe   # becomes current
+python3 forge.py sessions current
+python3 forge.py sessions history              # no id: the current session
+python3 forge.py sessions use 4f503dc92a29
+python3 forge.py sessions tree                 # stage→step tree + the first failed step
 python3 forge.py sessions rm 4f503dc92a29
 python3 forge.py sessions reset my-session      # clears the persistent task list
 ```
@@ -108,23 +120,24 @@ python3 forge.py sessions reset my-session      # clears the persistent task lis
 
 The reviewed **document** behind the plan/spec bar — not the task graph of the
 section below. `plan`/`spec` write the markdown, record it on the session and
-lock the session until you approve or reject `--session ID` is required.
+lock the session until you approve or reject. `--session ID` is optional: it
+defaults to the CLI's current session.
 
 | Command | Endpoint |
 |---|---|
-| `docs status --session ID` | `GET /api/docs?session=ID` |
-| `docs plan "request" --session ID` | `POST /api/docs/plan` |
-| `docs spec "request" --session ID` | `POST /api/docs/spec` |
-| `docs approve --session ID` | `POST /api/docs/approve` |
-| `docs reject --session ID` | `POST /api/docs/reject` |
-| `docs unlock --session ID` | `POST /api/docs/unlock` (release the gate and forget the record; the file stays) |
+| `docs status [--session ID]` | `GET /api/docs?session=ID` |
+| `docs plan "request" [--session ID]` | `POST /api/docs/plan` |
+| `docs spec "request" [--session ID]` | `POST /api/docs/spec` |
+| `docs approve [--session ID]` | `POST /api/docs/approve` |
+| `docs reject [--session ID]` | `POST /api/docs/reject` |
+| `docs unlock [--session ID]` | `POST /api/docs/unlock` (release the gate and forget the record; the file stays) |
 
 ```bash
 SID=$(python3 forge.py sessions new "docs probe" --workspace /tmp/lr-probe | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
 python3 forge.py docs plan "add a /health endpoint" --session "$SID"
-python3 forge.py docs status --session "$SID"        # plan_mode=true status=proposed + the path
-python3 forge.py chat "Reply with exactly PONG" --session "$SID"   # still a normal chat
-python3 forge.py docs unlock --session "$SID"        # bar gone, file kept
+python3 forge.py docs status                         # no --session: the current session
+python3 forge.py chat "Reply with exactly PONG"      # same session, id printed
+python3 forge.py docs unlock                         # bar gone, file kept
 python3 forge.py sessions rm "$SID"
 ```
 

@@ -597,6 +597,14 @@ tools:
     enabled: true
     approval: auto
 
+  # document modes (v1051d): an AGENT may write a reviewed plan/spec and lock the
+  # session, for itself or a direct report's idle session. The document itself is
+  # still the operator's to approve; approve/reject/unlock are NOT in this tool.
+  # It only writes under <workspace>/.longrun/documents and sets the plan gate.
+  docs:
+    enabled: true
+    approval: auto
+
   # session inspection (JAG-350): let the coordinator/Master READ other sessions'
   # full transcripts (messages + tool calls + harness injections) to understand
   # WHY a teammate is failing and help it. Read-only, safe.

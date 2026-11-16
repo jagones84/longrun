@@ -411,9 +411,106 @@ check("M3 sessions new can name a workspace through the WebUI's route",
       and '"/api/sessions/new?title="' in FORGE_SRC)
 check("M4 docs/CLI.md documents the group and its endpoints",
       "### Documents (`/plan` and `/spec`)" in CLI_MD
-      and "| `docs unlock --session ID` |" in CLI_MD
+      # `--session` became optional with the CLI current-session pointer (2026-11-16).
+      and "| `docs unlock [--session ID]` |" in CLI_MD
       and "| POST | `/api/docs/plan` | `docs plan` |" in CLI_MD
       and "`sessions new \"title\" [--workspace DIR]`" in CLI_MD)
+
+# ------------------- N: the AGENT path — `docs` tool + live document fields ----
+# Operator: "gli agenti hanno i tool per entrare da soli in spec/plan e comandare
+# i team member che riportano a lui?". The tool exists now; these pins hold the two
+# things that make it safe: the owner path, and a turn's stale save not dropping
+# (or resurrecting) the document record.
+from longrun.tools import registry as _reg  # noqa: E402
+from longrun.tools import tools as _toolmod  # noqa: E402
+
+TOOLS_SRC = read("src", "longrun", "tools", "tools.py")
+REG_SRC = read("src", "longrun", "tools", "registry.py")
+TOOLS_YAML = read("config", "tools.yaml")
+
+_ws_n = os.path.join(TMP, "ws-agent-docs")
+os.makedirs(_ws_n, exist_ok=True)
+_sid_n = session(_ws_n)
+_orig_turn_n = docs._turn_active
+try:
+    docs._turn_active = lambda sid: True
+    stub_plan()
+    r_owner = docs.create_plan(_sid_n, "owner path", owner=True)
+    try:
+        docs.create_plan(_sid_n, "http path", owner=False)
+        _http_refused = False
+    except ValueError as exc:
+        _http_refused = "chat turn" in str(exc)
+finally:
+    docs._turn_active = _orig_turn_n
+check("N1 the owner path writes inside a turn; the HTTP path still refuses",
+      r_owner.get("ok") is True and _http_refused)
+
+# A turn loads the session at its start and saves the WHOLE dict at its end. The
+# live doc fields are what stop that stale copy from dropping the new record.
+_sid_live = session(_ws_n)
+_stale = stores.load_session(_sid_live)          # an OLD turn's snapshot: no plan
+docs._turn_active = lambda sid: True
+try:
+    stub_plan()
+    docs.create_plan(_sid_live, "live plan", owner=True)
+finally:
+    docs._turn_active = _orig_turn_n
+stores.save_session(_stale)          # the "running turn" writes its old snapshot
+_now = stores.load_session(_sid_live)
+check("N2 a stale turn save cannot drop the new document",
+      bool(_now.get("plan_mode")) and ((_now.get("plan") or {}).get("doc") or {}).get("kind") == "plan")
+docs.unlock(_sid_live)
+stores.save_session(_stale)          # the same old snapshot lands again, after unlock
+_now2 = stores.load_session(_sid_live)
+check("N3 the same stale save cannot resurrect an unlocked document",
+      _now2.get("plan") is None and _now2.get("plan_mode") is False)
+
+# Permission: another session only when it is a DIRECT report (the dispatch rule).
+from longrun.agent import agents as _agents  # noqa: E402
+_orig_reg = (_agents.REGISTRY.get, _agents.REGISTRY.resolve, _agents.REGISTRY.team_of)
+_caller = "session-of-the-head"
+_target_sid = "session-of-the-report"
+stores.get_or_create_session(_target_sid, title="report", workspace=_ws_n)
+try:
+    _agents.REGISTRY.get = lambda sid: ({"id": "A54"} if sid == _caller else None)
+    _agents.REGISTRY.team_of = lambda ref, depth=1: ["A54", "A48"]
+    _agents.REGISTRY.resolve = lambda ref: (
+        {"id": "A48", "session": _target_sid} if ref in ("A48", _target_sid) else None)
+    _ok = _toolmod._docs_tool({"action": "status", "session": _target_sid}, _caller)
+    _agents.REGISTRY.resolve = lambda ref: ({"id": "A49", "session": "x"} if ref == "A49" else None)
+    _no = _toolmod._docs_tool({"action": "status", "session": "A49"}, _caller)
+finally:
+    (_agents.REGISTRY.get, _agents.REGISTRY.resolve, _agents.REGISTRY.team_of) = _orig_reg
+check("N4 a direct report is a legal target; a stranger is refused",
+      _ok.get("ok") is True and _ok.get("session") == _target_sid
+      and _no.get("ok") is False and "direct reports" in str(_no.get("error")), (_ok, _no))
+
+_enum = _reg._LEGACY_SCHEMAS["docs"]["properties"]["action"]["enum"]
+_handler_src = TOOLS_SRC.split("def _docs_tool")[1].split("_DISPATCH = {")[0]
+check("N5 approval/rejection/unlock stay with the OPERATOR (not in the tool)",
+      _enum == ["plan", "spec", "status"]
+      and '"approve"' not in _handler_src and '"unlock"' not in _handler_src)
+check("N6 the tool is registered and reusable from the registry",
+      _reg._SUBTOOL_FIELDS["docs"] == {"plan": ["prompt", "session", "context"],
+                                       "spec": ["prompt", "session", "context"],
+                                       "status": ["session"]}
+      and all(k in _reg._SUBTOOL_GUIDANCE for k in ("docs.plan", "docs.spec", "docs.status"))
+      and _reg._SUBTOOL_REQUIRED["docs.plan"] == ["prompt"]
+      and _toolmod._DISPATCH.get("docs") is _toolmod._docs_tool
+      and "docs" not in _reg.PLAN_GATED_TOOLS
+      and "  docs:\n    enabled: true\n    approval: auto" in TOOLS_YAML)
+_seen = {}
+_orig_gen_n = docs._generate_plan_doc
+try:
+    docs._generate_plan_doc = lambda goal, model=None, context="": (
+        _seen.update(ctx=context) or (PLAN_MD, "fake-model"))
+    docs.create_plan(_sid_n, "with notes", extra_context="THE AGENT READ main.py:1-40", owner=True)
+finally:
+    docs._generate_plan_doc = _orig_gen_n
+check("N7 the caller's own notes reach the planner, bounded and labelled",
+      "AGENT NOTES" in _seen.get("ctx", "") and "main.py:1-40" in _seen.get("ctx", "")
+      and len(_seen.get("ctx", "")) < 4096 + 8192 + 200, len(_seen.get("ctx", "")))
 
 docs._generate_plan_doc = _orig_plan
 docs._generate_spec_docs = _orig_spec

@@ -2,7 +2,8 @@
 """Longrun CLI — command the harness from the terminal.
 
 Usage:
-  python3 forge.py chat "message" [--session ID] [--model ALIAS] [--stream]
+  python3 forge.py chat "message" [--session ID] [--model ALIAS] [--stream] [--new]
+                          # no --session: this CLI's current session (printed as "session: ID")
   python3 forge.py agent "goal" [--max-steps N]
   python3 forge.py plan show [--session ID] | plan generate "goal" | plan toggle ID [--session ID]
   python3 forge.py tasks ls | tasks add "title" | tasks done ID | tasks set ID STATUS
@@ -11,9 +12,10 @@ Usage:
   python3 forge.py runs ls | runs show RUN_ID | runs summary | runs trace RUN_ID
                           | runs node RUN_ID '<json>' | control pause|resume|abort RUN_ID
   python3 forge.py sessions ls | sessions new "title" [--workspace DIR] | sessions rm ID
-                          | sessions history ID | sessions tree ID | sessions graph ID
+                          | sessions use ID | sessions current | sessions history [ID]
+                          | sessions tree [ID] | sessions graph [ID]
                           | sessions reset ID | sessions clear ID | sessions model "SID MODEL"
-  python3 forge.py docs status|plan "request"|spec "request"|approve|reject|unlock --session ID
+  python3 forge.py docs status|plan "request"|spec "request"|approve|reject|unlock [--session ID]
   python3 forge.py context show [--session ID] | context compact [--session ID]
                           | context preview "message" [--session ID] | context items [--session ID]
   python3 forge.py checkpoints ls | checkpoints create "label" [--session ID]
@@ -102,6 +104,66 @@ def req(method, path, body=None):
         return {"error": "request failed: %s" % e}
 
 
+# ---------------------------------------------------------- current session --
+# The CLI had no memory: a bare `chat` asked the server for a NEW session and threw
+# its id away, so a session created with `sessions new` stayed empty and the turn
+# landed in an anonymous row (`stores.get_or_create_session(None)`). One small
+# per-machine pointer fixes the operator's flow ("lanciare sessioni e vedere che
+# fanno"); `chat --new` keeps the old one-shot semantics. `LONGRUN_CLI_STATE`
+# overrides the file so tests never touch the real data home.
+_CLI_STATE_ENV = "LONGRUN_CLI_STATE"
+
+
+def _state_path():
+    override = os.environ.get(_CLI_STATE_ENV)
+    if override:
+        return override
+    from longrun.util import paths
+    return os.path.join(paths.DATA_DIR, "cli_session.json")
+
+
+def _current_session():
+    try:
+        with open(_state_path(), encoding="utf-8") as f:
+            return str((json.load(f) or {}).get("session") or "")
+    except (OSError, ValueError):
+        return ""
+
+
+def _set_current_session(sid):
+    sid = str(sid or "").strip()
+    if not sid:
+        return
+    p = _state_path()
+    try:
+        os.makedirs(os.path.dirname(p) or ".", exist_ok=True)
+        tmp = p + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"session": sid, "ts": time.time()}, f)
+        os.replace(tmp, p)
+    except OSError:
+        pass  # a read-only home must not break the command
+
+
+def _clear_current_session(sid=""):
+    """Drop the pointer (only when it names `sid`, or unconditionally with "")."""
+    try:
+        if sid and _current_session() != sid:
+            return
+        os.remove(_state_path())
+    except OSError:
+        pass
+
+
+def _session_or_current(explicit):
+    return str(explicit or "").strip() or _current_session()
+
+
+def _no_current_session():
+    print("no current session — run `sessions new` or `sessions use ID`", file=sys.stderr)
+    sys.exit(2)
+
+
 def sse(path):
     """Consume an SSE endpoint, printing deltas live."""
     r = urllib.request.Request(BASE + path, headers={
@@ -126,10 +188,17 @@ def sse(path):
 
 
 def stream_chat(path):
+    """Stream one chat turn; return the session id the server adopted (or "")."""
+    adopted = ""
     for ev, payload in sse(path):
         try:
             d = json.loads(payload) if payload and payload != "{}" else {}
         except json.JSONDecodeError:
+            continue
+        if ev == "chat.run":
+            # The FIRST frame carries the id the server is writing to — the one a
+            # bare `chat` used to throw away (the "empty session" report).
+            adopted = str((d or {}).get("session") or adopted)
             continue
         if ev == "chat.delta":
             # JAG-243: the ANSI codes were missing the ESC byte, so `--stream`
@@ -142,20 +211,35 @@ def stream_chat(path):
             print("\n[error] %s" % d.get("error"), file=sys.stderr)
         elif ev == "done":
             print()
+    return adopted
 
 
 def cmd_chat(args):
+    # `--session` > current pointer; `--new` forces a fresh session (old behaviour).
+    sid = "" if getattr(args, "new", False) else _session_or_current(args.session)
     if args.stream:
-        stream_chat("/api/chat/stream?message=%s%s%s" % (
-            _q(args.message),
-            "&session=" + _q(args.session) if args.session else "",
-            "&model=" + _q(args.model) if args.model else ""))
+        url = "/api/chat/stream?message=%s" % _q(args.message)
+        if sid:
+            url += "&session=" + _q(sid)
+        if args.model:
+            url += "&model=" + _q(args.model)
+        if sid:
+            print("session: %s" % sid)
+        adopted = stream_chat(url)
+        got = adopted or sid
+        if got:
+            _set_current_session(got)
+            print("session: %s" % got)
         return
-    out = req("POST", "/api/chat", {"message": args.message, "session": args.session,
+    out = req("POST", "/api/chat", {"message": args.message, "session": sid or None,
                                     "model": args.model})
     if out.get("error"):
         print("error:", out["error"], file=sys.stderr)
         sys.exit(1)
+    got = str(out.get("session") or "").strip() or sid
+    if got:
+        _set_current_session(got)      # never lose the transcript's address again
+        print("session: %s" % got)
     if out.get("reasoning"):
         print("[thinking]", out["reasoning"][:600], "\n")
     print(out.get("reply", ""))
@@ -830,8 +914,25 @@ def cmd_feed(_):
 def cmd_sessions(args):
     if args.action == "ls":
         out = req("GET", "/api/sessions")
+        cur = _current_session()
         for s in out.get("sessions", []):
-            print(" %-24s %4s msg  %s" % (s.get("id"), s.get("messages"), s.get("title") or ""))
+            mark = "*" if cur and s.get("id") == cur else " "
+            print("%s%-24s %4s msg  %s" % (mark, s.get("id"), s.get("messages"),
+                                           s.get("title") or ""))
+    elif args.action == "current":
+        cur = _current_session()
+        print(cur or "none — run `sessions new` or `sessions use ID`")
+    elif args.action == "use":
+        want = str(args.value or "").strip()
+        if not want:
+            print("usage: sessions use ID", file=sys.stderr)
+            sys.exit(2)
+        hist = req("GET", "/api/history?session=" + _q(want))
+        if hist.get("error"):
+            print("error:", hist["error"], file=sys.stderr)
+            sys.exit(1)
+        _set_current_session(want)
+        print("current session: %s" % want)
     elif args.action == "new":
         ws = getattr(args, "workspace", None)
         if ws:
@@ -843,45 +944,55 @@ def cmd_sessions(args):
             out = req("POST", "/api/sessions", {"title": args.value})
         print(json.dumps({k: out.get(k) for k in ("id", "title", "messages")},
                          indent=2, ensure_ascii=False))
+        if out.get("id"):
+            # A new session becomes the current one: a following bare `chat` lands
+            # HERE instead of in an anonymous row (the "empty session" defect).
+            _set_current_session(out["id"])
+            print("current session: %s" % out["id"])
     elif args.action == "rm":
         print(json.dumps(req("DELETE", "/api/sessions/" + args.value), indent=2))
-    elif args.action == "history":
-        out = req("GET", "/api/history?session=" + _q(args.value))
-        if out.get("error"):
-            print("error:", out["error"], file=sys.stderr)
-            sys.exit(1)
-        for m in out.get("messages", []):
-            print("[%-9s] %s" % (m.get("role"), (m.get("content") or "").replace("\n", " ")[:200]))
-        for c in out.get("tool_cards", []) or []:
-            print("[tool     ] %s ok=%s backend=%s" % (c.get("tool"), c.get("ok"), c.get("backend")))
-    elif args.action == "graph":
-        print(json.dumps(req("GET", "/api/sessions/%s/graph" % args.value),
-                         indent=2, ensure_ascii=False))
-    elif args.action == "tree":
-        # HD-2: the stage→step tree plus the first failure. The one-line verdict
-        # leads because that is the answer to "why did this turn go wrong"; the
-        # JSON is there when the operator (or an agent) needs the detail.
-        out = req("GET", "/api/sessions/%s/trace-tree" % args.value)
-        if out.get("error"):
-            print("error:", out["error"], file=sys.stderr)
-            sys.exit(1)
-        if out.get("verdict"):
-            print(out["verdict"])
+        _clear_current_session(args.value)
+    elif args.action in ("history", "graph", "tree"):
+        ref = str(args.value or "").strip() or _current_session()
+        if not ref:
+            _no_current_session()
+        if args.action == "history":
+            out = req("GET", "/api/history?session=" + _q(ref))
+            if out.get("error"):
+                print("error:", out["error"], file=sys.stderr)
+                sys.exit(1)
+            for m in out.get("messages", []):
+                print("[%-9s] %s" % (m.get("role"), (m.get("content") or "").replace("\n", " ")[:200]))
+            for c in out.get("tool_cards", []) or []:
+                print("[tool     ] %s ok=%s backend=%s" % (c.get("tool"), c.get("ok"), c.get("backend")))
+        elif args.action == "graph":
+            print(json.dumps(req("GET", "/api/sessions/%s/graph" % ref),
+                             indent=2, ensure_ascii=False))
         else:
-            print("no failed step in %d step(s)" % (out.get("counts") or {}).get("steps", 0))
-        for st in out.get("stages") or []:
-            print("\n%s  [%s]  %d step(s)" % (st.get("id"), st.get("status"), st.get("n") or 0))
-            print("  %s" % st.get("label"))
-            for s in st.get("steps") or []:
-                print("    %2d %-4s %s%s" % (s.get("i"), "FAIL" if s.get("failed") else "ok",
-                                             s.get("tool"),
-                                             ("  " + s.get("reason", "")[:90])
-                                             if s.get("failed") else ""))
-        if out.get("open"):
-            print("\nplanned but never executed (no tool call): %d"
-                  % len(out["open"]))
-            for st in out["open"]:
-                print("  %s  [%s]  %s" % (st.get("id"), st.get("status"), st.get("label")))
+            # HD-2: the stage→step tree plus the first failure. The one-line verdict
+            # leads because that is the answer to "why did this turn go wrong"; the
+            # JSON is there when the operator (or an agent) needs the detail.
+            out = req("GET", "/api/sessions/%s/trace-tree" % ref)
+            if out.get("error"):
+                print("error:", out["error"], file=sys.stderr)
+                sys.exit(1)
+            if out.get("verdict"):
+                print(out["verdict"])
+            else:
+                print("no failed step in %d step(s)" % (out.get("counts") or {}).get("steps", 0))
+            for st in out.get("stages") or []:
+                print("\n%s  [%s]  %d step(s)" % (st.get("id"), st.get("status"), st.get("n") or 0))
+                print("  %s" % st.get("label"))
+                for s in st.get("steps") or []:
+                    print("    %2d %-4s %s%s" % (s.get("i"), "FAIL" if s.get("failed") else "ok",
+                                                 s.get("tool"),
+                                                 ("  " + s.get("reason", "")[:90])
+                                                 if s.get("failed") else ""))
+            if out.get("open"):
+                print("\nplanned but never executed (no tool call): %d"
+                      % len(out["open"]))
+                for st in out["open"]:
+                    print("  %s  [%s]  %s" % (st.get("id"), st.get("status"), st.get("label")))
     elif args.action == "reset":
         print(json.dumps(req("POST", "/api/sessions/%s/graph/reset" % args.value, {}),
                          indent=2, ensure_ascii=False))
@@ -903,7 +1014,9 @@ def cmd_docs(args):
     `approve`/`reject`/`unlock` decide. One request per invocation; a failure is a
     non-zero exit with the server's reason, never a silent 0.
     """
-    sid = args.session
+    sid = args.session or _current_session()
+    if not sid:
+        _no_current_session()
     act = args.action
     if act == "status":
         out = req("GET", "/api/docs?session=" + _q(sid))
@@ -1213,7 +1326,9 @@ def main():
     ap = argparse.ArgumentParser(prog="forge")
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("chat"); p.add_argument("message"); p.add_argument("--session"); \
-        p.add_argument("--model"); p.add_argument("--stream", action="store_true"); p.set_defaults(fn=cmd_chat)
+        p.add_argument("--model"); p.add_argument("--stream", action="store_true"); \
+        p.add_argument("--new", action="store_true", help="force a fresh session (ignore the current one)"); \
+        p.set_defaults(fn=cmd_chat)
     p = sub.add_parser("agent"); p.add_argument("goal"); p.add_argument("--max-steps", type=int, default=6); \
         p.add_argument("--model"); p.set_defaults(fn=cmd_agent)
     p = sub.add_parser("plan"); p.add_argument("action", choices=["show", "generate", "toggle", "set"]); \
@@ -1281,10 +1396,10 @@ def main():
     p = sub.add_parser("swarm"); p.add_argument("goal"); p.add_argument("--n-workers", type=int, default=3); \
         p.add_argument("--max-steps", type=int, default=None); p.set_defaults(fn=cmd_swarm)
     sub.add_parser("paperclip-bot").set_defaults(fn=cmd_paperclip_bot)
-    p = sub.add_parser("sessions"); p.add_argument("action", choices=["ls", "new", "rm", "history", "graph", "tree", "reset", "clear", "model"]); \
+    p = sub.add_parser("sessions"); p.add_argument("action", choices=["ls", "new", "rm", "use", "current", "history", "graph", "tree", "reset", "clear", "model"]); \
         p.add_argument("value", nargs="?"); p.add_argument("--workspace"); p.set_defaults(fn=cmd_sessions)
     p = sub.add_parser("docs"); p.add_argument("action", choices=["status", "plan", "spec", "approve", "reject", "unlock"]); \
-        p.add_argument("value", nargs="?"); p.add_argument("--session", required=True); \
+        p.add_argument("value", nargs="?"); p.add_argument("--session"); \
         p.add_argument("--model"); p.set_defaults(fn=cmd_docs)
     p = sub.add_parser("context"); p.add_argument("action", choices=["show", "compact", "preview", "items"]); \
         p.add_argument("value", nargs="?"); p.add_argument("--session"); p.set_defaults(fn=cmd_context)

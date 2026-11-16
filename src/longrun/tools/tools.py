@@ -3717,6 +3717,74 @@ def _workspace(args, run_id):
     }
 
 
+def _docs_tool(args, run_id):
+    """v1051d: an AGENT writes a reviewed plan/spec and locks the session.
+
+    Self, or a DIRECT report's idle session (the same predicate as `dispatch`).
+    The planner is a separate model call with no tools, so `context` carries what
+    the caller already read. Approval, rejection and unlock are the OPERATOR's
+    acts and are deliberately absent: an agent must not release its own gate.
+    """
+    from longrun.plan import docs as _docs
+    args = args or {}
+    action = str(args.get("action") or "status").strip().lower()
+    caller = str(run_id or "").strip()
+    target = str(args.get("session") or "").strip() or caller
+    if not caller:
+        return {"ok": False, "exit_code": 1, "error": "no calling session",
+                "stdout": "no calling session"}
+    if action not in ("plan", "spec", "status"):
+        return {"ok": False, "exit_code": 1,
+                "error": "unknown action %r (plan|spec|status)" % action,
+                "stdout": "unknown action %r (plan|spec|status)" % action}
+    if target != caller:
+        try:
+            from longrun.agent import agents as _agents
+            me = _agents.REGISTRY.get(caller) or {}
+            member = _agents.REGISTRY.resolve(target)
+            team = _agents.REGISTRY.team_of(me.get("id")) if me.get("id") else []
+            if not (member and me.get("id") and member.get("id") in team
+                    and member.get("id") != me.get("id")):
+                raise ValueError("not one of your direct reports")
+            target = str(member.get("session") or "").strip()
+            if not target:
+                raise ValueError("that teammate has no session")
+        except ValueError as exc:
+            return {"ok": False, "exit_code": 1, "error": str(exc), "stdout": str(exc)}
+        except Exception as exc:  # noqa: BLE001 — a permission probe must answer, not crash
+            msg = "permission check failed: %s" % exc
+            return {"ok": False, "exit_code": 1, "error": msg, "stdout": msg}
+    try:
+        if action == "status":
+            st = _docs.status(target)
+            a = st.get("active") or {}
+            return {"ok": True, "exit_code": 0, "session": target,
+                    "plan_mode": bool(st.get("plan_mode")), "active": a,
+                    "stdout": ("docs: plan_mode=%s status=%s\n%s"
+                               % (bool(st.get("plan_mode")), a.get("status") or "-",
+                                  a.get("path") or "(no document)"))}
+        prompt = str(args.get("prompt") or "").strip()
+        if not prompt:
+            msg = "prompt required for docs.%s" % action
+            return {"ok": False, "exit_code": 1, "error": msg, "stdout": msg}
+        ctx = str(args.get("context") or "")
+        make = _docs.create_plan if action == "plan" else _docs.create_spec
+        res = make(target, prompt, extra_context=ctx, owner=(target == caller))
+    except ValueError as exc:
+        return {"ok": False, "exit_code": 1, "error": str(exc), "stdout": str(exc)}
+    except Exception as exc:  # noqa: BLE001 — the model must see the reason, not a crash
+        msg = "document generation failed: %s" % exc
+        return {"ok": False, "exit_code": 1, "error": msg, "stdout": msg}
+    return {"ok": True, "exit_code": 0, "session": target,
+            "kind": res.get("kind"), "path": res.get("path"),
+            "rel_path": res.get("rel_path"), "status": res.get("status"),
+            "plan_mode": res.get("plan_mode"),
+            "stdout": ("%s written: %s\nstatus=%s plan_mode=%s — the operator approves it "
+                       "from the document bar (or `forge.py docs approve`)"
+                       % (res.get("kind") or action, res.get("rel_path") or res.get("path"),
+                          res.get("status"), res.get("plan_mode")))}
+
+
 _DISPATCH = {"shell": _shell_hinted, "shell.exec": _shell_hinted,
              "fs.read": _fs_read, "fs.write": _fs_write, "fs.edit": _fs_edit,
              "diff": _diff,
@@ -3730,6 +3798,7 @@ _DISPATCH = {"shell": _shell_hinted, "shell.exec": _shell_hinted,
              "sessions": _sessions, "index": _index,
              "workspace": _workspace, "workspace.set": _workspace,
              "knowledge": _knowledge, "chapters": _chapters, "context": _context,
+             "docs": _docs_tool,
              # JAG-426: baseline tools every standard harness ships
              "python": _python, "python.run": _python,
              "process": _process,

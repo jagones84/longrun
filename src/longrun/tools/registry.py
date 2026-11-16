@@ -414,6 +414,31 @@ _LEGACY_SCHEMAS = {
             "n": {"type": "integer", "default": 5, "description": "max web hits (action=discover)"},
         },
     },
+    "docs": {
+        "description": ("Write a REVIEWED plan or spec document for a session and lock it "
+                        "until the OPERATOR approves it. action=plan -> one markdown plan "
+                        "under .longrun/documents/plans/; action=spec -> spec.md + tasks.md "
+                        "+ checklist.md under .longrun/documents/specs/<slug>/; "
+                        "action=status -> the document attached to a session (path, "
+                        "status, plan_mode). The planner is a separate model call with no "
+                        "tools: pass `context` with what you already read. Omit `session` "
+                        "for this chat; another session must be one of your direct "
+                        "reports. Approval, rejection and unlock are the operator's acts "
+                        "and are NOT available here."),
+        "type": "object",
+        "properties": {
+            "action": {"type": "string", "enum": ["plan", "spec", "status"],
+                       "default": "status"},
+            "prompt": {"type": "string",
+                       "description": "the request the document answers (required for plan/spec)"},
+            "session": {"type": "string",
+                        "description": ("target session id, A-id or name; omit for this "
+                                        "session; another session must be a direct report")},
+            "context": {"type": "string",
+                        "description": ("notes from your own reading, passed to the "
+                                        "planner (bounded, marked unverified)")},
+        },
+    },
     "sessions": {
         "description": ("Inspect OTHER sessions' chats to understand why a "
                         "teammate (e.g. 'coder 1') is failing, and help it. "
@@ -913,6 +938,11 @@ _SUBTOOL_FIELDS = {
         "discover": ["query", "n"], "import": ["notebook", "session", "urls", "refs"],
         "status": [],
     },
+    "docs": {
+        "plan": ["prompt", "session", "context"],
+        "spec": ["prompt", "session", "context"],
+        "status": ["session"],
+    },
     "sessions": {
         "list": ["query", "limit"], "read": ["session", "limit", "tail"],
         "send": ["session", "to", "message", "text", "idempotency_key"],
@@ -987,6 +1017,7 @@ _SUBTOOL_REQUIRED = {
     "index.search": ["query"],
     "knowledge.search": ["query"], "knowledge.read_source": ["ref"],
     "knowledge.create_notebook": ["name"], "knowledge.discover": ["query"],
+    "docs.plan": ["prompt"], "docs.spec": ["prompt"],
     "sessions.read": ["session"],
     "sessions.wait": ["message_id"],
     "workspace.set": ["workspace"],
@@ -1084,6 +1115,19 @@ _SUBTOOL_GUIDANCE = {
     ),
     "knowledge.add_text": "Add a note by providing `title` and either `text` or `content`.",
     "knowledge.create_notebook": "Create a shared notebook with the requested `name`.",
+    "docs.plan": (
+        "Write a plan document for this session (or a direct report's idle session) and "
+        "lock it until the operator approves. `prompt` is required; put what you read in "
+        "`context` — the planner cannot use tools."
+    ),
+    "docs.spec": (
+        "Write spec.md + tasks.md + checklist.md and lock the session. `prompt` is "
+        "required; `context` carries your findings."
+    ),
+    "docs.status": (
+        "Read the document attached to a session: path, status and plan_mode. Approval, "
+        "rejection and unlock belong to the operator."
+    ),
     "knowledge.discover": "Search the web for candidate sources; this does not index them.",
     "knowledge.import": "Index the supplied candidate URLs or refs into the selected notebook.",
     "memory.recall": (

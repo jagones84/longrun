@@ -476,6 +476,8 @@ def _purge_session_artifacts(sid):
     import glob
     if not _valid_sid(sid):
         return []  # JAG-230: a traversal-shaped id must never drive unlink()
+    with _LIVE_LOCK:            # a deleted id must not leave live fields behind
+        _LIVE.pop(sid, None)
     bases = [os.path.join(SESSIONS_DIR, sid + ".json")]
     try:
         bases.append(taskgraph._path(sid))
@@ -998,6 +1000,14 @@ def _set_session_model(sid, model):
 # owners record the value here, and `save_session` re-applies it, so no writer can
 # resurrect an older one. Process-local, dropped on restart.
 LIVE_OPERATOR_FIELDS = ("model", "workspace")
+# The DOCUMENT state has the same race as the operator fields: the `docs` tool can
+# write `plan`/`plan_mode` from INSIDE a running turn, whose final save would
+# otherwise drop the record (or an old copy would resurrect a cleared one). The
+# owners (`propose_plan`, `approve_plan`, `reject_plan`, `set_plan_mode` and
+# `plan.docs.unlock`) record the FINAL value here before their own save, so every
+# later writer re-applies it — the same defence model/workspace already use.
+LIVE_DOC_FIELDS = ("plan", "plan_mode")
+_LIVE_FIELDS = LIVE_OPERATOR_FIELDS + LIVE_DOC_FIELDS
 
 _LIVE = {}                  # sid -> {field: value}
 _LIVE_LOCK = threading.Lock()
@@ -1010,7 +1020,7 @@ def live_fields_changed(sid, **fields):
     with _LIVE_LOCK:
         slot = _LIVE.setdefault(sid, {})
         for k, v in fields.items():
-            if k in LIVE_OPERATOR_FIELDS:
+            if k in _LIVE_FIELDS:
                 slot[k] = v
 
 
@@ -1154,6 +1164,7 @@ def set_plan_mode(sid, on):
     if not s:
         raise ValueError("unknown session %r" % (sid,))
     s["plan_mode"] = bool(on)
+    live_fields_changed(sid, plan_mode=bool(on))
     save_session(s)
     return True
 
@@ -1179,6 +1190,7 @@ def propose_plan(sid, steps, doc=None, lock=False):
     s["plan"] = plan
     if lock:
         s["plan_mode"] = True
+    live_fields_changed(sid, plan=plan, **({"plan_mode": True} if lock else {}))
     save_session(s)
     return True
 
@@ -1201,6 +1213,7 @@ def approve_plan(sid):
         plan["doc"] = dict(plan["doc"], status="approved")
     s["plan"] = plan
     s["plan_mode"] = False
+    live_fields_changed(sid, plan=plan, plan_mode=False)
     save_session(s)
     return True
 
@@ -1220,6 +1233,7 @@ def reject_plan(sid):
     if isinstance(plan.get("doc"), dict):
         plan["doc"] = dict(plan["doc"], status="rejected")
     s["plan"] = plan
+    live_fields_changed(sid, plan=plan)
     save_session(s)
     return True
 

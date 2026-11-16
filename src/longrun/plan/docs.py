@@ -226,8 +226,12 @@ def _sweep_tmp(folder):
             shutil.rmtree(path, ignore_errors=True)
 
 
-def _context(session, kind):
-    """A small, honest context block: the planner has no tools to inspect files."""
+def _context(session, kind, extra=""):
+    """A small, honest context block: the planner has no tools to inspect files.
+
+    `extra` is the CALLER's own notes (the `docs` tool can pass what it read);
+    it is bounded and labelled as unverified, never mixed with the facts below.
+    """
     sess, sid = _session(session)
     ws = _workspace(session)
     lines = ["DOCUMENT KIND: %s" % kind,
@@ -254,7 +258,12 @@ def _context(session, kind):
         pass
     lines.append("You have NOT inspected these files. Do not invent paths; mark every "
                  "unverified claim as ASSUMPTION.")
-    return "\n".join(lines)[:4096]
+    text = "\n".join(lines)[:4096]
+    notes = str(extra or "").strip()
+    if notes:
+        text += ("\n\nAGENT NOTES (supplied by the caller; unverified by the planner):\n"
+                 + notes[:8192])
+    return text
 
 
 def _record(sid, doc, steps):
@@ -299,7 +308,12 @@ def _turn_active(sid):
         return False
 
 
-def _refuse_if_busy(sid, verb="write a document"):
+def _refuse_if_busy(sid, verb="write a document", owner=False):
+    # `owner=True` is the TOOL path: the caller is the turn that owns this session
+    # and the document fields are recorded as live (`stores.LIVE_DOC_FIELDS`), so
+    # the turn's own final save re-applies them instead of dropping them.
+    if owner:
+        return
     if _turn_active(sid):
         raise ValueError(
             "a chat turn is running in this session — let it finish, then %s" % verb)
@@ -327,7 +341,7 @@ class _Generating:
 
 # ---------------------------------------------------------------------- create --
 
-def create_plan(session, prompt, model=None):
+def create_plan(session, prompt, model=None, extra_context="", owner=False):
     """Generate one markdown plan, write it, propose it and lock the session."""
     sess, sid = _session(session)
     if not sess:
@@ -336,9 +350,9 @@ def create_plan(session, prompt, model=None):
     if not ask:
         raise ValueError("prompt required")
     folder = plan_dir(sid)          # validate the destination BEFORE a model call
-    _refuse_if_busy(sid)
+    _refuse_if_busy(sid, owner=owner)
     with _Generating(sid), _LOCK:
-        md, used_model = _generate_plan_doc(ask, model, _context(sid, "plan"))
+        md, used_model = _generate_plan_doc(ask, model, _context(sid, "plan", extra_context))
         os.makedirs(folder, exist_ok=True)
         base = "%s-%s" % (slug(ask), time.strftime("%Y-%m-%d"))
         path = _unique_plan_path(folder, base)
@@ -364,7 +378,7 @@ def create_plan(session, prompt, model=None):
             "model": used_model}
 
 
-def create_spec(session, prompt, model=None):
+def create_spec(session, prompt, model=None, extra_context="", owner=False):
     """Generate spec.md + tasks.md + checklist.md in ONE folder, atomically."""
     sess, sid = _session(session)
     if not sess:
@@ -373,9 +387,9 @@ def create_spec(session, prompt, model=None):
     if not ask:
         raise ValueError("prompt required")
     folder = spec_dir(sid)          # validate the destination BEFORE any model call
-    _refuse_if_busy(sid)
+    _refuse_if_busy(sid, owner=owner)
     with _Generating(sid), _LOCK:
-        docs, used_model = _generate_spec_docs(ask, model, _context(sid, "spec"))
+        docs, used_model = _generate_spec_docs(ask, model, _context(sid, "spec", extra_context))
         if not isinstance(docs, dict):
             raise ValueError("the generator returned no documents")
         missing = [n for n in SPEC_FILES if not str((docs or {}).get(n) or "").strip()]
@@ -467,6 +481,9 @@ def _decide(session, status_value):
         doc["decided_at"] = _now()
         plan["doc"] = doc
         sess["plan"] = plan
+        # The live value is what the running turn's final save re-applies; it must
+        # carry the decision timestamp too, or that save would drop it.
+        stores.live_fields_changed(sid, plan=plan)
         stores.save_session(sess)
     return status(sid)
 
@@ -510,5 +527,8 @@ def unlock(session):
     with _LOCK:
         sess["plan_mode"] = False
         sess.pop("plan", None)
+        # Final values as live: the next save by any writer (including a running
+        # turn's stale copy) must keep the mode off and the record gone.
+        stores.live_fields_changed(sid, plan=None, plan_mode=False)
         stores.save_session(sess)
         return status(sid)
