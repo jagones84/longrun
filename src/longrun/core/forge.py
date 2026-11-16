@@ -10,9 +10,10 @@ Usage:
   python3 forge.py approvals ls | approvals show ID | approvals approve ID | approvals deny ID | approvals rm ID | approvals clear
   python3 forge.py runs ls | runs show RUN_ID | runs summary | runs trace RUN_ID
                           | runs node RUN_ID '<json>' | control pause|resume|abort RUN_ID
-  python3 forge.py sessions ls | sessions new "title" | sessions rm ID | sessions history ID
-                          | sessions tree ID | sessions graph ID | sessions reset ID | sessions clear ID
-                          | sessions model "SID MODEL"
+  python3 forge.py sessions ls | sessions new "title" [--workspace DIR] | sessions rm ID
+                          | sessions history ID | sessions tree ID | sessions graph ID
+                          | sessions reset ID | sessions clear ID | sessions model "SID MODEL"
+  python3 forge.py docs status|plan "request"|spec "request"|approve|reject|unlock --session ID
   python3 forge.py context show [--session ID] | context compact [--session ID]
                           | context preview "message" [--session ID] | context items [--session ID]
   python3 forge.py checkpoints ls | checkpoints create "label" [--session ID]
@@ -832,7 +833,14 @@ def cmd_sessions(args):
         for s in out.get("sessions", []):
             print(" %-24s %4s msg  %s" % (s.get("id"), s.get("messages"), s.get("title") or ""))
     elif args.action == "new":
-        out = req("POST", "/api/sessions", {"title": args.value})
+        ws = getattr(args, "workspace", None)
+        if ws:
+            # The SAME route the WebUI uses when the operator names a folder
+            # (`GET /api/sessions/new`); POST /api/sessions has no workspace field.
+            out = req("GET", "/api/sessions/new?title=" + _q(args.value or "session")
+                      + "&workspace=" + _q(ws))
+        else:
+            out = req("POST", "/api/sessions", {"title": args.value})
         print(json.dumps({k: out.get(k) for k in ("id", "title", "messages")},
                          indent=2, ensure_ascii=False))
     elif args.action == "rm":
@@ -886,6 +894,60 @@ def cmd_sessions(args):
         model = v[1] if len(v) > 1 else ""
         print(json.dumps(req("POST", "/api/sessions/%s/model" % sid, {"model": model}),
                          indent=2, ensure_ascii=False))
+
+
+def cmd_docs(args):
+    """`/plan` and `/spec` from the terminal — the WebUI's twin, same endpoints.
+
+    `status` reads the bar; `plan`/`spec` write the document and lock the session;
+    `approve`/`reject`/`unlock` decide. One request per invocation; a failure is a
+    non-zero exit with the server's reason, never a silent 0.
+    """
+    sid = args.session
+    act = args.action
+    if act == "status":
+        out = req("GET", "/api/docs?session=" + _q(sid))
+        if out.get("error"):
+            print("error:", out["error"], file=sys.stderr)
+            sys.exit(1)
+        a = out.get("active") or {}
+        print("plan_mode=%s status=%s" % (bool(out.get("plan_mode")), a.get("status") or "-"))
+        if a:
+            print("kind=%s%s" % (a.get("kind") or "?", "  FILE MISSING" if a.get("stale") else ""))
+            for p in [a.get("path")] + [d for d in (a.get("documents") or []) if d != a.get("path")]:
+                if p:
+                    print("  " + str(p))
+        return
+    # Exact route literals, not a concatenation: `v588` proves every CLI path
+    # exists on the server, and the server gates these five as exact tuples.
+    route = {"plan": "/api/docs/plan", "spec": "/api/docs/spec",
+             "approve": "/api/docs/approve", "reject": "/api/docs/reject",
+             "unlock": "/api/docs/unlock"}[act]
+    if act in ("plan", "spec"):
+        ask = (args.value or "").strip()
+        if not ask:
+            print('error: a request is required: docs %s "<request>" --session %s' % (act, sid),
+                  file=sys.stderr)
+            sys.exit(2)
+        out = req("POST", route, {"session": sid, "prompt": ask, "model": args.model})
+    else:
+        out = req("POST", route, {"session": sid})
+    if out.get("error"):
+        print("error:", out["error"], file=sys.stderr)
+        sys.exit(1)
+    if act in ("plan", "spec"):
+        print("%s written: %s" % (out.get("kind") or act,
+                                  out.get("rel_path") or out.get("path") or "?"))
+        for d in out.get("documents") or []:
+            print("  " + str(d.get("rel_path") or d.get("path") or "?"))
+        print("status=%s plan_mode=%s model=%s lines=%s"
+              % (out.get("status"), bool(out.get("plan_mode")),
+                 out.get("model") or "?", out.get("lines") or "?"))
+    else:
+        a = out.get("active") or {}
+        print("ok: %s · plan_mode=%s%s"
+              % (act, bool(out.get("plan_mode")),
+                 (" · active=" + str(a.get("status"))) if a else " · no document"))
 
 
 def cmd_context(args):
@@ -1220,7 +1282,10 @@ def main():
         p.add_argument("--max-steps", type=int, default=None); p.set_defaults(fn=cmd_swarm)
     sub.add_parser("paperclip-bot").set_defaults(fn=cmd_paperclip_bot)
     p = sub.add_parser("sessions"); p.add_argument("action", choices=["ls", "new", "rm", "history", "graph", "tree", "reset", "clear", "model"]); \
-        p.add_argument("value", nargs="?"); p.set_defaults(fn=cmd_sessions)
+        p.add_argument("value", nargs="?"); p.add_argument("--workspace"); p.set_defaults(fn=cmd_sessions)
+    p = sub.add_parser("docs"); p.add_argument("action", choices=["status", "plan", "spec", "approve", "reject", "unlock"]); \
+        p.add_argument("value", nargs="?"); p.add_argument("--session", required=True); \
+        p.add_argument("--model"); p.set_defaults(fn=cmd_docs)
     p = sub.add_parser("context"); p.add_argument("action", choices=["show", "compact", "preview", "items"]); \
         p.add_argument("value", nargs="?"); p.add_argument("--session"); p.set_defaults(fn=cmd_context)
     p = sub.add_parser("hooks"); p.set_defaults(fn=cmd_hooks)

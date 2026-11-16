@@ -88,7 +88,7 @@ See `integrations/paperclip/README.md` for the adapter install and configuration
 | Command | Endpoint |
 |---|---|
 | `sessions ls` | `GET /api/sessions` |
-| `sessions new "title"` | `POST /api/sessions` |
+| `sessions new "title" [--workspace DIR]` | `POST /api/sessions` (or `GET /api/sessions/new?workspace=…` when a folder is named) |
 | `sessions rm ID` | `DELETE /api/sessions/<id>` |
 | `sessions history ID` | `GET /api/history?session=ID` |
 | `sessions graph ID` | `GET /api/sessions/<id>/graph` |
@@ -97,11 +97,41 @@ See `integrations/paperclip/README.md` for the adapter install and configuration
 
 ```bash
 python3 forge.py sessions ls
+python3 forge.py sessions new "probe docs" --workspace /tmp/lr-probe
 python3 forge.py sessions history 4f503dc92a29
 python3 forge.py sessions tree 4f503dc92a29     # stage→step tree + the first failed step
 python3 forge.py sessions rm 4f503dc92a29
 python3 forge.py sessions reset my-session      # clears the persistent task list
 ```
+
+### Documents (`/plan` and `/spec`)
+
+The reviewed **document** behind the plan/spec bar — not the task graph of the
+section below. `plan`/`spec` write the markdown, record it on the session and
+lock the session until you approve or reject `--session ID` is required.
+
+| Command | Endpoint |
+|---|---|
+| `docs status --session ID` | `GET /api/docs?session=ID` |
+| `docs plan "request" --session ID` | `POST /api/docs/plan` |
+| `docs spec "request" --session ID` | `POST /api/docs/spec` |
+| `docs approve --session ID` | `POST /api/docs/approve` |
+| `docs reject --session ID` | `POST /api/docs/reject` |
+| `docs unlock --session ID` | `POST /api/docs/unlock` (release the gate and forget the record; the file stays) |
+
+```bash
+SID=$(python3 forge.py sessions new "docs probe" --workspace /tmp/lr-probe | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+python3 forge.py docs plan "add a /health endpoint" --session "$SID"
+python3 forge.py docs status --session "$SID"        # plan_mode=true status=proposed + the path
+python3 forge.py chat "Reply with exactly PONG" --session "$SID"   # still a normal chat
+python3 forge.py docs unlock --session "$SID"        # bar gone, file kept
+python3 forge.py sessions rm "$SID"
+```
+
+A document write refuses while a chat turn is running in that session
+(`error: a chat turn is running…`, exit 1), and a second `docs plan|spec` for the
+same session is refused while the first is still generating.
+
 
 ### Context (the token meter / compaction)
 
@@ -415,7 +445,8 @@ scripting, but the document lifecycle is intentionally a reviewed UI gesture.
 | GET | `/api/plan` | `plan show` |
 | GET | `/api/tasks` | `tasks ls` |
 | GET | `/api/sessions` | `sessions ls` |
-| GET | `/api/sessions/new` | (WebUI first-open only — the CLI creates with `POST /api/sessions`) |
+| GET | `/api/sessions/new` | `sessions new --workspace DIR` (the WebUI first-open route) |
+| GET | `/api/docs` | `docs status` |
 | GET | `/api/history` | `sessions history` |
 | GET | `/api/eval/tasks` | `eval tasks` |
 | GET | `/api/voice/status` | `voice status` |
@@ -461,6 +492,11 @@ scripting, but the document lifecycle is intentionally a reviewed UI gesture.
 | POST | `/api/context/compact` | `context compact` |
 | POST | `/api/context/preview` | `context preview` |
 | POST | `/api/sessions` | `sessions new` |
+| POST | `/api/docs/plan` | `docs plan` |
+| POST | `/api/docs/spec` | `docs spec` |
+| POST | `/api/docs/approve` | `docs approve` |
+| POST | `/api/docs/reject` | `docs reject` |
+| POST | `/api/docs/unlock` | `docs unlock` |
 | POST | `/api/eval/run` | `eval run` |
 | POST | `/api/voice/stt` | `voice stt` |
 | POST | `/api/voice/tts` | `voice tts` |

@@ -135,14 +135,11 @@ docs/diagrams/*
 # JAG-2.9: `.longrun/` is per-machine operational state. It is no longer created
 # by the harness (JAG-534 moved project rules to the data home), but a stale
 # checkout must not suddenly start tracking it. `.gitignore`d, never committed.
+# v1051c (operator, 2026-11-16): `/plan` and `/spec` write their deliverables under
+# `<workspace>/.longrun/documents/`, which may be THIS repo when you work on the
+# harness itself — a deliverable is local output, not shipped source, so the whole
+# tree is ignored. The files stay on disk; only git stops seeing them.
 .longrun/
-# v1051: `.longrun/documents/` is the operator's DELIVERABLE area (`/plan` and
-# `/spec` write plans/specs there), not harness state. Keep it committable while
-# everything else under `.longrun/` stays ignored.
-!.longrun/
-.longrun/*
-!.longrun/documents/
-!.longrun/documents/**
 
 # OS / editor cruft (never share a machine's local state).
 .DS_Store

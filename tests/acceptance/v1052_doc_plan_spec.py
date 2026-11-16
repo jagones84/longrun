@@ -390,6 +390,31 @@ _left = sorted(os.listdir(_l_folder))
 check("L1 the next spec sweeps a temp set left by a killed writer",
       ".tmp-deadbeef" not in _left and _left == ["add-a-health-endpoint"], _left)
 
+# ------------------------------- M: the CLI twin (v1051c, operator request)
+# "usa la CLI per fare sessioni vere": the same document commands must exist on
+# the terminal client, pointing at the SAME endpoints as the WebUI — a CLI route
+# that only looks similar is a second truth.
+FORGE_SRC = read("src", "longrun", "core", "forge.py")
+CLI_MD = read("docs", "CLI.md")
+_docs_parser = FORGE_SRC.split('add_parser("docs")')[1][:400] if 'add_parser("docs")' in FORGE_SRC else ""
+check("M1 the CLI has a docs group with the six document actions",
+      "def cmd_docs(args):" in FORGE_SRC
+      and all('"%s"' % a in _docs_parser
+              for a in ("status", "plan", "spec", "approve", "reject", "unlock")),
+      _docs_parser[:200])
+check("M2 docs uses the WebUI's own endpoints (no parallel route)",
+      '"/api/docs?session="' in FORGE_SRC
+      and all('"/api/docs/%s"' % a in FORGE_SRC
+              for a in ("plan", "spec", "approve", "reject", "unlock")))
+check("M3 sessions new can name a workspace through the WebUI's route",
+      'add_argument("--workspace")' in FORGE_SRC
+      and '"/api/sessions/new?title="' in FORGE_SRC)
+check("M4 docs/CLI.md documents the group and its endpoints",
+      "### Documents (`/plan` and `/spec`)" in CLI_MD
+      and "| `docs unlock --session ID` |" in CLI_MD
+      and "| POST | `/api/docs/plan` | `docs plan` |" in CLI_MD
+      and "`sessions new \"title\" [--workspace DIR]`" in CLI_MD)
+
 docs._generate_plan_doc = _orig_plan
 docs._generate_spec_docs = _orig_spec
 

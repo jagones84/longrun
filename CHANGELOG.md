@@ -83,6 +83,15 @@ All notable changes to Longrun are documented here. The format follows
   both spellings and the badge reads `748/748` (two test files had been added without it).
 
 ### Added
+- **The CLI is the WebUI's twin for the document commands.** `forge.py docs
+  status|plan "request"|spec "request"|approve|reject|unlock --session ID` calls
+  the same `/api/docs*` the composer calls, prints the written path (or the
+  server's reason with a non-zero exit), and `sessions new "title" --workspace DIR`
+  now creates through the WebUI's own `GET /api/sessions/new` route so a probe can
+  own a throwaway folder. Live: `.agent/trash/cli_docs_probe.py` **12/12** — plan
+  written, a real `chat` turn in the locked session, unlock keeps the file, empty
+  request exit 2, spec's three files, approve, unlock. (Locked by `v1052` M1–M4;
+  `docs/CLI.md` documents the group.)
 - **`/reset` — a fresh chat without the New-session dialog, and `/unlock` — leaving `/plan`/`/spec`
   mode.** `/reset` creates a new session in the SAME workspace and leaves the old one in the rail
   with its transcript; it reuses the one creation path the dialog already used (`createSession`,
@@ -159,6 +168,10 @@ All notable changes to Longrun are documented here. The format follows
   `v1051` 18/18, `v1052` 28/28, `v1053` 39/39; `v775`, `v1020`, `v597`, `v863`, `v934` green.)
 
 ### Changed
+- **`.longrun/` is ignored in full.** `/plan` and `/spec` write their deliverables under
+  `<workspace>/.longrun/documents/`, which is this repo when you work on the harness itself. The
+  files are local output, not shipped source: the old carve-out re-included `documents/**` and made
+  every probe show up as untracked. They stay on disk; git stops seeing them.
 - **`web.search` / `web.fetch` take `query` OR `queries` (and `url` OR `urls`).** The canonical
   schemas no longer demand `query`/`url`: the alternatives live in `_SUBTOOL_ANY_OF`, so a batched
   call is not refused before the handler sees it. `_web_search` now returns
