@@ -522,6 +522,28 @@ check("N7 the caller's own notes reach the planner, bounded and labelled",
       "AGENT NOTES" in _seen.get("ctx", "") and "main.py:1-40" in _seen.get("ctx", "")
       and len(_seen.get("ctx", "")) < 4096 + 8192 + 200, len(_seen.get("ctx", "")))
 
+# N8: the TOOL path must cover BOTH generate actions. The first live agent probe
+# only drove `docs.plan`, so a real agent calling `docs.spec` was never exercised —
+# the operator caught it ("no ho visto nessun agente usarlo"). Pin the spec action
+# through the tool, inside a turn, with the session locked afterwards.
+_sid_spec_tool = session(_ws_n)
+try:
+    docs._turn_active = lambda sid: True
+    stub_spec()
+    _r_spec = _toolmod._docs_tool({"action": "spec", "prompt": "tool spec",
+                                   "context": "probe notes"}, _sid_spec_tool)
+finally:
+    docs._turn_active = _orig_turn_n
+    docs._generate_spec_docs = _orig_spec
+_sess_spec = stores.load_session(_sid_spec_tool)
+_spec_dir = os.path.dirname(str(_r_spec.get("path") or ""))
+_spec_files = sorted(os.listdir(_spec_dir)) if _spec_dir and os.path.isdir(_spec_dir) else []
+check("N8 the docs tool writes a SPEC from inside a turn (three files, session locked)",
+      _r_spec.get("ok") is True and _r_spec.get("kind") == "spec"
+      and _r_spec.get("plan_mode") is True
+      and _spec_files == ["checklist.md", "spec.md", "tasks.md"]
+      and bool(_sess_spec.get("plan_mode")), (_r_spec, _spec_files))
+
 docs._generate_plan_doc = _orig_plan
 docs._generate_spec_docs = _orig_spec
 

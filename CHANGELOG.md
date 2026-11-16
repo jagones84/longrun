@@ -102,10 +102,14 @@ All notable changes to Longrun are documented here. The format follows
   deliberately absent. Two obstacles were fixed rather than bypassed: the busy-turn refusal got an
   `owner=True` path used only by the tool, and `plan`/`plan_mode` joined the `stores` live fields so
   the turn's final save can neither drop nor resurrect a document. Live: `cli_session_probe.py`
-  **13/13** (new → chat lands in it → history → `*` row → REST `messages=4` → `docs plan` on the
-  same session → unlock → rm clears the pointer) and `agent_docs_probe.py` **11/11** (a real turn
+  **22/22** (new → current/use → a turn lands in it → history/tree/graph/context → `*` row → REST
+  `messages=4` → `plan` + `approve` + `spec` (three files) + `reject` + `unlock` → `rm` clears the
+  pointer) and `agent_docs_probe.py` **13/13** (a real turn
   calls `docs plan`, the file exists, `plan_mode=true`, `fs.write` is `blocked` with the plan-mode
-  reason, unlock releases it and the write executes). (Locked by `v785` M1–M15; `v1052` N1–N7.)
+  reason, unlock releases it and the write executes; then a second real turn calls **`docs spec`**,
+  which writes its three files and locks the session again — the first probe only drove `plan` and
+  the operator caught it: *"no ho visto nessun agente usarlo"*). (Locked by `v785` M1–M16; `v1052`
+  N1–N8, where N8 drives the SPEC action through the tool inside a turn.)
   **A CLI `chat` no longer kills its own turn.** Measured 2026-11-16 20:48:37: the 300 s socket
   timeout closed the connection and the server's `watch_client` read that as "client gone" and
   aborted a live turn (`chat.interrupted` on `b7329cccf94c`). Turns have no 5-minute bound, so
