@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""v504 — Deterministic Matrix -> Nucleus promotion, line-number diagnostics, mandatory test gate & checkbox-only policy."""
+"""v504 — Deterministic Matrix -> Nucleous promotion, line-number diagnostics, mandatory test gate & checkbox-only policy."""
 import json
 import os
 import sys
@@ -60,15 +60,15 @@ with tempfile.TemporaryDirectory() as tmp:
             )
         matrix.hotload(tmp)
 
-        # B: Even approvals.mode == "full" NEVER authorizes promote_to_nucleus without allow_matrix_promote checkbox
+        # B: Even approvals.mode == "full" NEVER authorizes promote_to_nucleous without allow_matrix_promote checkbox
         orig_load = registry.load_config
         cfg_full_no_cb = json.loads(json.dumps(orig_load()))
         cfg_full_no_cb.setdefault("approvals", {})["mode"] = "full"
         cfg_full_no_cb["approvals"]["allow_matrix_promote"] = False
         registry.load_config = lambda reload=False: cfg_full_no_cb
-        dec_no_cb, reason_no_cb = registry.classify("matrix", {"action": "promote_to_nucleus", "kind": "tool", "name": "fast_calc"})
-        prom_denied = matrix.promote_to_nucleus("tool", "fast_calc", repo_root=tmp)
-        check("B approvals.mode='full' still DENIES promote_to_nucleus when allow_matrix_promote checkbox is unchecked",
+        dec_no_cb, reason_no_cb = registry.classify("matrix", {"action": "promote_to_nucleous", "kind": "tool", "name": "fast_calc"})
+        prom_denied = matrix.promote_to_nucleous("tool", "fast_calc", repo_root=tmp)
+        check("B approvals.mode='full' still DENIES promote_to_nucleous when allow_matrix_promote checkbox is unchecked",
               dec_no_cb == "denied"
               and "allow_matrix_promote" in reason_no_cb
               and not prom_denied.get("ok")
@@ -78,14 +78,14 @@ with tempfile.TemporaryDirectory() as tmp:
         cfg_full_with_cb = json.loads(json.dumps(cfg_full_no_cb))
         cfg_full_with_cb["approvals"]["allow_matrix_promote"] = True
         registry.load_config = lambda reload=False: cfg_full_with_cb
-        dec_with_cb, _ = registry.classify("matrix", {"action": "promote_to_nucleus", "kind": "tool", "name": "fast_calc"})
-        prom_untested = matrix.promote_to_nucleus("tool", "fast_calc", repo_root=tmp)
-        check("C even with checkbox enabled, promote_to_nucleus refuses untested Matrix code (PROMOTE_UNVERIFIED)",
+        dec_with_cb, _ = registry.classify("matrix", {"action": "promote_to_nucleous", "kind": "tool", "name": "fast_calc"})
+        prom_untested = matrix.promote_to_nucleous("tool", "fast_calc", repo_root=tmp)
+        check("C even with checkbox enabled, promote_to_nucleous refuses untested Matrix code (PROMOTE_UNVERIFIED)",
               dec_with_cb == "auto"
               and not prom_untested.get("ok")
               and "PROMOTE_UNVERIFIED" in str(prom_untested.get("error", "")))
 
-        # D: Run test in .Matrix/trash targeting tool:fast_calc -> green -> promote_to_nucleus moves to Nucleus & deletes from Matrix
+        # D: Run test in .Matrix/trash targeting tool:fast_calc -> green -> promote_to_nucleous moves to Nucleous & deletes from Matrix
         test_res = matrix.run_test(
             "test_fast_calc.py",
             code=(
@@ -96,10 +96,10 @@ with tempfile.TemporaryDirectory() as tmp:
             target="tool:fast_calc",
             repo_root=tmp,
         )
-        prom_ok = matrix.promote_to_nucleus("tool", "fast_calc", repo_root=tmp)
+        prom_ok = matrix.promote_to_nucleous("tool", "fast_calc", repo_root=tmp)
         promoted_path = os.path.join(tmp, "src", "longrun", "tools", "promoted", "fast_calc.py")
         exec_promoted = matrix.execute_promoted_tool("fast_calc", {"a": 10, "b": 20}, repo_root=tmp)
-        check("D after passing test, promote_to_nucleus auto-commits, moves tool to Nucleus, deletes from Matrix, and runs as Nucleus",
+        check("D after passing test, promote_to_nucleous auto-commits, moves tool to Nucleous, deletes from Matrix, and runs as Nucleous",
               test_res.get("ok") is True
               and prom_ok.get("ok") is True
               and prom_ok.get("deleted_from_matrix") is True
@@ -108,7 +108,7 @@ with tempfile.TemporaryDirectory() as tmp:
               and os.path.isfile(promoted_path)
               and exec_promoted.get("ok") is True
               and exec_promoted.get("stdout") == "30"
-              and exec_promoted.get("origin") == "nucleus")
+              and exec_promoted.get("origin") == "nucleous")
 
         # E: Promote a subpackage hook (src/Matrix/plan/hooks.py) -> moves to src/longrun/plan/matrix_promoted_hooks.py & deletes from Matrix
         plan_hook = os.path.join(tmp, "src", "Matrix", "plan", "hooks.py")
@@ -126,9 +126,9 @@ with tempfile.TemporaryDirectory() as tmp:
             target="hook:plan",
             repo_root=tmp,
         )
-        prom_hook = matrix.promote_to_nucleus("hook", "plan", repo_root=tmp)
+        prom_hook = matrix.promote_to_nucleous("hook", "plan", repo_root=tmp)
         hook_val = matrix.call_hook("plan", "score_candidate", "x", 0.5, default=0.5, repo_root=tmp)
-        check("E promoting hook:plan moves it to Nucleus matrix_promoted_hooks.py, deletes from Matrix, and stays active",
+        check("E promoting hook:plan moves it to Nucleous matrix_promoted_hooks.py, deletes from Matrix, and stays active",
               t_hook.get("ok") is True
               and prom_hook.get("ok") is True
               and not os.path.exists(plan_hook)
