@@ -336,6 +336,60 @@ check("J6 both production doors hand classify() the session",
       'session=(getattr(st, "session", None)' in HTTPAPI
       and "session=run_id" in HTTPAPI)
 
+# ------------------------------------- K: one writer per session (autonomous use)
+# A document write and a chat turn both save the SAME session object. With no
+# operator watching, the later save silently drops the other's messages — so every
+# document mutation refuses while a turn is in flight, and a second generate for
+# the same session is refused instead of paying twice and overwriting the record.
+_ksid = session(os.path.join(TMP, "ws-busy"))
+_orig_turn = docs._turn_active
+_refused = []
+try:
+    docs._turn_active = lambda sid: True
+    for _fn, _args in ((docs.create_plan, ("x",)), (docs.create_spec, ("x",)),
+                       (docs.approve, ()), (docs.reject, ()), (docs.unlock, ())):
+        try:
+            _fn(_ksid, *_args)
+            _refused.append("")
+        except ValueError as exc:
+            _refused.append("chat turn" in str(exc))
+finally:
+    docs._turn_active = _orig_turn
+check("K1 every document write refuses while a chat turn owns the session",
+      all(_refused) and len(_refused) == 5, _refused)
+docs._INFLIGHT.add(_ksid)
+try:
+    stub_plan()
+    docs.create_plan(_ksid, "double")
+    check("K2 a second generation for the same session is refused", False, "no raise")
+except ValueError as exc:
+    check("K2 a second generation for the same session is refused",
+          "already being generated" in str(exc), str(exc))
+finally:
+    docs._INFLIGHT.discard(_ksid)
+stub_plan()
+_kr = docs.create_plan(_ksid, "after the double")
+check("K3 the in-flight slot is released, so the next attempt works",
+      _kr.get("ok") is True and _ksid not in docs._INFLIGHT)
+check("K4 the busy probe is the events module's own predicate (no second truth)",
+      "events.turn_active" in read("src", "longrun", "plan", "docs.py"))
+
+# ------------------------- L: a hard kill leaves no half-spec (v1051c)
+# The three files are written into `.tmp-<uuid>` and renamed only when all exist,
+# so a killed writer (service restart) never publishes a partial spec — but it can
+# leave the temp folder. The next create removes it under the same `_LOCK`.
+_ws_l = os.path.join(TMP, "ws-sweep")
+os.makedirs(_ws_l, exist_ok=True)
+_sid_l = session(_ws_l)
+stub_spec()
+_l_folder = docs.spec_dir(_sid_l)
+os.makedirs(os.path.join(_l_folder, ".tmp-deadbeef"), exist_ok=True)
+fswrite.write_text(os.path.join(_l_folder, ".tmp-deadbeef", "spec.md"), "# half\n")
+docs.create_spec(_sid_l, "add a health endpoint")
+_left = sorted(os.listdir(_l_folder))
+check("L1 the next spec sweeps a temp set left by a killed writer",
+      ".tmp-deadbeef" not in _left and _left == ["add-a-health-endpoint"], _left)
+
 docs._generate_plan_doc = _orig_plan
 docs._generate_spec_docs = _orig_spec
 

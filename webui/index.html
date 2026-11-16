@@ -8066,8 +8066,29 @@ function send(text, display, atts) {
     const _docKind = _docCall[1].toLowerCase();
     const _docAsk = ((_splitAttBlock(_docCall[2] || "").rest) || _docCall[2] || "").trim();
     if (!_docAsk) { toast("type the request after /" + _docKind, "warn"); return; }
-    inp.value = ""; if (inp.style) inp.style.height = ""; _renderCmdChips();
-    _draftClear(sessionId);
+    // A turn in flight owns this session's file; the document write must not race
+    // it (the backend refuses too). Queue it like every other command: the next
+    // idle flush re-enters this branch and runs it.
+    if (turnSSE[sessionId]) {
+      enqueueMsg({ raw: raw, text: raw, atts: [] });
+      inp.value = ""; if (inp.style) inp.style.height = ""; _renderCmdChips();
+      _draftClear(sessionId);
+      toast("/" + _docKind + " queued — it runs when this turn finishes", "ok");
+      return;
+    }
+    // 2026-11-10 rule, extended to document commands: only a send FROM the box
+    // empties the box and drops its draft. A QUEUED `/plan` flushed later must
+    // leave whatever the operator is typing untouched.
+    if (text === undefined) {
+      inp.value = ""; if (inp.style) inp.style.height = ""; _draftClear(sessionId);
+    }
+    _renderCmdChips();
+    // The planner has no tools and never receives attachments: say it, once,
+    // instead of letting the operator assume the image was part of the plan.
+    if (_attachments.length) {
+      toast("/" + _docKind + " does not include the " + _attachments.length +
+            " attachment(s) — they stay for your next message", "warn");
+    }
     _runDocCommand(_docKind, _docAsk);
     return;
   }
@@ -8394,6 +8415,7 @@ function selectSession(s) {
   _goalVerdictOpen = false;   // JAG-2: another session's open detail must not carry over
   loadGoal();         // G-1: the Active-goal bar follows the session, from the backend
   loadSlashCatalog(); // v1051: plugins/docs are session-scoped
+  _docBarForget();    // v1051c: never carry the previous session's bar, not even for a frame
   loadDocBar();       // v1051: the plan/spec bar follows the session, from the backend
   // 2026-11-11: a message left in this session's queue while it was busy is
   // delivered as soon as the operator is back on an IDLE session — it used to
@@ -9400,8 +9422,11 @@ async function createSession(title, ws) {
   _syncAttachmentBusyUI();
   _sessModel[s.id] = "";
   $("log").innerHTML = ""; curThink = curAns = null; _resetChatTree();
+  renderQueue();   // JAG-174: the NEW session's queue, never the one we left
   if (window.SparkEditor && SparkEditor.onSessionChange) SparkEditor.onSessionChange();
   loadSessions(); loadHistory(); loadRules(); loadCtx(); loadRole(); loadPlan(); loadCosts(); modelLabel(); closeAside();
+  _docBarForget();   // v1051c: a fresh chat has no document, so no bar
+  loadDocBar();
   scheduleDiagnosticsRefresh();
   return s;
 }
@@ -9421,6 +9446,9 @@ async function resetChat() {
   }
   const r = await createSession("", ws);
   if (r.error) { toast("reset: " + r.error, "err"); return; }
+  // A fresh chat starts with an empty box: an attachment ingested into the OLD
+  // session's knowledge must not ride into the new one.
+  _attachments = []; _renderAttach(); _renderPendingCtxItems();
   toast("new chat started — the previous session stays in the rail", "ok");
 }
 /* JAG-121: folder picker (file-browser) for the session workspace.
@@ -11139,12 +11167,28 @@ async function _runDocCommand(kind, ask) {
   try { r = await api("POST", "/api/docs/" + kind, { session: sid, prompt: ask },
                       ctl ? { signal: ctl.signal } : undefined); }
   catch (e) {
+    const _msg = String((e && e.message) || e);
     r = { ok: false, error: (e && e.name === "AbortError")
       ? "the planner did not answer within 10 minutes — it may still be running; reload this session to see the document"
-      : String((e && e.message) || e) };
+      : ((typeof TypeError !== "undefined" && e instanceof TypeError)
+          || /fetch|network|connection/i.test(_msg)
+        ? "the service did not answer (restart or network) — reload this session to see whether the document landed"
+        : _msg) };
   }
   finally { if (timer) clearTimeout(timer); }
   if (pending && pending.parentNode) pending.remove();
+  // The operator may have switched sessions while the planner was working: the
+  // card belongs to `sid`, never to the transcript on screen now.
+  if (sid !== sessionId) {
+    if (r && r.ok !== false && !r.error) {
+      toast("/" + kind + " written in the session you left — open it to review",
+            "ok");
+    } else {
+      toast("/" + kind + " failed in the session you left: "
+            + ((r && r.error) || "unknown reason"), "err");
+    }
+    return;
+  }
   if (!r || r.ok === false || r.error) {
     _docFailCard(kind, (r && r.error) || "document generation failed");
     toast((r && r.error) || "document generation failed", "err");
@@ -11161,6 +11205,14 @@ async function _runDocCommand(kind, ask) {
   _renderDocCard(r);
   loadDocBar();
   toast(kind + " written — " + (r.rel_path || r.path || ""), "ok");
+}
+/* A session switch must not carry the PREVIOUS session's document bar for even a
+   frame ("si mette in sovraimpressione", 2026-11-16). The async read below then
+   paints the new session's state; an older in-flight answer is ignored by its
+   `sid !== sessionId` guard. */
+function _docBarForget() {
+  _docState = null;
+  const b = $("docBar"); if (b) b.hidden = true;
 }
 async function loadDocBar() {
   const bar = $("docBar"); if (!bar) return null;
@@ -11235,6 +11287,15 @@ async function docReject() {
 }
 async function docUnlock() {
   if (!sessionId) return null;
+  // The session file is shared with the chat turn; unlocking mid-turn could make
+  // the turn's save drop the cleared record (or the reverse). The bar's ⏏ is
+  // disabled then too — the keyboard path must say the same thing.
+  if (turnSSE[sessionId]) {
+    toast("a turn is running — /unlock when it finishes", "warn"); return null;
+  }
+  if (_docState && !_docState.active && !_docState.plan_mode) {
+    toast("no document or plan mode in this session", "warn"); return null;
+  }
   if (typeof uiConfirm === "function"
       && !(await uiConfirm("leave this document's mode?",
                            "The bar closes and /plan or /spec mode is forgotten; the file stays on disk."))) return null;

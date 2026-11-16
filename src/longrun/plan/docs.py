@@ -206,6 +206,26 @@ def _unique_folder(folder, name):
     raise ValueError("too many spec folders for this slug")
 
 
+def _sweep_tmp(folder):
+    """Remove a `.tmp-*` set left by a hard kill (service restart mid-write).
+
+    The three files are written into a temp folder and renamed only when all of
+    them exist, so a killed writer leaves `.tmp-<uuid>` behind and never a
+    half-spec under the real name. Nothing else writes this folder while `_LOCK`
+    is held, so any `.tmp-*` seen here is stale garbage from a dead writer.
+    """
+    try:
+        names = os.listdir(folder)
+    except OSError:
+        return
+    for name in names:
+        if not name.startswith(".tmp-"):
+            continue
+        path = os.path.join(folder, name)
+        if os.path.isdir(path):
+            shutil.rmtree(path, ignore_errors=True)
+
+
 def _context(session, kind):
     """A small, honest context block: the planner has no tools to inspect files."""
     sess, sid = _session(session)
@@ -259,6 +279,52 @@ def _now():
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
+# ------------------------------------------------------- one writer at a time --
+# A document write is `load_session -> mutate -> save_session`; a chat turn writes
+# the SAME session object. Two concurrent writers would let the later `save_session`
+# drop the messages the other one appended (an autonomous run has nobody to notice),
+# so every document mutation refuses to run while that session's turn is in flight,
+# and a second generate for the same session is refused instead of paying for a
+# second model call and overwriting the first record.
+_INFLIGHT = set()
+_INFLIGHT_LOCK = threading.Lock()
+
+
+def _turn_active(sid):
+    """The chat turn in flight for `sid` (stub point in tests). Never raises."""
+    try:
+        from longrun.core import events
+        return bool(events.turn_active(sid))
+    except Exception:  # noqa: BLE001 — the probe must never block a document
+        return False
+
+
+def _refuse_if_busy(sid, verb="write a document"):
+    if _turn_active(sid):
+        raise ValueError(
+            "a chat turn is running in this session — let it finish, then %s" % verb)
+
+
+class _Generating:
+    """One generation per session: the second caller is refused, not queued."""
+
+    def __init__(self, sid):
+        self.sid = sid
+
+    def __enter__(self):
+        with _INFLIGHT_LOCK:
+            if self.sid in _INFLIGHT:
+                raise ValueError(
+                    "a document is already being generated for this session — wait for it")
+            _INFLIGHT.add(self.sid)
+        return self
+
+    def __exit__(self, *exc):
+        with _INFLIGHT_LOCK:
+            _INFLIGHT.discard(self.sid)
+        return False
+
+
 # ---------------------------------------------------------------------- create --
 
 def create_plan(session, prompt, model=None):
@@ -270,7 +336,8 @@ def create_plan(session, prompt, model=None):
     if not ask:
         raise ValueError("prompt required")
     folder = plan_dir(sid)          # validate the destination BEFORE a model call
-    with _LOCK:
+    _refuse_if_busy(sid)
+    with _Generating(sid), _LOCK:
         md, used_model = _generate_plan_doc(ask, model, _context(sid, "plan"))
         os.makedirs(folder, exist_ok=True)
         base = "%s-%s" % (slug(ask), time.strftime("%Y-%m-%d"))
@@ -306,7 +373,8 @@ def create_spec(session, prompt, model=None):
     if not ask:
         raise ValueError("prompt required")
     folder = spec_dir(sid)          # validate the destination BEFORE any model call
-    with _LOCK:
+    _refuse_if_busy(sid)
+    with _Generating(sid), _LOCK:
         docs, used_model = _generate_spec_docs(ask, model, _context(sid, "spec"))
         if not isinstance(docs, dict):
             raise ValueError("the generator returned no documents")
@@ -314,6 +382,7 @@ def create_spec(session, prompt, model=None):
         if missing:
             raise ValueError("the generator did not return %s" % ", ".join(missing))
         os.makedirs(folder, exist_ok=True)
+        _sweep_tmp(folder)
         final = _unique_folder(folder, slug(ask))
         tmp = os.path.join(folder, ".tmp-%s" % uuid.uuid4().hex)
         try:
@@ -407,6 +476,7 @@ def approve(session):
     _sess, sid = _session(session)
     if not _sess:
         raise ValueError("unknown session: %s" % (session or ""))
+    _refuse_if_busy(sid, "approve the document")
     with _LOCK:
         stores.approve_plan(sid)
         return _decide(sid, "approved")
@@ -417,6 +487,7 @@ def reject(session, unlock=True):
     _sess, sid = _session(session)
     if not _sess:
         raise ValueError("unknown session: %s" % (session or ""))
+    _refuse_if_busy(sid, "reject the document")
     with _LOCK:
         stores.reject_plan(sid)
         if unlock:
@@ -435,6 +506,7 @@ def unlock(session):
     sess, sid = _session(session)
     if not sess:
         raise ValueError("unknown session: %s" % (session or ""))
+    _refuse_if_busy(sid, "unlock")
     with _LOCK:
         sess["plan_mode"] = False
         sess.pop("plan", None)

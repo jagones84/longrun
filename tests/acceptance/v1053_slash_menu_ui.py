@@ -182,5 +182,30 @@ check("H7 open and remove are SIBLING buttons (no nested interactive control)",
       and 'class="attchip" data-i="' in UI
       and ".attchip .attopen:focus-visible" in UI)
 
+# ------------------------------- I: the exceptions of autonomous session usage
+check("I1 a document command sent while a turn runs is QUEUED, not dropped",
+      "if (turnSSE[sessionId]) {\n      enqueueMsg({ raw: raw, text: raw, atts: [] });" in UI
+      and 'toast("/" + _docKind + " queued' in UI)
+check("I2 /unlock refuses mid-turn, exactly like the disabled ⏏",
+      'toast("a turn is running — /unlock when it finishes", "warn"); return null;' in UI)
+check("I3 a session switch hides the old bar synchronously (reset and rail)",
+      "function _docBarForget() {" in UI
+      and UI.count("_docBarForget();") >= 2
+      and UI.index("_docBarForget();") < UI.index("async function loadDocBar()"))
+check("I4 a planner that lands after a session switch never paints the new chat",
+      "if (sid !== sessionId) {" in UI.split("async function _runDocCommand")[1][:2600])
+check("I5 a dead service says so, instead of a raw fetch error",
+      "the service did not answer (restart or network)" in UI)
+check("I6 an empty /unlock says there is nothing to unlock",
+      'toast("no document or plan mode in this session", "warn"); return null;' in UI)
+check("I7 a new/reset session shows ITS queue, never the one it left",
+      "renderQueue();   // JAG-174: the NEW session's queue" in UI)
+check("I8 /reset starts with an empty composer (no attachment from the old chat)",
+      "_attachments = []; _renderAttach(); _renderPendingCtxItems();" in UI.split("async function resetChat")[1][:900])
+check("I9 a flushed /plan never wipes the box or the operator's draft",
+      "if (text === undefined) {\n      inp.value = \"\"; if (inp.style) inp.style.height = \"\"; _draftClear(sessionId);\n    }" in UI)
+check("I10 /plan says it ignores composer attachments (the planner has no tools)",
+      "does not include the \" + _attachments.length" in UI)
+
 print("\n---\nv1053: %d/%d PASS" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

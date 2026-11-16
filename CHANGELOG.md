@@ -7,6 +7,24 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Fixed
+- **The document commands survive the exceptions of unattended use.** `/plan` and `/spec` write the
+  session object a chat turn is also writing; with nobody watching, the later save could drop the
+  other's messages or the fresh document record. Every document mutation (`create/approve/reject/
+  unlock`) now refuses while that session's turn is in flight (`events.turn_active`), and a second
+  generate for the same session is refused instead of paying for a second model call and overwriting
+  the first record. The composer QUEUES a document command typed during a turn (it used to be sent
+  into a race) and `/unlock` refuses with the same reason as its disabled button. A planner that
+  lands after a session switch no longer paints its card into the other chat, a session switch
+  (rail or `/reset`) hides the previous bar in the same frame, `/reset` shows the new session's queue
+  and starts with an empty composer, and a flushed `/plan` no longer wipes the operator's draft.
+  A dead service now says so ("reload this session to see whether the document landed") instead of a
+  raw fetch error, `/unlock` with nothing to unlock says that, and `/plan` warns when attachments
+  are present (the planner never receives them). Server side, a hard kill mid-`/spec` leaves no
+  half-spec — the three files are renamed only when all exist — and the next create sweeps the dead
+  writer's `.tmp-*` folder. Live: edge probe 13/13 (unknown session, empty prompt, approve/reject
+  with nothing proposed, double unlock, a REAL turn refusing `/plan`+`/unlock`, two concurrent
+  `/plan` calls) and restart-mid-spec probe 7/7 (no record, no lock, no half-spec, next `/spec`
+  clean). (Locked by `v1052` K1–K4, L1; `v1053` I1–I10; `v934` D1 re-pointed.)
 - **The plan/spec bar can always be dismissed, and a composer attachment chip opens again.** The
   bar hid `⏏` for a proposed document (approve/reject were the only exits) and for an approved one
   (the gate was already released) — so a generated spec/plan stayed on screen for ever with no

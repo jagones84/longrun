@@ -89,7 +89,9 @@ check("C3 the boot path restores the stored draft",
 # endpoint. The invariant is unchanged — every path that empties the box clears
 # its draft — the count is how it is pinned.
 check("D1 every place that empties the composer clears its draft",
-      UI.count("_draftClear(sessionId)") == 5, "%d sites" % UI.count("_draftClear(sessionId)"))
+      # v1051c: a document command QUEUED behind a live turn leaves the box too
+      # (it used to be dropped); that site clears its draft like the other five.
+      UI.count("_draftClear(sessionId)") == 6, "%d sites" % UI.count("_draftClear(sessionId)"))
 check("D2 only a send FROM the box clears it (a flushed queue item must not delete the draft)",
       "if (text === undefined) _draftClear(sessionId);" in UI)
 
