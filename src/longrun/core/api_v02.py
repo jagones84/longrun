@@ -735,8 +735,10 @@ def tool_context():
         "`## Input from dependencies` (use `input_from:\"<label>\"` to take just "
         "one dependency's output). Never invent `deps` you do not need: items with "
         "no `deps` start together, which is faster.",
-        "Enabled namespaces and how many tools each holds (`search` them, do not "
-        "guess a member name):",
+        "Enabled namespaces and how many tools each holds. A NAMESPACE IS NOT A "
+        "TOOL — `grep` is only a PREFIX and is not callable; the callable name is "
+        "a MEMBER (`grep.search`). Resolve the member with `self.tools "
+        "{query:...}` before calling:",
         "  " + " ".join("%s(%d)" % (ns, counts[ns]) for ns in sorted(counts)),
     ]
     if gw_collapsed:

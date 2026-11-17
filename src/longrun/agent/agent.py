@@ -5334,9 +5334,12 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     # 2026-11-17: identical calls ANYWHERE in the turn, not only consecutive ones.
     # The consecutive-only counter (`_tool_repeat`, JAG-178) let session `architect`
     # read the same `workspace.json` 5 times across batches before the nudge fired
-    # ONCE (msg 81); the hard block (JAG-183) covered only FAILED calls.
-    _call_seen = Counter()
-    _same_before = 0
+    # ONCE (msg 81). A repeat is "stuck" only when the RESULT repeats too: polling
+    # a job returns a NEW observation each time and is progress (measured live:
+    # 5 legitimate polls drew 4 "YOU ARE STUCK" nudges and the model argued with
+    # the harness instead of finishing).
+    _call_obs = {}                 # hash -> the last observation of that call
+    _same_obs_n = Counter()        # hash -> how many times the SAME obs repeated
     # JAG-272: a weak model can emit NONSENSE turns forever (malformed JSON /
     # unknown action / a bare promise). Without a cap it burned the whole iteration
     # budget. Stop after a few consecutive invalid turns with a clear reason.
@@ -6380,14 +6383,12 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             # it and hand back a directive so the model MUST change route, read a
             # skill, or ask ONE precise question.
             _call_h = _kg.tool_hash(tool, args)
-            _same_before = _call_seen[_call_h]
-            _call_seen[_call_h] += 1
             # JAG-183: only the verbatim re-run of a FAILED call is refused. A call
             # that SUCCEEDED is NEVER hard-blocked: `shell {action:"status"}` polling
             # a background job, or re-reading a file AFTER an edit, is the SAME call
             # repeated ON PURPOSE — refusing it broke legitimate work and told the
             # model "it FAILED", which was false. A successful repeat is caught by
-            # the SOFT nudge below (`_same_before` feeds `_stuck_note`, non-blocking).
+            # the SOFT nudge below, and only when its observation also repeats.
             if _call_h == _last_failed_hash:
                 _blocked_repeat += 1
                 msgs.append({"role": "assistant", "content": answer})
@@ -6425,12 +6426,14 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 status = res.get("status")
                 obs = (res.get("observation") or res.get("error") or res.get("reason")
                        or res.get("status") or "")
-                # JAG-431r4b: a GATE outcome (pending/expired/denied) means the tool
-                # NEVER ran — labelling it "failed" froze its (tool,args) hash and
-                # fed _fail_streak, so when the user approved the card and the model
-                # re-issued the SAME call verbatim, the JAG-183 guard BLOCKED it with
-                # "It was NOT executed… already FAILED". Gate outcomes are neutral.
-                _gate_only = status in ("pending", "expired", "denied")
+                # JAG-431r4b: a GATE outcome means the tool NEVER ran. `blocked`
+                # (a policy denial) is the same class: `gated_call` returns
+                # status="blocked" for a hard deny AND for a plan-mode refusal, and
+                # it did not execute either. Leaving it out labelled a CORRECT
+                # refusal as a tool failure, so the model was told to "fix the
+                # arguments and call again" — the one thing a policy will refuse
+                # every time (measured 2026-11-17: fs.write in plan mode).
+                _gate_only = status in ("pending", "expired", "denied", "blocked")
                 # F-1 (2026-11-04): a BLOCKED call carries its reason in `reason`,
                 # and a hard rule creates no approval — the sentence below is the
                 # only place the model and the operator can learn WHY.
@@ -6507,7 +6510,12 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             obs = str(obs)
             # JAG-178: track consecutive failures + repeated identical calls, and
             # COACH a stuck model (socratic) instead of the generic continue.
-            if _call_h == _last_tool_hash:
+            # 2026-11-17: a repeat counts ONLY when the observation is unchanged —
+            # a poll that returns a new state (running -> finished) is progress.
+            _same_obs = _call_obs.get(_call_h) == obs
+            _call_obs[_call_h] = obs
+            _same_obs_n[_call_h] = (_same_obs_n[_call_h] + 1) if _same_obs else 0
+            if _call_h == _last_tool_hash and _same_obs:
                 _tool_repeat += 1
             else:
                 _tool_repeat = 0
@@ -6526,10 +6534,23 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 _last_failed_err = obs[:300]
             else:
                 _last_failed_hash = None
-            if len(obs) <= CHAT_TOOL_OBS_LIMIT and (
-                    _fail_streak >= 2 or _tool_repeat >= 1 or _same_before >= 1):
+            if _gate_only and status == "blocked":
+                # A POLICY block did not execute and is NOT an argument problem, so
+                # the generic failure note ("fix the arguments and call again") sent
+                # the model into a retry the policy refuses every time — measured
+                # 2026-11-17: fs.write in plan mode was annotated "fix the
+                # arguments" right after a correct BLOCKED reason. Name the truth:
+                # only the OPERATOR can lift it.
+                note = ("BLOCKED by harness policy — this is NOT a failure of your "
+                        "arguments, and repeating the same call cannot work. Tell "
+                        "the OPERATOR, in plain words, which action is blocked and "
+                        "what they must change (the ▶ on the plan bar, an approval, "
+                        "or the policy/config). Then continue with anything else "
+                        "that helps, or answer with what you have.\n\n%s" % obs)
+            elif len(obs) <= CHAT_TOOL_OBS_LIMIT and (
+                    _fail_streak >= 2 or _tool_repeat >= 1 or _same_obs_n[_call_h] >= 1):
                 note = _stuck_note(tool, obs, _fail_streak,
-                                   max(_tool_repeat, _same_before),
+                                   max(_tool_repeat, _same_obs_n[_call_h]),
                                    _skill_hints(tool + " " + obs))
             elif len(obs) > CHAT_TOOL_OBS_LIMIT:
                 note = _offload_observation(sess, tool, obs)

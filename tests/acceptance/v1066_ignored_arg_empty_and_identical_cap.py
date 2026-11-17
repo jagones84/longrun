@@ -18,10 +18,13 @@ Contract pinned here:
   B2 that reply names the ignored key and says the answer is NOT "it does not exist"
   B3 the SAME call with the RIGHT key still succeeds (no new strictness)
   B4 an ignored argument on a call that DOES return data stays a warning (v874 A3)
-  A1 the loop counts identical calls across the whole turn (not only consecutive)
+  A1 the loop remembers each call's observation across the whole turn
   A2 the HARD block fires ONLY on the re-run of a FAILED call — a SUCCESSFUL
      repeat (`shell {action:"status"}` polling a job, a re-read after an edit) is
      NEVER refused, because refusing it broke legitimate work and lied ("it FAILED")
+  A3 the "stuck" nudge fires only when the OBSERVATION also repeats: a poll that
+     returns a new state each time is progress, not a loop (measured live: 5
+     legitimate polls drew 4 nudges and the model argued with the harness)
   D1 the plan-mode refusal still says "plan mode" (v597 B2/B5)
   D2 it now names the OPERATOR action (the ▶ / `forge.py docs implement`)
 
@@ -88,12 +91,13 @@ check("B4 an ignored arg on a call that RETURNS data stays a warning (v874 A3)",
 with open(os.path.join(REPO, "src", "longrun", "agent", "agent.py"),
           encoding="utf-8") as _fh:
     _src = _fh.read()
-check("A1 the loop keeps a per-turn counter of identical calls",
-      "_call_seen = Counter()" in _src, "")
+check("A1 the loop remembers each call's observation across the whole turn",
+      "_call_obs = {}" in _src and "_same_obs_n = Counter()" in _src, "")
 check("A2 the HARD block fires ONLY on a FAILED re-run (a successful repeat runs on)",
       "_call_h == _last_failed_hash" in _src and "_same_before >= 2" not in _src, "")
-check("A3 the second identical call raises the nudge",
-      "_same_before >= 1" in _src, "")
+check("A3 the nudge requires the OBSERVATION to repeat too (polling is progress)",
+      "_same_obs = _call_obs.get(_call_h) == obs" in _src
+      and "_same_obs_n[_call_h] >= 1" in _src, "")
 
 # ---- D: the plan-mode refusal names the OPERATOR action --------------------
 _s = stores.get_or_create_session(None, title="v1066-plan")
