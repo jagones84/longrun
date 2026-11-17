@@ -32,6 +32,7 @@ import tempfile
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 TMP = tempfile.mkdtemp(prefix="sf-v1073-")
 atexit.register(lambda: shutil.rmtree(TMP, ignore_errors=True))
+os.environ["LONGRUN_DATA_DIR"] = os.path.join(TMP, "data")
 os.environ["LONGRUN_CONFIG_DIR"] = os.path.join(TMP, "cfg")
 os.environ["LONGRUN_SESSIONS_DIR"] = os.path.join(TMP, "sessions")
 os.environ["LONGRUN_DB"] = os.path.join(TMP, "events.db")

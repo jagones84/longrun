@@ -286,5 +286,22 @@ check("S4 improve.ledger requires no argument it does not read",
 check("S5 improve.ledger advertises repair",
       "repair" in (_spec.get("properties") or {}), list(_spec.get("properties") or {}))
 
+# ---- X: the record is not written by an unisolated test ----------------------
+# The chain exposed a real leak: `v183_chat_core` and `v1073` drove the real turn
+# loop with the LIVE data home, so their `turn` rows landed in the operator's
+# ledger (measured 2026-11-18: sessions v183a..v183i and v1073-* inside the live
+# file, the v183 ones unchained and reported as `head-mismatch`). Running through
+# `tests/battery.sh` isolates them, but a direct `python3 tests/...` did not.
+for _t in ("v183_chat_core.py", "v1073_failure_transparency_contract.py"):
+    try:
+        _src = open(os.path.join(REPO, "tests", "acceptance", _t), encoding="utf-8").read()
+    except OSError:
+        _src = ""
+    check("X %s isolates the data home" % _t, "LONGRUN_DATA_DIR" in _src)
+check("X this test itself does not point at the live data home",
+      os.path.realpath(paths.DATA_DIR)
+      != os.path.realpath(os.path.join(os.path.expanduser("~"), ".longrun", "data")),
+      paths.DATA_DIR)
+
 print("\n---\nv1083: %d/%d PASS" % (sum(RESULTS), len(RESULTS)))
 raise SystemExit(0 if all(RESULTS) else 1)

@@ -27,13 +27,14 @@ import atexit  # noqa: E402
 import shutil  # noqa: E402
 tmp = tempfile.mkdtemp(prefix="sf-183-")
 atexit.register(lambda: shutil.rmtree(tmp, ignore_errors=True))
+os.environ["LONGRUN_DATA_DIR"] = os.path.join(tmp, "data")
 os.environ["LONGRUN_CONFIG_DIR"] = os.path.join(tmp, "cfg")
 os.environ["LONGRUN_SESSIONS_DIR"] = os.path.join(tmp, "sessions")
 os.environ["LONGRUN_DB"] = os.path.join(tmp, "events.db")
 os.environ["LONGRUN_GRAPH_DIR"] = tmp
 os.environ["LONGRUN_EDITS_DIR"] = os.path.join(tmp, "edits")
 os.environ["LONGRUN_RUNS_DIR"] = os.path.join(tmp, "runs")
-for d in ("cfg", "sessions", "graphs", "edits", "runs"):
+for d in ("cfg", "sessions", "graphs", "edits", "runs", "data"):
     os.makedirs(os.path.join(tmp, d), exist_ok=True)
 sys.path.insert(0, os.path.join(REPO, "src"))
 
