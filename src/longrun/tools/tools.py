@@ -3185,6 +3185,58 @@ def _sessions(args, run_id):
                 "purity": plan.get("purity"), "compare": cmp_,
                 "stdout": line, "stderr": "",
                 "backend": "host", "sandboxed": False}
+    if action in ("model_counterfactual", "model_cf"):
+        # Round 18: HD-1's model branch. Replace ONE message of the stored
+        # transcript, re-ask the model, compare its next ACTION. Nothing executes,
+        # so this works even when the step under test was a write — the case a
+        # step-level replay must refuse (harness/counterfactual.py).
+        sid = _session_id(args.get("session") or args.get("id") or "")
+        change = args.get("change")
+        if isinstance(change, str):
+            try:
+                change = json.loads(change)
+            except ValueError:
+                return {"ok": False, "exit_code": 64, "stdout": "", "stderr": "",
+                        "error": "change must be a JSON object, e.g. "
+                                 "{\"content\": \"a different observation\"}",
+                        "backend": "host", "sandboxed": False}
+        if not sid or args.get("index") is None or not isinstance(change, dict) or not change:
+            return {"ok": False, "exit_code": 64, "stdout": "", "stderr": "",
+                    "error": "session, index and change are required for "
+                             "action=model_counterfactual. `index` is the 0-based "
+                             "position of a USER message in the stored transcript "
+                             "(-1 = the last); change is {\"content\": \"…\"}.",
+                    "backend": "host", "sandboxed": False}
+        _ok, _why = _may_message(run_id, sid)
+        if not _ok:
+            return {"ok": False, "exit_code": 126, "permission_denied": True,
+                    "session": sid, "stdout": "", "stderr": "",
+                    "error": "model counterfactual refused: %s" % _why,
+                    "backend": "host", "sandboxed": False}
+        from longrun.core import api_v02 as _api
+        res = _api.model_counterfactual_run(sid, args.get("index"), change,
+                                            args.get("model"), by="tool")
+        if not res.get("ok"):
+            return {"ok": False, "exit_code": 1, "session": sid,
+                    "stdout": "", "stderr": "",
+                    "error": res.get("error") or "model counterfactual refused",
+                    "status_code": res.get("status"),
+                    "backend": "host", "sandboxed": False}
+        cmp_ = res.get("compare") or {}
+        line = ("model counterfactual at message %s: %s"
+                % (res.get("index"), cmp_.get("verdict")))
+        if cmp_.get("moved"):
+            line += " (moved: %s)" % ", ".join(cmp_["moved"])
+        line += " [%s]" % res.get("model")
+        return {"ok": True, "exit_code": 0, "session": sid,
+                "index": res.get("index"), "model": res.get("model"),
+                "verdict": cmp_.get("verdict"), "moved": cmp_.get("moved") or [],
+                "fidelity": res.get("fidelity"), "caveat": res.get("caveat"),
+                "recorded_action": res.get("recorded_action"),
+                "replayed_action": res.get("replayed_action"),
+                "compare": cmp_, "usage": res.get("usage"),
+                "stdout": line, "stderr": "",
+                "backend": "host", "sandboxed": False}
     if action in ("read", "get", "show", "transcript"):
         sid = _session_id(args.get("session") or args.get("id") or "")
         if not sid:

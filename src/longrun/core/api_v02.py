@@ -2813,6 +2813,16 @@ def handle(handler, method, path, qs, body):
                 _changed = sorted((body.get("approvals") or {}).keys()) or [body.get("tool") or "policy"]
                 _publish("policy.changed", actor="operator", keys=_changed)
             return _r(handler, 200, _res)
+        if path.startswith("/api/sessions/") and path.endswith("/counterfactual/model"):
+            # HD-1 model branch: replace ONE message of the stored transcript,
+            # re-ask the model, compare the next action. Nothing executes.
+            sid = path[len("/api/sessions/"):-len("/counterfactual/model")].strip("/")
+            b = body or {}
+            out = model_counterfactual_run(
+                sid, b.get("index"),
+                b.get("change") if "change" in b else b.get("args"),
+                b.get("model"), "model-counterfactual")
+            return _r(handler, out.pop("status", 200), out)
         if path.startswith("/api/sessions/") and path.endswith("/counterfactual"):
             # HD-1: change ONE fact of a recorded read-only call, re-execute it
             # through the same gate, and report whether the observation moved
@@ -5012,6 +5022,65 @@ def counterfactual_run(sid, handle, change, wait=True, by="counterfactual"):
             "fidelity": "live-tree",
             "caveat": "the workspace is the current tree, not the tree at the card's ts",
             "plan": plan, "execution": res, "compare": cmp_}
+
+
+def model_counterfactual_run(sid, index, change, model=None, by="model-counterfactual"):
+    """Replace ONE message of a STORED transcript, re-ask the model, compare.
+
+    The model branch of HD-1 (the step branch is `counterfactual_run`). Nothing is
+    executed: the stored transcript up to `index` is replayed with ONE user message
+    replaced (usually a tool observation), one model call is issued, and the
+    reply's action is compared with the action the model actually produced next
+    (`harness.modelcf`). That makes it usable where a step replay is not — the
+    step it asks about may have been a write.
+
+    Fidelity is stated, not implied: the transcript is real, the system prompt is
+    the CURRENT one, and the per-turn volatile blocks are not restored.
+    """
+    sid = str(sid or "").strip()
+    _, sess = _session_ws(sid)
+    if not sess:
+        return {"ok": False, "status": 404, "error": "session not found"}
+    from longrun.harness import modelcf as _mcf
+    plan, why = _mcf.plan(sess, index, change)
+    if why:
+        return {"ok": False, "status": 400, "error": why, "plan": plan}
+    model = str(model or sess.get("model") or "").strip()
+    if not model:
+        from longrun.model.rllm import default_model
+        model = default_model()
+    from longrun.core import server as _server
+    from longrun.agent import agent as _ag
+    stored = [m for m in (sess.get("messages") or []) if isinstance(m, dict)]
+    try:
+        sys_prompt = _server._system_prompt(sess, _server._tool_context(), model=model)
+    except Exception as exc:  # noqa: BLE001 — name the failure, never a fake prompt
+        return {"ok": False, "status": 500,
+                "error": "could not rebuild the system prompt: %s" % exc}
+    msgs = [{"role": "system", "content": sys_prompt}]
+    for m in stored[:plan["index"]]:
+        msgs.append({"role": m.get("role"), "content": m.get("content")})
+    msgs.append({"role": "user", "content": plan["replacement"]})
+    usage = {}
+    try:
+        answer, think = _ag._router_stream(msgs, model, lambda ch, t: None,
+                                           usage=usage)
+    except Exception as exc:  # noqa: BLE001 — a provider failure is a result, not a crash
+        return {"ok": False, "status": 502,
+                "error": "the model call failed: %s" % exc, "model": model}
+    recorded_action = _ag.extract_action_json(plan.get("recorded_reply") or "") or {}
+    replayed_action = _ag.extract_action_json(answer or "") or {}
+    cmp_ = _mcf.compare(recorded_action, replayed_action)
+    _publish("model_counterfactual.run", session=sid, index=plan["index"],
+             model=model, verdict=cmp_["verdict"], moved=cmp_["moved"], by=by)
+    return {"ok": True, "status": 200, "session": sid, "index": plan["index"],
+            "model": model, "fidelity": plan["fidelity"], "caveat": plan["caveat"],
+            "original": plan["original"], "replacement": plan["replacement"],
+            "recorded_action": recorded_action, "replayed_action": replayed_action,
+            "compare": cmp_, "usage": usage,
+            "recorded_reply": str(plan.get("recorded_reply") or "")[:1200],
+            "replayed_reply": str(answer or "")[:1200],
+            "think": str(think or "")[:600]}
 
 
 def _codebase_hint(ws, res):

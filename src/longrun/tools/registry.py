@@ -459,8 +459,13 @@ _LEGACY_SCHEMAS = {
                         "action=counterfactual -> change ONE fact of that recorded "
                         "call, re-run it (both sides must be a pure read) and report "
                         "whether the observation moved: the causal answer to 'why did "
-                        "this step fail', instead of a correlation. "
-                        "Your OWN session is always allowed. ANOTHER session must be "
+                       "this step fail', instead of a correlation. "
+                       "action=model_counterfactual -> replace ONE message of the "
+                       "STORED transcript (an observation or a nudge), re-ask the "
+                       "model with the same transcript+system prompt and report "
+                       "whether its NEXT action changed. Nothing executes — usable "
+                       "even when the step under test was a write. "
+                       "Your OWN session is always allowed. ANOTHER session must be "
                         "BELOW you in the reporting line (any level, same team); "
                         "compact shrinks the transcript (force=true bypasses the "
                         "threshold when the operator asked), reset wipes messages, "
@@ -470,7 +475,7 @@ _LEGACY_SCHEMAS = {
         "properties": {
             "action": {"type": "string",
                        "enum": ["list", "read", "send", "wait", "compact", "reset",
-                                "card", "counterfactual"],
+                                "card", "counterfactual", "model_counterfactual"],
                        "default": "list"},
             "session": {"type": "string",
                         "description": ("the target agent's NAME exactly as "
@@ -510,6 +515,16 @@ _LEGACY_SCHEMAS = {
                                        "read — a write is refused, not replayed")},
             "wait": {"type": "boolean", "default": True,
                      "description": "action=counterfactual: wait for the replay to finish"},
+            "index": {"type": "integer",
+                      "description": ("action=model_counterfactual: the 0-based "
+                                      "position of the message to replace in the "
+                                      "stored transcript (-1 = the last message). It "
+                                      "must be a USER message (an observation/nudge) "
+                                      "followed by an assistant action.")},
+            "model": {"type": "string",
+                      "description": ("action=model_counterfactual: model to re-ask; "
+                                      "defaults to the session's own model, which is "
+                                      "what makes the comparison meaningful")},
             "timeout_secs": {"type": "integer", "minimum": 0, "maximum": 900,
                              "default": 180,
                              "description": "maximum wait; 0 checks once, then retry with the same id"},
@@ -979,6 +994,8 @@ _SUBTOOL_FIELDS = {
         # read or intervene on it.
         "card": ["session", "handle"],
         "counterfactual": ["session", "handle", "change", "wait"],
+        # Round 18: the model branch — one message of the stored transcript.
+        "model_counterfactual": ["session", "index", "change", "model"],
     },
     "workspace": {"set": ["agent", "workspace", "scope", "create"]},
     "chapters": {
@@ -1056,6 +1073,7 @@ _SUBTOOL_REQUIRED = {
     # Round 16: both act on ONE recorded call, so the handle is not optional.
     "sessions.card": ["session", "handle"],
     "sessions.counterfactual": ["session", "handle", "change"],
+    "sessions.model_counterfactual": ["session", "index", "change"],
     "workspace.set": ["workspace"],
     "chapters.read": ["id"], "chapters.title": ["id", "title"],
     "memory.store": ["content"], "memory.recall": ["query"],
@@ -1365,6 +1383,7 @@ _SUBTOOL_GUIDANCE = {
     "sessions.list": "List other sessions with agent, title, age and running state; optional `query` and `limit`.",
     "sessions.card": "Dereference ONE recorded tool call by its `#handle` (the one the compacted manifest prints): full args, error and result, no re-execution.",
     "sessions.counterfactual": "Change ONE fact of a recorded PURE call and replay it through the same gate; reports whether the observation moved (`same-observation` / `different-observation`). A write is refused, never replayed.",
+    "sessions.model_counterfactual": "Replace ONE message of the stored transcript (`index`, -1 = last) and re-ask the model; reports whether its next action changed (`same-action` / `different-action`). Nothing executes; costs one model call.",
     "sessions.read": "Read one session's full transcript (messages, tool calls, results, injections) in order; `session` required, `limit`/`tail` bound it.",
     "sessions.compact": "Compact one session now; `session` (or `to`) selects it, `force=true` only when the operator explicitly asked to compact early.",
     "sessions.reset": "Clear one session's transcript and start it fresh; `session` (or `to`) is required. Destructive and irreversible.",
