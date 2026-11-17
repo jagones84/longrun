@@ -625,15 +625,23 @@ FAILURE_FAMILIES = (
 
 #: The ONE remediation and the check that would prove it per family. `check` names
 #: a test id only when one exists; None means "no check yet", never an invented id.
+#:
+#: Round 45: two families were uncovered while a test already proved their answer
+#: — `timeout` (v1094 A–C/F pin the `background: true` + `action=status` hint and
+#: the remedy that says the same thing) and `gate` (v1093 pins that a plan-gate
+#: refusal is classified `gate`, capped at `warning`, and never ranked as a real
+#: fault — the register's own answer to the family). Measured before: 15 of 37
+#: issues named a proving test.
 FAMILY_FIX = {
-    "timeout": ("start long work with background=true and poll with action=status", None),
+    "timeout": ("start long work with background=true and poll with action=status",
+                "v1094"),
     "missing-argument": ("re-read the tool's schema; the required key is named there", "v510"),
     "not-found": ("confirm the path first (workspace list / sessions tree)", None),
     "syntax": ("write the script with fs.write, then run the FILE (no heredoc)", "v747"),
     "no-change": ("send the real steps in the update", None),
     "permission": ("the policy denies it; use the allowed read path", "v1075"),
     "gate": ("this is a GATE, not a fault: in plan mode only read-only tools run — "
-             "propose the plan, then call the tool", None),
+             "propose the plan, then call the tool", "v1093"),
     "nonzero-exit": ("read stderr in the observation and correct the command", None),
     "tool-error": ("read the error text and fix the argument", None),
 }
