@@ -489,8 +489,13 @@ tools:
     # in every fs verb, and for the shell spellings (`shell.exec.deny`). This is
     # a hard deny: `approvals.mode=full` never lifts it. `.env.template` is the
     # tracked, secret-free example and stays readable.
+    # 2026-11-18 (trace tampering, arXiv:2609.30266): the sealed held-out judge is
+    # for the harness, not the agent — the agent may not read the cases it is
+    # graded on. (heldout.py already keeps it in the DATA HOME; this covers a
+    # legacy in-checkout data/.)
     deny:
       - "(^|/)\\.env(\\.(?!template$)[^/]*)?$"
+      - "(^|/)data/heldout(/|$)"
 
   # write a file (host-side, constrained to the allowed roots; JAG-59: the repo
   # root so the agent can create/edit the DGX repos it works on)
@@ -503,8 +508,15 @@ tools:
     roots:
       - "."
       - "~/Repositories"
+    # 2026-11-18 (trace tampering, arXiv:2609.30266): the agent's OWN record —
+    # runs, the transcript, thread state, the event log and the sealed judge —
+    # must not be rewritable by the agent it records. State normally lives
+    # outside the checkout (paths.py JAG-533); this covers a legacy in-checkout
+    # data/. Hard deny: `approvals.mode=full` never lifts it.
     deny:
       - "(^|/)\\.env(\\.(?!template$)[^/]*)?$"
+      - "(^|/)data/(runs|sessions|threads|heldout)(/|$)"
+      - "(^|/)data/events\\.db$"
 
   # surgical edit: exact search/replace inside a file (safer than rewriting
   # the whole file with fs.write); same roots as fs.write
@@ -514,8 +526,11 @@ tools:
     roots:
       - "."
       - "~/Repositories"
+    # 2026-11-18 (trace tampering, arXiv:2609.30266): same store deny as fs.write.
     deny:
       - "(^|/)\\.env(\\.(?!template$)[^/]*)?$"
+      - "(^|/)data/(runs|sessions|threads|heldout)(/|$)"
+      - "(^|/)data/events\\.db$"
 
   # git — read-only subcommands auto-approved, mutating ones need approval
   git:
