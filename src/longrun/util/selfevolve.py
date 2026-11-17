@@ -786,6 +786,42 @@ def _since_epoch(value):
     return None
 
 
+def _agents_index():
+    """session id → {id, name, role} from the org chart's own reader.
+
+    Round 37 (Who&When Pro, arXiv:2607.09996 — attribution has a WHO axis). The
+    register named the tool and the family; measured 2026-11-18 over the live store,
+    158 failed cards belong to **37 different agents** (A11 30, A61 21, A54 15 …)
+    and the biggest row (`shell.exec · missing-argument` 21) spans four of them, so
+    "3 sessions" was the only reachable answer to "whose?". `agents.REGISTRY.list()`
+    owns that mapping; a missing store answers `{}` and nothing is invented.
+    """
+    try:
+        from longrun.agent import agents as _ag
+        got = _ag.REGISTRY.list() or []
+    except Exception:  # noqa: BLE001 — attribution is never worth a crash
+        return {}
+    # `REGISTRY.list()` answers `{"agents": [...], "seq": N, "count": N}`; a
+    # helper that assumed a bare list attributed nothing (measured 2026-11-18:
+    # every row's `who` was empty until this unwrap). Accept both shapes.
+    rows = got.get("agents") if isinstance(got, dict) else got
+    out = {}
+    for a in rows or []:
+        if not isinstance(a, dict):
+            continue
+        sid = str(a.get("session") or "")
+        if sid:
+            out[sid] = {"id": str(a.get("id") or ""), "name": str(a.get("name") or ""),
+                        "role": str(a.get("role") or "")}
+    return out
+
+
+def _top_agents(counter, n=3):
+    """The named agents behind a class or an issue, most failures first."""
+    items = sorted((counter or {}).items(), key=lambda kv: (-kv[1], kv[0][0]))[:n]
+    return [{"id": a[0], "name": a[1], "role": a[2], "count": c} for a, c in items]
+
+
 def session_failures(sessions_dir=None, limit=200, max_sessions=400, since=None):
     """Rank failure classes from the LIVE session cards — the traces agents made.
 
@@ -817,11 +853,13 @@ def session_failures(sessions_dir=None, limit=200, max_sessions=400, since=None)
     entries.sort(key=lambda e: e.stat().st_mtime, reverse=True)
     entries = entries[:max(1, int(max_sessions or 400))]
     buckets, scanned = {}, 0
+    who_by_sid = _agents_index()
     for ent in entries:
         sess = _read_json(ent.path)
         if not isinstance(sess, dict):
             continue
         scanned += 1
+        who = who_by_sid.get(ent.name[:-5])
         cards = [c for c in (sess.get("tool_cards") or []) if isinstance(c, dict)]
         # Round 26 (Trial by Trace, arXiv:2610.32285): a failure the agent RETRIES
         # in the same shape is a reliability signal, not noise. Measured 2026-11-18:
@@ -858,9 +896,15 @@ def session_failures(sessions_dir=None, limit=200, max_sessions=400, since=None)
             tool, head = key
             row = buckets.setdefault((tool, head),
                                      {"count": 0, "repeats": 0, "recovered": 0,
-                                      "sessions": set(), "samples": [], "probe": ""})
+                                      "sessions": set(), "samples": [], "probe": "",
+                                      "agents": {}})
             row["count"] += 1
             row["sessions"].add(ent.name[:-5])
+            # Round 37: the WHO axis. A card whose session has no agent row adds
+            # nothing — an unknown session is not attributed to a guess.
+            if who and who.get("id"):
+                akey = (who["id"], who["name"], who["role"])
+                row["agents"][akey] = row["agents"].get(akey, 0) + 1
             if any(k == key for k in seq[i + 1:i + 4]):
                 row["repeats"] += 1
             if last_ok.get((tool, card.get("node")), -1) > i:
@@ -873,7 +917,8 @@ def session_failures(sessions_dir=None, limit=200, max_sessions=400, since=None)
     rows = [{"tool": t, "error": e, "count": v["count"], "repeats": v["repeats"],
              "recovered": v["recovered"],
              "sessions": len(v["sessions"]), "samples": v["samples"],
-             "probe": v.get("probe") or ""}
+             "probe": v.get("probe") or "",
+             "agents": _top_agents(v["agents"])}
             for (t, e), v in buckets.items()]
     rows.sort(key=lambda r: (-r["count"], r["tool"], r["error"]))
     return {"ok": True, "classes": rows[:max(1, int(limit or 200))],
@@ -937,7 +982,8 @@ def failure_candidates(path=None, limit=10, min_count=1, include_sessions=False,
             row = buckets.setdefault((tool, head), {"count": 0, "repeats": 0,
                                                     "recovered": 0, "runs": set(),
                                                     "sessions": 0,
-                                                    "samples": [], "probe": ""})
+                                                    "samples": [], "probe": "",
+                                                    "agents": {}})
             row["count"] += 1
             row["runs"].add(fn[:-5])
             if not row["probe"]:
@@ -952,11 +998,21 @@ def failure_candidates(path=None, limit=10, min_count=1, include_sessions=False,
             row = buckets.setdefault(key, {"count": 0, "repeats": 0,
                                            "recovered": 0, "runs": set(),
                                            "sessions": 0,
-                                           "samples": [], "probe": ""})
+                                           "samples": [], "probe": "",
+                                           "agents": {}})
             row["count"] += int(cls.get("count") or 0)
             row["repeats"] += int(cls.get("repeats") or 0)
             row["recovered"] += int(cls.get("recovered") or 0)
             row["sessions"] = max(row["sessions"], int(cls.get("sessions") or 0))
+            # Round 37: the session corpus is the only one with a WHO; a
+            # run-record-only row names nobody instead of guessing.
+            for a in (cls.get("agents") or []):
+                if not isinstance(a, dict) or not a.get("id"):
+                    continue
+                akey = (str(a.get("id")), str(a.get("name") or ""),
+                        str(a.get("role") or ""))
+                row["agents"][akey] = (row["agents"].get(akey, 0)
+                                       + int(a.get("count") or 0))
             row["samples"] = (row["samples"] + list(cls.get("samples") or []))[:2]
             if not row["probe"]:
                 row["probe"] = str(cls.get("probe") or "")[:400]
@@ -983,6 +1039,7 @@ def failure_candidates(path=None, limit=10, min_count=1, include_sessions=False,
                      "severity": severity_for(family, v["count"], v["sessions"],
                                               v.get("repeats", 0)),
                      "action": action, "check": check,
+                     "agents": _top_agents(v.get("agents")),
                      "samples": v["samples"]})
     rows.sort(key=lambda r: (-r["count"], r["tool"], r["error"]))
     rows = [r for r in rows if r["count"] >= max(1, int(min_count or 1))]
@@ -1000,12 +1057,19 @@ def _issues_from(rows):
         g = grouped.setdefault(key, {"tool": r["tool"], "family": r["family"],
                                      "count": 0, "repeats": 0, "recovered": 0,
                                      "sessions": 0, "runs": 0, "classes": [],
-                                     "source": set(), "samples": []})
+                                     "source": set(), "samples": [], "agents": {}})
         g["count"] += int(r["count"] or 0)
         g["repeats"] += int(r.get("repeats") or 0)
         g["recovered"] += int(r.get("recovered") or 0)
         g["sessions"] = max(g["sessions"], int(r["sessions"] or 0))
         g["runs"] = max(g["runs"], int(r["runs"] or 0))
+        # Round 37: the WHO sums across the classes of one issue — "shell.exec ·
+        # missing-argument" is the same remedy whoever hit it.
+        for a in (r.get("agents") or []):
+            if not isinstance(a, dict) or not a.get("id"):
+                continue
+            akey = (str(a.get("id")), str(a.get("name") or ""), str(a.get("role") or ""))
+            g["agents"][akey] = g["agents"].get(akey, 0) + int(a.get("count") or 0)
         g["source"].add(r["source"])
         for s in (r.get("samples") or [])[:2]:
             if len(g["samples"]) < 2 and s not in g["samples"]:
@@ -1037,6 +1101,7 @@ def _issues_from(rows):
                     "source": ("both" if "both" in g["source"] else
                                "sessions" if "sessions" in g["source"] else "runs"),
                     "classes": g["classes"], "samples": g["samples"],
+                    "agents": _top_agents(g["agents"]),
                     "action": action, "check": check})
     out.sort(key=lambda i: (_SEV_RANK.get(i["severity"], 3),
                             -i["count"], i["tool"], i["family"]))
@@ -1088,10 +1153,23 @@ def _repair_md(prop):
                            "(a stumble, not a break)" if rec else
                            "no later success of the same tool in the same stage"))
     kind = "refusal" if prop.get("refusal") else "failure"
+    # Round 37 (Who&When Pro): a count with no WHO cannot be routed — the reader
+    # had "3 session(s)" and no name. The three strongest agents are named when
+    # the store knows them, and the absence is stated when it does not.
+    ags = [a for a in (prop.get("agents") or []) if isinstance(a, dict) and a.get("id")]
+    who_line = ("**Who:** %s — the agents behind these cards, most failed first%s.\n\n"
+                % (", ".join("%s %s (%s)" % (a.get("id"), a.get("name") or "?",
+                                             a.get("count"))
+                             for a in ags),
+                   ", top three shown" if len(ags) >= 3 else "")
+                ) if ags else (
+        "**Who:** no agent row names these sessions — the org chart has no mapping "
+        "for them, and no attribution is invented.\n\n")
     return (
         "# Repair: %s · %s\n\n"
         "**Severity:** %s — **%s** %s(s) in **%s** session(s) "
         "(source: %s).\n\n"
+        "%s"
         "%s"
         "%s"
         "%s"
@@ -1106,7 +1184,7 @@ def _repair_md(prop):
         "`self.failures` (or run the check) to prove the issue is gone.\n"
         % (prop.get("tool"), prop.get("family"),
            prop.get("severity"), prop.get("count"), kind, prop.get("sessions"),
-           prop.get("source"), window, retried, recovery, rows,
+           prop.get("source"), who_line, window, retried, recovery, rows,
            ("```\n%s\n```\n\n" % samples) if samples else "",
            prop.get("action") or "(no remedy recorded)",
            ("Run `%s` after the fix; it is the test that proves this family of "
@@ -1160,6 +1238,9 @@ def issue_drafts(out_dir, limit=5, min_severity="warning", sessions_dir=None,
                 "runs": iss.get("runs"), "source": iss.get("source"),
                 "since": rep.get("since"),
                 "classes": iss.get("classes") or [], "samples": iss.get("samples") or [],
+                # Round 37: the draft names whose sessions hit the class, so a
+                # reader can route the fix without opening the register.
+                "agents": iss.get("agents") or [],
                 "action": iss.get("action"), "check": iss.get("check"),
                 "created": round(time.time(), 3), "origin": "auto",
                 "next": "state the fix, apply it through the gate, prove it"}

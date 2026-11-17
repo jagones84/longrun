@@ -2036,7 +2036,7 @@ def _self(args, run_id):
                                 "classes": rep.get("classes") or []}
             lines = []
             for iss in rep.get("issues") or []:
-                lines.append("[%s] %s · %s — %d in %d session(s): %s%s%s%s" % (
+                lines.append("[%s] %s · %s — %d in %d session(s): %s%s%s%s%s" % (
                     iss.get("severity"), iss.get("tool"), iss.get("family"),
                     iss.get("count"), iss.get("sessions"), iss.get("action"),
                     (" · %d retried" % int(iss.get("repeats") or 0))
@@ -2050,6 +2050,12 @@ def _self(args, run_id):
                                                " (refusal)" if iss.get("refusal")
                                                else ""))
                     if iss.get("recovery_rate") is not None else "",
+                    # Round 37 (Who&When Pro): the count now names WHOSE sessions
+                    # produced it — the agent axis the register could not answer.
+                    (" · who: %s" % ", ".join(
+                        "%s %s" % (a.get("id"), int(a.get("count") or 0))
+                        for a in (iss.get("agents") or [])[:3]))
+                    if iss.get("agents") else "",
                     (" (check: %s)" % iss["check"]) if iss.get("check") else ""))
             info["failure_lines"] = lines
         elif action in ("sj", "session-jobs", "sessionjobs", "subjobs"):
