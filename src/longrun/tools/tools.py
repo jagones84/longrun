@@ -4431,9 +4431,19 @@ def _missing_args_reply(tool: str, missing: list[str],
     required = list(full.get("required") or missing or empty)
     arg_names = list(dict.fromkeys(
         required + [name for group in missing_any for name in group]))
+    # Round 30 (R4): the register measured 20 `shell.exec · missing-argument`
+    # failures, 11 of them retried in the SAME shape — the long error text above
+    # did not land. The error keeps the evidence; the hint is the one short line
+    # the model acts on, built from the tool's OWN example (never invented).
+    example = full.get("example_args") or {}
+    hint = ("the call shape is {\"args\": %s} — required: %s"
+            % (json.dumps(example, ensure_ascii=False, default=str),
+               ", ".join(required) or (" OR ".join(
+                   " + ".join(group) for group in missing_any)) or "…"))
     return {"ok": False, "tool": tool, "exit_code": 64,
             "missing_args": missing, "empty_args": empty,
             "missing_any_of": missing_any, "shape_problems": shape,
+            "hint": hint,
             "error": ("%s: %s. Required: %s. "
                       "Arg types: %s. Accepted arguments: %s. Example call: %s"
                       % (tool, "; ".join(problems),
