@@ -41,6 +41,17 @@ All notable changes to Longrun are documented here. The format follows
   tool gate. (Locked by `v1052` B1/B1b, N9d/N9d2, N11b/N11b2, O1–O7; `v785` K1–K5; `v763` F1–F2.)
 
 ### Fixed
+- **The phone transcript stopped carrying the desktop gutter.** Operator: *"why in mobile format is all that
+  empty space in the chat on the left? can you solve it graphically?"* — with a 393 px screenshot where the
+  first line of a worked step started a third of the way across the chat. Measured live (CDP, `architect`,
+  393x844): `#log` was still on the DESKTOP gutter (padding 28 px a side — the only phone rule for it was
+  scoped to `orientation: landscape`) and a nested todo group added 26 px (16 margin + 10 padding on
+  `.tc-kids`), so the body text began at x=55 on a 349 px chat: 16% of the width, empty. The portrait phone
+  now keeps a 16 px gutter — the same one the chat head uses for the session name, so the two left edges
+  line up — and a nested step tightens to 8+8 (deeper nesting 4+6) with its status dot re-anchored on the
+  shifted rail; the landscape layout and both desktop gutters are untouched. The new transcript width is
+  300 px of 349 for a step card (was 285 of 349 with the content starting 22 px further right). Cache name
+  bumped to `longrun-shell-v8` per the shell rule. (Locked by `v1068` A1–A10.)
 - **A registry improvement can no longer delete rules it never named.** Operator: *"is this safe? what
   happens if I approve?"* on two `improve.registry` proposals. The optimizer's model rewrote
   `shell.exec.deny` from memory and proposed a one-entry list: approving it would have replaced the whole

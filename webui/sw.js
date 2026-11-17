@@ -26,8 +26,10 @@
  * row moved the ✨ onto the path row, so the "/" shell changed shape again.
  * 2026-11-17 — bumped to v7 (JAG-933): the chat header gained the session-file
  * copy button, so the shell changed shape again.
+ * 2026-11-17 — bumped to v8 (JAG-934): the phone transcript gutter changed, so the
+ * "/" shell changed shape again.
  */
-const CACHE = "longrun-shell-v7";
+const CACHE = "longrun-shell-v8";
 const SHELL = ["/", "/orbit", "/assets/dragsort.js", "/assets/icon-192.png",
                "/assets/icon-512.png", "/assets/apple-touch-icon.png",
                "/assets/icon-maskable-512.png"];
