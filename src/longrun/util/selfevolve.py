@@ -609,10 +609,12 @@ FAILURE_FAMILIES = (
                     "refused", "protected")),
     # Round 24: the GATE doing its job is not a fault. Measured 2026-11-18: 6 of
     # the 24 "shell.exec tool-error" failures were the plan gate refusing — a
-    # policy answer that a repair cannot fix.
+    # policy answer that a repair cannot fix. Round 32 adds "approval expired":
+    # an expired approval card is a GATE answer (the operator must re-approve),
+    # measured 2026-11-18 in two `fs.write` cards.
     ("gate", ("plan mode", "unapproved plan", "waiting for approval",
               "approval required", "requires approval", "needs approval",
-              "awaiting approval", "approval pending")),
+              "awaiting approval", "approval pending", "approval expired")),
     ("timeout", ("timeout", "timed out", "exit 124")),
     ("missing-argument", ("missing required argument", "required:")),
     ("not-found", ("no such file", "not found", "does not exist")),
@@ -650,11 +652,38 @@ FAMILY_FIX = {
 #: 14 of 26 "missing REQUIRED argument" cards (10 shell.exec, 2 fs.read, 2
 #: web.search) were attributed to the wrong family, where the remedy is "read
 #: stderr" instead of "re-read the schema". The wrapper prefix is not the cause.
-TAIL_FAMILIES = ("gate", "missing-argument")
+#:
+#: Round 32 (AgentDebugX, arXiv:2607.18754 — the RECOVER axis): the classes that
+#: never recover are policy REFUSALS, and the prefixed shape hid them too —
+#: `[sessions.read] exit=<n> … ERROR: read refused…` lost the word at the 80-char
+#: cut, so a wall was filed as breakage. The tail reads only phrases a refusal
+#: really carries; `permission` joins the tail families for that reason.
+TAIL_FAMILIES = ("gate", "missing-argument", "permission")
 
 #: A tail search stays narrower than the head search where the head needle is
-#: broader than safe for a whole text (`required:` appears in every schema dump).
-TAIL_OVERRIDES = {"missing-argument": ("missing required argument", "unknown argument")}
+#: broader than safe for a whole text (`required:` appears in every schema dump;
+#: `permission`/`refused` are common words).
+TAIL_OVERRIDES = {
+    "missing-argument": ("missing required argument", "unknown argument"),
+    "permission": ("read refused", "not authorized", "cannot message itself",
+                   "not a coordinator"),
+}
+
+
+#: Families where the harness answered a POLICY question, not a fault. Round 24
+#: put `gate` here for the severity; round 32 measured the never-recovered
+#: residue over the live store and found the same shape everywhere: the classes
+#: with `recovery_rate 0.0` are `fs.write · gate` (approval expired), `sessions.read
+#: · permission` ("read refused: a session cannot message itself"), `fs.edit ·
+#: permission` (a protected nucleus), `job.get` ("not a coordinator"),
+#: `webui.inspect` ("not authorized"). A later success from the SAME tool is not
+#: the proof that a refusal was fixed — who must act is named by the family.
+REFUSAL_FAMILIES = ("gate", "permission")
+
+
+def is_refusal(family):
+    """True when the family is a policy ANSWER (the consumer must not read it as breakage)."""
+    return str(family or "") in REFUSAL_FAMILIES
 
 
 def failure_family(tool, head, text=None):
@@ -717,6 +746,12 @@ def severity_for(family, count, sessions, repeats=0):
     Round 26 adds the retry lift: a class the agent keeps re-hitting at the same
     shape is worse than its raw count says, because the hint beside it did not
     land. One step only, and the gate cap still wins.
+
+    Round 32 measured that `permission` is a refusal too (`REFUSAL_FAMILIES`), yet
+    the cap stays gate-only ON PURPOSE: a gate fires while a turn is legitimately
+    read-only, whereas 17 `shell.exec · permission` denials across sessions say the
+    agents' model of the policy is wrong — a guidance defect that must outrank a
+    single gate answer. Changing this needs its own measurement, not the label.
     """
     sev = _severity(count, sessions)
     if (family != "gate" and int(repeats or 0) >= RETRY_MIN
@@ -995,6 +1030,9 @@ def _issues_from(rows):
                     # None = no session corpus in this read (runs only).
                     "recovery_rate": (None if not g["sessions"] else
                                       retry_signal(g["recovered"], g["count"])),
+                    # Round 32: one predicate, not a `family in (...)` test at every
+                    # consumer — the register and the renderers must agree.
+                    "refusal": is_refusal(g["family"]),
                     "runs": g["runs"],
                     "source": ("both" if "both" in g["source"] else
                                "sessions" if "sessions" in g["source"] else "runs"),
@@ -1035,14 +1073,24 @@ def _repair_md(prop):
     recovery = ""
     if prop.get("recovery_rate") is not None:
         rec, cnt = int(prop.get("recovered") or 0), int(prop.get("count") or 0)
-        recovery = ("**Recovered:** %d of %d — %s.\n\n"
-                    % (rec, cnt,
-                       "a later call of the same tool succeeded in the same stage "
-                       "(a stumble, not a break)" if rec else
-                       "no later success of the same tool in the same stage"))
+        if prop.get("refusal"):
+            # Round 32: the never-recovered residue is refusals. A refusal is not
+            # repaired by a later success of the same tool, so the count must not
+            # be read as a verdict — the remedy above already names who acts.
+            recovery = ("**Recovered:** %d of %d — not the measure for this family: "
+                        "the harness answered a POLICY question, so a missing later "
+                        "success says the wall still stands, not that a fix failed. "
+                        "The remedy above names who acts.\n\n" % (rec, cnt))
+        else:
+            recovery = ("**Recovered:** %d of %d — %s.\n\n"
+                        % (rec, cnt,
+                           "a later call of the same tool succeeded in the same stage "
+                           "(a stumble, not a break)" if rec else
+                           "no later success of the same tool in the same stage"))
+    kind = "refusal" if prop.get("refusal") else "failure"
     return (
         "# Repair: %s · %s\n\n"
-        "**Severity:** %s — **%s** failure(s) in **%s** session(s) "
+        "**Severity:** %s — **%s** %s(s) in **%s** session(s) "
         "(source: %s).\n\n"
         "%s"
         "%s"
@@ -1057,7 +1105,7 @@ def _repair_md(prop):
         "touched; state the fix, apply it through the normal gate, and re-read "
         "`self.failures` (or run the check) to prove the issue is gone.\n"
         % (prop.get("tool"), prop.get("family"),
-           prop.get("severity"), prop.get("count"), prop.get("sessions"),
+           prop.get("severity"), prop.get("count"), kind, prop.get("sessions"),
            prop.get("source"), window, retried, recovery, rows,
            ("```\n%s\n```\n\n" % samples) if samples else "",
            prop.get("action") or "(no remedy recorded)",
@@ -1108,6 +1156,7 @@ def issue_drafts(out_dir, limit=5, min_severity="warning", sessions_dir=None,
                 "repeats": iss.get("repeats"), "retry_rate": iss.get("retry_rate"),
                 "recovered": iss.get("recovered"),
                 "recovery_rate": iss.get("recovery_rate"),
+                "refusal": bool(iss.get("refusal")),
                 "runs": iss.get("runs"), "source": iss.get("source"),
                 "since": rep.get("since"),
                 "classes": iss.get("classes") or [], "samples": iss.get("samples") or [],

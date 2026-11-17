@@ -2043,8 +2043,12 @@ def _self(args, run_id):
                     if iss.get("repeats") else "",
                     # Round 31: recovery is stated only where the corpus has
                     # order (sessions); a run-record-only row says nothing.
-                    (" · %d/%d recovered" % (int(iss.get("recovered") or 0),
-                                             int(iss.get("count") or 0)))
+                    # Round 32: a policy refusal keeps the count but is labelled,
+                    # because "0/6 recovered" beside a gate reads as breakage.
+                    (" · %d/%d recovered%s" % (int(iss.get("recovered") or 0),
+                                               int(iss.get("count") or 0),
+                                               " (refusal)" if iss.get("refusal")
+                                               else ""))
                     if iss.get("recovery_rate") is not None else "",
                     (" (check: %s)" % iss["check"]) if iss.get("check") else ""))
             info["failure_lines"] = lines
