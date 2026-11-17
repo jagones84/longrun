@@ -59,8 +59,8 @@ python3 forge.py control abort run_abc123
 ```
 
 **The current session.** The CLI remembers one session per machine
-(`data/cli_session.json`, override with `LONGRUN_CLI_STATE`). `sessions new` sets it,
-`sessions use ID` switches it, `sessions current` prints it and `sessions ls` marks
+(`data/cli_session.json`, override with `LONGRUN_CLI_STATE`). `sessions new` and
+`sessions fork` set it, `sessions use ID` switches it, `sessions current` prints it and `sessions ls` marks
 it with `*`. A `chat` without `--session` uses it, and every chat prints the id it
 wrote to — so a turn can never land in an anonymous row again. Without a stored
 session, a bare `chat` creates one and adopts its id (as before); `--new` keeps the
@@ -105,6 +105,7 @@ See `integrations/paperclip/README.md` for the adapter install and configuration
 |---|---|
 | `sessions ls` | `GET /api/sessions` |
 | `sessions new "title" [--workspace DIR]` | `POST /api/sessions` (or `GET /api/sessions/new?workspace=…` when a folder is named) |
+| `sessions fork ID [--at N] [--title T] [--model M] [--workspace DIR]` | `POST /api/sessions/<id>/fork` (new session with `messages[:N]`; the source is untouched) |
 | `sessions use ID` | `GET /api/history?session=ID` (validates, then remembers) |
 | `sessions current` | — (the local pointer) |
 | `sessions rm ID` | `DELETE /api/sessions/<id>` |
@@ -118,6 +119,7 @@ python3 forge.py sessions ls
 python3 forge.py sessions new "probe docs" --workspace /tmp/lr-probe   # becomes current
 python3 forge.py sessions current
 python3 forge.py sessions history              # no id: the current session
+python3 forge.py sessions fork 4f503dc92a29 --at 12 --model gpt-local   # A/B arm
 python3 forge.py sessions use 4f503dc92a29
 python3 forge.py sessions tree                 # stage→step tree + the first failed step
 python3 forge.py sessions rm 4f503dc92a29
@@ -535,6 +537,7 @@ are aliases of the same verbs.
 | POST | `/api/context/compact` | `context compact` |
 | POST | `/api/context/preview` | `context preview` |
 | POST | `/api/sessions` | `sessions new` |
+| POST | `/api/sessions/<id>/fork` | `sessions fork` |
 | POST | `/api/docs/plan` | `docs plan` |
 | POST | `/api/docs/spec` | `docs spec` |
 | POST | `/api/docs/approve` | `docs approve [--implement]` |

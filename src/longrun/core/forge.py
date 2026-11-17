@@ -12,8 +12,9 @@ Usage:
   python3 forge.py runs ls | runs show RUN_ID | runs summary | runs trace RUN_ID
                           | runs node RUN_ID '<json>' | control pause|resume|abort RUN_ID
   python3 forge.py sessions ls | sessions new "title" [--workspace DIR] | sessions rm ID
-                          | sessions use ID | sessions current | sessions history [ID]
-                          | sessions tree [ID] | sessions graph [ID]
+                         | sessions fork ID [--at N] [--title T] [--model M]
+                         | sessions use ID | sessions current | sessions history [ID]
+                         | sessions tree [ID] | sessions graph [ID]
                           | sessions reset ID | sessions clear ID | sessions model "SID MODEL"
   python3 forge.py docs status|plan "request"|spec "request"|approve|reject|unlock [--session ID]
   python3 forge.py context show [--session ID] | context compact [--session ID]
@@ -942,6 +943,34 @@ def cmd_sessions(args):
             # HERE instead of in an anonymous row (the "empty session" defect).
             _set_current_session(out["id"])
             print("current session: %s" % out["id"])
+    elif args.action == "fork":
+        if not str(args.value or "").strip():
+            print("usage: sessions fork ID [--at N] [--title TITLE] [--model MODEL] "
+                  "[--workspace DIR]", file=sys.stderr)
+            sys.exit(2)
+        body = {}
+        if getattr(args, "at", None) is not None:
+            try:
+                body["at"] = int(args.at)
+            except (TypeError, ValueError):
+                print("--at must be an integer", file=sys.stderr)
+                sys.exit(2)
+        for k in ("title", "model", "workspace"):
+            v = getattr(args, k, None)
+            if v:
+                body[k] = v
+        out = req("POST", "/api/sessions/%s/fork" % args.value, body)
+        if out.get("error"):
+            print("error:", out["error"], file=sys.stderr)
+            sys.exit(1)
+        s = out.get("session") or {}
+        print(json.dumps({"id": s.get("id"), "source": out.get("source"),
+                          "fork_at": out.get("fork_at"),
+                          "messages": out.get("messages"), "model": s.get("model")},
+                         indent=2, ensure_ascii=False))
+        if s.get("id"):
+            _set_current_session(s["id"])
+            print("current session: %s" % s["id"])
     elif args.action == "rm":
         print(json.dumps(req("DELETE", "/api/sessions/" + args.value), indent=2))
         _clear_current_session(args.value)
@@ -1398,8 +1427,10 @@ def main():
     p = sub.add_parser("swarm"); p.add_argument("goal"); p.add_argument("--n-workers", type=int, default=3); \
         p.add_argument("--max-steps", type=int, default=None); p.set_defaults(fn=cmd_swarm)
     sub.add_parser("paperclip-bot").set_defaults(fn=cmd_paperclip_bot)
-    p = sub.add_parser("sessions"); p.add_argument("action", choices=["ls", "new", "rm", "use", "current", "history", "graph", "tree", "reset", "clear", "model"]); \
-        p.add_argument("value", nargs="?"); p.add_argument("--workspace"); p.set_defaults(fn=cmd_sessions)
+    p = sub.add_parser("sessions"); p.add_argument("action", choices=["ls", "new", "fork", "rm", "use", "current", "history", "graph", "tree", "reset", "clear", "model"]); \
+        p.add_argument("value", nargs="?"); p.add_argument("--workspace"); \
+        p.add_argument("--at"); p.add_argument("--title"); p.add_argument("--model"); \
+        p.set_defaults(fn=cmd_sessions)
     p = sub.add_parser("docs"); p.add_argument("action", choices=["status", "plan", "spec", "approve", "implement", "reject", "unlock"]); \
         p.add_argument("value", nargs="?"); p.add_argument("--session"); \
         p.add_argument("--implement", action="store_true",

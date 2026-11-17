@@ -1335,6 +1335,63 @@ def get_or_create_session(sid, title=None, workspace=None, trust=None):
     return s
 
 
+def fork_session(sid, at=None, title=None, model=None, workspace=None):
+    """Branch a session at message `at` into a NEW session (DeepSeek resume/fork).
+
+    The source transcript is the PREFIX `messages[:at]` (0-based, exclusive);
+    `at=None` copies the whole transcript. The source is never mutated: the fork
+    gets its own id, its own agent number, `forked_from`/`fork_at`/`fork_ts`
+    provenance, and the tool cards that precede the cutoff (a card after the cut
+    belongs to work the fork did not inherit). `workspace`/`model` default to the
+    source and can be overridden, which is what makes a fork an A/B arm: the same
+    prefix, a different model.
+
+    Returns {"ok": True, "session": <new>, "source", "fork_at", "messages"} or
+    {"ok": False, "error"} — an out-of-range `at` is refused, never clamped.
+    """
+    src = load_session(sid)
+    if not src:
+        return {"ok": False, "error": "session not found"}
+    msgs = list(src.get("messages") or [])
+    if at is None:
+        n = len(msgs)
+    else:
+        if isinstance(at, bool):
+            return {"ok": False, "error": "at must be an integer"}
+        try:
+            n = int(at)
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "at must be an integer"}
+        if n < 0 or n > len(msgs):
+            return {"ok": False,
+                    "error": "at out of range (0..%d)" % len(msgs)}
+    try:
+        prefix = json.loads(json.dumps(msgs[:n]))
+        cutoff = float(msgs[n - 1].get("ts") or 0) if n else float("-inf")
+        cards = [c for c in (src.get("tool_cards") or [])
+                 if n >= len(msgs) or float(c.get("ts") or 0) <= cutoff]
+        cards = json.loads(json.dumps(cards))
+    except (TypeError, ValueError):
+        return {"ok": False, "error": "session transcript is not JSON-safe"}
+    new_id = uuid.uuid4().hex[:12]
+    new = {"id": new_id,
+           "title": str(title or ((src.get("title") or "session") + " (fork)"))[:120],
+           "created": round(time.time(), 3), "messages": prefix,
+           "workspace": str(workspace or src.get("workspace") or ""),
+           "forked_from": sid, "fork_at": n, "fork_ts": round(time.time(), 3)}
+    if model or src.get("model"):
+        new["model"] = str(model or src.get("model"))
+    if src.get("trust"):
+        new["trust"] = src.get("trust")
+    if cards:
+        new["tool_cards"] = cards
+    save_session(new)
+    ensure_agent(new)                       # a fork IS a new agent (its own A<n>)
+    _remember_workspace(new.get("workspace"))
+    return {"ok": True, "session": new, "source": sid, "fork_at": n,
+            "messages": len(prefix)}
+
+
 def append_message(sess, role, content, reasoning=None, meta=None):
     # JAG-238: the transcript must only ever hold STRING content. A client could
     # POST {"message": 123}; the int was persisted and later crashed /api/context

@@ -53,7 +53,7 @@ from longrun.core.server import (ASSET_CTYPES, ASSET_EXTS,
                      append_message, backfill_agents, backfill_session_workspaces,
                      chat_once, clear_abort, clear_session, context_budget, default_model,
                      ensure_agent, ensure_model, ensure_reply_persisted, eval_list_tasks,
-                     eval_run, events_since, feed_seq, generate_plan,
+                     eval_run, events_since, feed_seq, fork_session, generate_plan,
                      get_or_create_session, get_run_trace, graph_post, heartbeat_frame,
                      keys_status, list_sessions, load_plan, load_session, load_tasks, model_loaded,
                      publish, push_abort, push_steer, query_events,
@@ -3143,6 +3143,20 @@ class Handler(BaseHTTPRequestHandler):
                 pass
             publish("session.renamed", session=sid, title=title)
             return self._send(200, {"ok": True, "id": sid, "title": title})
+        if path.startswith("/api/sessions/") and path.endswith("/fork"):
+            # Fork = a NEW session holding messages[:at] of the source; the source
+            # is never touched. `model` lets the same prefix run as an A/B arm.
+            sid = path[len("/api/sessions/"):-len("/fork")].strip("/")
+            if not _valid_sid(sid) or load_session(sid) is None:
+                return self._send(404, {"error": "session not found"})
+            b = body or {}
+            res = fork_session(sid, at=b.get("at"), title=b.get("title"),
+                               model=b.get("model"), workspace=b.get("workspace"))
+            if not res.get("ok"):
+                return self._send(400, res)
+            publish("session.forked", session=res["session"]["id"],
+                    source=sid, fork_at=res.get("fork_at"))
+            return self._send(200, res)
         if path.startswith("/api/sessions/") and path.endswith("/graph/plan/drop"):
             # JAG-514: delete ONE older plan and every step in it (the nodes ARE the
             # plan — the tasks panel, the model prompt and the Control constellation
