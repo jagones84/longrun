@@ -216,11 +216,13 @@ check("F5 the tool returns the register", res.get("action") == "failures"
       (res.get("action"), payload.get("sessions")))
 check("F6 the limit bounds the issues",
       len(payload.get("issues") or []) <= 3, len(payload.get("issues") or []))
-check("F7 every reported line is one sentence with its fix",
-      len(res.get("failure_lines") or []) == len(payload.get("issues") or [])
-      and all(" — " in ln and "session(s): " in ln
-              for ln in res.get("failure_lines") or []),
-      res.get("failure_lines"))
+# Round 44: the answer ends with its own check coverage, so the line count is
+# issues + 1; the footer is not a failure row and must not look like one.
+_lines = res.get("failure_lines") or []
+check("F7 every reported line is one sentence with its fix, plus the coverage footer",
+      len(_lines) == len(payload.get("issues") or []) + 1
+      and all(" — " in ln and "session(s): " in ln for ln in _lines[:-1])
+      and _lines[-1].startswith("(checks: "), _lines)
 check("F8 the unknown-action hint names the new action",
       "failures" in (T.execute("self", {"action": "nope"}).get("error") or ""), "")
 

@@ -1068,8 +1068,15 @@ def failure_candidates(path=None, limit=10, min_count=1, include_sessions=False,
     rows.sort(key=lambda r: (-r["count"], r["tool"], r["error"]))
     rows = [r for r in rows if r["count"] >= max(1, int(min_count or 1))]
     issues = _issues_from(rows)
+    # Round 44: a fix is only provable where a check exists. Measured 2026-11-18:
+    # 22 of 37 live issues name no test, including 5 of the top 8 — the register
+    # must say so instead of letting a draft read as if the proof exists.
+    with_check = sum(1 for i in issues if i.get("check"))
     return {"ok": True, "classes": rows[:max(1, int(limit or 10))],
             "issues": issues[:max(1, int(limit or 10))],
+            "checks": {"with_check": with_check,
+                       "without_check": len(issues) - with_check,
+                       "total": len(issues)},
             "runs": runs, "sessions": scanned, "since": since_ts}
 
 

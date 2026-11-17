@@ -4395,7 +4395,8 @@
           <summary class="set-t u-ptr" title="The failure register the agent reads: every failure class in the store, ranked by severity and by what did not recover.">Failure register <span id="impRegisterCount" class="remaining"></span></summary>
           <div class="remaining u-mt6">Ranked by severity, then by what did <b>not</b> recover:
             <b>unresolved</b> = failures a later call of the same tool and stage did not clear;
-            <b>who</b> = the agents whose sessions produced them. The panel applies nothing.</div>
+            <b>who</b> = the agents whose sessions produced them. A fix is provable only where a
+            check exists — the count says how many of these issues can be proven at all. The panel applies nothing.</div>
           <div id="impRegister" class="u-mt6"></div>
         </details>
         <!-- Round 36: the FAILURE register turned into work, and what each fix did.
@@ -13372,8 +13373,12 @@ async function loadImprovement() {
   const regBox = $("impRegister"), regCnt = $("impRegisterCount");
   const regD = d.failures || {}, reg = regD.issues || [];
   if (regCnt) {
+    // Round 44: how much of the register is provable — a fix without a check is a
+    // claim, and the count says how many of these issues can be proven at all.
+    const chk = regD.checks || {};
     regCnt.textContent = reg.length
-      ? "(" + reg.length + " issue(s) · " + (regD.sessions || 0) + " session(s) scanned)"
+      ? "(" + reg.length + " issue(s) · " + (regD.sessions || 0) + " session(s) scanned" +
+        (chk.total ? " · " + (chk.with_check || 0) + "/" + chk.total + " checked" : "") + ")"
       : "";
   }
   if (regBox) {

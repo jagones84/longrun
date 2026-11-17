@@ -2183,13 +2183,16 @@ def improvement_failures(limit=8):
     try:
         rep = selfevolve.failure_candidates(limit=limit, include_sessions=True)
     except Exception:  # noqa: BLE001 — an unreadable store is data, not a crash
-        return {"issues": [], "sessions": 0, "runs": 0, "since": None}
+        return {"issues": [], "sessions": 0, "runs": 0, "since": None,
+                "checks": {}}
     keys = ("id", "tool", "family", "severity", "count", "unresolved", "sessions",
             "recovered", "recovery_rate", "refusal", "from_sessions", "from_runs",
             "agents", "action", "check")
     issues = [{k: i.get(k) for k in keys} for i in (rep.get("issues") or [])[:limit]]
     return {"issues": issues, "sessions": int(rep.get("sessions") or 0),
-            "runs": int(rep.get("runs") or 0), "since": rep.get("since")}
+            "runs": int(rep.get("runs") or 0), "since": rep.get("since"),
+            # Round 44: how much of the register is PROVABLE (a check exists).
+            "checks": rep.get("checks") or {}}
 
 
 def improvement_repairs():
