@@ -642,7 +642,19 @@ FAMILY_FIX = {
 #: (`Arg types: {'command': str, 'timeout_secs': int}`) and pulled 19
 #: missing-argument failures into `timeout` — so a generic needle reads the class
 #: head only, and only these read past it.
-TAIL_FAMILIES = ("gate",)
+#:
+#: Round 27 (Trial by Trace, arXiv:2610.32285 — failure attribution): the harness
+#: writes SOME tool errors as `[tool] exit=<n> ok=False backend=… \nERROR: <tool>:
+#: missing REQUIRED argument…`. The head then says `exit=` and the register filed
+#: the same argument-contract failure under `nonzero-exit` — measured 2026-11-18:
+#: 14 of 26 "missing REQUIRED argument" cards (10 shell.exec, 2 fs.read, 2
+#: web.search) were attributed to the wrong family, where the remedy is "read
+#: stderr" instead of "re-read the schema". The wrapper prefix is not the cause.
+TAIL_FAMILIES = ("gate", "missing-argument")
+
+#: A tail search stays narrower than the head search where the head needle is
+#: broader than safe for a whole text (`required:` appears in every schema dump).
+TAIL_OVERRIDES = {"missing-argument": ("missing required argument", "unknown argument")}
 
 
 def failure_family(tool, head, text=None):
@@ -650,8 +662,9 @@ def failure_family(tool, head, text=None):
 
     The class head is the identity and the first place the family is read. When
     the caller has the raw text, the families in `TAIL_FAMILIES` may also match
-    past the 80-char head — a plan-gate refusal can begin with the harness's
-    `[shell.exec] exit=<n> …` prefix, which says nothing about the cause.
+    past the 80-char head — a plan-gate refusal or an argument-contract error can
+    begin with the harness's `[shell.exec] exit=<n> …` prefix, which says nothing
+    about the cause.
     """
     s = str(head or "").lower()
     for name, needles in FAILURE_FAMILIES:
@@ -660,7 +673,8 @@ def failure_family(tool, head, text=None):
     tail = str(text or "").lower()[:400]
     if tail:
         for name, needles in FAILURE_FAMILIES:
-            if name in TAIL_FAMILIES and any(n in tail for n in needles):
+            if name in TAIL_FAMILIES and any(
+                    n in tail for n in TAIL_OVERRIDES.get(name, needles)):
                 return name
     return "nonzero-exit" if "exit=" in s else "tool-error"
 
