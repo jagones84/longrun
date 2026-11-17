@@ -215,6 +215,12 @@ MEMORY_DIR = os.environ.get("LONGRUN_MEMORY_DIR") or os.path.join(DATA_DIR, "mem
 # a retried `sessions.send` return the original message_id instead of delivering
 # the text twice. Overridable so tests never write it into the live data/.
 MESSAGES_DIR = os.environ.get("LONGRUN_MESSAGES_DIR") or os.path.join(DATA_DIR, "messages")
+# Round 13: the IMPROVEMENT record — one folder per candidate (proposal.json,
+# skill.json, check.py). It is the harness's own evidence for what it promoted,
+# so it is a store the agent may not rewrite (matrix_guard + tools.yaml deny).
+# Overridable so tests never touch the live proposals.
+PROPOSALS_DIR = (os.environ.get("LONGRUN_PROPOSALS_DIR")
+                 or os.path.join(DATA_DIR, "proposals"))
 # JAG-533: the self-evolution RUNTIME checkout (a git clone + rules + skills +
 # checkpoints, rewritten at runtime) — mutable state, so it lives under HOME, not
 # in the repository.

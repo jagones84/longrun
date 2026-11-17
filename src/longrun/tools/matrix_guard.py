@@ -282,6 +282,12 @@ def _store_targets():
         out.append(os.environ.get("LONGRUN_RUNS_DIR") or os.path.join(data, "runs"))
         out.append(os.environ.get("LONGRUN_HELDOUT_DIR") or os.path.join(data, "heldout"))
         out.append(os.environ.get("LONGRUN_DB") or os.path.join(data, "events.db"))
+        # Round 13: the IMPROVEMENT record is evidence too. Proved live 2026-11-18:
+        # a write to `~/.longrun/data/proposals/<id>/proposal.json` was allowed by
+        # both guards, so an agent could rewrite its own verdict and case table.
+        _prop = getattr(_p, "PROPOSALS_DIR", "")
+        if isinstance(_prop, str) and _prop:
+            out.append(_prop)
     except Exception:  # noqa: BLE001 — the guard must not break on an import
         pass
     # The in-repo spelling needs no entry of its own: `paths.DATA_DIR` IS the

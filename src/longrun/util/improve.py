@@ -14,10 +14,12 @@ import hashlib
 
 from longrun.util import tracing
 from longrun.util.fswrite import write_json
-from longrun.util.paths import REPO_ROOT as REPO, DATA_DIR
+from longrun.util.paths import REPO_ROOT as REPO, DATA_DIR, PROPOSALS_DIR
 # JAG-447: derive from the env-overridable DATA_DIR, so tests run against a
 # scratch dir and never pollute the live data/ (same convention as paths.py).
-PROPOSAL_DIR = os.path.join(DATA_DIR, "proposals")
+# Round 13: the location has ONE owner (`paths.PROPOSALS_DIR`, overridable by
+# `LONGRUN_PROPOSALS_DIR`) because the write gate now denies the same path.
+PROPOSAL_DIR = PROPOSALS_DIR
 # Machine-mined skill DRAFTS (selfevolve stage 1/2). Modules patch DRAFT_DIR in
 # tests; one owner for the location so a draft cannot be written in one place and
 # looked for in another.
