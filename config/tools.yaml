@@ -475,6 +475,14 @@ tools:
       # a body that carries a session, and a curl body carries none.
       - "(?:curl|wget)[^\\n]*127\\.0\\.0\\.1[^\\n]*/api/(jobs|agents|teams|architect|tools|settings|docs|fs|edits)"
       - "(?:curl|wget)[^\\n]*localhost[^\\n]*/api/(jobs|agents|teams|architect|tools|settings|docs|fs|edits)"
+      # 2026-11-18 (trace tampering arXiv:2609.30266 + instrument evasion
+      # arXiv:2609.30217): the `fs.*` verbs deny the run/transcript/event/held-out
+      # store by path; a shell-capable agent must not reach it another way, and
+      # agents "decompose operations across tool calls" to evade a monitor, so the
+      # store is denied in the shell spelling too. `ls` of the store stays allowed.
+      - "(?:>>?|\\btee\\b)[^\\n]*data/(runs|sessions|threads|heldout|events\\.db)"
+      - "\\b(rm|mv|truncate|shred|dd|cp|install)\\b[^\\n]*data/(runs|sessions|threads|heldout|events\\.db)"
+      - "\\b(cat|head|tail|less|more|strings|xxd|od|base64|cp|rsync|scp)\\b[^\\n]*data/heldout"
 
   # read a file (host-side, constrained to allowed roots)
   fs.read:
