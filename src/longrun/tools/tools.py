@@ -3230,10 +3230,13 @@ def _sessions(args, run_id):
                 % (res.get("index"), cmp_.get("verdict")))
         if cmp_.get("moved"):
             line += " (moved: %s)" % ", ".join(cmp_["moved"])
+        if res.get("dropped"):
+            line += " [windowed: %d older message(s) dropped]" % res["dropped"]
         line += " [%s]" % res.get("model")
         return {"ok": True, "exit_code": 0, "session": sid,
                 "index": res.get("index"), "model": res.get("model"),
                 "verdict": cmp_.get("verdict"), "moved": cmp_.get("moved") or [],
+                "dropped": res.get("dropped") or 0,
                 "fidelity": res.get("fidelity"), "caveat": res.get("caveat"),
                 "recorded_action": res.get("recorded_action"),
                 "replayed_action": res.get("replayed_action"),

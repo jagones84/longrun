@@ -43,7 +43,26 @@ def _index(value, n):
     return i, ""
 
 
-def plan(sess, index, change):
+def window(messages, index, budget_chars):
+    """(first_kept, dropped) — drop the OLDEST messages until the prefix fits.
+
+    The transcript is the model's real context, and the live store holds sessions
+    of up to 269 messages / 545k chars (measured 2026-11-18), so a replay of a
+    long session would exceed the model's window. Dropping from the oldest is what
+    the harness's own compaction does; the target message and its recorded
+    successor are ALWAYS kept, and the caller reports how many were dropped so the
+    answer cannot pretend it saw the whole transcript.
+    """
+    kept = list(messages[:max(0, index)])
+    total = sum(len(str(m.get("content") or "")) + 32 for m in kept)
+    first = 0
+    while first < len(kept) and total > budget_chars:
+        total -= len(str(kept[first].get("content") or "")) + 32
+        first += 1
+    return first, first
+
+
+def plan(sess, index, change, budget_chars=None):
     """(plan, error). The plan names the one message to replace and its successor.
 
     The target must be a USER message (the model's input: an observation, a nudge,
@@ -80,12 +99,21 @@ def plan(sess, index, change):
     if str(nxt.get("role") or "") != ASSISTANT:
         return {}, ("message %d is %r, not an assistant action"
                     % (i + 1, nxt.get("role")))
+    first, dropped = (0, 0)
+    if budget_chars:
+        first, dropped = window(msgs, i, budget_chars)
+    caveat = ("the stored transcript is replayed with the CURRENT system prompt; "
+              "the volatile per-turn blocks the original turn carried (memory "
+              "index, task list) are not restored")
+    if dropped:
+        caveat += ("; %d older message(s) did not fit the model's window and were "
+                   "dropped, oldest first" % dropped)
     return {"index": i, "original": target.get("content"),
             "replacement": content, "recorded_reply": nxt.get("content") or "",
-            "fidelity": "transcript+live-system",
-            "caveat": ("the stored transcript is replayed with the CURRENT system "
-                       "prompt; the volatile per-turn blocks the original turn "
-                       "carried (memory index, task list) are not restored"),
+            "first": first, "dropped": dropped,
+            "fidelity": ("transcript-window+live-system" if dropped
+                         else "transcript+live-system"),
+            "caveat": caveat,
             "messages": len(msgs)}, ""
 
 

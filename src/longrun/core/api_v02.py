@@ -5042,23 +5042,39 @@ def model_counterfactual_run(sid, index, change, model=None, by="model-counterfa
     if not sess:
         return {"ok": False, "status": 404, "error": "session not found"}
     from longrun.harness import modelcf as _mcf
-    plan, why = _mcf.plan(sess, index, change)
-    if why:
-        return {"ok": False, "status": 400, "error": why, "plan": plan}
-    model = str(model or sess.get("model") or "").strip()
-    if not model:
-        from longrun.model.rllm import default_model
-        model = default_model()
+    from longrun.model import rllm as _rllm
     from longrun.core import server as _server
     from longrun.agent import agent as _ag
-    stored = [m for m in (sess.get("messages") or []) if isinstance(m, dict)]
+    model = str(model or sess.get("model") or "").strip()
+    if not model:
+        model = _rllm.default_model()
     try:
         sys_prompt = _server._system_prompt(sess, _server._tool_context(), model=model)
     except Exception as exc:  # noqa: BLE001 — name the failure, never a fake prompt
         return {"ok": False, "status": 500,
                 "error": "could not rebuild the system prompt: %s" % exc}
+    budget_tokens = None
+    try:
+        budget_tokens = int(_rllm.context_budget(model) or 0) or None
+    except Exception:  # noqa: BLE001 — an unknown model simply skips the bound
+        budget_tokens = None
+    # Reserve the system prompt and a margin; the transcript gets the rest. The
+    # live store holds sessions of up to 269 messages / 545k chars (measured
+    # 2026-11-18), so an unbounded replay would exceed the window.
+    budget_chars = None
+    if budget_tokens:
+        budget_chars = max(0, budget_tokens * 4 - len(sys_prompt) - 1000)
+    plan, why = _mcf.plan(sess, index, change, budget_chars)
+    if why:
+        return {"ok": False, "status": 400, "error": why, "plan": plan}
+    stored = [m for m in (sess.get("messages") or []) if isinstance(m, dict)]
+    if budget_chars is not None and len(plan["replacement"]) > budget_chars:
+        return {"ok": False, "status": 400,
+                "error": ("the replacement message exceeds the model's context "
+                          "budget (%d chars); shorten the replacement"
+                          % budget_chars)}
     msgs = [{"role": "system", "content": sys_prompt}]
-    for m in stored[:plan["index"]]:
+    for m in stored[plan.get("first", 0):plan["index"]]:
         msgs.append({"role": m.get("role"), "content": m.get("content")})
     msgs.append({"role": "user", "content": plan["replacement"]})
     usage = {}
@@ -5075,6 +5091,7 @@ def model_counterfactual_run(sid, index, change, model=None, by="model-counterfa
              model=model, verdict=cmp_["verdict"], moved=cmp_["moved"], by=by)
     return {"ok": True, "status": 200, "session": sid, "index": plan["index"],
             "model": model, "fidelity": plan["fidelity"], "caveat": plan["caveat"],
+            "dropped": plan.get("dropped", 0), "first": plan.get("first", 0),
             "original": plan["original"], "replacement": plan["replacement"],
             "recorded_action": recorded_action, "replayed_action": replayed_action,
             "compare": cmp_, "usage": usage,
