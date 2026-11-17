@@ -188,14 +188,38 @@ def _shell_terminal(sid, cwd):
     return term.get(sid, cwd)
 
 
+#: A failed command whose shell spoke the WRONG dialect, by the text the shell
+#: itself emitted. Measured 2026-11-18 from the failure register: 6 commands in a
+#: Windows workspace died on "non è riconosciuto come comando interno" (`ls`,
+#: `Get-Item`) and 4 on `set: Illegal option -o pipefail` (an `sh`/`dash` shell,
+#: not bash) — each retried in the same shape because nothing named the dialect.
+_DIALECT_HINTS = (
+    (("is not recognized as an internal or external command",
+      "non è riconosciuto come comando interno"),
+     "the host shell did not recognize this command — it speaks the Windows "
+     "syntax (cmd/PowerShell), not POSIX: use the host's own words "
+     "(`Get-ChildItem` for `ls`, `Get-Content` for `cat`), or run the command "
+     "as `bash -lc \"<command>\"` only if bash exists on that host"),
+    (("illegal option -o pipefail", "set: illegal option"),
+     "this shell is sh/dash, not bash: drop `set -o pipefail`, or invoke bash "
+     "explicitly (`bash -lc \"<command>\"`) when the host has it"),
+)
+
+
 def _shell_hinted(args, run_id):
-    """Dispatch entry for `shell`: a failed heredoc explains itself.
+    """Dispatch entry for `shell`: a failed call explains the likely cause.
 
     Measured 2026-10-31: 3 of 18 `shell.exec` calls in one benchmark session died
     as `python3 - <<'PY' …` patch scripts (EV-50). The exit code and the stdout
     were correct, but nothing told the model that the FILE route is the way out —
     it retried the same shape. The hint is added only on a failure and only when
     the command used a heredoc, so it cannot fire on a working call.
+
+    Round 23 adds the other measured class (2026-11-18): a command the host shell
+    could not parse because it was written for a DIFFERENT dialect. `stderr` is
+    matched against `_DIALECT_HINTS`; the first hint that applies wins, the
+    heredoc rule keeps precedence, and a failure that matches neither comes back
+    byte-identical.
 
     The rule lives here, not inside `_shell`, because `_shell` is pinned by v595
     as the function that resolves the session trust and skips the host terminal
@@ -209,6 +233,13 @@ def _shell_hinted(args, run_id):
                 "hint", "a heredoc in `command` failed and its program was never "
                         "run: write the script with fs.write to a FILE, then run "
                         "`python3 <file>` (or use python.run)")
+        if isinstance(res, dict) and not res.get("ok") and not res.get("hint"):
+            said = ("%s %s %s" % (res.get("stderr") or "", res.get("stdout") or "",
+                                  res.get("error") or "")).lower()
+            for needles, hint in _DIALECT_HINTS:
+                if any(n in said for n in needles):
+                    res["hint"] = hint
+                    break
     except Exception:  # noqa: BLE001 — a hint must never break the call
         pass
     return res
