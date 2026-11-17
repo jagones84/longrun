@@ -80,7 +80,7 @@ for cmd in ("python3 tests/acceptance/v1071_trace_store_shell_deny.py",
 _CFG = open(os.path.join(REPO, "config", "tools.yaml"), encoding="utf-8").read()
 check("I7 the interpreter rule is shipped in config/tools.yaml",
       "(?:python[0-9.]*|node|perl|ruby)" in _CFG
-      and "data/(runs|sessions|threads|heldout|proposals)" in _CFG)
+      and "data/(runs|sessions|threads|heldout|proposals|improvement)" in _CFG)
 
 print("\n---\nv1075: %d/%d PASS" % (sum(RESULTS), len(RESULTS)))
 raise SystemExit(0 if all(RESULTS) else 1)

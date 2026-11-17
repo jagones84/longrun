@@ -2539,6 +2539,11 @@ class Handler(BaseHTTPRequestHandler):
                 "proposals_total": len(raw),
                 "ledger": meaningful[:120],
                 "ledger_total": len(meaningful),
+                # Round 14: whether the changelog above can be BELIEVED. The panel
+                # used to show a record whose file was rewritable in place and whose
+                # rows carried no link; this field is the chain's own verdict, so the
+                # surface and the store cannot disagree silently.
+                "ledger_integrity": improve_mod.verify_ledger(),
                 "records": records,
                 "drafts": _drafts.get("drafts") or [],
                 "drafts_total": int(_drafts.get("total") or 0),
@@ -2557,6 +2562,7 @@ class Handler(BaseHTTPRequestHandler):
                 "root": _paths.HOME_DIR,
                 "files": [
                     {"path": "data/improvement/ledger.jsonl", "kind": "audit ledger"},
+                    {"path": "data/improvement/ledger.head.json", "kind": "ledger chain anchor"},
                     {"path": "data/memory/agent_notes.md", "kind": "distilled lessons"},
                     {"path": "data/memory/user_memories.md", "kind": "user memory"},
                     {"path": "data/proposals", "kind": "rule/skill proposals"},

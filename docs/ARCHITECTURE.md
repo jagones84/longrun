@@ -489,6 +489,17 @@ on this install — and fill `skills/created/` to its 25-skill cap in one go. Th
 same pass also writes one `promote` (or `retire`) row in the improvement ledger,
 so "what did the machine change on its own?" is answerable after the fact.
 
+That ledger is a **hash chain**, not a log file (round 14, 2026-11-18): every row
+carries `seq` / `prev` / `hash`, the bounded 500-row window links back to an
+anchor (`data/improvement/ledger.head.json`) that names the last evicted row and
+the newest row written, and `improve(action="ledger")` / `GET /api/improvement`
+report the chain's own verdict (`ledger_integrity`). An edit, a deleted row, a
+reordering, a truncation or a removal of the whole file is therefore detectable,
+and the agent the ledger records cannot write it: `matrix_guard` and
+`config/tools.yaml` deny the `data/improvement` store, like the runs, held-out and
+event records. Limit, from arXiv 2609.30266: a chain proves the rows that ARE
+there were not altered, never that every action was written down.
+
 
 ### Enabling matched whole runs (opt-in, off by default)
 

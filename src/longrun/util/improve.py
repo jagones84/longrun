@@ -10,13 +10,15 @@ import os
 import re
 import json
 import uuid
+import contextlib
 import hashlib
 
 from longrun.util import tracing
 from longrun.util.fswrite import write_json
-from longrun.util.paths import REPO_ROOT as REPO, DATA_DIR, PROPOSALS_DIR
-# JAG-447: derive from the env-overridable DATA_DIR, so tests run against a
-# scratch dir and never pollute the live data/ (same convention as paths.py).
+from longrun.util.paths import (REPO_ROOT as REPO, PROPOSALS_DIR,
+                                IMPROVEMENT_DIR)
+# JAG-447: derive from the env-overridable data home (paths.py), so tests run
+# against a scratch dir and never pollute the live data/.
 # Round 13: the location has ONE owner (`paths.PROPOSALS_DIR`, overridable by
 # `LONGRUN_PROPOSALS_DIR`) because the write gate now denies the same path.
 PROPOSAL_DIR = PROPOSALS_DIR
@@ -53,8 +55,354 @@ IMPORTANCE_THRESHOLD = 5
 # self-improvement loop did on its own (proposals opened, memories distilled,
 # skills mined, proposals decided). It is the answer to "what changed, and was
 # it the harness or me?". Bounded so it never grows without limit.
-LEDGER_PATH = os.path.join(DATA_DIR, "improvement", "ledger.jsonl")
+#
+# Round 14: "append-only" was a CONVENTION, not a property. Measured live on
+# 2026-11-18: the file sat at exactly LEDGER_MAX, so `_trim_ledger` REWROTE it in
+# place on every append; no row carried a link to its predecessor; and all five
+# write routes to it (`shell >>`, `truncate`, `python -c`, `fs.write`, `fs.edit`)
+# classified `auto` — the agent the ledger records could rewrite its own record.
+# Every row now carries `seq` / `prev` / `hash`, so a retroactive edit, a deletion
+# in the middle, a reordering or a truncation is DETECTABLE (`verify_ledger`).
+# The design is the tamper-evident verdict log of arXiv 2606.24322 (M4): an O(1)
+# append that is one hash over the previous head, no model call. Honest limit,
+# from arXiv 2609.30266: a chain proves the rows that ARE there were not altered;
+# it cannot prove that every action was written down before it happened.
+LEDGER_PATH = os.path.join(IMPROVEMENT_DIR, "ledger.jsonl")
+# The chain HEAD: what the oldest row in the bounded window links back to. This is
+# what makes EVICTION distinguishable from DELETION — without it, "the first 300
+# rows are gone" and "the first 300 rows fell off the cap" look identical.
+LEDGER_HEAD_PATH = os.path.join(IMPROVEMENT_DIR, "ledger.head.json")
 LEDGER_MAX = 500
+# The genesis link of a chain with no evicted rows (the standard all-zero root).
+LEDGER_GENESIS = "0" * 64
+
+
+def _ledger_canon(row):
+    """Canonical bytes of one row: the exact form the digest is taken over."""
+    body = {k: v for k, v in row.items() if k != "hash"}
+    return json.dumps(body, sort_keys=True, separators=(",", ":"),
+                      ensure_ascii=False)
+
+
+def _ledger_hash(row):
+    """sha256 over the canonical row — which INCLUDES `prev`, so the link binds."""
+    return hashlib.sha256(_ledger_canon(row).encode("utf-8")).hexdigest()
+
+
+@contextlib.contextmanager
+def _ledger_lock():
+    """Serialize read-tail -> append -> trim across processes.
+
+    An append needs the previous row, so it is a read-modify-write; the service, a
+    CLI and a test can otherwise interleave and fork the chain into two links that
+    both claim the same predecessor.
+    """
+    try:
+        os.makedirs(os.path.dirname(LEDGER_PATH), exist_ok=True)
+        fh = open(LEDGER_PATH + ".lock", "a+", encoding="utf-8")
+    except OSError:
+        yield
+        return
+    try:
+        try:
+            import fcntl
+            fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+        except Exception:  # noqa: BLE001 — a platform without flock still appends
+            pass
+        yield
+    finally:
+        try:
+            import fcntl
+            fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            fh.close()
+        except OSError:
+            pass
+
+
+def _ledger_rows():
+    """[(row | None, raw_line)] in file order; a non-JSON line reads as None."""
+    try:
+        with open(LEDGER_PATH, encoding="utf-8") as f:
+            raw = f.readlines()
+    except OSError:
+        return []
+    out = []
+    for line in raw:
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except ValueError:
+            row = None
+        out.append((row if isinstance(row, dict) else None, line))
+    return out
+
+
+def _ledger_text(rows):
+    return "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows)
+
+
+def _write_atomic(path, text):
+    """Write beside the file and rename: a reader never sees half a ledger."""
+    tmp = "%s.tmp.%d" % (path, os.getpid())
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    finally:
+        try:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        except OSError:
+            pass
+
+
+def _ledger_head():
+    """The ANCHOR: what the window links back to, and how far the chain got.
+
+    `seq`/`hash` name the last EVICTED row (what the oldest row in the window must
+    link back to); `last_seq`/`last_hash` name the newest row written. The anchor is
+    what makes eviction, deletion and truncation distinguishable at all: without
+    `last_seq`, dropping rows from the END of the window leaves a perfectly valid
+    chain (measured 2026-11-18).
+    """
+    try:
+        with open(LEDGER_HEAD_PATH, encoding="utf-8") as f:
+            head = json.load(f)
+        if isinstance(head, dict) and isinstance(head.get("hash"), str):
+            return {"seq": int(head.get("seq") or 0), "hash": head["hash"],
+                    "evicted": int(head.get("evicted") or 0),
+                    "last_seq": int(head.get("last_seq") or 0),
+                    "last_hash": str(head.get("last_hash") or LEDGER_GENESIS)}
+    except (OSError, ValueError, TypeError):
+        pass
+    return {"seq": 0, "hash": LEDGER_GENESIS, "evicted": 0,
+            "last_seq": 0, "last_hash": LEDGER_GENESIS}
+
+
+def _chain(raw_rows):
+    """Re-seal rows written before the chain existed. Returns (rows, migrated).
+
+    `raw_rows` is the (row|None, line) list from `_ledger_rows`. The 500 rows
+    already on disk carried no link, so they are chained once, in place, payloads
+    untouched — and the migration is itself recorded as the next ledger entry. The
+    record then SAYS "everything before this point was re-sealed once" instead of
+    pretending it had always been chained.
+    """
+    if not raw_rows:
+        return [], 0
+    if all(r is not None and "hash" in r and "seq" in r and "prev" in r
+           for (r, _line) in raw_rows):
+        return [r for (r, _line) in raw_rows], 0
+    out, prev = [], LEDGER_GENESIS
+    for i, (row, _line) in enumerate(raw_rows, 1):
+        row = dict(row or {"kind": "event", "origin": "harness",
+                           "_unreadable_line": True})
+        row.pop("hash", None)
+        row["seq"] = i
+        row["prev"] = prev
+        row["hash"] = _ledger_hash(row)
+        prev = row["hash"]
+        out.append(row)
+    return out, len(out)
+
+
+def ledger_add(kind, **fields):
+    """Append one improvement event to the audit ledger. Returns the entry.
+
+    `origin` defaults to 'harness' (the loop itself); pass 'reflect'/'mining'/
+    'agent'/'user' to say WHERE the artifact came from. Every row carries the
+    harness that produced it unless the caller supplies its own `harness=`.
+    """
+    origin = str(fields.pop("origin", "harness") or "harness")
+    entry = {"id": uuid.uuid4().hex[:10], "ts": round(time.time(), 3),
+             "kind": str(kind or "event"), "origin": origin}
+    entry.update(fields)
+    # E-2: an empty stamp (tracing unavailable) writes NO key, so a row never
+    # claims an attribution it does not have.
+    _stamp = harness_stamp()
+    if _stamp:
+        entry.setdefault("harness", _stamp)
+    try:
+        with _ledger_lock():
+            rows, migrated = _chain(_ledger_rows())
+            head = _ledger_head()
+            queued = []
+            if migrated:
+                # the re-seal is written with the rows it changed, in one file
+                _write_atomic(LEDGER_PATH, _ledger_text(rows))
+                queued.append({"kind": "ledger.chain_init", "origin": "harness",
+                               "id": uuid.uuid4().hex[:10],
+                               "ts": round(time.time(), 3), "sealed": migrated,
+                               "note": "one-time re-seal: rows written before the "
+                                       "hash chain carried no link to their "
+                                       "predecessor"})
+            queued.append(entry)
+            for row in queued:
+                row["seq"] = (rows[-1]["seq"] + 1) if rows else head["seq"] + 1
+                row["prev"] = rows[-1]["hash"] if rows else head["hash"]
+                row["hash"] = _ledger_hash(row)
+                rows.append(row)
+            # 1. the entry itself must survive a crash, so it lands FIRST.
+            with open(LEDGER_PATH, "a", encoding="utf-8") as f:
+                for row in queued:
+                    f.write(json.dumps(row, ensure_ascii=False) + "\n")
+            # 2. the anchor moves to the row just written (and, at the cap, to the
+            #    eviction point), then 3. the window shrinks. A crash between 2 and
+            #    3 is `interrupted-trim` and `repair_ledger` completes it; a crash
+            #    between 1 and 2 leaves an entry one seq AHEAD of the anchor, which
+            #    verify reports as `ahead`, not as tampering.
+            anchor = {"seq": head["seq"], "hash": head["hash"],
+                      "evicted": int(head.get("evicted") or 0),
+                      "last_seq": rows[-1]["seq"], "last_hash": rows[-1]["hash"]}
+            keep = len(rows)
+            if len(rows) > LEDGER_MAX:
+                cut = rows[:-LEDGER_MAX]
+                last = cut[-1]
+                keep = LEDGER_MAX
+                anchor.update({"seq": last["seq"], "hash": last["hash"],
+                               "evicted": int(head.get("evicted") or 0) + len(cut)})
+            _write_atomic(LEDGER_HEAD_PATH, json.dumps(anchor, sort_keys=True) + "\n")
+            if keep != len(rows):
+                _write_atomic(LEDGER_PATH, _ledger_text(rows[-keep:]))
+    except OSError:
+        pass
+    if origin != "matrix":
+        try:
+            from longrun.core import matrix as _mtx
+            _mtx.call_hook("util", "on_ledger_add", entry, default=None)
+        except Exception:  # noqa: BLE001
+            pass
+    return entry
+
+
+def _ledger_fail(code, index, row, detail, head=None, checked=0):
+    return {"ok": False, "code": code, "checked": checked,
+            "first_bad": {"index": index, "seq": (row or {}).get("seq"),
+                          "id": (row or {}).get("id"),
+                          "kind": (row or {}).get("kind"), "detail": detail},
+            "head": head or _ledger_head()}
+
+
+def verify_ledger():
+    """Is the ledger SELF-CONSISTENT? Names the first broken link; never guesses.
+
+    Checks, in file order: the digest of every row, each row's `prev` against its
+    predecessor, `seq` continuity, and the first row against the recorded head.
+    `ok` means "these rows were not altered, reordered, deleted from the middle or
+    truncated without a recorded eviction" — NOT "every action was logged"
+    (2609.30266). `interrupted-trim` is a crash state, not tampering, and
+    `repair_ledger` completes it.
+    """
+    raw = _ledger_rows()
+    head = _ledger_head()
+    if not raw:
+        # An anchor that recorded rows proves the window was not empty: a trim
+        # always leaves LEDGER_MAX rows, so "no rows at all" is a deletion.
+        if head.get("last_seq", 0) > 0:
+            return _ledger_fail("truncated", 0, None,
+                                "the ledger is empty but the anchor recorded rows "
+                                "up to seq %s (file removed or emptied?)"
+                                % head.get("last_seq"), head, 0)
+        return {"ok": True, "code": "empty", "checked": 0, "rows": 0,
+                "head": head, "evicted": head.get("evicted", 0)}
+    for i, (row, _line) in enumerate(raw):
+        if row is None:
+            return _ledger_fail("corrupt-line", i, None,
+                                "line %d is not a JSON object" % (i + 1), head, i)
+        checked = i + 1
+        if not all(k in row for k in ("seq", "prev", "hash")):
+            return _ledger_fail("unchained", i, row,
+                                "row has no seq/prev/hash (written outside "
+                                "ledger_add)", head, checked)
+        if _ledger_hash(row) != row.get("hash"):
+            return _ledger_fail("hash-mismatch", i, row,
+                                "row %s was altered after it was written"
+                                % row.get("id"), head, checked)
+        if i == 0:
+            if row.get("seq") == head.get("seq") and row.get("hash") == head.get("hash"):
+                return _ledger_fail("interrupted-trim", 0, row,
+                                    "the head names this row, which is still in "
+                                    "the window: a trim was recorded but not "
+                                    "completed (repairable)", head, checked)
+            if row.get("prev") != head.get("hash") or row.get("seq") != head.get("seq", 0) + 1:
+                return _ledger_fail("head-mismatch", 0, row,
+                                    "the first row does not link back to the "
+                                    "recorded head (rows removed without an "
+                                    "eviction record?)", head, checked)
+        else:
+            prev = raw[i - 1][0] or {}
+            if row.get("prev") != prev.get("hash"):
+                return _ledger_fail("broken-link", i, row,
+                                    "row %s does not link to the row before it"
+                                    % row.get("id"), head, checked)
+            if row.get("seq") != (prev.get("seq") or 0) + 1:
+                return _ledger_fail("gap", i, row,
+                                    "seq jumps from %s to %s"
+                                    % (prev.get("seq"), row.get("seq")), head, checked)
+    last = raw[-1][0] or {}
+    ahead = 0
+    if (last.get("seq") or 0) != head.get("last_seq", 0):
+        if (last.get("seq") or 0) > head.get("last_seq", 0):
+            # append landed, the anchor update did not: a crash, not tampering
+            ahead = last["seq"] - head["last_seq"]
+        else:
+            return _ledger_fail("truncated", len(raw) - 1, last,
+                                "the window ends at seq %s but the anchor recorded "
+                                "seq %s (rows removed from the end?)"
+                                % (last.get("seq"), head.get("last_seq")),
+                                head, len(raw))
+    over = len(raw) - LEDGER_MAX
+    return {"ok": True, "code": "ok", "checked": len(raw), "rows": len(raw),
+            "head": head, "evicted": head.get("evicted", 0), "ahead": ahead,
+            "over_cap": over if over > 0 else 0,
+            "last": {"seq": last.get("seq"), "id": last.get("id"),
+                     "ts": last.get("ts"), "hash": last.get("hash")}}
+
+
+def repair_ledger():
+    """Complete an interrupted trim. Refuses every other inconsistency.
+
+    Only `interrupted-trim` is repairable here: the head says a row was evicted and
+    the row is still in the window, so the window is dropped to the rows the head
+    no longer points at. A `hash-mismatch`/`gap`/`head-mismatch` is evidence, and
+    evidence is never rewritten to make a check green.
+    """
+    rep = verify_ledger()
+    if rep.get("ok"):
+        return {"ok": True, "code": rep.get("code"), "repaired": False,
+                "stat": rep}
+    if rep.get("code") != "interrupted-trim":
+        return {"ok": False, "code": rep.get("code"), "repaired": False,
+                "error": "refusing to rewrite %s: that is evidence, not a crash"
+                         % rep.get("code"), "stat": rep}
+    try:
+        with _ledger_lock():
+            raw = _ledger_rows()
+            head = _ledger_head()
+            keep = [r for (r, _l) in raw
+                    if r is not None and (r.get("seq") or 0) > head.get("seq", 0)]
+            _write_atomic(LEDGER_PATH, _ledger_text(keep))
+    except OSError as exc:
+        return {"ok": False, "code": rep.get("code"), "repaired": False,
+                "error": str(exc)}
+    after = verify_ledger()
+    return {"ok": bool(after.get("ok")), "code": after.get("code"),
+            "repaired": True, "dropped": len(raw) - len(keep), "stat": after}
+
+
+def ledger_tail(limit=60):
+    """The most recent ledger entries, NEWEST FIRST (for the WebUI changelog)."""
+    raw = _ledger_rows()
+    out = [row for (row, _line) in raw if row is not None]
+    if not out:
+        return []
+    return out[-int(limit):][::-1]
 
 
 def approval_kind(name):
@@ -73,23 +421,11 @@ def approval_kind(name):
         return ""
 
 
-# ------------------------------------------------------------- ledger --------
-# JAG-447: the audit ledger. Every improvement artifact the harness produces —
-# on its own or because the agent asked — is appended here, with its provenance
+# ------------------------------------------------------- provenance stamp ----
+# JAG-447: every improvement artifact the harness produces — on its own or because
+# the agent asked — is appended to the ledger above, with its provenance
 # (`origin`) and the file it touched, so the WebUI can show a truthful changelog
 # and the operator can always tell auto-generated from hand-written.
-
-def _trim_ledger():
-    """Keep the ledger bounded (last LEDGER_MAX lines). Best-effort."""
-    try:
-        with open(LEDGER_PATH, encoding="utf-8") as f:
-            lines = f.readlines()
-        if len(lines) > LEDGER_MAX:
-            with open(LEDGER_PATH, "w", encoding="utf-8") as f:
-                f.writelines(lines[-LEDGER_MAX:])
-    except OSError:
-        pass
-
 
 def _digest_map(mapping):
     """One short hash over a {filename: digest} map, order-independent."""
@@ -116,59 +452,6 @@ def harness_stamp(config_dir=None):
         return {}
 
 
-def ledger_add(kind, **fields):
-    """Append one improvement event to the audit ledger. Returns the entry.
-
-    `origin` defaults to 'harness' (the loop itself); pass 'reflect'/'mining'/
-    'agent'/'user' to say WHERE the artifact came from. Every row carries the
-    harness that produced it unless the caller supplies its own `harness=`.
-    """
-    origin = str(fields.pop("origin", "harness") or "harness")
-    entry = {"id": uuid.uuid4().hex[:10], "ts": round(time.time(), 3),
-             "kind": str(kind or "event"), "origin": origin}
-    entry.update(fields)
-    # E-2: an empty stamp (tracing unavailable) writes NO key, so a row never
-    # claims an attribution it does not have.
-    _stamp = harness_stamp()
-    if _stamp:
-        entry.setdefault("harness", _stamp)
-    try:
-        os.makedirs(os.path.dirname(LEDGER_PATH), exist_ok=True)
-        with open(LEDGER_PATH, "a", encoding="utf-8") as f:
-            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-        _trim_ledger()
-    except OSError:
-        pass
-    if origin != "matrix":
-        try:
-            from longrun.core import matrix as _mtx
-            _mtx.call_hook("util", "on_ledger_add", entry, default=None)
-        except Exception:  # noqa: BLE001
-            pass
-    return entry
-
-
-def ledger_tail(limit=60):
-    """The most recent ledger entries, NEWEST FIRST (for the WebUI changelog)."""
-    try:
-        with open(LEDGER_PATH, encoding="utf-8") as f:
-            raw = f.readlines()
-    except OSError:
-        return []
-    out = []
-    for line in raw:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            out.append(json.loads(line))
-        except ValueError:
-            continue
-    if not out:
-        return []
-    return out[-int(limit):][::-1]
-
-
 # ------------------------------------------------------- LLM review (JAG-491) --
 # The backlog grows on its own (proposals, distilled lessons, mined skills). Some
 # of it becomes stale: a later change implemented the same idea, or a mechanism
@@ -176,7 +459,7 @@ def ledger_tail(limit=60):
 # CURRENT code (retrieved from the codebase index) and classify it. It is one
 # feature used by two callers — the Improvement panel button and the `improve`
 # tool — never a second implementation.
-REVIEW_DIR = os.path.join(DATA_DIR, "improvement", "reviews")
+REVIEW_DIR = os.path.join(IMPROVEMENT_DIR, "reviews")
 REVIEW_VERDICTS = ("keep", "implemented", "obsolete", "update", "conflict")
 REVIEW_SYSTEM = (
     "You audit a coding agent's self-improvement backlog against the CURRENT "

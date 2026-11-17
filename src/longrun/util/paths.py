@@ -221,6 +221,13 @@ MESSAGES_DIR = os.environ.get("LONGRUN_MESSAGES_DIR") or os.path.join(DATA_DIR, 
 # Overridable so tests never touch the live proposals.
 PROPOSALS_DIR = (os.environ.get("LONGRUN_PROPOSALS_DIR")
                  or os.path.join(DATA_DIR, "proposals"))
+# Round 14: the improvement RECORD as a whole — the hash-chained audit ledger
+# (`ledger.jsonl` + `ledger.head.json`) and the LLM review reports. The chain is
+# what makes "what the harness changed on its own" provable after the fact, so the
+# folder is a store the agent may not rewrite (matrix_guard + tools.yaml deny).
+# Overridable so tests never touch the live record.
+IMPROVEMENT_DIR = (os.environ.get("LONGRUN_IMPROVEMENT_DIR")
+                   or os.path.join(DATA_DIR, "improvement"))
 # JAG-533: the self-evolution RUNTIME checkout (a git clone + rules + skills +
 # checkpoints, rewritten at runtime) — mutable state, so it lives under HOME, not
 # in the repository.

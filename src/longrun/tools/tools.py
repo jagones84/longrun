@@ -2362,6 +2362,22 @@ def _improve(args, run_id=None):
     if action in ("mine", "evolve", "verify", "promote", "forge", "abstract"):
         scope = "mine"
     content = str(args.get("content", "")).strip()
+    # Round 14: is the improvement LEDGER itself intact? The chain proves the rows
+    # that are there were not altered; this action is how the agent (and the
+    # operator, via the panel) checks it instead of trusting the file's name.
+    if action == "ledger":
+        st = improve.repair_ledger() if args.get("repair") else improve.verify_ledger()
+        line = "ledger %s: %s" % ("repair" if args.get("repair") else "verify",
+                                  st.get("code"))
+        bad = st.get("first_bad") or {}
+        if bad.get("detail"):
+            line += " — " + bad["detail"]
+        if st.get("rows") is not None:
+            line += " (%s rows, head seq %s, evicted %s)" % (
+                st.get("rows"), (st.get("head") or {}).get("seq"),
+                st.get("evicted"))
+        return {"ok": bool(st.get("ok")), "exit_code": 0 if st.get("ok") else 1,
+                "ledger": st, "stdout": line}
     # JAG-491: audit the WHOLE backlog (proposals + distilled lessons) with an LLM
     # against the current codebase. One implementation shared with the panel.
     if scope == "review" or action == "review":

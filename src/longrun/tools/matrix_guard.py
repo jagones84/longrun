@@ -288,6 +288,14 @@ def _store_targets():
         _prop = getattr(_p, "PROPOSALS_DIR", "")
         if isinstance(_prop, str) and _prop:
             out.append(_prop)
+        # Round 14: the improvement LEDGER is the record the proposals are judged
+        # in. Proved live 2026-11-18: all five routes (`shell >>`, `truncate`,
+        # `python -c`, `fs.write`, `fs.edit`) to `data/improvement/ledger.jsonl`
+        # classified `auto`, so the agent the ledger records could rewrite it —
+        # and a hash chain nobody can forge is worthless if the file is writable.
+        _imp = getattr(_p, "IMPROVEMENT_DIR", "")
+        if isinstance(_imp, str) and _imp:
+            out.append(_imp)
     except Exception:  # noqa: BLE001 — the guard must not break on an import
         pass
     # The in-repo spelling needs no entry of its own: `paths.DATA_DIR` IS the
@@ -367,9 +375,9 @@ def check_python_write(code, workspace=None, repo_root=None):
             shown = str(resolved)
         return (False,
                 "STORE_PROTECTED: python snippet %s inside the harness record (%s). "
-                "The runs, transcripts, thread ledger, event log, held-out suite and "
-                "improvement proposals are not writable by the agent they record; "
-                "write your own outputs under the workspace."
+                "The runs, transcripts, thread ledger, event log, held-out suite, "
+                "improvement proposals and the improvement ledger are not writable "
+                "by the agent they record; write your own outputs under the workspace."
                 % (what, shown))
 
     def _refuse(resolved, what):

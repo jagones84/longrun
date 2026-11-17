@@ -646,12 +646,14 @@ _LEGACY_SCHEMAS = {
                         "(proposals + distilled lessons) with an LLM against the "
                         "current codebase and reports keep/implemented/obsolete/"
                         "update/conflict for each artifact; scan proposes routines "
-                        "from your own sessions (created disabled)."),
+                        "from your own sessions (created disabled); ledger verifies "
+                        "the hash chain of the improvement record itself (pass "
+                        "repair=true to complete a trim a crash interrupted)."),
         "type": "object",
         "properties": {
             "action": {"type": "string",
                        "enum": ["propose", "mine", "evolve", "verify", "promote",
-                                "forge", "abstract", "review", "scan"],
+                                "forge", "abstract", "review", "scan", "ledger"],
                        "default": "propose"},
             "scope": {"type": "string",
                       "enum": ["skill", "project", "global", "mine", "review", "scan"],
@@ -683,6 +685,10 @@ _LEGACY_SCHEMAS = {
             "agent": {"type": "string",
                       "description": ("scan: agent id that would own a proposed "
                                       "routine (default: the first designated agent)")},
+            "repair": {"type": "boolean",
+                       "description": ("ledger: complete a trim that a crash "
+                                       "interrupted. Refused for any other "
+                                       "inconsistency — that is evidence")},
         },
         "required": ["action", "scope"],
     },
@@ -980,6 +986,9 @@ _SUBTOOL_FIELDS = {
         "review": ["limit", "model"],
         # E-5: scan reads the operator's sessions and proposes routines.
         "scan": ["limit", "model", "agent"],
+        # Round 14: the integrity check of the improvement ledger itself, and the
+        # one repair it accepts (completing a trim interrupted by a crash).
+        "ledger": ["repair"],
     },
     "web": {
         "search": ["query", "queries", "max_results", "max_total", "days",
@@ -1041,6 +1050,10 @@ _SUBTOOL_REQUIRED = {
     # C3: scan does not read `scope`; inheriting improve's namespace requirement
     # advertised a meaningless argument.
     "improve.scan": [],
+    # Round 14: the ledger check reads `repair` only. Without this row the call
+    # inherited improve's namespace requirement and answered "missing scope" —
+    # measured live 2026-11-18 through `POST /api/tools/call improve.ledger`.
+    "improve.ledger": [],
     "web.search": [], "web.fetch": [],
     "diff.files": ["a", "b"], "diff.text": ["text_a", "text_b"],
     "process.kill": ["pid"],
@@ -1222,6 +1235,12 @@ _SUBTOOL_GUIDANCE = {
         "LLM-audit the whole backlog (proposals + distilled lessons) against the "
         "current code: keep / implemented / obsolete / update / conflict. "
         "Nothing is decided by the review."
+    ),
+    "improve.ledger": (
+        "Check the improvement AUDIT LEDGER's hash chain: has any row been altered, "
+        "deleted, reordered or truncated since it was written? Reads only. Pass "
+        "repair=true to complete a trim that a crash interrupted — anything else is "
+        "reported, never rewritten."
     ),
     "matrix.status": (
         "Report the live Matrix inventory: discovered tools and hooks, load errors, "
