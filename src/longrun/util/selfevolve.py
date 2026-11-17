@@ -1445,6 +1445,13 @@ def promote(proposal_dir, skills_dir=None, c=None, human=False, purpose="",
         g = heldout.gate(proposal_dir, c=c)
         if not g.get("green"):
             why = str(g.get("reason") or "")
+            if why == "canary_tripped":
+                # PROCTOR §5.5 (S-2026-11-18-007): a canary is a held-out case no
+                # honest candidate can pass, so a PASS on it is evidence of label or
+                # sandbox leakage, not of quality — refuse, and name the canary.
+                return {"ok": False, "canary": g.get("canary"), "gate": g,
+                        "error": "canary integrity: an unpassable case passed — "
+                                 "refusing promotion (suspected label/sandbox leakage)"}
             # v645: "no_manifest" is not a defect of the draft — it means the
             # sealed judge suite was never installed, so NOTHING can be promoted
             # (the automatic path fails the same way). Say that instead of
