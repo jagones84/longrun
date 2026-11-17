@@ -725,20 +725,60 @@ def severity_for(family, count, sessions, repeats=0):
     return "warning" if (family == "gate" and sev == "error") else sev
 
 
-def session_failures(sessions_dir=None, limit=200, max_sessions=400):
+def _since_epoch(value):
+    """A window bound as an epoch, or None for "all time".
+
+    Round 28. Accepts an epoch (int/float/numeric string) or an ISO date/time
+    (`YYYY-MM-DD`, `YYYY-MM-DDTHH:MM`, `YYYY-MM-DD HH:MM[:SS]`, local time).
+    Anything else is "all time": a read of the register is never refused because
+    of a lenient query — the answer always states the window it used.
+    """
+    if value is None or value == "" or value == 0 or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    s = str(value).strip()
+    try:
+        return float(s)
+    except ValueError:
+        pass
+    for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M:%S",
+                "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+        try:
+            return time.mktime(time.strptime(s, fmt))
+        except ValueError:
+            continue
+    return None
+
+
+def session_failures(sessions_dir=None, limit=200, max_sessions=400, since=None):
     """Rank failure classes from the LIVE session cards — the traces agents made.
 
     `failure_candidates` read only the harness run records: measured 2026-11-18,
     **4** records against **2704** cards / **155** failures in 138 sessions, so the
     ranking saw a few percent of the evidence. This is the same (tool, class)
     grouping over the store the agent itself writes, newest sessions first.
+
+    `since` is the window (session-file mtime): a class fixed in code stays at the
+    top of an all-time read forever, so the post-adoption question — "is this
+    still happening?" — needs a bound. The answer carries the epoch it used.
     """
     from longrun.util import runtree
     root = sessions_dir or paths.SESSIONS_DIR
+    since_ts = _since_epoch(since)
     try:
-        entries = [e for e in os.scandir(root) if e.name.endswith(".json")]
+        entries = []
+        for e in os.scandir(root):
+            if not e.name.endswith(".json"):
+                continue
+            try:
+                mt = e.stat().st_mtime
+            except OSError:
+                continue
+            if since_ts is None or mt >= since_ts:
+                entries.append(e)
     except OSError:
-        return {"ok": True, "classes": [], "sessions": 0}
+        return {"ok": True, "classes": [], "sessions": 0, "since": since_ts}
     entries.sort(key=lambda e: e.stat().st_mtime, reverse=True)
     entries = entries[:max(1, int(max_sessions or 400))]
     buckets, scanned = {}, 0
@@ -788,11 +828,11 @@ def session_failures(sessions_dir=None, limit=200, max_sessions=400):
             for (t, e), v in buckets.items()]
     rows.sort(key=lambda r: (-r["count"], r["tool"], r["error"]))
     return {"ok": True, "classes": rows[:max(1, int(limit or 200))],
-            "sessions": scanned}
+            "sessions": scanned, "since": since_ts}
 
 
 def failure_candidates(path=None, limit=10, min_count=1, include_sessions=False,
-                       sessions_dir=None, max_sessions=400):
+                       sessions_dir=None, max_sessions=400, since=None):
     """Rank failure CLASSES from the durable run records (AHE 2604.25850).
 
     `mine()` only sees habits: a tool sequence repeated `min_count` times. A
@@ -809,6 +849,10 @@ def failure_candidates(path=None, limit=10, min_count=1, include_sessions=False,
     evidence. The flag is explicit because a test that pins record counts must
     not start reading an operator's store.
 
+    `since` bounds BOTH corpora by the file's mtime (see `session_failures`): the
+    post-adoption read needs a date, because an all-time ranking never tells a
+    reader whether the fix landed. The answer carries the epoch it used.
+
     Every row is LABELLED (`family`, `severity`, `action`, `check`) and the rows
     are also grouped into `issues` — one engineering issue per (tool, family),
     with the classes that support it (Signals, arXiv:2611.04507). Data only:
@@ -816,6 +860,7 @@ def failure_candidates(path=None, limit=10, min_count=1, include_sessions=False,
     """
     from longrun.harness import record as rec_mod
     root = os.path.join(path or rec_mod.dir_path(), "runs")
+    since_ts = _since_epoch(since)
     try:
         names = sorted(os.listdir(root))[:1000]
     except OSError:
@@ -825,6 +870,12 @@ def failure_candidates(path=None, limit=10, min_count=1, include_sessions=False,
     for fn in names:
         if not fn.endswith(".json"):
             continue
+        if since_ts is not None:
+            try:
+                if os.path.getmtime(os.path.join(root, fn)) < since_ts:
+                    continue
+            except OSError:
+                continue
         rec = _read_json(os.path.join(root, fn))
         if not isinstance(rec, dict):
             continue
@@ -843,7 +894,8 @@ def failure_candidates(path=None, limit=10, min_count=1, include_sessions=False,
                 row["probe"] = str(step.get("error") or "")[:400]
     scanned = 0
     if include_sessions:
-        live = session_failures(sessions_dir=sessions_dir, max_sessions=max_sessions)
+        live = session_failures(sessions_dir=sessions_dir, max_sessions=max_sessions,
+                               since=since_ts)
         scanned = int(live.get("sessions") or 0)
         for cls in live.get("classes") or []:
             key = (str(cls.get("tool") or "?"), str(cls.get("error") or ""))
@@ -880,7 +932,7 @@ def failure_candidates(path=None, limit=10, min_count=1, include_sessions=False,
     issues = _issues_from(rows)
     return {"ok": True, "classes": rows[:max(1, int(limit or 10))],
             "issues": issues[:max(1, int(limit or 10))],
-            "runs": runs, "sessions": scanned}
+            "runs": runs, "sessions": scanned, "since": since_ts}
 
 
 def _issues_from(rows):

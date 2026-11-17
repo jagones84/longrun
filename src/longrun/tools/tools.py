@@ -2027,9 +2027,11 @@ def _self(args, run_id):
             # families with a severity, a fix and (when one exists) a check.
             from longrun.util import selfevolve as _se
             rep = _se.failure_candidates(
-                limit=(args or {}).get("limit") or 10, include_sessions=True)
+                limit=(args or {}).get("limit") or 10, include_sessions=True,
+                since=(args or {}).get("since"))
             info["failures"] = {"runs": rep.get("runs"),
                                 "sessions": rep.get("sessions"),
+                                "since": rep.get("since"),
                                 "issues": rep.get("issues") or [],
                                 "classes": rep.get("classes") or []}
             lines = []

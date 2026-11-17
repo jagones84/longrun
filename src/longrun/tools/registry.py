@@ -969,7 +969,7 @@ _SUBTOOL_FIELDS = {
         "info": [], "diagnose": [], "logs": ["session", "limit", "kind"],
         "context": ["session"], "tools": ["tool", "query"],
         "diagnostics": ["session", "model", "code", "source", "limit"],
-        "failures": ["limit"],
+        "failures": ["limit", "since"],
         "sj": ["session", "job"], "trace": ["session"],
     },
     "skills": {
@@ -1391,7 +1391,7 @@ _SUBTOOL_GUIDANCE = {
     "self.logs": "Read this session's event history; optional `kind` filter, `limit` (default 100) and `session`.",
     "self.context": "Report how full this session's context window is (tokens, budget, pct); optional `session`.",
     "self.diagnostics": "Run the Settings diagnostics report; filter with `code`, `source` or `model`; optional `session` and `limit`.",
-    "self.failures": "Rank the failure register across the live sessions: tool, family, severity, the fix and (when one exists) the check; optional `limit`.",
+    "self.failures": "Rank the failure register across the live sessions: tool, family, severity, the fix and (when one exists) the check; optional `limit` and `since` (ISO date/time or epoch — read only the sessions and records written at or after it, for a post-adoption check).",
     "self.sj": "List this session's Session Jobs (SJ…): deps, status and output; optional `job` for one and `session`.",
     "self.trace": "Show what the HARNESS did in a session: gates fired, context spent, replies repeated; optional `session`.",
     "skills.list": "List every skill in the skills tree with its one-line description. No arguments.",

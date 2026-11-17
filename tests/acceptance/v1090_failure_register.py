@@ -201,8 +201,8 @@ _enum = set(((registry.TOOL_SCHEMAS.get("self") or {})
              .get("properties", {}).get("action", {}) or {}).get("enum", []))
 check("F1 the `self` schema documents action=failures", "failures" in _enum,
       sorted(_enum))
-check("F2 the sub-tool field map names `limit`",
-      registry._SUBTOOL_FIELDS.get("self", {}).get("failures") == ["limit"],
+check("F2 the sub-tool field map names the fields it reads (round 28 added `since`)",
+      registry._SUBTOOL_FIELDS.get("self", {}).get("failures") == ["limit", "since"],
       registry._SUBTOOL_FIELDS.get("self", {}).get("failures"))
 check("F3 it has guidance",
       bool(registry._SUBTOOL_GUIDANCE.get("self.failures")), "")
