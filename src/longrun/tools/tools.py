@@ -2036,11 +2036,16 @@ def _self(args, run_id):
                                 "classes": rep.get("classes") or []}
             lines = []
             for iss in rep.get("issues") or []:
-                lines.append("[%s] %s · %s — %d in %d session(s): %s%s%s" % (
+                lines.append("[%s] %s · %s — %d in %d session(s): %s%s%s%s" % (
                     iss.get("severity"), iss.get("tool"), iss.get("family"),
                     iss.get("count"), iss.get("sessions"), iss.get("action"),
                     (" · %d retried" % int(iss.get("repeats") or 0))
                     if iss.get("repeats") else "",
+                    # Round 31: recovery is stated only where the corpus has
+                    # order (sessions); a run-record-only row says nothing.
+                    (" · %d/%d recovered" % (int(iss.get("recovered") or 0),
+                                             int(iss.get("count") or 0)))
+                    if iss.get("recovery_rate") is not None else "",
                     (" (check: %s)" % iss["check"]) if iss.get("check") else ""))
             info["failure_lines"] = lines
         elif action in ("sj", "session-jobs", "sessionjobs", "subjobs"):

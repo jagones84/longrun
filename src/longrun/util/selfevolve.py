@@ -806,23 +806,37 @@ def session_failures(sessions_dir=None, limit=200, max_sessions=400, since=None)
                 if isinstance(ec, int) and ec:
                     head = "exit=<n> (no error text)"
             seq.append((tool, head))
+        # Round 31 (AgentDebugX, arXiv:2607.18754 — Detect/Attribute/RECOVER/Rerun):
+        # "the step where an error surfaces is often not the one that caused it".
+        # The register counted every failed card as breakage; measured 2026-11-18,
+        # 111 of 158 (70 %) are followed by a SUCCESS of the same tool in the same
+        # stage — the agent recovered, and the class is a stumble, not a break.
+        # The rule is the trace tree's own (`runtree.onset`: same tool, same node);
+        # the run-record corpus has no order and therefore no recovery claim.
+        last_ok = {}
+        for j, c in enumerate(cards):
+            if not runtree.failed(c):
+                last_ok[(str(c.get("tool") or "?"), c.get("node"))] = j
         for i, (card, key) in enumerate(zip(cards, seq)):
             if not key:
                 continue
             tool, head = key
             row = buckets.setdefault((tool, head),
-                                     {"count": 0, "repeats": 0, "sessions": set(),
-                                      "samples": [], "probe": ""})
+                                     {"count": 0, "repeats": 0, "recovered": 0,
+                                      "sessions": set(), "samples": [], "probe": ""})
             row["count"] += 1
             row["sessions"].add(ent.name[:-5])
             if any(k == key for k in seq[i + 1:i + 4]):
                 row["repeats"] += 1
+            if last_ok.get((tool, card.get("node")), -1) > i:
+                row["recovered"] += 1
             if not row["probe"]:
                 row["probe"] = str(card.get("error") or card.get("result") or "")[:400]
             if len(row["samples"]) < 2:
                 row["samples"].append(
                     str(card.get("error") or card.get("result") or "")[:160])
     rows = [{"tool": t, "error": e, "count": v["count"], "repeats": v["repeats"],
+             "recovered": v["recovered"],
              "sessions": len(v["sessions"]), "samples": v["samples"],
              "probe": v.get("probe") or ""}
             for (t, e), v in buckets.items()]
@@ -886,7 +900,8 @@ def failure_candidates(path=None, limit=10, min_count=1, include_sessions=False,
             tool = str(step.get("tool") or "?")
             head = error_class(step.get("error"))
             row = buckets.setdefault((tool, head), {"count": 0, "repeats": 0,
-                                                    "runs": set(), "sessions": 0,
+                                                    "recovered": 0, "runs": set(),
+                                                    "sessions": 0,
                                                     "samples": [], "probe": ""})
             row["count"] += 1
             row["runs"].add(fn[:-5])
@@ -900,10 +915,12 @@ def failure_candidates(path=None, limit=10, min_count=1, include_sessions=False,
         for cls in live.get("classes") or []:
             key = (str(cls.get("tool") or "?"), str(cls.get("error") or ""))
             row = buckets.setdefault(key, {"count": 0, "repeats": 0,
-                                           "runs": set(), "sessions": 0,
+                                           "recovered": 0, "runs": set(),
+                                           "sessions": 0,
                                            "samples": [], "probe": ""})
             row["count"] += int(cls.get("count") or 0)
             row["repeats"] += int(cls.get("repeats") or 0)
+            row["recovered"] += int(cls.get("recovered") or 0)
             row["sessions"] = max(row["sessions"], int(cls.get("sessions") or 0))
             row["samples"] = (row["samples"] + list(cls.get("samples") or []))[:2]
             if not row["probe"]:
@@ -919,6 +936,11 @@ def failure_candidates(path=None, limit=10, min_count=1, include_sessions=False,
                      "tool": tool, "error": head, "count": v["count"],
                      "repeats": v.get("repeats", 0),
                      "retry_rate": retry_signal(v.get("repeats", 0), v["count"]),
+                     "recovered": v.get("recovered", 0),
+                     # None = the corpus cannot see order (run records only);
+                     # 0.0 is a measured "never recovered".
+                     "recovery_rate": (None if not in_sessions else
+                                       retry_signal(v.get("recovered", 0), v["count"])),
                      "runs": len(v["runs"]), "sessions": v["sessions"],
                      "source": ("both" if in_runs and in_sessions else
                                 "sessions" if in_sessions else "runs"),
@@ -941,11 +963,12 @@ def _issues_from(rows):
     for r in rows:
         key = (r["tool"], r["family"])
         g = grouped.setdefault(key, {"tool": r["tool"], "family": r["family"],
-                                     "count": 0, "repeats": 0, "sessions": 0,
-                                     "runs": 0, "classes": [], "source": set(),
-                                     "samples": []})
+                                     "count": 0, "repeats": 0, "recovered": 0,
+                                     "sessions": 0, "runs": 0, "classes": [],
+                                     "source": set(), "samples": []})
         g["count"] += int(r["count"] or 0)
         g["repeats"] += int(r.get("repeats") or 0)
+        g["recovered"] += int(r.get("recovered") or 0)
         g["sessions"] = max(g["sessions"], int(r["sessions"] or 0))
         g["runs"] = max(g["runs"], int(r["runs"] or 0))
         g["source"].add(r["source"])
@@ -953,7 +976,8 @@ def _issues_from(rows):
             if len(g["samples"]) < 2 and s not in g["samples"]:
                 g["samples"].append(s)
         g["classes"].append({"error": r["error"], "count": r["count"],
-                             "repeats": int(r.get("repeats") or 0)})
+                             "repeats": int(r.get("repeats") or 0),
+                             "recovered": int(r.get("recovered") or 0)})
     out = []
     for (tool, family), g in grouped.items():
         g["classes"] = sorted(g["classes"], key=lambda c: -c["count"])[:3]
@@ -967,6 +991,10 @@ def _issues_from(rows):
                     "count": g["count"], "sessions": g["sessions"],
                     "repeats": g["repeats"],
                     "retry_rate": retry_signal(g["repeats"], g["count"]),
+                    "recovered": g["recovered"],
+                    # None = no session corpus in this read (runs only).
+                    "recovery_rate": (None if not g["sessions"] else
+                                      retry_signal(g["recovered"], g["count"])),
                     "runs": g["runs"],
                     "source": ("both" if "both" in g["source"] else
                                "sessions" if "sessions" in g["source"] else "runs"),
@@ -1002,10 +1030,21 @@ def _repair_md(prop):
                "(retry rate %s) — the hint beside it did not land.\n\n"
                % (prop.get("repeats"), prop.get("count"),
                   prop.get("retry_rate"))) if prop.get("repeats") else ""
+    # Round 31: recovery is measured only where the corpus has ORDER (sessions);
+    # a run-record-only row says nothing instead of claiming "never recovered".
+    recovery = ""
+    if prop.get("recovery_rate") is not None:
+        rec, cnt = int(prop.get("recovered") or 0), int(prop.get("count") or 0)
+        recovery = ("**Recovered:** %d of %d — %s.\n\n"
+                    % (rec, cnt,
+                       "a later call of the same tool succeeded in the same stage "
+                       "(a stumble, not a break)" if rec else
+                       "no later success of the same tool in the same stage"))
     return (
         "# Repair: %s · %s\n\n"
         "**Severity:** %s — **%s** failure(s) in **%s** session(s) "
         "(source: %s).\n\n"
+        "%s"
         "%s"
         "%s"
         "## What fails\n\n%s\n\n"
@@ -1019,7 +1058,7 @@ def _repair_md(prop):
         "`self.failures` (or run the check) to prove the issue is gone.\n"
         % (prop.get("tool"), prop.get("family"),
            prop.get("severity"), prop.get("count"), prop.get("sessions"),
-           prop.get("source"), window, retried, rows,
+           prop.get("source"), window, retried, recovery, rows,
            ("```\n%s\n```\n\n" % samples) if samples else "",
            prop.get("action") or "(no remedy recorded)",
            ("Run `%s` after the fix; it is the test that proves this family of "
@@ -1067,6 +1106,8 @@ def issue_drafts(out_dir, limit=5, min_severity="warning", sessions_dir=None,
                 "family": iss.get("family"), "severity": iss.get("severity"),
                 "count": iss.get("count"), "sessions": iss.get("sessions"),
                 "repeats": iss.get("repeats"), "retry_rate": iss.get("retry_rate"),
+                "recovered": iss.get("recovered"),
+                "recovery_rate": iss.get("recovery_rate"),
                 "runs": iss.get("runs"), "source": iss.get("source"),
                 "since": rep.get("since"),
                 "classes": iss.get("classes") or [], "samples": iss.get("samples") or [],
