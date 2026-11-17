@@ -801,9 +801,33 @@ class MCPClientManager:
         # gateway was connected with 26 tools.
         with self._lock:
             live_tools = {}
+            # Round 50 (arXiv:2611.21577 — tool-provider misbinding): the PROVIDER
+            # is part of the identity, and `client__tool` is only unambiguous while
+            # the client key is unique after lowercasing and never carries the `__`
+            # separator. Two keys that differ only by case used to collapse onto
+            # the same name and the LAST writer won silently; a key containing
+            # `__` can spell another client's namespace. Both are refused here,
+            # loudly, instead of being resolved by dict order.
+            owners = {}
             for cname, session in list(self.sessions.items()):
                 if not getattr(session, "connected", True):
                     continue
+                key = str(cname).strip().lower()
+                if "__" in key:
+                    self._errors.setdefault(
+                        cname, "client name contains '__', the provider separator — "
+                               "rename it so a call cannot be misbound to another server")
+                    log("%s: %s", cname, self._errors[cname])
+                    continue
+                prev = owners.get(key)
+                if prev is not None and prev != cname:
+                    self._errors.setdefault(
+                        cname, "provider name collides with %r after lowercasing — "
+                               "rename one of them so a call cannot be misbound"
+                               % prev)
+                    log("%s: %s", cname, self._errors[cname])
+                    continue
+                owners[key] = cname
                 for tname, tspec in list(
                         (getattr(session, "tools", None) or {}).items()):
                     if not tspec:
