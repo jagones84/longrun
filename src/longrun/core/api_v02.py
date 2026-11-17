@@ -2813,6 +2813,40 @@ def handle(handler, method, path, qs, body):
                 _changed = sorted((body.get("approvals") or {}).keys()) or [body.get("tool") or "policy"]
                 _publish("policy.changed", actor="operator", keys=_changed)
             return _r(handler, 200, _res)
+        if path.startswith("/api/sessions/") and path.endswith("/counterfactual"):
+            # HD-1: change ONE fact of a recorded read-only call, re-execute it
+            # through the same gate, and report whether the observation moved
+            # (CausalFlow, arXiv:2605.25338). The workspace is the LIVE tree, so
+            # the answer carries that caveat instead of implying a frozen state.
+            sid = path[len("/api/sessions/"):-len("/counterfactual")].strip("/")
+            b = body or {}
+            handle = str(b.get("handle") or "").strip()
+            if not handle:
+                return _r(handler, 400, {"error": "handle required (a card #id)"})
+            ws, sess = _session_ws(sid)
+            if not sess:
+                return _r(handler, 404, {"error": "session not found"})
+            card = _srv().card_by_handle(sess, handle)
+            if card is None:
+                return _r(handler, 404, {"error": "no card with that handle"})
+            from longrun.harness import counterfactual as _cf
+            plan = _cf.plan(card, b.get("change") if "change" in b else b.get("args"))
+            if plan.get("error"):
+                return _r(handler, 400, plan)
+            res = gated_call(plan["tool"], plan["args"], run_id=sid,
+                             wait=b.get("wait", True), by="counterfactual",
+                             workspace=ws, obs_max=_chat_obs_full())
+            out = res.get("result") if isinstance(res, dict) else None
+            cmp_ = _cf.compare(card, out if isinstance(out, dict) else {},
+                               (res or {}).get("observation") or "")
+            _publish("counterfactual.run", session=sid, tool=plan["tool"],
+                     handle=handle, changed=plan["changed"], same=cmp_["same"])
+            return _r(handler, 200, {"ok": True, "session": sid, "handle": handle,
+                                     "fidelity": "live-tree",
+                                     "caveat": "the workspace is the current tree, "
+                                               "not the tree at the card's ts",
+                                     "plan": plan, "execution": res,
+                                     "compare": cmp_})
         if path == "/api/tools/call":
             tool = body.get("tool")
             if not tool:
@@ -4944,6 +4978,19 @@ def _session_ws(session_id):
     except Exception:  # noqa: BLE001 — indexing is best-effort
         pass
     return ws, sess
+
+
+def _chat_obs_full():
+    """The observation budget the chat loop renders with (`agent.CHAT_OBS_FULL`).
+
+    Read from the same config key so a counterfactual's observation is directly
+    comparable to the one the loop persisted — no second constant.
+    """
+    from longrun.model import context_limits as _cl
+    try:
+        return int(_cl.get("render_max"))
+    except Exception:  # noqa: BLE001 — a missing limit falls back to the renderer default
+        return 1600
 
 
 def _codebase_hint(ws, res):

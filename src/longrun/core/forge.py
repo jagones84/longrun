@@ -15,6 +15,7 @@ Usage:
                          | sessions fork ID [--at N] [--title T] [--model M]
                          | sessions use ID | sessions current | sessions history [ID]
                          | sessions card HANDLE (one tool card of the current session)
+                         | sessions counterfactual HANDLE --arg k=v (re-run one read-only call)
                          | sessions tree [ID] | sessions graph [ID]
                           | sessions reset ID | sessions clear ID | sessions model "SID MODEL"
   python3 forge.py docs status|plan "request"|spec "request"|approve|reject|unlock [--session ID]
@@ -992,6 +993,41 @@ def cmd_sessions(args):
             print("error:", out["error"], file=sys.stderr)
             sys.exit(1)
         print(json.dumps(out.get("card") or {}, indent=2, ensure_ascii=False))
+    elif args.action == "counterfactual":
+        # HD-1: change ONE argument of a recorded read-only call, re-execute it
+        # and report whether the observation moved (CausalFlow, 2605.25338).
+        ref = _current_session()
+        if not ref:
+            _no_current_session()
+        h = str(args.value or "").strip()
+        if not h:
+            print("usage: sessions counterfactual HANDLE --arg key=value [--arg k=v]",
+                  file=sys.stderr)
+            sys.exit(2)
+        change = {}
+        for item in (getattr(args, "arg", None) or []):
+            if "=" not in item:
+                print("--arg must be key=value: %r" % item, file=sys.stderr)
+                sys.exit(2)
+            k, v = item.split("=", 1)
+            try:
+                change[k] = json.loads(v)
+            except ValueError:
+                change[k] = v
+        if not change:
+            print("at least one --arg is required: the ONE fact to change",
+                  file=sys.stderr)
+            sys.exit(2)
+        out = req("POST", "/api/sessions/%s/counterfactual" % ref,
+                  {"handle": h, "change": change})
+        if out.get("error"):
+            print("error:", out["error"], file=sys.stderr)
+            sys.exit(1)
+        cmp_ = out.get("compare") or {}
+        print("%s  changed=%s  fidelity=%s  (%s)"
+              % (cmp_.get("verdict"), ",".join(cmp_.get("changed") or []) or "-",
+                 out.get("fidelity"), out.get("caveat") or ""))
+        print(json.dumps(cmp_, indent=2, ensure_ascii=False))
     elif args.action in ("history", "graph", "tree"):
         ref = str(args.value or "").strip() or _current_session()
         if not ref:
@@ -1445,9 +1481,10 @@ def main():
     p = sub.add_parser("swarm"); p.add_argument("goal"); p.add_argument("--n-workers", type=int, default=3); \
         p.add_argument("--max-steps", type=int, default=None); p.set_defaults(fn=cmd_swarm)
     sub.add_parser("paperclip-bot").set_defaults(fn=cmd_paperclip_bot)
-    p = sub.add_parser("sessions"); p.add_argument("action", choices=["ls", "new", "fork", "rm", "use", "current", "history", "card", "graph", "tree", "reset", "clear", "model"]); \
+    p = sub.add_parser("sessions"); p.add_argument("action", choices=["ls", "new", "fork", "rm", "use", "current", "history", "card", "counterfactual", "graph", "tree", "reset", "clear", "model"]); \
         p.add_argument("value", nargs="?"); p.add_argument("--workspace"); \
         p.add_argument("--at"); p.add_argument("--title"); p.add_argument("--model"); \
+        p.add_argument("--arg", action="append"); \
         p.set_defaults(fn=cmd_sessions)
     p = sub.add_parser("docs"); p.add_argument("action", choices=["status", "plan", "spec", "approve", "implement", "reject", "unlock"]); \
         p.add_argument("value", nargs="?"); p.add_argument("--session"); \

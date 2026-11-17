@@ -111,6 +111,7 @@ See `integrations/paperclip/README.md` for the adapter install and configuration
 | `sessions rm ID` | `DELETE /api/sessions/<id>` |
 | `sessions history [ID]` | `GET /api/history?session=ID` (ID omitted → current) |
 | `sessions card HANDLE` | `GET /api/history?session=<current>&card=<handle>` (ONE tool card by the handle the compacted manifest prints: `#id`, or `t<ms>` for a card persisted before ids) |
+| `sessions counterfactual HANDLE --arg k=v` | `POST /api/sessions/<id>/counterfactual` (change ONE argument of a recorded **read-only** call, re-execute it through the same gate, report `same-observation` / `different-observation`; a mutating card is refused) |
 | `sessions graph [ID]` | `GET /api/sessions/<id>/graph` |
 | `sessions tree [ID]` | `GET /api/sessions/<id>/trace-tree` |
 | `sessions reset ID` | `POST /api/sessions/<id>/graph/reset` |
@@ -121,6 +122,7 @@ python3 forge.py sessions new "probe docs" --workspace /tmp/lr-probe   # becomes
 python3 forge.py sessions current
 python3 forge.py sessions history              # no id: the current session
 python3 forge.py sessions card 3f2a91c4        # one tool card by its manifest handle
+python3 forge.py sessions counterfactual 3f2a91c4 --arg path=README.md   # one fact changed
 python3 forge.py sessions fork 4f503dc92a29 --at 12 --model gpt-local   # A/B arm
 python3 forge.py sessions use 4f503dc92a29
 python3 forge.py sessions tree                 # stage→step tree + the first failed step
@@ -540,6 +542,7 @@ are aliases of the same verbs.
 | POST | `/api/context/preview` | `context preview` |
 | POST | `/api/sessions` | `sessions new` |
 | POST | `/api/sessions/<id>/fork` | `sessions fork` |
+| POST | `/api/sessions/<id>/counterfactual` | `sessions counterfactual HANDLE --arg k=v` (one read-only call re-executed with one fact changed) |
 | POST | `/api/docs/plan` | `docs plan` |
 | POST | `/api/docs/spec` | `docs spec` |
 | POST | `/api/docs/approve` | `docs approve [--implement]` |
