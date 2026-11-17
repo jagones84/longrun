@@ -221,6 +221,10 @@ def _shell_hinted(args, run_id):
     heredoc rule keeps precedence, and a failure that matches neither comes back
     byte-identical.
 
+    Round 25 puts the ROOT CAUSE first: a call killed at `timeout_secs` carries
+    the `background: true` + `action=status` escape hatch (10 such failures in 6
+    sessions), and a timed-out heredoc is a timeout, not a quoting problem.
+
     The rule lives here, not inside `_shell`, because `_shell` is pinned by v595
     as the function that resolves the session trust and skips the host terminal
     for a locked session; a wrapper keeps that source contract intact.
@@ -228,12 +232,25 @@ def _shell_hinted(args, run_id):
     res = _shell(args, run_id)
     try:
         cmd = str(args.get("command") or "")
-        if isinstance(res, dict) and not res.get("ok") and "<<" in cmd:
+        failed = isinstance(res, dict) and not res.get("ok")
+        # Round 25: the measured loop behind `shell.exec · timeout` (10 in 6
+        # sessions). The call was killed at `timeout_secs` and the retry did the
+        # same thing; the observation now names the escape hatch the register's
+        # own remedy already states. The ROOT CAUSE goes first: a timed-out
+        # heredoc is a timeout, not a quoting problem.
+        if failed and res.get("timed_out"):
+            res.setdefault(
+                "hint", "the command hit `timeout_secs` and was interrupted; the "
+                        "partial output above is what it printed. For work that "
+                        "needs longer, start it with `background: true` (the call "
+                        "returns a job id at once) and poll it with "
+                        "`{action:\"status\", job:\"<id>\"}`")
+        if failed and "<<" in cmd and not res.get("hint"):
             res.setdefault(
                 "hint", "a heredoc in `command` failed and its program was never "
                         "run: write the script with fs.write to a FILE, then run "
                         "`python3 <file>` (or use python.run)")
-        if isinstance(res, dict) and not res.get("ok") and not res.get("hint"):
+        if failed and not res.get("hint"):
             said = ("%s %s %s" % (res.get("stderr") or "", res.get("stdout") or "",
                                   res.get("error") or "")).lower()
             for needles, hint in _DIALECT_HINTS:
