@@ -2630,11 +2630,14 @@ def _render_transcript(sess, limit=30, tail=False):
     JSON — unusable in context — so "why is coder 1 failing" stayed unanswerable.
     """
     evs = []
-    for m in sess.get("messages", []) or []:
-        evs.append((m.get("ts") or 0,
-                    "%s: %s" % (str(m.get("role", "?")).upper(),
-                                _truncate(provenance.escape_role_labels(
-                                    str(m.get("content", "")).strip()), 2000))))
+    # Round 19: a message prints its INDEX, because that is the address
+    # `sessions.model_counterfactual` intervenes on. Without it the agent could
+    # read a transcript but never name the message it wanted to change.
+    for _i, _m in enumerate(sess.get("messages", []) or []):
+        evs.append((_m.get("ts") or 0,
+                    "#%d %s: %s" % (_i, str(_m.get("role", "?")).upper(),
+                                    _truncate(provenance.escape_role_labels(
+                                        str(_m.get("content", "")).strip()), 2000))))
     for c in sess.get("tool_cards", []) or []:
         body = c.get("error") or c.get("result") or ""
         ec = c.get("exit_code")

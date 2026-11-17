@@ -518,7 +518,8 @@ _LEGACY_SCHEMAS = {
             "index": {"type": "integer",
                       "description": ("action=model_counterfactual: the 0-based "
                                       "position of the message to replace in the "
-                                      "stored transcript (-1 = the last message). It "
+                                      "stored transcript, printed as `#N` by "
+                                      "action=read (-1 = the last message). It "
                                       "must be a USER message (an observation/nudge) "
                                       "followed by an assistant action.")},
             "model": {"type": "string",
@@ -1383,8 +1384,8 @@ _SUBTOOL_GUIDANCE = {
     "sessions.list": "List other sessions with agent, title, age and running state; optional `query` and `limit`.",
     "sessions.card": "Dereference ONE recorded tool call by its `#handle` (the one the compacted manifest prints): full args, error and result, no re-execution.",
     "sessions.counterfactual": "Change ONE fact of a recorded PURE call and replay it through the same gate; reports whether the observation moved (`same-observation` / `different-observation`). A write is refused, never replayed.",
-    "sessions.model_counterfactual": "Replace ONE message of the stored transcript (`index`, -1 = last) and re-ask the model; reports whether its next action changed (`same-action` / `different-action`). Nothing executes; costs one model call.",
-    "sessions.read": "Read one session's full transcript (messages, tool calls, results, injections) in order; `session` required, `limit`/`tail` bound it.",
+    "sessions.model_counterfactual": "Replace ONE message of the stored transcript (`index` = the `#N` from `sessions.read`, -1 = last) and re-ask the model; reports whether its next action changed (`same-action` / `different-action`). Nothing executes; costs one model call.",
+    "sessions.read": "Read one session's full transcript in order — messages carry their `#N` index (the address `model_counterfactual` takes); `session` required, `limit`/`tail` bound it.",
     "sessions.compact": "Compact one session now; `session` (or `to`) selects it, `force=true` only when the operator explicitly asked to compact early.",
     "sessions.reset": "Clear one session's transcript and start it fresh; `session` (or `to`) is required. Destructive and irreversible.",
     "chapters.list": "List this session's thread groups in order with ids, ranges, previews and justifications; optional `session`.",
