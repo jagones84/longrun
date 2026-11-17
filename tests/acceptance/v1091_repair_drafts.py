@@ -136,9 +136,9 @@ _enum = set(((registry.TOOL_SCHEMAS.get("improve") or {})
              .get("properties", {}).get("action", {}) or {}).get("enum", []))
 check("E1 the `improve` schema documents action=repairs", "repairs" in _enum,
       sorted(_enum))
-check("E2 its fields are the two it reads",
+check("E2 its fields are the ones it reads (round 29 added `since`)",
       registry._SUBTOOL_FIELDS.get("improve", {}).get("repairs")
-      == ["limit", "min_severity"]
+      == ["limit", "min_severity", "since"]
       and registry._SUBTOOL_REQUIRED.get("improve.repairs") == [],
       (registry._SUBTOOL_FIELDS.get("improve", {}).get("repairs"),
        registry._SUBTOOL_REQUIRED.get("improve.repairs")))

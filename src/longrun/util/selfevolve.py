@@ -990,6 +990,12 @@ def _repair_md(prop):
         for c in (prop.get("classes") or []))
     samples = "\n".join("  - %s" % s for s in (prop.get("samples") or []))
     check = prop.get("check")
+    # Round 29: a draft says the SCOPE of its evidence — an all-time count and a
+    # windowed count are different claims, and a repair written today should
+    # target what is still happening.
+    window = ("**Window:** sessions and records written since %s.\n\n"
+              % time.strftime("%Y-%m-%d %H:%M", time.localtime(float(prop["since"])))
+              ) if prop.get("since") else "**Window:** the whole store (all time).\n\n"
     # Round 26: the retry count is the evidence that the hint beside this class
     # was not enough — stated once, in the header, only when it was measured.
     retried = ("**Retried:** %s of %s failures came back in the same shape "
@@ -1000,6 +1006,7 @@ def _repair_md(prop):
         "# Repair: %s · %s\n\n"
         "**Severity:** %s — **%s** failure(s) in **%s** session(s) "
         "(source: %s).\n\n"
+        "%s"
         "%s"
         "## What fails\n\n%s\n\n"
         "%s"
@@ -1012,7 +1019,7 @@ def _repair_md(prop):
         "`self.failures` (or run the check) to prove the issue is gone.\n"
         % (prop.get("tool"), prop.get("family"),
            prop.get("severity"), prop.get("count"), prop.get("sessions"),
-           prop.get("source"), retried, rows,
+           prop.get("source"), window, retried, rows,
            ("```\n%s\n```\n\n" % samples) if samples else "",
            prop.get("action") or "(no remedy recorded)",
            ("Run `%s` after the fix; it is the test that proves this family of "
@@ -1022,7 +1029,7 @@ def _repair_md(prop):
 
 
 def issue_drafts(out_dir, limit=5, min_severity="warning", sessions_dir=None,
-                 max_sessions=400):
+                 max_sessions=400, since=None):
     """Write one REPAIR draft per failure issue — the register turned into work.
 
     Round 22. `mine()` drafts a repeated SEQUENCE; the register names a FAILURE
@@ -1031,10 +1038,15 @@ def issue_drafts(out_dir, limit=5, min_severity="warning", sessions_dir=None,
     above `min_severity`, never twice for the same issue id, and executes
     nothing: the draft is material for the optimizer/operator, and every write
     still goes through the normal gate.
+
+    Round 29: `since` scopes the evidence (see `failure_candidates`) and travels
+    into the draft — `proposal.json` carries the epoch and `REPAIR.md` states the
+    window, so an all-time count can never be mistaken for "still happening".
     """
     floor = _SEV_RANK.get(str(min_severity or "warning"), 1)
     rep = failure_candidates(limit=200, include_sessions=True,
-                             sessions_dir=sessions_dir, max_sessions=max_sessions)
+                             sessions_dir=sessions_dir, max_sessions=max_sessions,
+                             since=since)
     issues = [i for i in (rep.get("issues") or [])
               if _SEV_RANK.get(i.get("severity"), 3) <= floor]
     written, skipped = [], []
@@ -1056,6 +1068,7 @@ def issue_drafts(out_dir, limit=5, min_severity="warning", sessions_dir=None,
                 "count": iss.get("count"), "sessions": iss.get("sessions"),
                 "repeats": iss.get("repeats"), "retry_rate": iss.get("retry_rate"),
                 "runs": iss.get("runs"), "source": iss.get("source"),
+                "since": rep.get("since"),
                 "classes": iss.get("classes") or [], "samples": iss.get("samples") or [],
                 "action": iss.get("action"), "check": iss.get("check"),
                 "created": round(time.time(), 3), "origin": "auto",
@@ -1074,7 +1087,8 @@ def issue_drafts(out_dir, limit=5, min_severity="warning", sessions_dir=None,
                         "check": prop["check"]})
     return {"ok": True, "dir": out_dir, "written": written, "skipped": skipped,
             "issues": len(issues), "severity": str(min_severity),
-            "runs": rep.get("runs"), "sessions": rep.get("sessions")}
+            "runs": rep.get("runs"), "sessions": rep.get("sessions"),
+            "since": rep.get("since")}
 
 
 def mine_history(out_dir, c=None, path=None, note=""):

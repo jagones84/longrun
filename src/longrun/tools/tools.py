@@ -2462,7 +2462,8 @@ def _improve(args, run_id=None):
         out = os.path.join(improve.PROPOSAL_DIR, "repairs")
         rep = selfevolve.issue_drafts(
             out, limit=max(1, min(limit, 20)),
-            min_severity=str(args.get("min_severity") or "warning").strip().lower())
+            min_severity=str(args.get("min_severity") or "warning").strip().lower(),
+            since=args.get("since"))
         if not rep.get("ok"):
             return rep
         lines = ["%-9s %-18s %-16s %3d in %2d session(s)%-16s%s → %s"
@@ -2473,12 +2474,21 @@ def _improve(args, run_id=None):
                     (" (check: %s)" % w["check"]) if w.get("check") else "",
                     w.get("issue"))
                  for w in rep.get("written") or []]
+        # Round 29: an answer must name the real reason. A re-run that found the
+        # issues but skipped them ("already drafted") used to answer "no issue at
+        # or above error" — false, and measured live on 2026-11-18.
+        if lines:
+            text = "\n".join(lines)
+        elif rep.get("skipped"):
+            text = ("(no new draft: %d issue(s) at or above %s already have one)"
+                    % (len(rep["skipped"]), rep.get("severity")))
+        else:
+            text = "(no issue at or above %s)" % rep.get("severity")
         return {"ok": True, "dir": rep.get("dir"), "written": rep.get("written"),
                 "skipped": rep.get("skipped"), "issues": rep.get("issues"),
                 "severity": rep.get("severity"), "runs": rep.get("runs"),
-                "sessions": rep.get("sessions"),
-                "stdout": ("\n".join(lines) if lines else
-                           "(no issue at or above %s)" % rep.get("severity"))}
+                "sessions": rep.get("sessions"), "since": rep.get("since"),
+                "stdout": text}
     # JAG-491: audit the WHOLE backlog (proposals + distilled lessons) with an LLM
     # against the current codebase. One implementation shared with the panel.
     if scope == "review" or action == "review":

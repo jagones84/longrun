@@ -1041,7 +1041,7 @@ _SUBTOOL_FIELDS = {
         # Round 14: the integrity check of the improvement ledger itself, and the
         # one repair it accepts (completing a trim interrupted by a crash).
         "ledger": ["repair"],
-        "repairs": ["limit", "min_severity"],
+        "repairs": ["limit", "min_severity", "since"],
     },
     "web": {
         "search": ["query", "queries", "max_results", "max_total", "days",
@@ -1305,7 +1305,9 @@ _SUBTOOL_GUIDANCE = {
     "improve.repairs": (
         "Turn the failure register into one draft per measured issue (severity, "
         "evidence, remedy and the check that proves it). Drafts only: nothing runs, "
-        "nothing is promoted. Optional `limit` and `min_severity` (error|warning|info)."
+        "nothing is promoted. Optional `limit`, `min_severity` (error|warning|info) "
+        "and `since` (ISO date/time or epoch — scope the evidence to what was written "
+        "at or after it; the draft states its window)."
     ),
     "matrix.status": (
         "Report the live Matrix inventory: discovered tools and hooks, load errors, "
