@@ -636,6 +636,24 @@ _GATEWAY_PREFIX = "pmcp__gateway."
 _GATEWAY_KEEP = ("catalog_search", "describe", "invoke")
 
 
+def _namespace_labels(counts):
+    """`ns(n)` labels for the discovery block, with promoted tools collapsed.
+
+    A self-evolving harness FORGES tools: each one is a `learned_<meaning>_<hash>`
+    namespace whose name is 40–60 chars, so the namespace map grew with every
+    forge (measured 2026-11-18: four of them, ~240 chars, and the block had just
+    crossed its 4200-char guard). They collapse to ONE `learned_*(n)` entry —
+    the block already says a namespace is a PREFIX and the member is found with
+    `self.tools {query:...}`, which matches `learned` in every such name.
+    """
+    labels = ["%s(%d)" % (ns, c) for ns, c in sorted(counts.items())
+              if not ns.startswith("learned_")]
+    forged = [(ns, c) for ns, c in counts.items() if ns.startswith("learned_")]
+    if forged:
+        labels.append("learned_*(%d)" % sum(c for _ns, c in forged))
+    return labels
+
+
 def tool_context():
     """Render the tool DISCOVERY contract + a NAMESPACE map for the prompt.
 
@@ -739,7 +757,7 @@ def tool_context():
         "TOOL — `grep` is only a PREFIX and is not callable; the callable name is "
         "a MEMBER (`grep.search`). Resolve the member with `self.tools "
         "{query:...}` before calling:",
-        "  " + " ".join("%s(%d)" % (ns, counts[ns]) for ns in sorted(counts)),
+        "  " + " ".join(_namespace_labels(counts)),
     ]
     if gw_collapsed:
         lines.append("  (+ %d more `%s*` tools — reach them via "

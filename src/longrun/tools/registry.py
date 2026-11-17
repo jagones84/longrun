@@ -289,12 +289,17 @@ _LEGACY_SCHEMAS = {
                         "fired with its count, the context it spent injecting them, and "
                         "the replies the model repeated (the loop signature). Use it to "
                         "find WASTED TURNS, which a transcript alone hides. "
+                        "action=failures: the FAILURE REGISTER — failed tool calls "
+                        "across the live sessions, grouped by tool and normalized "
+                        "error class, labelled into families with a severity, the fix "
+                        "and, when one exists, the check that proves it. Use it to see "
+                        "what keeps breaking instead of debugging one turn at a time. "
                         "Read-only, always safe, no external dependency."),
         "type": "object",
         "properties": {
             "action": {"type": "string",
                        "enum": ["info", "diagnose", "logs", "context", "tools",
-                                "diagnostics", "sj", "trace"],
+                                "diagnostics", "failures", "sj", "trace"],
                        "description": "what to report (default: info)"},
             "session": {"type": "string",
                         "description": "session id for action=logs|context|diagnostics|sj|trace (default: this run's session)"},
@@ -960,6 +965,7 @@ _SUBTOOL_FIELDS = {
         "info": [], "diagnose": [], "logs": ["session", "limit", "kind"],
         "context": ["session"], "tools": ["tool", "query"],
         "diagnostics": ["session", "model", "code", "source", "limit"],
+        "failures": ["limit"],
         "sj": ["session", "job"], "trace": ["session"],
     },
     "skills": {
@@ -1372,6 +1378,7 @@ _SUBTOOL_GUIDANCE = {
     "self.logs": "Read this session's event history; optional `kind` filter, `limit` (default 100) and `session`.",
     "self.context": "Report how full this session's context window is (tokens, budget, pct); optional `session`.",
     "self.diagnostics": "Run the Settings diagnostics report; filter with `code`, `source` or `model`; optional `session` and `limit`.",
+    "self.failures": "Rank the failure register across the live sessions: tool, family, severity, the fix and (when one exists) the check; optional `limit`.",
     "self.sj": "List this session's Session Jobs (SJ…): deps, status and output; optional `job` for one and `session`.",
     "self.trace": "Show what the HARNESS did in a session: gates fired, context spent, replies repeated; optional `session`.",
     "skills.list": "List every skill in the skills tree with its one-line description. No arguments.",
@@ -2549,7 +2556,8 @@ PLAN_READ_ONLY_TOOLS = frozenset({
     "process.list",
     "routine.get", "routine.list",
     "ruleaudit.list", "ruleaudit.scan",
-    "self.context", "self.diagnose", "self.diagnostics", "self.info", "self.logs",
+    "self.context", "self.diagnose", "self.diagnostics", "self.failures", "self.info",
+    "self.logs",
     "self.sj", "self.tools", "self.trace",
     "sessions.list", "sessions.read", "sessions.wait",
     "skills.audit", "skills.list", "skills.read", "skills.search",

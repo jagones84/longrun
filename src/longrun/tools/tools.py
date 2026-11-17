@@ -1972,6 +1972,25 @@ def _self(args, run_id):
                 code=(args or {}).get("code"),
                 source=(args or {}).get("source"),
                 limit=(args or {}).get("limit") or 50)
+        elif action in ("failures", "failure-register", "issues"):
+            # Round 21 (Signals, arXiv:2611.04507): the failure REGISTER reads the
+            # traces agents actually made — the same (tool, class) grouping the
+            # improver ranks by, plus the live session corpus, labelled into
+            # families with a severity, a fix and (when one exists) a check.
+            from longrun.util import selfevolve as _se
+            rep = _se.failure_candidates(
+                limit=(args or {}).get("limit") or 10, include_sessions=True)
+            info["failures"] = {"runs": rep.get("runs"),
+                                "sessions": rep.get("sessions"),
+                                "issues": rep.get("issues") or [],
+                                "classes": rep.get("classes") or []}
+            lines = []
+            for iss in rep.get("issues") or []:
+                lines.append("[%s] %s · %s — %d in %d session(s): %s%s" % (
+                    iss.get("severity"), iss.get("tool"), iss.get("family"),
+                    iss.get("count"), iss.get("sessions"), iss.get("action"),
+                    (" (check: %s)" % iss["check"]) if iss.get("check") else ""))
+            info["failure_lines"] = lines
         elif action in ("sj", "session-jobs", "sessionjobs", "subjobs"):
             # JAG-533/SJ: the SESSION-scoped job graph (the dependency-ordered
             # subagents of this chat). Not the multi-session Orbit jobs (those
@@ -1987,7 +2006,7 @@ def _self(args, run_id):
             info["trace"] = diag_mod.harness_trace((args or {}).get("session") or run_id)
         else:
             info["error"] = ("unknown action %r — use info|diagnose|logs|context|"
-                             "tools|diagnostics|sj|trace" % action)
+                             "tools|diagnostics|failures|sj|trace" % action)
     info["action"] = action
     return info
 

@@ -349,7 +349,10 @@ check("I4 the single-panel layout takes the full width and drops the column hand
 check("I5 the rail is wired on boot and restored from the last choice (v617)",
       'b.onclick = () => this.applyView(b.dataset.view)' in DECK
       and 'localStorage.getItem("orbit_view_v1")' in DECK
-      and "this.applyView(saved" in DECK)
+      # 2026-11-18: a guest panel window opens on ITS panel, so the boot call is
+      # `applyView(this.embedPanel || saved || ("view:" + …))` — the saved view
+      # still wins whenever the deck is not embedded.
+      and "this.applyView(this.embedPanel || saved" in DECK)
 
 # cleanup the probe agents so the shared stores stay clean
 for ref in (worker_id, boss_id):

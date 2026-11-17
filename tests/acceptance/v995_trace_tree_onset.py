@@ -166,9 +166,9 @@ FORGE = open(os.path.join(REPO, "src/longrun/core/forge.py"), encoding="utf-8").
 DOC = open(os.path.join(REPO, "docs/CLI.md"), encoding="utf-8").read()
 check("G1 the route is served", "/trace-tree" in HTTP and "_runtree.describe" in HTTP, "httpapi")
 check("G2 the CLI verb exists and calls it",
-      'req("GET", "/api/sessions/%s/trace-tree" % args.value)' in FORGE
-      and 'args.action == "tree"' in FORGE, "forge")
-check("G3 the CLI documents the verb", "sessions tree ID" in FORGE and "sessions tree" in DOC, "docs")
+      'req("GET", "/api/sessions/%s/trace-tree" % ref)' in FORGE
+      and 'elif args.action in ("history", "graph", "tree"):' in FORGE, "forge")
+check("G3 the CLI documents the verb", "sessions tree [ID]" in FORGE and "sessions tree" in DOC, "docs")
 check("G4 the failure class has ONE owner (no second normalizer)",
       "def error_class(" in open(os.path.join(REPO, "src/longrun/util/selfevolve.py"),
                                  encoding="utf-8").read()

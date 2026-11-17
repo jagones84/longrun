@@ -34,8 +34,13 @@ from longrun.plan import taskgraph
 from longrun.util import selfevolve
 
 
-def _failed(card):
-    """True when a card names a failure: a bad verdict, or a non-zero exit."""
+def failed(card):
+    """True when a card names a failure: a bad verdict, or a non-zero exit.
+
+    A card with NO verdict fails closed (measured 2026-11-18: all 2704 live cards
+    carry `ok`, so the default never fires on the real store). The failure
+    register (`selfevolve.session_failures`) uses this same predicate.
+    """
     if not card.get("ok"):
         return True
     ec = card.get("exit_code")
@@ -54,7 +59,7 @@ def steps(sess):
     cards.sort(key=lambda c: (c.get("ts") or 0, c.get("after") or 0))
     out = []
     for i, c in enumerate(cards, 1):
-        bad = _failed(c)
+        bad = failed(c)
         rec = {"i": i, "tool": str(c.get("tool") or "?"), "ok": not bad,
                "failed": bad,
                "exit_code": c.get("exit_code"),

@@ -91,6 +91,12 @@ check("A3d the block is COMPACT and free of a member catalogue",
       # member catalogue (the old dump was >10k chars), so it carries headroom
       # for a few more namespaces rather than being a byte target.
       len(tctx) < 4200, "%d chars" % len(tctx))
+# 2026-11-18: a self-evolving harness FORGES tools (`learned_<meaning>_<hash>`),
+# and each 40–60-char namespace name used to enter the map on every turn. They
+# now collapse to one entry; the member is reached with `self.tools {query}`.
+_ns_labels = api_v02._namespace_labels({"fs": 3, "learned_a": 2, "learned_b": 1})
+check("A3d2 promoted `learned_*` namespaces collapse to ONE entry",
+      _ns_labels == ["fs(3)", "learned_*(3)"], _ns_labels)
 _chat_tool_context = _server._tool_context()
 check("A3e chat assembly includes the discovery contract",
       "Tool discovery" in _chat_tool_context and "shell(" in _chat_tool_context)
@@ -155,11 +161,13 @@ check("A8b `self` advertises tool + query",
 # --------------------------- A8c web subtools expose conditional requirements -
 _web_search_schema = (registry.tool_spec("web.search") or {}).get("schema") or {}
 _web_fetch_schema = (registry.tool_spec("web.fetch") or {}).get("schema") or {}
-check("A8c web.search requires query in its discovered schema",
-      _web_search_schema.get("required") == ["query"],
+check("A8c web.search requires query OR batched queries (anyOf, no hard required)",
+      _web_search_schema.get("required") == []
+      and {"required": ["query"]} in (_web_search_schema.get("anyOf") or []),
       _web_search_schema.get("required"))
-check("A8d web.fetch requires url in its discovered schema",
-      _web_fetch_schema.get("required") == ["url"],
+check("A8d web.fetch requires url OR batched urls (anyOf, no hard required)",
+      _web_fetch_schema.get("required") == []
+      and {"required": ["url"]} in (_web_fetch_schema.get("anyOf") or []),
       _web_fetch_schema.get("required"))
 
 # --------------------------- A8e nested args and blank-value handling --------

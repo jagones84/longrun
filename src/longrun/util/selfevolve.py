@@ -10,6 +10,7 @@ sandbox verification cycle, next step).
 
 PURE module: no dependency on the server, unit-testable.
 """
+import hashlib
 import json
 import math
 import os
@@ -600,7 +601,102 @@ def error_class(text):
     return s[:80] or "(no error text)"
 
 
-def failure_candidates(path=None, limit=10, min_count=1):
+#: Deterministic LABELS over the class `error_class` already computes. They group
+#: classes into an engineering issue (Signals, arXiv:2611.04507) without a second
+#: grouping key: the class stays the identity of a row, the family names the fix.
+FAILURE_FAMILIES = (
+    ("permission", ("denied", "permission", "hard-deny", "not permitted",
+                    "refused", "protected")),
+    ("timeout", ("timeout", "timed out", "exit 124")),
+    ("missing-argument", ("missing required argument", "required:")),
+    ("not-found", ("no such file", "not found", "does not exist")),
+    ("syntax", ("traceback", "syntaxerror", "illegal option", "unexpected token",
+                "cannot find module")),
+    ("no-change", ("changed nothing", "no steps received")),
+)
+
+#: The ONE remediation and the check that would prove it per family. `check` names
+#: a test id only when one exists; None means "no check yet", never an invented id.
+FAMILY_FIX = {
+    "timeout": ("start long work with background=true and poll with action=status", None),
+    "missing-argument": ("re-read the tool's schema; the required key is named there", "v510"),
+    "not-found": ("confirm the path first (workspace list / sessions tree)", None),
+    "syntax": ("write the script with fs.write, then run the FILE (no heredoc)", "v747"),
+    "no-change": ("send the real steps in the update", None),
+    "permission": ("the policy denies it; use the allowed read path", "v1075"),
+    "nonzero-exit": ("read stderr in the observation and correct the command", None),
+    "tool-error": ("read the error text and fix the argument", None),
+}
+
+
+def failure_family(tool, head):
+    """The family label of one (tool, normalized error) class."""
+    s = str(head or "").lower()
+    for name, needles in FAILURE_FAMILIES:
+        if any(n in s for n in needles):
+            return name
+    return "nonzero-exit" if "exit=" in s else "tool-error"
+
+
+def _severity(count, sessions):
+    """The diagnostics vocabulary (error/warning/info), from reach and volume."""
+    if sessions >= 3 or count >= 10:
+        return "error"
+    if sessions >= 2 or count >= 3:
+        return "warning"
+    return "info"
+
+
+def session_failures(sessions_dir=None, limit=200, max_sessions=400):
+    """Rank failure classes from the LIVE session cards — the traces agents made.
+
+    `failure_candidates` read only the harness run records: measured 2026-11-18,
+    **4** records against **2704** cards / **155** failures in 138 sessions, so the
+    ranking saw a few percent of the evidence. This is the same (tool, class)
+    grouping over the store the agent itself writes, newest sessions first.
+    """
+    from longrun.util import runtree
+    root = sessions_dir or paths.SESSIONS_DIR
+    try:
+        entries = [e for e in os.scandir(root) if e.name.endswith(".json")]
+    except OSError:
+        return {"ok": True, "classes": [], "sessions": 0}
+    entries.sort(key=lambda e: e.stat().st_mtime, reverse=True)
+    entries = entries[:max(1, int(max_sessions or 400))]
+    buckets, scanned = {}, 0
+    for ent in entries:
+        sess = _read_json(ent.path)
+        if not isinstance(sess, dict):
+            continue
+        scanned += 1
+        for card in (sess.get("tool_cards") or []):
+            if not isinstance(card, dict) or not runtree.failed(card):
+                continue
+            tool = str(card.get("tool") or "?")
+            head = error_class(card.get("error") or card.get("result"))
+            if head == "(no error text)":
+                # A card can fail on its EXIT CODE alone; absence of text is not
+                # the class, the non-zero status is.
+                ec = card.get("exit_code")
+                if isinstance(ec, int) and ec:
+                    head = "exit=<n> (no error text)"
+            row = buckets.setdefault((tool, head),
+                                     {"count": 0, "sessions": set(), "samples": []})
+            row["count"] += 1
+            row["sessions"].add(ent.name[:-5])
+            if len(row["samples"]) < 2:
+                row["samples"].append(
+                    str(card.get("error") or card.get("result") or "")[:160])
+    rows = [{"tool": t, "error": e, "count": v["count"],
+             "sessions": len(v["sessions"]), "samples": v["samples"]}
+            for (t, e), v in buckets.items()]
+    rows.sort(key=lambda r: (-r["count"], r["tool"], r["error"]))
+    return {"ok": True, "classes": rows[:max(1, int(limit or 200))],
+            "sessions": scanned}
+
+
+def failure_candidates(path=None, limit=10, min_count=1, include_sessions=False,
+                       sessions_dir=None, max_sessions=400):
     """Rank failure CLASSES from the durable run records (AHE 2604.25850).
 
     `mine()` only sees habits: a tool sequence repeated `min_count` times. A
@@ -610,14 +706,24 @@ def failure_candidates(path=None, limit=10, min_count=1):
     groups failed steps by (tool, normalized error head), so the next draft can
     target a real failure instead of a coincidence.
 
-    Data only: turning a class into a draft is still a model/operator decision.
+    `include_sessions=True` merges the LIVE session tool cards into the same
+    (tool, class) buckets — the same grouping, one predicate (`runtune.failed`),
+    a second corpus. Measured 2026-11-18: 4 harness records vs 2704 session cards
+    (155 failures in 138 sessions), so the records alone are a few percent of the
+    evidence. The flag is explicit because a test that pins record counts must
+    not start reading an operator's store.
+
+    Every row is LABELLED (`family`, `severity`, `action`, `check`) and the rows
+    are also grouped into `issues` — one engineering issue per (tool, family),
+    with the classes that support it (Signals, arXiv:2611.04507). Data only:
+    turning an issue into a draft is still a model/operator decision.
     """
     from longrun.harness import record as rec_mod
     root = os.path.join(path or rec_mod.dir_path(), "runs")
     try:
         names = sorted(os.listdir(root))[:1000]
     except OSError:
-        return {"ok": True, "classes": [], "runs": 0}
+        names = []
     buckets = {}
     runs = 0
     for fn in names:
@@ -632,14 +738,74 @@ def failure_candidates(path=None, limit=10, min_count=1):
                 continue
             tool = str(step.get("tool") or "?")
             head = error_class(step.get("error"))
-            row = buckets.setdefault((tool, head), {"count": 0, "runs": set()})
+            row = buckets.setdefault((tool, head), {"count": 0, "runs": set(),
+                                                    "sessions": 0, "samples": []})
             row["count"] += 1
             row["runs"].add(fn[:-5])
-    rows = [{"tool": t, "error": e, "count": v["count"], "runs": len(v["runs"])}
-            for (t, e), v in buckets.items()]
+    scanned = 0
+    if include_sessions:
+        live = session_failures(sessions_dir=sessions_dir, max_sessions=max_sessions)
+        scanned = int(live.get("sessions") or 0)
+        for cls in live.get("classes") or []:
+            key = (str(cls.get("tool") or "?"), str(cls.get("error") or ""))
+            row = buckets.setdefault(key, {"count": 0, "runs": set(),
+                                           "sessions": 0, "samples": []})
+            row["count"] += int(cls.get("count") or 0)
+            row["sessions"] = max(row["sessions"], int(cls.get("sessions") or 0))
+            row["samples"] = (row["samples"] + list(cls.get("samples") or []))[:2]
+    rows = []
+    for (tool, head), v in buckets.items():
+        in_runs, in_sessions = bool(v["runs"]), bool(v["sessions"])
+        family = failure_family(tool, head)
+        action, check = FAMILY_FIX.get(family, FAMILY_FIX["tool-error"])
+        rows.append({"id": "fail-%s-%s-%s" % (
+                         re.sub(r"[^a-z0-9]+", "-", tool.lower()).strip("-") or "tool",
+                         family, hashlib.sha1(head.encode("utf-8")).hexdigest()[:6]),
+                     "tool": tool, "error": head, "count": v["count"],
+                     "runs": len(v["runs"]), "sessions": v["sessions"],
+                     "source": ("both" if in_runs and in_sessions else
+                                "sessions" if in_sessions else "runs"),
+                     "family": family, "severity": _severity(v["count"], v["sessions"]),
+                     "action": action, "check": check,
+                     "samples": v["samples"]})
     rows.sort(key=lambda r: (-r["count"], r["tool"], r["error"]))
     rows = [r for r in rows if r["count"] >= max(1, int(min_count or 1))]
-    return {"ok": True, "classes": rows[:max(1, int(limit or 10))], "runs": runs}
+    issues = _issues_from(rows)
+    return {"ok": True, "classes": rows[:max(1, int(limit or 10))],
+            "issues": issues[:max(1, int(limit or 10))],
+            "runs": runs, "sessions": scanned}
+
+
+def _issues_from(rows):
+    """Group classes into one issue per (tool, family), most severe first."""
+    grouped = {}
+    for r in rows:
+        key = (r["tool"], r["family"])
+        g = grouped.setdefault(key, {"tool": r["tool"], "family": r["family"],
+                                     "count": 0, "sessions": 0, "runs": 0,
+                                     "classes": [], "source": set()})
+        g["count"] += int(r["count"] or 0)
+        g["sessions"] = max(g["sessions"], int(r["sessions"] or 0))
+        g["runs"] = max(g["runs"], int(r["runs"] or 0))
+        g["source"].add(r["source"])
+        g["classes"].append({"error": r["error"], "count": r["count"]})
+    out = []
+    for (tool, family), g in grouped.items():
+        g["classes"] = sorted(g["classes"], key=lambda c: -c["count"])[:3]
+        action, check = FAMILY_FIX.get(family, FAMILY_FIX["tool-error"])
+        out.append({"id": "fail-%s-%s" % (
+                        re.sub(r"[^a-z0-9]+", "-", tool.lower()).strip("-") or "tool",
+                        family),
+                    "tool": tool, "family": family,
+                    "severity": _severity(g["count"], g["sessions"]),
+                    "count": g["count"], "sessions": g["sessions"],
+                    "runs": g["runs"],
+                    "source": ("both" if "both" in g["source"] else
+                               "sessions" if "sessions" in g["source"] else "runs"),
+                    "classes": g["classes"], "action": action, "check": check})
+    out.sort(key=lambda i: ({"error": 0, "warning": 1, "info": 2}.get(i["severity"], 3),
+                            -i["count"], i["tool"], i["family"]))
+    return out
 
 
 def mine_history(out_dir, c=None, path=None, note=""):
