@@ -913,6 +913,84 @@ def _case_command(case):
     return "python3 check.py" if not case or str(case) == "default" else str(case)
 
 
+# ------------------------------------------------------- verifier mutations ----
+# A check that exits 0 on EVERY input is not evidence. Measured 2026-11-18: 115
+# of 134 auto-skill proposals carried one structural boolean
+# (`verify.cases == {"default": true}`) as their whole verification, so the
+# promotion gate could not tell a real check from a vacuous one. Each mutation
+# below breaks ONE assumption of the artifact; the proposal's OWN check.py must
+# FAIL on every one of them or the artifact is not promotable. The stored case
+# table then says what the verifier can distinguish (`catches:<mutation>`), and
+# `promote`'s existing case gate consumes it unchanged.
+
+
+def _artifact_mutations(proposal_dir):
+    """[(case_id, mutated skill dict | None)] — [] when the artifact is not a skill.
+
+    Skills are the artifact kind with a generated `check.py` over `skill.json`;
+    other kinds (project/matrix) keep today's single-case verification.
+    """
+    try:
+        art = _read_json(os.path.join(proposal_dir, "skill.json"))
+    except Exception:  # noqa: BLE001 — an unreadable artifact is the check's job
+        art = None
+    if (not isinstance(art, dict)
+            or not os.path.isfile(os.path.join(proposal_dir, "check.py"))):
+        return []
+    out = [("catches:corrupt-json", None)]
+    steps = art.get("steps")
+    if isinstance(steps, list) and steps:
+        out.append(("catches:no-steps", dict(art, steps=[])))
+        first = steps[0] if isinstance(steps[0], dict) else {}
+        out.append(("catches:unknown-tool",
+                    dict(art, steps=[dict(first, tool="no.such.tool")]
+                         + list(steps[1:]))))
+    return out
+
+
+def mutation_report(proposal_dir, c=None):
+    """Is the artifact's check DISCRIMINATING? (cases, case_runs, applied).
+
+    Each mutation runs in a copy of the proposal folder, so the artifact and its
+    digest are untouched. `caught` = the check exited non-zero for that copy. A
+    sandbox error is NOT a catch (it would fabricate evidence), so it fails the
+    mutation case explicitly.
+    """
+    c = c or cfg()
+    muts = _artifact_mutations(proposal_dir)
+    if not muts:
+        return {}, {}, []
+    import shutil
+    import tempfile
+    cases, runs, applied = {}, {}, []
+    for cid, art in muts:
+        tmp = tempfile.mkdtemp(prefix="sev-mut-")
+        try:
+            for name in os.listdir(proposal_dir):
+                src = os.path.join(proposal_dir, name)
+                dst = os.path.join(tmp, name)
+                if os.path.isdir(src):
+                    shutil.copytree(src, dst)
+                else:
+                    shutil.copy2(src, dst)
+            target = os.path.join(tmp, "skill.json")
+            if art is None:
+                with open(target, "w", encoding="utf-8") as f:
+                    f.write("{not json")
+            else:
+                _write_json(target, art)
+            green, msg = _run_check(tmp, "python3 check.py", c)
+            caught = (not green) and not str(msg).startswith("sandbox error")
+            cases[cid] = caught
+            runs[cid] = {"passes": 1 if caught else 0, "runs": 1}
+            applied.append(cid)
+        except Exception:  # noqa: BLE001 — a mutation is evidence, never a crash
+            continue
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+    return cases, runs, applied
+
+
 def evaluate_cases(proposal_dir, cases, runner=None, c=None, repeats=1):
     """Run each case `repeats` times and return {case_id: {"passes", "runs"}}.
 
@@ -1090,7 +1168,10 @@ def verify(proposal_dir, runner=None, c=None, cases=None, baseline=None,
     away. The report also carries the artifact's prompt cost (`cost_tokens`) and
     the per-case execution counts (`case_runs`).
 
-    `runner(dir, command) -> (green, output)` injectable in tests (pure).
+    `runner(dir, command) -> (green, output)` injectable in tests (pure). An
+    injected runner also marks a HARNESS check, not a promotion: the mutation
+    cases below need the artifact's own check to run for real, so they are
+    skipped there (the case table stays the single injected case).
     """
     c = c or cfg()
     prop = _read_json(os.path.join(proposal_dir, "proposal.json")) or {}
@@ -1104,10 +1185,19 @@ def verify(proposal_dir, runner=None, c=None, cases=None, baseline=None,
     t0 = time.time()
     counts = evaluate_cases(proposal_dir, cases, runner=runner, c=c, repeats=repeats)
     case_map = {k: (v["passes"] * 2 > v["runs"]) for k, v in counts.items()}
+    # Is the verifier itself discriminating? A vacuous check passes everything,
+    # so it would otherwise promote on its own uselessness.
+    mut_applied = []
+    if runner is None:
+        mut_cases, mut_runs, mut_applied = mutation_report(proposal_dir, c)
+        if mut_cases:
+            case_map.update(mut_cases)
+            counts.update(mut_runs)
     green = all(case_map.values())
     out = ", ".join("%s=%d/%d" % (k, v["passes"], v["runs"]) for k, v in counts.items())
     report = {"ran": True, "green": bool(green), "command": command,
               "cases": case_map, "case_runs": counts,
+              "mutations": mut_applied,
               "baseline": {str(k): bool(v) for k, v in (baseline or {}).items()},
               "cost_tokens": _skill_cost(proposal_dir),
               # AA: the bytes this verdict is ABOUT. Stamped so `promote` can
