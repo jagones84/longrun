@@ -110,6 +110,7 @@ See `integrations/paperclip/README.md` for the adapter install and configuration
 | `sessions current` | — (the local pointer) |
 | `sessions rm ID` | `DELETE /api/sessions/<id>` |
 | `sessions history [ID]` | `GET /api/history?session=ID` (ID omitted → current) |
+| `sessions card HANDLE` | `GET /api/history?session=<current>&card=<handle>` (ONE tool card by the handle the compacted manifest prints: `#id`, or `t<ms>` for a card persisted before ids) |
 | `sessions graph [ID]` | `GET /api/sessions/<id>/graph` |
 | `sessions tree [ID]` | `GET /api/sessions/<id>/trace-tree` |
 | `sessions reset ID` | `POST /api/sessions/<id>/graph/reset` |
@@ -119,6 +120,7 @@ python3 forge.py sessions ls
 python3 forge.py sessions new "probe docs" --workspace /tmp/lr-probe   # becomes current
 python3 forge.py sessions current
 python3 forge.py sessions history              # no id: the current session
+python3 forge.py sessions card 3f2a91c4        # one tool card by its manifest handle
 python3 forge.py sessions fork 4f503dc92a29 --at 12 --model gpt-local   # A/B arm
 python3 forge.py sessions use 4f503dc92a29
 python3 forge.py sessions tree                 # stage→step tree + the first failed step
@@ -492,7 +494,7 @@ are aliases of the same verbs.
 | GET | `/api/sessions` | `sessions ls` |
 | GET | `/api/sessions/new` | `sessions new --workspace DIR` (the WebUI first-open route) |
 | GET | `/api/docs` | `docs status` |
-| GET | `/api/history` | `sessions history` |
+| GET | `/api/history` | `sessions history`, `sessions card HANDLE` (`?card=<handle>` returns that one card) |
 | GET | `/api/eval/tasks` | `eval tasks` |
 | GET | `/api/voice/status` | `voice status` |
 | GET | `/api/tools` | `tools ls` |

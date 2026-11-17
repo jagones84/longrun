@@ -51,6 +51,7 @@ from longrun.core.server import (ASSET_CTYPES, ASSET_EXTS,
                      _sse_queues,
                      _start_event_pruning, _turn_lock, _valid_sid, agent_run,
                      append_message, backfill_agents, backfill_session_workspaces,
+                     card_by_handle,
                      chat_once, clear_abort, clear_session, context_budget, default_model,
                      ensure_agent, ensure_model, ensure_reply_persisted, eval_list_tasks,
                      eval_run, events_since, feed_seq, fork_session, generate_plan,
@@ -2596,6 +2597,13 @@ class Handler(BaseHTTPRequestHandler):
             if not sess:
                 return self._send(404, {"error": "session not found"})
             ensure_agent(sess)   # EV-30: a stored session always has its A<n>
+            # round 10: `?card=<handle>` dereferences ONE tool card by the handle
+            # the compacted manifest prints (#id, or t<ms> for a legacy card).
+            if qs.get("card"):
+                card = card_by_handle(sess, qs.get("card"))
+                if card is None:
+                    return self._send(404, {"error": "no card with that handle"})
+                return self._send(200, {"session": sid, "card": card})
             return self._send(200, sess)
         if path == "/api/events":
             # JAG-262: filtered event-log history for post-mortem. Answers "what

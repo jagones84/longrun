@@ -3080,6 +3080,38 @@ def _sessions(args, run_id):
                            "the reply, or sessions.read to inspect the live transcript."
                            % (rec.get("job"), message_id)),
                 "stderr": "", "backend": "host", "sandboxed": False}
+    if action in ("card", "tool"):
+        # round 10: the compacted manifest prints `#<handle>`, so this is the
+        # dereference (Folio L3, arXiv:2611.16627) — the full card instead of a
+        # re-run of a call whose effects may already exist.
+        sid = _session_id(args.get("session") or args.get("id") or "")
+        handle = str(args.get("handle") or args.get("card") or "").strip()
+        if not sid or not handle:
+            return {"ok": False, "exit_code": 64, "stdout": "", "stderr": "",
+                    "error": "session and handle are required for action=card "
+                             "(the handle is the #id printed in the manifest)",
+                    "backend": "host", "sandboxed": False}
+        _ok, _why = _may_message(run_id, sid)
+        if not _ok:
+            return {"ok": False, "exit_code": 126, "permission_denied": True,
+                    "session": sid, "stdout": "", "stderr": "",
+                    "error": "card refused: %s" % _why,
+                    "backend": "host", "sandboxed": False}
+        from longrun.memory.stores import card_by_handle
+        card = card_by_handle(server.load_session(sid) or {}, handle)
+        if not card:
+            return {"ok": False, "exit_code": 1, "session": sid, "stdout": "",
+                    "stderr": "", "error": "no card with that handle: %s" % handle,
+                    "backend": "host", "sandboxed": False}
+        view = {"id": card.get("id"), "tool": card.get("tool"), "ok": card.get("ok"),
+                "exit_code": card.get("exit_code"), "ts": card.get("ts"),
+                "node": card.get("node"),
+                "args": str(card.get("args") or "")[:1500],
+                "error": str(card.get("error") or "")[:1500],
+                "result": str(card.get("result") or "")[:1500]}
+        return {"ok": True, "exit_code": 0, "session": sid, "card": view,
+                "stdout": json.dumps(view, ensure_ascii=False)[:2000], "stderr": "",
+                "backend": "host", "sandboxed": False}
     if action in ("read", "get", "show", "transcript"):
         sid = _session_id(args.get("session") or args.get("id") or "")
         if not sid:

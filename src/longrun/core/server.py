@@ -87,7 +87,7 @@ from longrun.memory.stores import (_ensure_dirs, _store_path, load_plan,
                      ensure_agent, ensure_session_workspace, backfill_session_workspaces,
                      backfill_agents, _set_session_model, reconcile_agent_models,
                      _remember_workspace, _chat_workspace, get_or_create_session,
-                     fork_session,
+                     fork_session, card_by_handle,
                      append_message, persist_tool_card, persist_inject, TOOL_EVENT_MAX,
                      _trunc, _tool_event, ERROR_PREFIX, session_mark, has_reply_since,
                      ensure_reply_persisted, reconcile_orphan_turns)

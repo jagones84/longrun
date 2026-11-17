@@ -153,7 +153,8 @@ def anchors_block(messages, exclude=""):
 # view, so a failure older than `keep_recent` survived only as prose the summarizer
 # is free to drop. The manifest is mechanical: tool, verdict, exit code, first error
 # — no model call.
-MANIFEST_PREFIX = "MANIFEST (mechanical, from the tool cards of the compacted turns):"
+MANIFEST_PREFIX = ("MANIFEST (mechanical, from the tool cards of the compacted turns; "
+                   "#<handle> reads one back with `sessions card`):")
 MANIFEST_MAX = 20
 MANIFEST_FAIL_MAX = 5
 MANIFEST_CHARS = 2000
@@ -165,6 +166,24 @@ def _card_failed(card):
                 or card.get("exit_code") not in (None, 0))
     except Exception:  # noqa: BLE001 — a malformed card is not a failure claim
         return False
+
+
+def card_handle(card):
+    """Stable short handle of a tool card: its id, else its persist ts.
+
+    Cards minted from round 10 carry `id`; a legacy card (or one persisted by an
+    older process still running) has none, and `t<ms>` is still unique per card.
+    `stores.card_by_handle` accepts both, so the manifest never prints a handle
+    it cannot dereference (Folio L2 -> L3, arXiv:2611.16627).
+    """
+    try:
+        cid = str((card or {}).get("id") or "").strip()
+        if cid:
+            return cid
+        ts = float((card or {}).get("ts") or 0)
+        return ("t%d" % int(round(ts * 1000))) if ts else ""
+    except (TypeError, ValueError, AttributeError):
+        return ""
 
 
 def manifest_block(cards, until=None, exclude=""):
@@ -213,7 +232,8 @@ def manifest_block(cards, until=None, exclude=""):
                 line += ": " + err[:80]
         if line in exclude:
             continue
-        out.append("  " + line)
+        h = card_handle(c)
+        out.append("  #%s %s" % (h, line) if h else "  " + line)
     if not out:
         return ""
     return (MANIFEST_PREFIX + "\n" + "\n".join(out))[:MANIFEST_CHARS]

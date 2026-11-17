@@ -14,6 +14,7 @@ Usage:
   python3 forge.py sessions ls | sessions new "title" [--workspace DIR] | sessions rm ID
                          | sessions fork ID [--at N] [--title T] [--model M]
                          | sessions use ID | sessions current | sessions history [ID]
+                         | sessions card HANDLE (one tool card of the current session)
                          | sessions tree [ID] | sessions graph [ID]
                           | sessions reset ID | sessions clear ID | sessions model "SID MODEL"
   python3 forge.py docs status|plan "request"|spec "request"|approve|reject|unlock [--session ID]
@@ -975,6 +976,22 @@ def cmd_sessions(args):
     elif args.action == "rm":
         print(json.dumps(req("DELETE", "/api/sessions/" + args.value), indent=2))
         _clear_current_session(args.value)
+    elif args.action == "card":
+        # round 10: the compacted manifest prints `#<handle>`; this dereferences
+        # one tool card of the CURRENT session (the CLI twin of sessions action=card).
+        ref = _current_session()
+        if not ref:
+            _no_current_session()
+        h = str(args.value or "").strip()
+        if not h:
+            print("usage: sessions card HANDLE   (the #id in the compacted manifest)",
+                  file=sys.stderr)
+            sys.exit(2)
+        out = req("GET", "/api/history?session=%s&card=%s" % (_q(ref), _q(h)))
+        if out.get("error"):
+            print("error:", out["error"], file=sys.stderr)
+            sys.exit(1)
+        print(json.dumps(out.get("card") or {}, indent=2, ensure_ascii=False))
     elif args.action in ("history", "graph", "tree"):
         ref = str(args.value or "").strip() or _current_session()
         if not ref:
@@ -1428,7 +1445,7 @@ def main():
     p = sub.add_parser("swarm"); p.add_argument("goal"); p.add_argument("--n-workers", type=int, default=3); \
         p.add_argument("--max-steps", type=int, default=None); p.set_defaults(fn=cmd_swarm)
     sub.add_parser("paperclip-bot").set_defaults(fn=cmd_paperclip_bot)
-    p = sub.add_parser("sessions"); p.add_argument("action", choices=["ls", "new", "fork", "rm", "use", "current", "history", "graph", "tree", "reset", "clear", "model"]); \
+    p = sub.add_parser("sessions"); p.add_argument("action", choices=["ls", "new", "fork", "rm", "use", "current", "history", "card", "graph", "tree", "reset", "clear", "model"]); \
         p.add_argument("value", nargs="?"); p.add_argument("--workspace"); \
         p.add_argument("--at"); p.add_argument("--title"); p.add_argument("--model"); \
         p.set_defaults(fn=cmd_sessions)

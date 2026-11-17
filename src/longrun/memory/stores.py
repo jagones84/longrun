@@ -1342,6 +1342,27 @@ def get_or_create_session(sid, title=None, workspace=None, trust=None):
     return s
 
 
+def card_by_handle(sess, handle):
+    """The tool card named by a manifest handle, or None.
+
+    Accepts what `context_engine.card_handle` prints — a card `id`, or `t<ms>`
+    for a card persisted before ids existed — with or without the leading `#`.
+    One resolver for the CLI, the HTTP filter and the `sessions` tool.
+    """
+    h = str(handle or "").strip().lstrip("#")
+    if not h:
+        return None
+    from longrun.model.context_engine import card_handle
+    cards = [c for c in ((sess or {}).get("tool_cards") or []) if isinstance(c, dict)]
+    for c in cards:
+        if str(c.get("id") or "") == h:
+            return c
+    for c in cards:
+        if card_handle(c) == h:
+            return c
+    return None
+
+
 def replay_record(cards, workspace="", upto_ts=None):
     """What a fork can and cannot replay of the prefix it inherited.
 
@@ -1502,6 +1523,7 @@ def persist_tool_card(sess, tool, ok, args=None, result="", error="",
         args_str = args if isinstance(args, str) else json.dumps(args or {},
                                                                 ensure_ascii=False)
         card = {
+            "id": uuid.uuid4().hex[:8],
             "tool": str(tool),
             "ok": bool(ok),
             "args": args_str[:4000],
