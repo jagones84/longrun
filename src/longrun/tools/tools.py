@@ -2034,9 +2034,11 @@ def _self(args, run_id):
                                 "classes": rep.get("classes") or []}
             lines = []
             for iss in rep.get("issues") or []:
-                lines.append("[%s] %s · %s — %d in %d session(s): %s%s" % (
+                lines.append("[%s] %s · %s — %d in %d session(s): %s%s%s" % (
                     iss.get("severity"), iss.get("tool"), iss.get("family"),
                     iss.get("count"), iss.get("sessions"), iss.get("action"),
+                    (" · %d retried" % int(iss.get("repeats") or 0))
+                    if iss.get("repeats") else "",
                     (" (check: %s)" % iss["check"]) if iss.get("check") else ""))
             info["failure_lines"] = lines
         elif action in ("sj", "session-jobs", "sessionjobs", "subjobs"):
@@ -2461,10 +2463,11 @@ def _improve(args, run_id=None):
             min_severity=str(args.get("min_severity") or "warning").strip().lower())
         if not rep.get("ok"):
             return rep
-        lines = ["%-9s %-18s %-16s %3d in %2d session(s)%s → %s"
+        lines = ["%-9s %-18s %-16s %3d in %2d session(s)%-16s%s → %s"
                  % ("[%s]" % w.get("severity"), str(w.get("tool"))[:18],
                     str(w.get("family"))[:16], int(w.get("count") or 0),
                     int(w.get("sessions") or 0),
+                    (" (%d retried)" % int(w["repeats"])) if w.get("repeats") else "",
                     (" (check: %s)" % w["check"]) if w.get("check") else "",
                     w.get("issue"))
                  for w in rep.get("written") or []]

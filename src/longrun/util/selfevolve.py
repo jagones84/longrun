@@ -674,15 +674,40 @@ def _severity(count, sessions):
     return "info"
 
 
-def severity_for(family, count, sessions):
+#: Round 26 (Trial by Trace, arXiv:2610.32285). A class the agent RETRIES in the
+#: same shape is telling the register that the remedy it names did not land, so a
+#: high retry share lifts the severity one step (never past the gate cap). The
+#: thresholds are deliberately blunt: three or more retries is not one accident,
+#: and a third of the class repeating in place is a pattern.
+RETRY_ESCALATE = 0.34
+RETRY_MIN = 3
+
+
+def retry_signal(repeats, count):
+    """The share of a class' failures the agent retried in the same shape."""
+    try:
+        n, c = int(repeats or 0), int(count or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    return round(float(n) / c, 3) if c > 0 else 0.0
+
+
+def severity_for(family, count, sessions, repeats=0):
     """The label a row really gets: a GATE refusal is never `error`.
 
     Round 24. `_severity` ranks BREAKAGE; a gate refusal is the policy doing its
     job (measured 2026-11-18: 6 of the 24 `shell.exec tool-error` failures were
     the plan gate). It stays a `warning` — the agent kept trying — but it must
     not outrank a real fault, because the repair drafts follow the severity.
+
+    Round 26 adds the retry lift: a class the agent keeps re-hitting at the same
+    shape is worse than its raw count says, because the hint beside it did not
+    land. One step only, and the gate cap still wins.
     """
     sev = _severity(count, sessions)
+    if (family != "gate" and int(repeats or 0) >= RETRY_MIN
+            and retry_signal(repeats, count) >= RETRY_ESCALATE):
+        sev = {"info": "warning", "warning": "error"}.get(sev, sev)
     return "warning" if (family == "gate" and sev == "error") else sev
 
 
@@ -708,28 +733,42 @@ def session_failures(sessions_dir=None, limit=200, max_sessions=400):
         if not isinstance(sess, dict):
             continue
         scanned += 1
-        for card in (sess.get("tool_cards") or []):
-            if not isinstance(card, dict) or not runtree.failed(card):
+        cards = [c for c in (sess.get("tool_cards") or []) if isinstance(c, dict)]
+        # Round 26 (Trial by Trace, arXiv:2610.32285): a failure the agent RETRIES
+        # in the same shape is a reliability signal, not noise. Measured 2026-11-18:
+        # 19 of 155 failed cards (12.3 %) were followed by the SAME class within
+        # three tool calls — the hint did not land.
+        seq = []
+        for c in cards:
+            if not runtree.failed(c):
+                seq.append(None)
                 continue
-            tool = str(card.get("tool") or "?")
-            head = error_class(card.get("error") or card.get("result"))
+            tool = str(c.get("tool") or "?")
+            head = error_class(c.get("error") or c.get("result"))
             if head == "(no error text)":
                 # A card can fail on its EXIT CODE alone; absence of text is not
                 # the class, the non-zero status is.
-                ec = card.get("exit_code")
+                ec = c.get("exit_code")
                 if isinstance(ec, int) and ec:
                     head = "exit=<n> (no error text)"
+            seq.append((tool, head))
+        for i, (card, key) in enumerate(zip(cards, seq)):
+            if not key:
+                continue
+            tool, head = key
             row = buckets.setdefault((tool, head),
-                                     {"count": 0, "sessions": set(), "samples": [],
-                                      "probe": ""})
+                                     {"count": 0, "repeats": 0, "sessions": set(),
+                                      "samples": [], "probe": ""})
             row["count"] += 1
             row["sessions"].add(ent.name[:-5])
+            if any(k == key for k in seq[i + 1:i + 4]):
+                row["repeats"] += 1
             if not row["probe"]:
                 row["probe"] = str(card.get("error") or card.get("result") or "")[:400]
             if len(row["samples"]) < 2:
                 row["samples"].append(
                     str(card.get("error") or card.get("result") or "")[:160])
-    rows = [{"tool": t, "error": e, "count": v["count"],
+    rows = [{"tool": t, "error": e, "count": v["count"], "repeats": v["repeats"],
              "sessions": len(v["sessions"]), "samples": v["samples"],
              "probe": v.get("probe") or ""}
             for (t, e), v in buckets.items()]
@@ -781,9 +820,9 @@ def failure_candidates(path=None, limit=10, min_count=1, include_sessions=False,
                 continue
             tool = str(step.get("tool") or "?")
             head = error_class(step.get("error"))
-            row = buckets.setdefault((tool, head), {"count": 0, "runs": set(),
-                                                    "sessions": 0, "samples": [],
-                                                    "probe": ""})
+            row = buckets.setdefault((tool, head), {"count": 0, "repeats": 0,
+                                                    "runs": set(), "sessions": 0,
+                                                    "samples": [], "probe": ""})
             row["count"] += 1
             row["runs"].add(fn[:-5])
             if not row["probe"]:
@@ -794,9 +833,11 @@ def failure_candidates(path=None, limit=10, min_count=1, include_sessions=False,
         scanned = int(live.get("sessions") or 0)
         for cls in live.get("classes") or []:
             key = (str(cls.get("tool") or "?"), str(cls.get("error") or ""))
-            row = buckets.setdefault(key, {"count": 0, "runs": set(),
-                                           "sessions": 0, "samples": [], "probe": ""})
+            row = buckets.setdefault(key, {"count": 0, "repeats": 0,
+                                           "runs": set(), "sessions": 0,
+                                           "samples": [], "probe": ""})
             row["count"] += int(cls.get("count") or 0)
+            row["repeats"] += int(cls.get("repeats") or 0)
             row["sessions"] = max(row["sessions"], int(cls.get("sessions") or 0))
             row["samples"] = (row["samples"] + list(cls.get("samples") or []))[:2]
             if not row["probe"]:
@@ -810,10 +851,14 @@ def failure_candidates(path=None, limit=10, min_count=1, include_sessions=False,
                          re.sub(r"[^a-z0-9]+", "-", tool.lower()).strip("-") or "tool",
                          family, hashlib.sha1(head.encode("utf-8")).hexdigest()[:6]),
                      "tool": tool, "error": head, "count": v["count"],
+                     "repeats": v.get("repeats", 0),
+                     "retry_rate": retry_signal(v.get("repeats", 0), v["count"]),
                      "runs": len(v["runs"]), "sessions": v["sessions"],
                      "source": ("both" if in_runs and in_sessions else
                                 "sessions" if in_sessions else "runs"),
-                     "family": family, "severity": severity_for(family, v["count"], v["sessions"]),
+                     "family": family,
+                     "severity": severity_for(family, v["count"], v["sessions"],
+                                              v.get("repeats", 0)),
                      "action": action, "check": check,
                      "samples": v["samples"]})
     rows.sort(key=lambda r: (-r["count"], r["tool"], r["error"]))
@@ -830,16 +875,19 @@ def _issues_from(rows):
     for r in rows:
         key = (r["tool"], r["family"])
         g = grouped.setdefault(key, {"tool": r["tool"], "family": r["family"],
-                                     "count": 0, "sessions": 0, "runs": 0,
-                                     "classes": [], "source": set(), "samples": []})
+                                     "count": 0, "repeats": 0, "sessions": 0,
+                                     "runs": 0, "classes": [], "source": set(),
+                                     "samples": []})
         g["count"] += int(r["count"] or 0)
+        g["repeats"] += int(r.get("repeats") or 0)
         g["sessions"] = max(g["sessions"], int(r["sessions"] or 0))
         g["runs"] = max(g["runs"], int(r["runs"] or 0))
         g["source"].add(r["source"])
         for s in (r.get("samples") or [])[:2]:
             if len(g["samples"]) < 2 and s not in g["samples"]:
                 g["samples"].append(s)
-        g["classes"].append({"error": r["error"], "count": r["count"]})
+        g["classes"].append({"error": r["error"], "count": r["count"],
+                             "repeats": int(r.get("repeats") or 0)})
     out = []
     for (tool, family), g in grouped.items():
         g["classes"] = sorted(g["classes"], key=lambda c: -c["count"])[:3]
@@ -848,8 +896,11 @@ def _issues_from(rows):
                         re.sub(r"[^a-z0-9]+", "-", tool.lower()).strip("-") or "tool",
                         family),
                     "tool": tool, "family": family,
-                    "severity": severity_for(g["family"], g["count"], g["sessions"]),
+                    "severity": severity_for(g["family"], g["count"], g["sessions"],
+                                             g["repeats"]),
                     "count": g["count"], "sessions": g["sessions"],
+                    "repeats": g["repeats"],
+                    "retry_rate": retry_signal(g["repeats"], g["count"]),
                     "runs": g["runs"],
                     "source": ("both" if "both" in g["source"] else
                                "sessions" if "sessions" in g["source"] else "runs"),
@@ -866,14 +917,24 @@ _SEV_RANK = {"error": 0, "warning": 1, "info": 2}
 
 def _repair_md(prop):
     """The human/agent-readable body of a repair draft (no invented content)."""
-    rows = "\n".join("- `%s` × %s" % (c.get("error"), c.get("count"))
-                     for c in (prop.get("classes") or []))
+    rows = "\n".join(
+        "- `%s` × %s%s" % (c.get("error"), c.get("count"),
+                           (" (%s retried in the same shape)" % c["repeats"])
+                           if c.get("repeats") else "")
+        for c in (prop.get("classes") or []))
     samples = "\n".join("  - %s" % s for s in (prop.get("samples") or []))
     check = prop.get("check")
+    # Round 26: the retry count is the evidence that the hint beside this class
+    # was not enough — stated once, in the header, only when it was measured.
+    retried = ("**Retried:** %s of %s failures came back in the same shape "
+               "(retry rate %s) — the hint beside it did not land.\n\n"
+               % (prop.get("repeats"), prop.get("count"),
+                  prop.get("retry_rate"))) if prop.get("repeats") else ""
     return (
         "# Repair: %s · %s\n\n"
         "**Severity:** %s — **%s** failure(s) in **%s** session(s) "
         "(source: %s).\n\n"
+        "%s"
         "## What fails\n\n%s\n\n"
         "%s"
         "## The remedy the register names\n\n> %s\n\n"
@@ -885,7 +946,7 @@ def _repair_md(prop):
         "`self.failures` (or run the check) to prove the issue is gone.\n"
         % (prop.get("tool"), prop.get("family"),
            prop.get("severity"), prop.get("count"), prop.get("sessions"),
-           prop.get("source"), rows,
+           prop.get("source"), retried, rows,
            ("```\n%s\n```\n\n" % samples) if samples else "",
            prop.get("action") or "(no remedy recorded)",
            ("Run `%s` after the fix; it is the test that proves this family of "
@@ -927,6 +988,7 @@ def issue_drafts(out_dir, limit=5, min_severity="warning", sessions_dir=None,
                 "issue": name, "tool": iss.get("tool"),
                 "family": iss.get("family"), "severity": iss.get("severity"),
                 "count": iss.get("count"), "sessions": iss.get("sessions"),
+                "repeats": iss.get("repeats"), "retry_rate": iss.get("retry_rate"),
                 "runs": iss.get("runs"), "source": iss.get("source"),
                 "classes": iss.get("classes") or [], "samples": iss.get("samples") or [],
                 "action": iss.get("action"), "check": iss.get("check"),
@@ -942,6 +1004,7 @@ def issue_drafts(out_dir, limit=5, min_severity="warning", sessions_dir=None,
         written.append({"issue": name, "path": d, "severity": prop["severity"],
                         "tool": prop["tool"], "family": prop["family"],
                         "count": prop["count"], "sessions": prop["sessions"],
+                        "repeats": prop.get("repeats"),
                         "check": prop["check"]})
     return {"ok": True, "dir": out_dir, "written": written, "skipped": skipped,
             "issues": len(issues), "severity": str(min_severity),

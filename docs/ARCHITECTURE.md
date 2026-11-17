@@ -284,6 +284,11 @@ and guessing. `util/runtree.py` is the read model over those stores, and
 - **One failure vocabulary.** The class comes from `selfevolve.error_class` (public since this
   change), the same normalizer the miner ranks failures by — the tree and `failure_candidates`
   cannot name the same failure two ways.
+- **A retry is a reliability signal.** `selfevolve.session_failures` counts a failure class that
+  comes back in the same shape within the next three tool calls (`retry_signal`, one severity step
+  at ≥3 retries and ≥34 %, never past `error` and never against a `gate` refusal). This is the
+  register's question (a class re-hit in place); the trace tree's onset `retries` is a different one
+  (calls of the same tool after the first failure), so the two numbers are not compared.
 - **Read-only.** No store is written and no model is called, so it is safe to ask about a
   session that is running right now. It is not causal attribution: that is HD-1, and this tree
   is its precondition.
