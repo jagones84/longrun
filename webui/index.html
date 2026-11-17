@@ -4388,6 +4388,18 @@
             say what it accomplishes, verify it in the sandbox, then promote it. <b>Nothing here is installed.</b></div>
           <div id="impDrafts" class="u-mt6"></div>
         </details>
+        <!-- Round 36: the FAILURE register turned into work, and what each fix did.
+             A repair draft carries the commit that answered it and the sessions
+             written after it: resolved / still open (N in M) / unobserved (no
+             session after the fix — nothing claimed). Material only, like a skill
+             draft: the panel applies nothing. -->
+        <details class="card" id="impRepairsBox">
+          <summary class="set-t u-ptr" title="One draft per measured failure issue, with the commit that answered it and the number of sessions written after it.">Failure repairs <span id="impRepairCount" class="remaining"></span></summary>
+          <div class="remaining u-mt6">The register drafts an issue at or above warning, with its remedy and the check that proves it.
+            <b>resolved</b> = none of its class in the sessions after the fix; <b>still open</b> = N in M;
+            <b>unobserved</b> = no session after the fix, so nothing is claimed. Nothing here is applied by the panel.</div>
+          <div id="impRepairs" class="u-mt6"></div>
+        </details>
         <!-- EV-20: a forged Matrix tool that was never used after it landed is
              work paid for and not earned. Shown as fact (uses / runs after), with
              the real remove call — no score, no guess. -->
@@ -13336,6 +13348,53 @@ async function loadImprovement() {
       draftsBox.insertAdjacentHTML("afterbegin",
         '<div class="remaining u-mb6"><b>' + esc(String(d.drafts_unreadable)) +
         "</b> draft folder(s) could not be read and are not counted above.</div>");
+    }
+  }
+  // ---- the failure register's repairs, with the outcome of each fix (round 36) --
+  // Rounds 34–35 gave a repair draft a lifecycle: the commit that answered it and
+  // the sessions written AFTER it decide `resolved` / still open / `unobserved`.
+  // None of it reached this panel, so an applied fix looked exactly like an open
+  // draft. The state is an ICON with its name in the title; the words beside it
+  // are the evidence (the window's count and denominator), never a verdict.
+  const repBox = $("impRepairs"), repCnt = $("impRepairCount");
+  const repD = d.repairs || {}, repairs = repD.states || [];
+  if (repCnt) {
+    const done = repairs.filter(x => x.status === "resolved").length;
+    repCnt.textContent = repairs.length
+      ? "(" + (repD.open || 0) + " open · " + done + " resolved · " + repairs.length + ")"
+      : "";
+  }
+  if (repBox) {
+    repBox.innerHTML = "";
+    if (!repairs.length) {
+      repBox.innerHTML = '<div class="remaining">no repair draft — the register drafts one when a failure issue is at or above warning</div>';
+    } else {
+      const det = document.createElement("details"); det.className = "imp-card";
+      det.innerHTML = '<summary class="remaining" style="cursor:pointer">show all ' +
+        repairs.length + "</summary>";
+      const box = document.createElement("div"); box.className = "imp-ledger";
+      const word = { resolved: "resolved", "fixed-open": "still open",
+                     unobserved: "unobserved", proposed: "not fixed yet" };
+      const glyph = { resolved: "✓", "fixed-open": "✗", unobserved: "◌", proposed: "·" };
+      repairs.forEach(s => {
+        const st = s.status || "proposed";
+        const n = (s.sessions_since === null || s.sessions_since === undefined)
+          ? null : Number(s.sessions_since);
+        const ev = st === "proposed" ? "no commit recorded"
+          : st === "unobserved" ? "no session after the fix — nothing claimed"
+          : st === "resolved" ? "0 in " + n + " session(s) after the fix"
+          : (Number(s.count_since || 0) + " in " + n + " session(s) after the fix");
+        const fix = (s.fix && s.fix.commit)
+          ? " · " + esc(String(s.fix.commit).slice(0, 12)) : "";
+        const row = document.createElement("div"); row.className = "imp-row";
+        row.innerHTML = '<span title="' + esc((word[st] || st) + " — " + ev) +
+          '" aria-label="' + esc(word[st] || st) + '">' + (glyph[st] || "·") +
+          "</span> <b>" + esc(s.issue || "") + '</b> <span class="remaining">' +
+          esc(String(s.tool || "?")) + " · " + esc(String(s.family || "?")) + " · " +
+          esc(ev) + fix + "</span>";
+        box.appendChild(row);
+      });
+      det.appendChild(box); repBox.appendChild(det);
     }
   }
   // ---- forged Matrix tools: did the change help AFTER it landed? (EV-20) ----

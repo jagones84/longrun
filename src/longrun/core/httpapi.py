@@ -2168,6 +2168,30 @@ def status_payload():
     }
 
 
+def improvement_repairs():
+    """The failure register's repair drafts, each with its measured outcome.
+
+    Round 36: the register turns failures into `kind: "repair"` drafts and, since
+    rounds 34–35, records the commit that answered one and counts its class in the
+    sessions written after it. None of that reached the operator's surface — the
+    Settings ▸ Improvements panel listed skill drafts only. One read, one shape:
+    the rows are `selfevolve.repair_states`' own dicts, never re-derived here.
+    """
+    from longrun.util import selfevolve
+    from longrun.util import improve as improve_mod
+    out = os.path.join(str(improve_mod.PROPOSAL_DIR), "repairs")
+    try:
+        rep = selfevolve.repair_states(out)
+    except Exception:  # noqa: BLE001 — an unreadable folder is data, not a crash
+        return {"states": [], "total": 0, "open": 0, "sessions": 0}
+    states = [s for s in (rep.get("states") or []) if isinstance(s, dict)]
+    return {"states": states, "total": len(states),
+            # `open` is a draft nobody has closed yet; a fix with no session after
+            # it is `unobserved`, which is not open work — it is waiting for data.
+            "open": sum(1 for s in states if s.get("status") == "proposed"),
+            "sessions": int(rep.get("sessions") or 0)}
+
+
 class Handler(BaseHTTPRequestHandler):
     """HTTP surface of the harness.
 
@@ -2548,6 +2572,10 @@ class Handler(BaseHTTPRequestHandler):
                 "drafts": _drafts.get("drafts") or [],
                 "drafts_total": int(_drafts.get("total") or 0),
                 "drafts_unreadable": int(_drafts.get("unreadable") or 0),
+                # Round 36: the register's repair drafts and their outcome
+                # (`resolved` / `fixed-open` / `unobserved`), so the panel can say
+                # what an applied fix did instead of only listing material.
+                "repairs": improvement_repairs(),
                 "forged": _forged.get("tools") or [],
                 "forged_total": int(_forged.get("count") or 0),
                 "forged_unused": int(_forged.get("unused") or 0),
