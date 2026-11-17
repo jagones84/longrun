@@ -147,8 +147,80 @@ def anchors_block(messages, exclude=""):
     return block[:ANCHOR_MAX_CHARS]
 
 
+# Folio (arXiv:2611.16627): the context manager keeps linked levels — a turn note,
+# a runtime EVENT MANIFEST of every call, and the source records. Longrun had the
+# note (summary) and the sources (cards on disk) but no manifest in the compacted
+# view, so a failure older than `keep_recent` survived only as prose the summarizer
+# is free to drop. The manifest is mechanical: tool, verdict, exit code, first error
+# — no model call.
+MANIFEST_PREFIX = "MANIFEST (mechanical, from the tool cards of the compacted turns):"
+MANIFEST_MAX = 20
+MANIFEST_FAIL_MAX = 5
+MANIFEST_CHARS = 2000
+
+
+def _card_failed(card):
+    try:
+        return (card.get("ok") is False
+                or card.get("exit_code") not in (None, 0))
+    except Exception:  # noqa: BLE001 — a malformed card is not a failure claim
+        return False
+
+
+def manifest_block(cards, until=None, exclude=""):
+    """Deterministic tool-call record for a compacted transcript ("" when none).
+
+    The last `MANIFEST_MAX` cards, PLUS up to `MANIFEST_FAIL_MAX` failures that
+    the window would have pushed out — a failure is the one row a summary must
+    not lose. `until` drops a card created AFTER the compacted turns (it belongs
+    to the verbatim window, not to the summary).
+    """
+    rows = []
+    for c in cards or []:
+        if not isinstance(c, dict):
+            continue
+        tool = str(c.get("tool") or "").strip()
+        if not tool:
+            continue
+        try:
+            ts = float(c.get("ts") or 0)
+        except (TypeError, ValueError):
+            ts = 0.0
+        if until is not None and ts > until:
+            continue
+        rows.append((ts, c, tool))
+    if not rows:
+        return ""
+    rows.sort(key=lambda r: r[0])
+    tail = rows[-MANIFEST_MAX:]
+    old_fails = [r for r in rows[:-MANIFEST_MAX] if _card_failed(r[1])]
+    chosen = old_fails[-MANIFEST_FAIL_MAX:] + tail
+    seen, out = set(), []
+    for ts, c, tool in chosen:
+        key = (ts, tool, c.get("exit_code"), c.get("ok"))
+        if key in seen:
+            continue
+        seen.add(key)
+        if not _card_failed(c):
+            line = tool + " ok"
+        else:
+            line = tool + " FAILED"
+            code = c.get("exit_code")
+            if code not in (None, ""):
+                line += " (exit=%s)" % code
+            err = " ".join(str(c.get("error") or "").split())
+            if err:
+                line += ": " + err[:80]
+        if line in exclude:
+            continue
+        out.append("  " + line)
+    if not out:
+        return ""
+    return (MANIFEST_PREFIX + "\n" + "\n".join(out))[:MANIFEST_CHARS]
+
+
 def compact(messages, budget_tokens, keep_recent=DEFAULT_KEEP_RECENT, summarizer=None,
-            force=False):
+            force=False, manifest=None):
     """Compact a transcript under a token budget.
 
     Returns (msgs, stats). Keeps the newest `keep_recent` messages verbatim;
@@ -272,6 +344,19 @@ def compact(messages, budget_tokens, keep_recent=DEFAULT_KEEP_RECENT, summarizer
             if _anchors:
                 summary = summary.rstrip() + "\n\n" + _anchors
                 stats["anchors"] = len(_anchors)
+            # Folio L2: the runtime record of the calls these turns made. Appended
+            # AFTER the anchors so a failure is never the section a cap prunes.
+            _cut = None
+            try:
+                _ts = [float(m.get("ts") or 0) for m in fresh
+                       if isinstance(m, dict) and m.get("ts") is not None]
+                _cut = max(_ts) if _ts else None
+            except (TypeError, ValueError):
+                _cut = None
+            _man = manifest_block(manifest, until=_cut, exclude=summary)
+            if _man:
+                summary = summary.rstrip() + "\n\n" + _man
+                stats["manifest"] = len(_man)
         stats["compacted"] = len(old)
         msgs = [{"role": "system", "content": summary}]
     else:
@@ -419,10 +504,12 @@ def wire_content(msg):
 
 
 def build(system_prompt, messages, message=None, budget_tokens=DEFAULT_BUDGET,
-          keep_recent=DEFAULT_KEEP_RECENT, retrieve_memory=True, workspace=None):
+          keep_recent=DEFAULT_KEEP_RECENT, retrieve_memory=True, workspace=None,
+          manifest=None):
     """Full pipeline: compaction + retrieval. Returns (msgs, stats).
 
     `msgs` is ready to send: [system(s)...] + compacted transcript + [user message].
+    `manifest` is the session's tool-card list (Folio L2); only `compact` reads it.
     """
     query = message or (messages[-1].get("content") if messages else "")
     stats = {"budget_tokens": budget_tokens, "keep_recent": keep_recent,
@@ -431,7 +518,7 @@ def build(system_prompt, messages, message=None, budget_tokens=DEFAULT_BUDGET,
     # compact the transcript against what is LEFT for it, so the TOTAL prompt
     # (system + transcript) stays within `budget_tokens`.
     room = max(1024, budget_tokens - count_tokens(system_prompt))
-    msgs, cstats = compact(messages, room, keep_recent)
+    msgs, cstats = compact(messages, room, keep_recent, manifest=manifest)
     stats.update({"compaction": cstats})
     if retrieve_memory and query:
         hits = retrieve(query, workspace=workspace)
@@ -507,7 +594,8 @@ def preview(session, message=None, budget_tokens=DEFAULT_BUDGET, keep_recent=DEF
     _hist = [dict(m, content=wire_content(m)) if isinstance(m, dict) else m
              for m in sess.get("messages", [])]
     msgs, stats = build(sysp, _hist, eff_message,
-                        budget_tokens, keep_recent, retrieve_memory=False)
+                        budget_tokens, keep_recent, retrieve_memory=False,
+                        manifest=sess.get("tool_cards"))
     stats["system_prompt_tokens"] = count_tokens(sysp)
     # retrieval is reported separately so the check can observe memory hits
     hits = retrieve(message or (sess["messages"][-1]["content"] if sess["messages"] else ""),

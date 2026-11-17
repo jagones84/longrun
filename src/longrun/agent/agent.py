@@ -3682,7 +3682,8 @@ def assemble_turn(sess, message, tool_ctx=None, model=None, autonomous=False):
         from longrun.model import context_engine
         msgs, ctx_stats = context_engine.build(
             sys, transcript, eff_message, budget_tokens=context_budget(model),
-            workspace=(sess or {}).get("workspace"))
+            workspace=(sess or {}).get("workspace"),
+            manifest=(sess or {}).get("tool_cards"))
         msgs = _inject_vision_blocks(msgs, model)
     except Exception:  # noqa: BLE001 — never block a turn on the context engine
         msgs = [{"role": "system", "content": sys}]

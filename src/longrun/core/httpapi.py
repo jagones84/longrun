@@ -1968,7 +1968,8 @@ def compact_session(session, budget_tokens=None, keep_recent=None, origin=None):
         kwargs = {"summarizer": lambda old: _summarize_with_llm(old, meta=meta,
                                                                session=session,
                                                                cancel=_cancelled),
-                  "force": manual}
+                  "force": manual,
+                  "manifest": (sess or {}).get("tool_cards")}
         if keep_recent is not None:
             kwargs["keep_recent"] = keep_recent
         msgs, stats = context_engine.compact(messages, room, **kwargs)
