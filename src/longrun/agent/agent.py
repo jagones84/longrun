@@ -21,6 +21,7 @@ import os
 import re
 import time
 import uuid
+from collections import Counter
 
 from longrun.core import api_v02
 from longrun.util import osutil
@@ -5330,6 +5331,12 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     _last_failed_hash = None  # JAG-183: last FAILED (tool,args) -> verbatim re-run blocked
     _last_failed_err = ""
     _blocked_repeat = 0
+    # 2026-11-17: identical calls ANYWHERE in the turn, not only consecutive ones.
+    # The consecutive-only counter (`_tool_repeat`, JAG-178) let session `architect`
+    # read the same `workspace.json` 5 times across batches before the nudge fired
+    # ONCE (msg 81); the hard block (JAG-183) covered only FAILED calls.
+    _call_seen = Counter()
+    _same_before = 0
     # JAG-272: a weak model can emit NONSENSE turns forever (malformed JSON /
     # unknown action / a bare promise). Without a cap it burned the whole iteration
     # budget. Stop after a few consecutive invalid turns with a clear reason.
@@ -6373,12 +6380,21 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             # it and hand back a directive so the model MUST change route, read a
             # skill, or ask ONE precise question.
             _call_h = _kg.tool_hash(tool, args)
-            if _call_h == _last_failed_hash:
+            _same_before = _call_seen[_call_h]
+            _call_seen[_call_h] += 1
+            # The verbatim re-run of a FAILED call (JAG-183) and the THIRD run of any
+            # identical call are both refused: a third identical result adds nothing.
+            if _call_h == _last_failed_hash or _same_before >= 2:
                 _blocked_repeat += 1
                 msgs.append({"role": "assistant", "content": answer})
-                _inject(_repeat_block_note(tool, _last_failed_err, _blocked_repeat,
-                                           _skill_hints(tool + " " + (_last_failed_err or ""))),
-                        "nudge")
+                _inject(_repeat_block_note(
+                    tool,
+                    _last_failed_err or ("this exact call already ran twice in this "
+                                         "turn and returned the same result; a third "
+                                         "run adds nothing new"),
+                    _blocked_repeat,
+                    _skill_hints(tool + " " + (_last_failed_err or ""))),
+                    "nudge")
                 continue
             work_steps += 1
             _total_work_steps += 1
@@ -6510,8 +6526,10 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 _last_failed_err = obs[:300]
             else:
                 _last_failed_hash = None
-            if len(obs) <= CHAT_TOOL_OBS_LIMIT and (_fail_streak >= 2 or _tool_repeat >= 1):
-                note = _stuck_note(tool, obs, _fail_streak, _tool_repeat,
+            if len(obs) <= CHAT_TOOL_OBS_LIMIT and (
+                    _fail_streak >= 2 or _tool_repeat >= 1 or _same_before >= 1):
+                note = _stuck_note(tool, obs, _fail_streak,
+                                   max(_tool_repeat, _same_before),
                                    _skill_hints(tool + " " + obs))
             elif len(obs) > CHAT_TOOL_OBS_LIMIT:
                 note = _offload_observation(sess, tool, obs)

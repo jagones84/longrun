@@ -21,10 +21,11 @@ env_files:
   - .env
 
 # The model a bare/absent request falls back to. A GENERAL cloud model, never a
-# local one: the OpenRouter auto-router picks the best general model per request.
+# local one. Pinned to glm-5.3-flash (deterministic cost): the OpenRouter
+# auto-router was removed because it silently routed to expensive frontier models.
 # The user's own choice (Settings ▸ Models ▸ ★) persists in providers.local.yaml
 # and always wins over this shipped default.
-default: openrouter:openrouter/auto
+default: openrouter:z-ai/glm-5.3-flash
 
 providers:
   # ---- local: llama.cpp router on the DGX Spark -----------------------------
@@ -90,9 +91,6 @@ providers:
       - {id: "deepseek/deepseek-v4-flash-0731"}
       - {id: "deepseek/deepseek-v4-pro-0813"}
       - {id: "~deepseek/deepseek-pro-latest"}
-      # convenient router aliases
-      - {id: "openrouter/auto"}
-      - {id: "openrouter/auto-beta"}
       # ---- RERANKERS (retrieval second stage — NOT chat models) --------------
       # `rerank: true` marks a cross-encoder: it answers POST /rerank, so it is
       # never offered to a chat picker, a default or a fallback

@@ -15,7 +15,7 @@
 set -u
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO" || exit 1
-TB_HOME="${TB_HOME:-/home/jagones/Repositories/third-parties/terminal-bench}"
+TB_HOME="${TB_HOME:-$(cd "$REPO/../.." && pwd)/third-parties/terminal-bench}"
 TB="$TB_HOME/.venv/bin/tb"
 
 # Model policy (project rule 2026-11-06): NEVER a local DGX model in a benchmark —

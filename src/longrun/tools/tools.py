@@ -4103,6 +4103,29 @@ def _shape_notes(tool: str, args: Any) -> list[tuple[str, str]]:
     return notes
 
 
+#: List-valued keys that carry a tool's PAYLOAD. Present and EMPTY -> no data.
+_PAYLOAD_LIST_KEYS = ("files", "matches", "hits", "rows", "lines", "processes",
+                      "results", "items")
+#: `stdout` sentinels that mean "I searched and found nothing".
+_EMPTY_STDOUT = {"", "(no match)", "(no matches)", "(none)", "none"}
+
+
+def _result_is_empty(res: Any) -> bool:
+    """True ONLY when a success POSITIVELY carries no payload.
+
+    Conservative by construction: an unrecognised shape is NOT empty, so a real
+    answer is never turned into a refusal. Used to decide that an IGNORED
+    argument, not the world, produced the empty answer.
+    """
+    if not isinstance(res, dict):
+        return False
+    for key in _PAYLOAD_LIST_KEYS:
+        if isinstance(res.get(key), list):
+            return len(res[key]) == 0
+    out = res.get("stdout")
+    return isinstance(out, str) and out.strip().lower() in _EMPTY_STDOUT
+
+
 def _missing_args_reply(tool: str, missing: list[str],
                         empty: list[str] | None = None,
                         missing_any: list[list[str]] | None = None,
@@ -4231,21 +4254,34 @@ def _dispatch_execute_raw(tool, args, run_id=None):
     res["args"] = args
     # 2026-11-08: an UNDECLARED argument was dropped in silence when the call
     # otherwise succeeded, so a typo ("startline" for "start_line") read the whole
-    # file and looked correct. The call DID run, so it stays non-fatal; the model
-    # is told which key was ignored and what the tool accepts.
-    if res.get("ok"):
-        _ignored = [text for kind, text in _shape_notes(tool, args) if kind == "unknown"]
-        if _ignored:
+    # file and looked correct.
+    # 2026-11-17: when the call SUCCEEDS but returns NO payload, the ignored key is
+    # the likely cause and the empty answer is a LIE the model acts on — measured on
+    # session `architect` msg 19: `glob.list {"pattern":..,"path":..}` searched the
+    # default root, returned `(no match)`, and the model concluded the file did not
+    # exist. An empty answer next to a dropped argument is INVALID_INPUT (exit 64),
+    # never a result. Otherwise the call stays non-fatal and only warns (v874 A3).
+    _ignored = [text for kind, text in _shape_notes(tool, args) if kind == "unknown"]
+    if _ignored:
+        # R4 (staged): count the occurrence in the existing rule-hit ledger — on
+        # BOTH branches — so a week of evidence decides whether the refusal may ship.
+        try:
+            from longrun.tools import registry as _reg
+            for _text in _ignored:
+                _reg.note_rule_hit(tool, "unknown_arg", _text)
+        except Exception:  # noqa: BLE001 — counting must never fail a call
+            pass
+        if res.get("ok") and _result_is_empty(res):
+            res = {"ok": False, "tool": tool, "args": args, "exit_code": 64,
+                   "invalid_input": True, "ignored_args": list(_ignored),
+                   "stdout": res.get("stdout"),
+                   "warning": "; ".join(_ignored) + " — ignored",
+                   "error": ("%s: %s — the call returned NO result, so the dropped "
+                             "argument is the likely cause. This is NOT 'it does not "
+                             "exist': fix the argument NAME and call again."
+                             % (tool, "; ".join(_ignored)))}
+        elif res.get("ok"):
             res["warning"] = "; ".join(_ignored) + " — ignored"
-            # R4 (staged): the call still ran. Count the occurrence in the
-            # existing rule-hit ledger so a week of evidence decides whether
-            # the refusal may ship; nothing about this call changes.
-            try:
-                from longrun.tools import registry as _reg
-                for _text in _ignored:
-                    _reg.note_rule_hit(tool, "unknown_arg", _text)
-            except Exception:  # noqa: BLE001 — counting must never fail a call
-                pass
     return res
 
 

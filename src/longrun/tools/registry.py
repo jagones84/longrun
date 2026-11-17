@@ -2883,10 +2883,35 @@ def classify(tool, args, workspace=None, hist=None, allow=None, scope_name=None,
     # bypasses it (matrix-promote precedent).
     _sess = session or (args or {}).get("_session") or (args or {}).get("run_id")
     if session_plan_locked(_sess) and plan_denies(tool):
+        # 2026-11-17: the reason must TRANSLATE the state into the OPERATOR's next
+        # action, not describe it in jargon. Measured on session `architect`: 6
+        # refusals read "is not exploration" and the agent re-proposed the plan
+        # instead of telling the operator to click ▶ — the DOCUMENT block says this
+        # correctly, the tool refusal did not.
+        _pstate = {}
+        try:
+            from longrun.memory import stores as _stm
+            _pstate = (_stm.load_session(_sess) or {}).get("plan") or {}
+        except Exception:  # noqa: BLE001 — the reason must never break classify
+            _pstate = {}
+        _status = str(_pstate.get("status") or "none")
+        if _status in ("", "none"):
+            _state = "no plan has been proposed yet"
+        elif _status == "proposed":
+            _state = "a plan is PROPOSED and not decided yet"
+        elif _status == "rejected":
+            _state = "the proposed plan was REJECTED"
+        else:  # approved, but the implementation was never authorised
+            _state = ("the plan is APPROVED but the implementation was NOT "
+                      "authorised")
         return "denied", (
-            "plan mode: session %r has an unapproved plan — %r is not exploration; "
-            "only read-only tools work until the operator approves the plan "
-            "(propose it with `docs`, then wait)" % (_sess, tool))
+            "plan mode: this session is locked and %s, so %r is blocked (only "
+            "read-only tools run). This is NOT a mistake in your call — the "
+            "OPERATOR must decide. Tell them, in plain words, exactly that: the "
+            "fix is the ▶ on the plan bar (approve & implement), or "
+            "`docs` action=implement. Propose with `docs` action=plan if there is "
+            "nothing to decide yet, then STOP and wait."
+            % (_state, tool))
     # PT3: `matrix.promote_to_nucleous` / `matrix{action:"promote_to_nucleous"}` is gated EXCLUSIVELY
     # by the dedicated `approvals.allow_matrix_promote` checkbox — even `approvals.mode=full` never unlocks it.
     if tool == "matrix.promote_to_nucleous" or (

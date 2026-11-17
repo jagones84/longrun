@@ -1,3 +1,10 @@
 __pycache__/
 *.pyc
 *.pyo
+
+# 2026-11-17 (operator): `src/Matrix` is TRACKED code (it is the importable
+# `Matrix` package), but `learned_*.py` under tools/ is generated at runtime by
+# self-evolve (`forge_matrix`) — per-machine output, exactly like reports/.
+# Ignoring it keeps `git status` about source instead of about one machine's
+# forged tools; promotion still copies the file into the tracked Nucleous.
+tools/learned_*.py
