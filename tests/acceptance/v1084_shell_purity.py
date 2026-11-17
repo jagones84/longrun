@@ -72,7 +72,7 @@ IMPURE = [
     "ls 2> err.txt",
     "ls &> both.txt",
     "ls >/dev/null/x",
-    "cat < secret",
+    "cat < secret > out",                  # round 17: `< file` alone is a read
     "echo x | tee out.txt",
     "sort -o out.txt in.txt",
     "find . -delete",
