@@ -9,6 +9,7 @@ neither read nor tamper with the judge. Pure module (no dependency on the server
 import hashlib
 import json
 import os
+import re
 import shlex
 import time
 
@@ -108,17 +109,58 @@ def run(candidate=None, c=None, timeout=None, runner=None):
     return bool(green), str(out)[-1200:], int((time.time() - t0) * 1000)
 
 
-def gate(candidate=None, c=None, runner=None):
-    """Sealed verification: integrity AND run. Fail-closed on any doubt."""
+# A suite may report one line per case: `CASE <id> PASS|FAIL`. Absent markers, the
+# canary is `unbound` and the gate behaves exactly as before (PROCTOR §5.5).
+CASE_MARKER = re.compile(r"(?m)^\s*CASE\s+(\S+)\s+(PASS|FAIL)\b")
+
+
+def parse_cases(output):
+    """Per-case outcomes from the suite's `CASE <id> PASS|FAIL` marker lines."""
+    cases = {}
+    for m in CASE_MARKER.finditer(output or ""):
+        cases[m.group(1)] = (m.group(2) == "PASS")
+    return {"cases": cases}
+
+
+def canary_verdict(output, canary_id):
+    """The canary decision for a run's output (pure; see `plan.canary`)."""
+    from longrun.plan import canary
+    return canary.evaluate(parse_cases(output), canary_id=canary_id)
+
+
+def _declared_canary(canary_id=None):
+    """The canary id: the argument wins, else the manifest's `canary` key."""
+    if canary_id:
+        return str(canary_id)
+    cid = (load_manifest() or {}).get("canary")
+    return str(cid) if cid else None
+
+
+def gate(candidate=None, c=None, runner=None, canary_id=None):
+    """Sealed verification: integrity, then run, then the canary tripwire.
+
+    A declared canary (manifest key `canary`, or the `canary_id` argument) is a
+    held-out case NO honest candidate can pass (PROCTOR, arXiv:2609.02246 §5.5):
+    if it PASSES, the run is refused (`reason: canary_tripped`) — a perfect score
+    is evidence of leakage, not of quality. No canary declared -> unchanged.
+    """
     rep = integrity(c)
     if not rep.get("ok"):
         return {"green": False, "integrity": rep, "run": None,
                 "reason": rep.get("reason", "integrity")}
     green, out, ms = run(candidate=candidate, c=c,
                          timeout=(c or {}).get("heldout_timeout"), runner=runner)
-    return {"green": bool(green), "integrity": rep,
-            "run": {"green": bool(green), "duration_ms": ms, "output": out},
-            "reason": "ok" if green else "run_failed"}
+    result = {"green": bool(green), "integrity": rep,
+              "run": {"green": bool(green), "duration_ms": ms, "output": out},
+              "reason": "ok" if green else "run_failed"}
+    cid = _declared_canary(canary_id)
+    if cid:
+        cv = canary_verdict(out, cid)
+        result["canary"] = cv
+        if cv["verdict"] == "tripped":
+            result["green"] = False
+            result["reason"] = "canary_tripped"
+    return result
 
 
 def pin(paths=None, command=None):

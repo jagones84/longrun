@@ -57,6 +57,49 @@ if canary is not None:
     check("C5 a declared-but-absent canary is unbound",
           r_missing.get("verdict") == "unbound", r_missing)
 
+# --- C6: the sealed held-out gate refuses when the canary passes --------------
+import hashlib
+import json
+import shutil
+import tempfile
+
+try:
+    from longrun.plan import heldout
+except Exception as e:  # noqa: BLE001
+    heldout = None
+    HELDOUT_ERR = e
+
+
+def _sha(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+_c6_ok, _c6_detail = False, "heldout not importable: %r" % (globals().get("HELDOUT_ERR"),)
+if heldout is not None and canary is not None:
+    _d = tempfile.mkdtemp(prefix="heldout-c6-")
+    os.makedirs(os.path.join(_d, "suite"), exist_ok=True)
+    _suite = os.path.join(_d, "suite", "check_all.py")
+    with open(_suite, "w") as fh:
+        fh.write("print('CASE canary_x PASS')\n")
+    with open(os.path.join(_d, "manifest.json"), "w") as fh:
+        json.dump({"files": {"suite/check_all.py": _sha(_suite)},
+                   "command": "python3 check_all.py", "canary": "canary_x"}, fh)
+    os.environ["LONGRUN_HELDOUT_DIR"] = _d
+    try:
+        _rep = heldout.gate(runner=lambda suite, cmd: (True, "CASE canary_x PASS"))
+        _c6_ok = (_rep.get("green") is False and _rep.get("reason") == "canary_tripped")
+        _c6_detail = _rep
+    except Exception as e:  # noqa: BLE001
+        _c6_detail = "raised: %r" % (e,)
+    finally:
+        os.environ.pop("LONGRUN_HELDOUT_DIR", None)
+        shutil.rmtree(_d, ignore_errors=True)
+check("C6 heldout.gate refuses when the canary passes", _c6_ok, _c6_detail)
+
 print("---")
 print("%d/%d PASS" % (sum(RESULTS), len(RESULTS)))
 raise SystemExit(0 if all(RESULTS) else 1)
