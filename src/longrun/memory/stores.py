@@ -826,6 +826,14 @@ def list_sessions():
             upd = row["updated"]
             out.append({
                 **row,
+                # JAG-933: the ABSOLUTE path of the transcript this row stands for.
+                # The operator hands it to another agent ("read the chat in this
+                # file") or pastes it into an editor/shell, so it must be the real
+                # file on this host — never a path the browser rebuilt from a
+                # guessed data home. It rides the ROW, not the document: `path`
+                # added to the session dict itself would be persisted by
+                # `save_session` and leak into every transcript on disk.
+                "path": os.path.abspath(p),
                 "age": _rel_time(upd),
                 "running": row["id"] in _active,
             })

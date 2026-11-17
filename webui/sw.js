@@ -24,8 +24,10 @@
  * copy for an already-installed app.
  * 2026-11-16 — bumped to v6: the Tools page gained its search field and the Rules
  * row moved the ✨ onto the path row, so the "/" shell changed shape again.
+ * 2026-11-17 — bumped to v7 (JAG-933): the chat header gained the session-file
+ * copy button, so the shell changed shape again.
  */
-const CACHE = "longrun-shell-v6";
+const CACHE = "longrun-shell-v7";
 const SHELL = ["/", "/orbit", "/assets/dragsort.js", "/assets/icon-192.png",
                "/assets/icon-512.png", "/assets/apple-touch-icon.png",
                "/assets/icon-maskable-512.png"];

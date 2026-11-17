@@ -6,6 +6,18 @@ All notable changes to Longrun are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- **The chat header hands out the session's FILE, not just its name.** Operator: *"a way to copy the
+  session file (absolute path) so you have the path in hand and can hand it to another agent — look at the
+  chat in this path … at the top, near the other copy (copy name), always an icon, no text"*. A second
+  icon-only button (`#chatHeadPath`, a drawn document glyph beside the existing ⧉) puts the absolute
+  transcript path on the clipboard in one tap — ready for another agent, an editor or a shell. The path is
+  the SERVER's own: `list_sessions()` now carries `path` (the absolute file each row stands for, resolved
+  against the live data home, which the browser cannot derive). It rides the ROW and never the document,
+  so `save_session` cannot persist a `path` key into every transcript on disk; a row without one refuses
+  out loud instead of copying an empty string. (`LONGRUN_DATA_HOME` moves the data dir, so a
+  browser-rebuilt `/data/sessions/<id>.json` would be a guess.) Locked by `v1067` A1–A6, B1–B10.
+
 ### Changed
 - **A document now carries TWO decisions, and the approval policy has ONE owner.** Operator: *"the manual
   approval is required both plan and spec … i was in approval=FULL … a specific checkbox: auto-approve

@@ -761,6 +761,11 @@
   #chatHead .ch-copy { all: unset; cursor: pointer; color: var(--dim); padding: 2px 6px;
     border-radius: 6px; font-size: 12px; }
   #chatHead .ch-copy:hover { color: var(--acc); background: var(--panel2); }
+  /* JAG-933: the path button is a DRAWN icon, not a glyph character — one stroke
+     weight, `currentColor` so it inherits the hover accent, `display: block` so it
+     sits on the button box instead of an inline baseline. 16px keeps the tap target
+     at the 24x24 floor the rest of the chat affordances follow (WCAG 2.2 AA). */
+  #chatHead .ch-copy svg { display: block; width: 16px; height: 16px; }
   #chatSearchBar { display: flex; align-items: center; gap: 6px; padding: 6px 14px;
     border-bottom: 1px solid var(--line); background: var(--panel); }
   #chatSearchBar[hidden] { display: none; }
@@ -3766,6 +3771,16 @@
            its name in aria-label, the tooltip is the visible copy of the same name). -->
       <button type="button" class="ch-copy" id="chatHeadCopy"
               title="copy the session name" aria-label="copy name">⧉</button>
+      <!-- JAG-933: the same box again, for the session's FILE — one tap puts the
+           absolute transcript path on the clipboard, ready to hand to another agent
+           ("read the chat in this path") or to paste in an editor. The icon is the
+           document itself: it says WHICH thing is copied, where the neighbouring ⧉
+           says only "copy". -->
+      <button type="button" class="ch-copy" id="chatHeadPath"
+              title="copy the session file path" aria-label="copy session file path"
+              ><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+                    stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+                    stroke-linejoin="round" aria-hidden="true"><path d="M14.5 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7.5L14.5 3Z"/><path d="M14.5 3v4.5H19"/><path d="M9 12.5h6"/><path d="M9 16.5h4"/></svg></button>
     </div>
     <div id="chatSearchBar" hidden role="search" aria-label="Search the current chat">
       <input type="search" id="chatSearchInput" maxlength="512"
@@ -9065,6 +9080,7 @@ async function loadSessions() {
   _all.forEach(s => {
     _sessModel[s.id] = s.model || "";   // JAG-157: cache each session's model
     _sessTitle[s.id] = s.title || s.id; // JAG-479: so the panel names every row
+    _sessPath[s.id] = s.path || "";     // JAG-933: its transcript file on THIS host
     // JAG-323: seed the busy marker from the authoritative server flag, so a page
     // load / refresh shows a HEADLESS run (job/routine turn) that no in-page event
     // announced. Never clobber a turn this browser is itself streaming.
@@ -12072,6 +12088,7 @@ let _modelItems = [];    // items currently rendered, in visual order
 let _modelHi = 0;        // highlighted index (keyboard)
 let _sessModel = {};     // JAG-157: per-session model {sessionId: modelRef}
 let _sessTitle = {};     // JAG-479: per-session title, so the runs panel names a row
+let _sessPath = {};      // JAG-933: per-session transcript path, as the SERVER reports it
 let _sessList = [];      // JAG-479: the last /api/sessions payload (real server truth)
 
 /* JAG-157: a session remembers its own LLM; fall back to the global default. */
@@ -22243,6 +22260,18 @@ function _copySessionName() {
   Promise.resolve(copyText(payload)).then(ok =>
     toast(ok ? "session name copied" : "copy failed", ok ? "ok" : "err"));
 }
+/* JAG-933: the session's FILE, not its name — the absolute path of the transcript
+   the server persists, so it can be handed to another agent ("read the chat stored
+   in this path") or pasted into an editor/shell. The path is quoted from the server
+   payload (`/api/sessions` → `row.path`): the data home is a machine setting, so a
+   path rebuilt in the browser would be a guess. Nothing is copied when the server
+   reported no path — an empty clipboard is worse than an honest failure. */
+function _copySessionPath() {
+  const p = sessionId ? (_sessPath[sessionId] || "") : "";
+  if (!p) { toast("session file path unavailable"); return; }
+  Promise.resolve(copyText(p)).then(ok =>
+    toast(ok ? "session file path copied" : "copy failed", ok ? "ok" : "err"));
+}
 /* JAG-428: reveal the ACTIVE session in the left rail — from anywhere (typically the
    chat), even when its team group (or the whole panel) is collapsed. Opens the panel,
    expands every group that holds the session, scrolls its row to the CENTER and flashes
@@ -22370,6 +22399,7 @@ _wireRunsPanel();   // JAG-479: the running/unread popover reads real state and 
 _wireSessMenuClose();   // 2026-11-16: one listener closes the session ⋮ menu (reopens cleanly)
 _wireObjectContextMenu();   // 2026-11-16: right-click means something on every object
 { const _chc = $("chatHeadCopy"); if (_chc) _chc.onclick = _copySessionName; }   // JAG-480
+{ const _chp = $("chatHeadPath"); if (_chp) _chp.onclick = _copySessionPath; }   // JAG-933
 $("chatSearchToggle").onclick = toggleChatSearch;
 $("chatSearchClose").onclick = closeChatSearch;
 $("chatSearchPrev").onclick = () => _chatSearchMove(-1);
