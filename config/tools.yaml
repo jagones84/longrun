@@ -482,6 +482,15 @@ tools:
       # store is denied in the shell spelling too. `ls` of the store stays allowed.
       - "(?:>>?|\\btee\\b)[^\\n]*data/(runs|sessions|threads|heldout|events\\.db)"
       - "\\b(rm|mv|truncate|shred|dd|cp|install)\\b[^\\n]*data/(runs|sessions|threads|heldout|events\\.db)"
+      # 2026-11-18 round 6 — the FOURTH spelling. `python.run` is guarded in code
+      # (`matrix_guard.check_python_write`), and the redirect/delete spellings are
+      # denied above, but `shell.exec` may invoke an INTERPRETER. Proved live:
+      # `python3 -c "open('data/events.db','w').write('{}')"` was auto-approved and
+      # executed under `approvals.mode=full`. Any interpreter one-liner or heredoc
+      # that NAMES the store is denied — read and write alike (a legitimate read has
+      # `fs.read`). Bounded text match, not a sandbox: `python3 -m module` whose
+      # code writes the store elsewhere is not detectable here (documented limit).
+      - "(?:python[0-9.]*|node|perl|ruby)\\b[^\\n]*(?:\\s-c\\b|\\s-e\\b|\\s-\\s*<<|<<)[\\s\\S]{0,600}?(?:events\\.db|data/(runs|sessions|threads|heldout)\\b)"
       - "\\b(cat|head|tail|less|more|strings|xxd|od|base64|cp|rsync|scp)\\b[^\\n]*data/heldout"
 
   # read a file (host-side, constrained to allowed roots)
