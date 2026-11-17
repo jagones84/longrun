@@ -151,8 +151,8 @@ info = T.execute("self", {"action": "failures", "limit": 6})
 line = ((info.get("failure_lines") or [""])[0])
 check("E1 the line the model reads names the agents (`· who: A61 3, A170 1`)",
       "· who: A61 3, A170 1" in line, line)
-check("E2 the issue's own reach stays its number (5 cards) while the agents sum 4",
-      "5 in 3 session(s)" in line and "who: A61 3, A170 1" in line, line)
+check("E2 the issue's reach is the UNION of its classes (4 sessions), not the max (3)",
+      "5 in 4 session(s)" in line and "who: A61 3, A170 1" in line, line)
 check("E3 the payload the panel reads carries the same rows",
       (info.get("failures") or {}).get("issues", [{}])[0].get("agents")
       and (info["failures"]["issues"][0]["agents"][0]["id"] == "A61"),

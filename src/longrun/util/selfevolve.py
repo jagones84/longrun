@@ -917,6 +917,13 @@ def session_failures(sessions_dir=None, limit=200, max_sessions=400, since=None)
     rows = [{"tool": t, "error": e, "count": v["count"], "repeats": v["repeats"],
              "recovered": v["recovered"],
              "sessions": len(v["sessions"]), "samples": v["samples"],
+             # Round 38: the class carries WHICH sessions, not only how many. An
+             # issue sums several classes, and `max` over their counts is not the
+             # number of sessions the issue reaches (`shell · tool-error` read
+             # "32 in 1 session" with 16 of 32 belonging to one agent). The ids
+             # stay in this row for the merge; `_issues_from` pops them so no
+             # emitted row carries the list back out.
+             "session_ids": sorted(v["sessions"]),
              "probe": v.get("probe") or "",
              "agents": _top_agents(v["agents"])}
             for (t, e), v in buckets.items()]
@@ -981,10 +988,12 @@ def failure_candidates(path=None, limit=10, min_count=1, include_sessions=False,
             head = error_class(step.get("error"))
             row = buckets.setdefault((tool, head), {"count": 0, "repeats": 0,
                                                     "recovered": 0, "runs": set(),
-                                                    "sessions": 0,
+                                                    "sessions": 0, "sids": set(),
+                                                    "from_sessions": 0, "from_runs": 0,
                                                     "samples": [], "probe": "",
                                                     "agents": {}})
             row["count"] += 1
+            row["from_runs"] += 1
             row["runs"].add(fn[:-5])
             if not row["probe"]:
                 row["probe"] = str(step.get("error") or "")[:400]
@@ -997,13 +1006,15 @@ def failure_candidates(path=None, limit=10, min_count=1, include_sessions=False,
             key = (str(cls.get("tool") or "?"), str(cls.get("error") or ""))
             row = buckets.setdefault(key, {"count": 0, "repeats": 0,
                                            "recovered": 0, "runs": set(),
-                                           "sessions": 0,
+                                           "sessions": 0, "sids": set(),
+                                           "from_sessions": 0, "from_runs": 0,
                                            "samples": [], "probe": "",
                                            "agents": {}})
             row["count"] += int(cls.get("count") or 0)
+            row["from_sessions"] += int(cls.get("count") or 0)
             row["repeats"] += int(cls.get("repeats") or 0)
             row["recovered"] += int(cls.get("recovered") or 0)
-            row["sessions"] = max(row["sessions"], int(cls.get("sessions") or 0))
+            row["sids"].update(cls.get("session_ids") or [])
             # Round 37: the session corpus is the only one with a WHO; a
             # run-record-only row names nobody instead of guessing.
             for a in (cls.get("agents") or []):
@@ -1018,13 +1029,19 @@ def failure_candidates(path=None, limit=10, min_count=1, include_sessions=False,
                 row["probe"] = str(cls.get("probe") or "")[:400]
     rows = []
     for (tool, head), v in buckets.items():
-        in_runs, in_sessions = bool(v["runs"]), bool(v["sessions"])
+        in_runs = bool(v["runs"])
+        in_sessions = bool(v["sids"]) or bool(v["sessions"])
         family = failure_family(tool, head, v.get("probe"))
         action, check = FAMILY_FIX.get(family, FAMILY_FIX["tool-error"])
         rows.append({"id": "fail-%s-%s-%s" % (
                          re.sub(r"[^a-z0-9]+", "-", tool.lower()).strip("-") or "tool",
                          family, hashlib.sha1(head.encode("utf-8")).hexdigest()[:6]),
                      "tool": tool, "error": head, "count": v["count"],
+                     # Round 38: the two corpora count DIFFERENT units (session
+                     # tool cards vs run-record steps), so the split travels with
+                     # the total instead of hiding behind one number.
+                     "from_sessions": int(v.get("from_sessions") or 0),
+                     "from_runs": int(v.get("from_runs") or 0),
                      "repeats": v.get("repeats", 0),
                      "retry_rate": retry_signal(v.get("repeats", 0), v["count"]),
                      "recovered": v.get("recovered", 0),
@@ -1032,7 +1049,11 @@ def failure_candidates(path=None, limit=10, min_count=1, include_sessions=False,
                      # 0.0 is a measured "never recovered".
                      "recovery_rate": (None if not in_sessions else
                                        retry_signal(v.get("recovered", 0), v["count"])),
-                     "runs": len(v["runs"]), "sessions": v["sessions"],
+                     "runs": len(v["runs"]),
+                     # Round 38: the session corpus knows WHICH sessions; a
+                     # runs-only class keeps its 0 and says nothing else.
+                     "sessions": (len(v["sids"]) if v["sids"] else v["sessions"]),
+                     "session_ids": sorted(v["sids"]),
                      "source": ("both" if in_runs and in_sessions else
                                 "sessions" if in_sessions else "runs"),
                      "family": family,
@@ -1057,10 +1078,18 @@ def _issues_from(rows):
         g = grouped.setdefault(key, {"tool": r["tool"], "family": r["family"],
                                      "count": 0, "repeats": 0, "recovered": 0,
                                      "sessions": 0, "runs": 0, "classes": [],
-                                     "source": set(), "samples": [], "agents": {}})
+                                     "source": set(), "samples": [], "agents": {},
+                                     "sids": set(), "from_sessions": 0, "from_runs": 0})
         g["count"] += int(r["count"] or 0)
+        g["from_sessions"] += int(r.get("from_sessions") or 0)
+        g["from_runs"] += int(r.get("from_runs") or 0)
         g["repeats"] += int(r.get("repeats") or 0)
         g["recovered"] += int(r.get("recovered") or 0)
+        # Round 38: an issue's reach is the UNION of its classes' sessions, not
+        # the largest class's count. Measured 2026-11-18: `shell · tool-error`
+        # said "32 in 1 session(s)" while its classes came from several sessions.
+        # The ids are POPPED so no emitted row carries the list back out.
+        g["sids"].update(r.pop("session_ids", None) or [])
         g["sessions"] = max(g["sessions"], int(r["sessions"] or 0))
         g["runs"] = max(g["runs"], int(r["runs"] or 0))
         # Round 37: the WHO sums across the classes of one issue — "shell.exec ·
@@ -1075,24 +1104,33 @@ def _issues_from(rows):
             if len(g["samples"]) < 2 and s not in g["samples"]:
                 g["samples"].append(s)
         g["classes"].append({"error": r["error"], "count": r["count"],
+                             "from_sessions": int(r.get("from_sessions") or 0),
+                             "from_runs": int(r.get("from_runs") or 0),
                              "repeats": int(r.get("repeats") or 0),
                              "recovered": int(r.get("recovered") or 0)})
     out = []
     for (tool, family), g in grouped.items():
         g["classes"] = sorted(g["classes"], key=lambda c: -c["count"])[:3]
+        # Round 38: the reach is the union of the classes' sessions; a runs-only
+        # issue has no ids and keeps the (zero) count it always had.
+        reach = len(g["sids"]) if g["sids"] else g["sessions"]
         action, check = FAMILY_FIX.get(family, FAMILY_FIX["tool-error"])
         out.append({"id": "fail-%s-%s" % (
                         re.sub(r"[^a-z0-9]+", "-", tool.lower()).strip("-") or "tool",
                         family),
                     "tool": tool, "family": family,
-                    "severity": severity_for(g["family"], g["count"], g["sessions"],
+                    "severity": severity_for(g["family"], g["count"], reach,
                                              g["repeats"]),
-                    "count": g["count"], "sessions": g["sessions"],
+                    "count": g["count"], "sessions": reach,
+                    # Round 38: the split, so a mixed row never reads as if all
+                    # its failures were session cards.
+                    "from_sessions": g["from_sessions"],
+                    "from_runs": g["from_runs"],
                     "repeats": g["repeats"],
                     "retry_rate": retry_signal(g["repeats"], g["count"]),
                     "recovered": g["recovered"],
                     # None = no session corpus in this read (runs only).
-                    "recovery_rate": (None if not g["sessions"] else
+                    "recovery_rate": (None if not reach else
                                       retry_signal(g["recovered"], g["count"])),
                     # Round 32: one predicate, not a `family in (...)` test at every
                     # consumer — the register and the renderers must agree.
@@ -1153,6 +1191,17 @@ def _repair_md(prop):
                            "(a stumble, not a break)" if rec else
                            "no later success of the same tool in the same stage"))
     kind = "refusal" if prop.get("refusal") else "failure"
+    # Round 38: two corpora, two units. A row that mixes session tool cards with
+    # run-record steps names both, so "32 in 1 session" can never read as 32
+    # cards seen in one session; a runs-only row says there is no session corpus
+    # instead of printing a bare zero.
+    _fs, _fr = int(prop.get("from_sessions") or 0), int(prop.get("from_runs") or 0)
+    if _fr and not _fs:
+        units = ""
+        where = "in run records only (no session corpus)"
+    else:
+        units = (" (%d session card(s) + %d run step(s))" % (_fs, _fr)) if _fr else ""
+        where = "in **%s** session(s)" % prop.get("sessions")
     # Round 37 (Who&When Pro): a count with no WHO cannot be routed — the reader
     # had "3 session(s)" and no name. The three strongest agents are named when
     # the store knows them, and the absence is stated when it does not.
@@ -1167,7 +1216,7 @@ def _repair_md(prop):
         "for them, and no attribution is invented.\n\n")
     return (
         "# Repair: %s · %s\n\n"
-        "**Severity:** %s — **%s** %s(s) in **%s** session(s) "
+        "**Severity:** %s — **%s** %s(s)%s %s "
         "(source: %s).\n\n"
         "%s"
         "%s"
@@ -1183,7 +1232,7 @@ def _repair_md(prop):
         "touched; state the fix, apply it through the normal gate, and re-read "
         "`self.failures` (or run the check) to prove the issue is gone.\n"
         % (prop.get("tool"), prop.get("family"),
-           prop.get("severity"), prop.get("count"), kind, prop.get("sessions"),
+           prop.get("severity"), prop.get("count"), kind, units, where,
            prop.get("source"), who_line, window, retried, recovery, rows,
            ("```\n%s\n```\n\n" % samples) if samples else "",
            prop.get("action") or "(no remedy recorded)",
@@ -1231,6 +1280,9 @@ def issue_drafts(out_dir, limit=5, min_severity="warning", sessions_dir=None,
                 "issue": name, "tool": iss.get("tool"),
                 "family": iss.get("family"), "severity": iss.get("severity"),
                 "count": iss.get("count"), "sessions": iss.get("sessions"),
+                # Round 38: the corpus split travels with the count.
+                "from_sessions": iss.get("from_sessions"),
+                "from_runs": iss.get("from_runs"),
                 "repeats": iss.get("repeats"), "retry_rate": iss.get("retry_rate"),
                 "recovered": iss.get("recovered"),
                 "recovery_rate": iss.get("recovery_rate"),

@@ -2036,9 +2036,20 @@ def _self(args, run_id):
                                 "classes": rep.get("classes") or []}
             lines = []
             for iss in rep.get("issues") or []:
-                lines.append("[%s] %s · %s — %d in %d session(s): %s%s%s%s%s" % (
+                # Round 38: a mixed issue counts session cards AND run-record
+                # steps — two units that must not hide behind one number — and a
+                # runs-only row says it has no session corpus instead of "0
+                # session(s)" with no explanation.
+                _fs, _fr = (int(iss.get("from_sessions") or 0),
+                            int(iss.get("from_runs") or 0))
+                _units = (" (%d cards + %d run steps)" % (_fs, _fr)
+                          if (_fr and _fs) else "")
+                _where = ("run records only, no session corpus"
+                          if (_fr and not _fs)
+                          else "in %d session(s)" % int(iss.get("sessions") or 0))
+                lines.append("[%s] %s · %s — %d%s %s: %s%s%s%s%s" % (
                     iss.get("severity"), iss.get("tool"), iss.get("family"),
-                    iss.get("count"), iss.get("sessions"), iss.get("action"),
+                    iss.get("count"), _units, _where, iss.get("action"),
                     (" · %d retried" % int(iss.get("repeats") or 0))
                     if iss.get("repeats") else "",
                     # Round 31: recovery is stated only where the corpus has
