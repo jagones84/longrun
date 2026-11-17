@@ -367,8 +367,9 @@ def check_python_write(code, workspace=None, repo_root=None):
             shown = str(resolved)
         return (False,
                 "STORE_PROTECTED: python snippet %s inside the harness record (%s). "
-                "The run/session/event/held-out store is not writable by the agent "
-                "it records; write your own outputs under the workspace."
+                "The runs, transcripts, thread ledger, event log, held-out suite and "
+                "improvement proposals are not writable by the agent they record; "
+                "write your own outputs under the workspace."
                 % (what, shown))
 
     def _refuse(resolved, what):
