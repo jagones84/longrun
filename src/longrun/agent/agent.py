@@ -29,6 +29,7 @@ from longrun.model import routing
 from longrun.model import context_limits as ctx_limits
 from longrun.plan import taskgraph
 from longrun.plan import verify as plan_verify
+from longrun.harness import shellread
 from longrun.core import server
 from longrun.core.events import publish
 from longrun.util.paths import DATA_DIR, SESSIONS_DIR, WEBUI_DIR
@@ -2748,32 +2749,16 @@ def _note_chat_mutation(sess, tool, args=None, state=None):
 
 
 _READ_TOOLS = ("fs.read", "fs.view", "fs.cat")
-#: First word of a shell segment that only LOOKS at bytes. A `shell.exec` write is
-#: opaque to the harness (`state["paths"]` stays empty), so a read-only command is
-#: the only way a shell-using turn can prove it opened what it wrote.
-_SHELL_READ_VERBS = ("cat", "head", "tail", "od", "xxd", "less", "more",
-                     "cmp", "diff", "jq")
-#: Anything that could WRITE inside a shell segment disqualifies it.
-_SHELL_WRITE_HINTS = (">", "tee ", "rm ", "mv ", "cp ", "ln ", "chmod ", "chown ",
-                      "sed -i", "truncate ", "dd ")
 
 
 def _shell_looks_read_only(command):
     """True when NO segment of `command` can write and at least one only reads.
 
-    Deliberately narrow: a redirect anywhere disqualifies the whole command, and a
-    segment counts as a read only when its FIRST word is a read-only verb. This is
-    used for ONE question ("did the model look at what it wrote?"), never for
-    attributing a file to a turn.
+    The predicate moved to `harness.shellread.looks_read_only` (one owner, next
+    to the STRICT `reads_only` the counterfactual gate uses); this alias keeps the
+    call site and its truth table unchanged.
     """
-    text = str(command or "")
-    if not text.strip() or any(h in text for h in _SHELL_WRITE_HINTS):
-        return False
-    for seg in re.split(r"&&|\|\||[;|\n]", text):
-        words = seg.strip().split()
-        if words and os.path.basename(words[0]) in _SHELL_READ_VERBS:
-            return True
-    return False
+    return shellread.looks_read_only(command)
 
 
 def _note_chat_verification(tool, args, sess, state):

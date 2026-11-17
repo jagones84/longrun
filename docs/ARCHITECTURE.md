@@ -305,7 +305,7 @@ and guessing. `util/runtree.py` is the read model over those stores, and
 | `integrations/` | `paperclip_adapter.py`, `paperclip_bot.py` (Paperclip team-chat adapter + bot) |
 | `orbit/` | the **Control** deck at `/orbit`: `api.py`, `orchestrator.py`, `attention.py`, `decisions.py`, `registry.py`, `bay.py`, `web/orbit.html` |
 | `research/` | `research.py`, `executor.py`, `researchcfg.py` (web-grounded research agent) |
-| `harness/` | `record.py`, `contrast.py`, `library.py`, `editors.py`, `probe.py`, `runner.py`, `compose.py`, `cycle.py`, `snapshot.py`, `whole.py`, `gateway.py`, `unixshim.py` (bounded evidence workflow) |
+| `harness/` | `record.py`, `contrast.py`, `library.py`, `editors.py`, `probe.py`, `runner.py`, `compose.py`, `cycle.py`, `snapshot.py`, `whole.py`, `gateway.py`, `unixshim.py`, `counterfactual.py`, `shellread.py` (bounded evidence workflow; step-level counterfactual + the purity gate that decides what may be replayed) |
 
 ## Harness evidence workflow
 

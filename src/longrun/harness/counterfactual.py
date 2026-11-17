@@ -14,8 +14,12 @@ under the same policy, approvals and workspace as a normal call.
 
 Two boundaries are deliberate:
 
-* **Read-only tools only.** Re-executing a write is not a counterfactual, it is
-  a duplicate effect. The scope/approval gate is not asked to decide that.
+* **Pure steps only.** Re-executing a write is not a counterfactual, it is a
+  duplicate effect. The scope/approval gate is not asked to decide that: a
+  `fs.read`/`glob`/`diff` card is pure by construction, and a shell card is
+  accepted only when `shellread.reads_only` proves BOTH the recorded command and
+  the changed one pure (arXiv:2606.09071 — the intervention is a diagnosis-
+  specific patch whose descendants are pure, so the outcome flip is evidence).
 * **The live tree is the environment.** Nothing is frozen or restored, so the
   result is labelled `live-tree`; a writer card from the prefix is reported as
   a caveat, never hidden.
@@ -24,12 +28,23 @@ Pure: no server import, no model, no store write.
 """
 import json
 
+from longrun.harness import shellread
+
 # The tools whose execution has no environment effect: re-running one with a
 # different argument changes only what the agent OBSERVES. Deliberately a list,
 # not a heuristic — a new read-only tool is added here in the same commit.
 READ_ONLY = frozenset(("fs.read", "glob", "glob.list", "diff"))
+# The one tool whose purity depends on its ARGUMENTS, so it is classified per
+# card instead of being listed: 1076 live shell commands, 983 of them `shell.exec`
+# (measured 2026-11-18) — refusing the whole tool left the counterfactual with no
+# eligible card at all (round 11's measured limit: 0 read-only cards live).
+SHELL_TOOLS = frozenset(("shell", "shell.exec", "terminal"))
 
 MAX_ARGS = 20
+
+
+def _command(args):
+    return str((args or {}).get("command") or "") if isinstance(args, dict) else ""
 
 
 def plan(card, change):
@@ -42,7 +57,8 @@ def plan(card, change):
     if not isinstance(card, dict) or not str(card.get("tool") or "").strip():
         return {"error": "a recorded card is required"}
     tool = str(card.get("tool")).strip()
-    if tool not in READ_ONLY:
+    is_shell = tool in SHELL_TOOLS
+    if tool not in READ_ONLY and not is_shell:
         return {"error": "tool %r is not read-only: re-executing it would duplicate "
                          "a side effect instead of testing one fact" % tool}
     if not isinstance(change, dict):
@@ -71,8 +87,22 @@ def plan(card, change):
     args.update(changed)
     if len(args) > MAX_ARGS:
         return {"error": "too many arguments (%d > %d)" % (len(args), MAX_ARGS)}
+    purity = ""
+    if is_shell:
+        # BOTH sides must be pure: a replay whose NEW command writes is not an
+        # intervention, it is a second experiment.
+        ok_before, why_before = shellread.reads_only(_command(base))
+        if not ok_before:
+            return {"error": "the recorded shell command is not pure (%s): "
+                             "re-executing it would duplicate an effect" % why_before}
+        ok_after, why_after = shellread.reads_only(_command(args))
+        if not ok_after:
+            return {"error": "the changed shell command is not pure (%s): an "
+                             "intervention must not turn a read into an effect"
+                             % why_after}
+        purity = "read-only shell command"
     return {"tool": tool, "args": args, "changed": sorted(changed),
-            "original_args": base}
+            "original_args": base, "purity": purity or "read-only tool"}
 
 
 def _view(ok, exit_code, error, result):

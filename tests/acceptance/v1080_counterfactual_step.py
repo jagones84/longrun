@@ -68,10 +68,16 @@ check("P1f a dict-valued card works too", p3.get("args") == {"pattern": "*.py"},
 check("P1g the card is not mutated", READ["args"] == json.dumps({"path": "missing.txt"}))
 
 # ---- P2: mutating tools are refused -----------------------------------------
-for tool in ("fs.write", "fs.edit", "shell.exec", "python.run", "git.run"):
+for tool in ("fs.write", "fs.edit", "python.run", "git.run"):
     e = CF.plan({"tool": tool, "args": {"path": "x"}}, {"path": "y"})
     check("P2 %s is refused as a duplicate effect" % tool,
           "not read-only" in (e.get("error") or ""), e)
+# Round 15: `shell.exec` is classified PER CARD (a command can be pure), so the
+# refusal it must still produce is the impurity of the command, not the tool name.
+e = CF.plan({"tool": "shell.exec", "args": {"command": "rm -rf build"}},
+            {"command": "rm -rf dist"})
+check("P2 shell.exec with a mutating command is refused",
+      "not pure" in (e.get("error") or ""), e)
 
 # ---- P3: a change must change something -------------------------------------
 check("P3a an empty change is refused", "empty" in (CF.plan(READ, {}).get("error") or ""))
