@@ -189,7 +189,12 @@ def _steps(cards):
             "ts": card.get("ts"),
             "ok": card.get("ok") if isinstance(card.get("ok"), bool) else None,
             "exit_code": card.get("exit_code"),
-            "error": str(card.get("error") or "")[:ERROR_MAX],
+            # Round 49: a failed card's text can sit in `result` (partial stdout /
+            # shell stderr) while `error` is empty. The register's class rule is
+            # exactly `error or result` for session cards (selfevolve.
+            # session_failures); without the same fallback here those steps reached
+            # it as `(no error text)` — measured 2026-11-18 on the 4 live records.
+            "error": str(card.get("error") or card.get("result") or "")[:ERROR_MAX],
             "backend": card.get("backend") or "",
             "args_keys": sorted(args.keys()),
             "args_len": len(_canonical(args)),
