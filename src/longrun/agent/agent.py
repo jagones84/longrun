@@ -1912,6 +1912,33 @@ def _resolve_graph_node(graph, step):
     return node
 
 
+def _missing_step_hint(graph):
+    """What the model can address instead, when a step id/label/index does not resolve.
+
+    Round 33, measured 2026-11-18 over the live store: `todo.update` answered
+    `step 'n1' not found` in 2 cards / 2 sessions and neither recovered — one of
+    them was the FIRST card of its session, i.e. the model addressed `n1` before
+    any plan existed. The observation already renders the whole list, but the
+    refusal line itself said nothing, so the retry guessed again. Same rule as the
+    argument contract (round 30): the refusal names what is REAL — the open ids, or
+    the writer to use when there is no plan yet.
+    """
+    try:
+        nodes = taskgraph.plan_nodes(graph)
+    except Exception:  # noqa: BLE001 — a hint must never break the update
+        return ""
+    if not nodes:
+        return (' — this session has no plan yet: write the steps first with '
+                '{"action":"todo.write","todos":[{"label":"<step>","deps":[]}]}')
+    open_ids = [str(n.get("id")) for n in nodes
+                if n.get("status") in taskgraph.OPEN_STATUSES]
+    ids = open_ids or [str(n.get("id")) for n in nodes]
+    more = len(ids) - 6
+    return (" — %s %s%s (or use `index` for the position in the OPEN list)"
+            % ("the open steps are" if open_ids else "the steps are",
+               ", ".join(ids[:6]), (" +%d more" % more) if more > 0 else ""))
+
+
 def _apply_chat_todo_updates(sess, act, on_event, node=None, after=None):
     """Harness action `update_todos`: the MODEL advances its own plan (JAG-75).
 
@@ -1956,7 +1983,7 @@ def _apply_chat_todo_updates(sess, act, on_event, node=None, after=None):
             _ref = step.get("id") or step.get("label") or step.get("index")
             _nd = _resolve_graph_node(graph, step)
             if _nd is None:
-                errors.append("step %r not found" % (_ref,))
+                errors.append("step %r not found%s" % (_ref, _missing_step_hint(graph)))
                 continue
             _raw_status = str(step.get("status") or "").strip()
             status = taskgraph.normalize_status(_raw_status)
