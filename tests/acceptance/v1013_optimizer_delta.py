@@ -76,11 +76,16 @@ if props:
     check("A7 proposal is pending (not auto-applied)", rec.get("status") == "pending", rec.get("status"))
 
 # ---- B) a fenced / prose-wrapped reply is still parsed ----------------------
+# v1074 (RRSI pruner): a second IDENTICAL delta is refused as "already proposed",
+# so this case must carry a DIFFERENT change — it tests the parser, not duplicate
+# submission. Same shape, different row.
+_delta2 = {"target": "fs.write", "field": "approval", "value": "required",
+           "reason": "writes asked too often", "confidence": "medium"}
 seed("s-fenced")
 optimizer._call_model = lambda prompt, model=None: (
-    "Sure, here is the delta:\n```json\n" + json.dumps(_delta) + "\n```\n")
+    "Sure, here is the delta:\n```json\n" + json.dumps(_delta2) + "\n```\n")
 r = optimizer.run("s-fenced")
-check("B1 fenced reply parsed", r.get("delta") == _delta, r.get("delta"))
+check("B1 fenced reply parsed", r.get("delta") == _delta2, r.get("delta"))
 
 # ---- C) a malformed reply becomes a skip -----------------------------------
 seed("s-malformed")
@@ -120,7 +125,8 @@ check("F2 reason names the allowed values",
 final = [p for p in proposals_on_disk() if p.get("scope") == "registry"]
 check("G1 the two valid deltas (plain + fenced) both landed", len(final) == 2, len(final))
 check("G2 no proposal was written for a skip",
-      all(p.get("delta", {}).get("target") == "shell.exec" for p in final), len(final))
+      all(p.get("delta", {}).get("target") in ("shell.exec", "fs.write")
+          for p in final), len(final))
 
 # ---- H) a LIST is changed with add/remove, never with a whole-list `value` --
 # 2026-11-17: the optimizer's model rewrote `shell.exec.deny` from memory and

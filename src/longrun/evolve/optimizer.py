@@ -26,6 +26,76 @@ OPTIMIZER_LOG = os.environ.get("LONGRUN_OPTIMIZER_LOG") or os.path.join(
 # Minimum session activity to trigger the optimizer: at least one tool call.
 MIN_TOOL_CALLS = 1
 
+# RRSI (arXiv:2609.24972, abstract): recursive harness editing must condition the
+# proposer on the evolution history ("encourages unexplored trajectories") and a
+# pruner drops changes that are "no longer useful". The inbox is that history: the
+# same delta re-proposed after a decision is noise, not exploration.
+HISTORY_LIMIT = 8
+
+
+def _evolution_history(limit=HISTORY_LIMIT):
+    """Recent registry proposals with their decision, newest first.
+
+    Read-only and fail-open: no history is better than no proposal. Only rows
+    that actually carry a `delta` are useful here (a prose proposal has nothing
+    to compare against).
+    """
+    try:
+        from longrun.util import improve as _improve
+        rows = [p for p in _improve.list_proposals() if p.get("scope") == "registry"]
+    except Exception:  # noqa: BLE001 — the prompt must never break a run
+        return []
+    out = []
+    for p in rows:
+        d = p.get("delta")
+        if not isinstance(d, dict) or not d:
+            continue
+        out.append({"id": p.get("id"), "status": str(p.get("status") or "pending"),
+                    "delta": d, "reason": str(p.get("reason") or "")[:160]})
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _delta_key(delta):
+    """The IDENTITY of a delta: target/field/value/add/remove, no prose.
+
+    `reason`/`confidence` are the model's explanation and may differ between two
+    runs that propose the same change; including them would defeat the pruner.
+    List order is not part of a list's identity (the validator treats a list as a
+    set of entries).
+    """
+    d = delta if isinstance(delta, dict) else {}
+    keep = {k: d.get(k) for k in ("target", "field", "value", "add", "remove")
+            if k in d}
+    for k in ("add", "remove"):
+        if isinstance(keep.get(k), list):
+            keep[k] = sorted(str(x) for x in keep[k])
+    try:
+        return json.dumps(keep, sort_keys=True)
+    except (TypeError, ValueError):
+        return ""
+
+
+def _history_block(history):
+    """The bounded 'already tried' section of the prompt ("" when empty)."""
+    if not history:
+        return ""
+    lines = ["Already proposed for this registry (newest first) — do NOT propose "
+             "an identical delta again (approved = already applied, denied = "
+             "refused); choose a DIFFERENT row, or skip:"]
+    for h in history:
+        d = h.get("delta") or {}
+        bits = ["%s.%s" % (d.get("target"), d.get("field"))]
+        if "value" in d:
+            bits.append("value=%s" % json.dumps(d.get("value")))
+        for k in ("add", "remove"):
+            if d.get(k):
+                bits.append("%s=%s" % (k, json.dumps(d.get(k))))
+        lines.append("- [%s] %s — %s" % (h.get("status"), " ".join(bits),
+                                         h.get("reason") or "(no reason)"))
+    return "\n".join(lines)[:3000]
+
 
 def _read_trace(sid):
     """Read the session trace from runmetrics. Returns {} on any failure."""
@@ -169,7 +239,7 @@ def _policy_snapshot(policy_hits):
     return "\n".join(rows)[:5000]
 
 
-def _build_analysis_prompt(trace, policy_hits, job_cost, feedback):
+def _build_analysis_prompt(trace, policy_hits, job_cost, feedback, history=None):
     """Build the optimizer's analysis prompt from session evidence.
 
     The prompt asks for ONE JSON object: either {"skip": true, ...} or a registry-row
@@ -211,6 +281,7 @@ def _build_analysis_prompt(trace, policy_hits, job_cost, feedback):
             parts.append(f"A downstream agent that consumed this output failed: {failed_agent}")
 
     snap = _policy_snapshot(policy_hits)
+    _hist = _history_block(history)
     prompt = (
         "You are a harness optimizer. Analyze this session trace and identify ONE "
         "concrete deficiency in the TOOL REGISTRY — a tool that failed, a gate that "
@@ -219,7 +290,8 @@ def _build_analysis_prompt(trace, policy_hits, job_cost, feedback):
         "Current live policy of the row(s) the evidence names (the exact values; a "
         "list is changed ONLY through add/remove, never rewritten from memory):\n"
         + (snap or "(not available)") + "\n\n"
-        "Reply with ONE JSON object and NOTHING else. Either:\n"
+        + ((_hist + "\n\n") if _hist else "")
+        + "Reply with ONE JSON object and NOTHING else. Either:\n"
         '  {"skip": true, "reason": "..."}   — when no registry deficiency is evident\n'
         "or a delta naming one editable registry field:\n"
         '  {"target": "<tool row, e.g. shell.exec or the namespace shell>",\n'
@@ -293,7 +365,9 @@ def run(sid, jid=None):
     policy_hits = _read_policy_hits()
     job_cost = _read_job_cost(jid) if jid else {}
     feedback = _read_feedback(sid)
-    prompt = _build_analysis_prompt(trace, policy_hits, job_cost, feedback)
+    history = _evolution_history()
+    prompt = _build_analysis_prompt(trace, policy_hits, job_cost, feedback,
+                                    history=history)
 
     evidence = {
         "tokens": trace.get("tokens", 0),
@@ -324,6 +398,18 @@ def run(sid, jid=None):
     if err:
         result = {"skip": True, "reason": err, "session": sid,
                   "delta": delta, "prompt": prompt, "evidence": evidence}
+        _log_run(sid, result)
+        return result
+    # RRSI pruner ("no longer useful"): the same delta already decided or still
+    # waiting adds a duplicate to the inbox and no information to the operator.
+    _key = _delta_key(delta)
+    _seen = next((h for h in history if _key and _delta_key(h["delta"]) == _key), None)
+    if _seen:
+        result = {"skip": True, "session": sid, "delta": delta,
+                  "reason": "already proposed (%s): %s" % (
+                      _seen["status"], _seen["reason"] or "no reason"),
+                  "proposal_id": _seen.get("id"), "prompt": prompt,
+                  "evidence": evidence}
         _log_run(sid, result)
         return result
 
