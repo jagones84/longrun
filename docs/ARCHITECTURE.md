@@ -305,7 +305,7 @@ and guessing. `util/runtree.py` is the read model over those stores, and
 | `integrations/` | `paperclip_adapter.py`, `paperclip_bot.py` (Paperclip team-chat adapter + bot) |
 | `orbit/` | the **Control** deck at `/orbit`: `api.py`, `orchestrator.py`, `attention.py`, `decisions.py`, `registry.py`, `bay.py`, `web/orbit.html` |
 | `research/` | `research.py`, `executor.py`, `researchcfg.py` (web-grounded research agent) |
-| `harness/` | `record.py`, `contrast.py`, `library.py`, `editors.py`, `probe.py`, `runner.py`, `compose.py`, `cycle.py`, `snapshot.py`, `whole.py`, `gateway.py`, `unixshim.py`, `counterfactual.py`, `shellread.py` (bounded evidence workflow; step-level counterfactual + the purity gate that decides what may be replayed) |
+| `harness/` | `record.py`, `contrast.py`, `library.py`, `editors.py`, `probe.py`, `runner.py`, `compose.py`, `cycle.py`, `snapshot.py`, `whole.py`, `gateway.py`, `unixshim.py`, `counterfactual.py`, `shellread.py`, `modelcf.py` (bounded evidence workflow; step- and model-level counterfactuals + the purity gate that decides what may be replayed) |
 
 ## Harness evidence workflow
 
@@ -362,6 +362,13 @@ counterfactual`, and the agent's `sessions` action `counterfactual` (`card` dere
 the `#handle` the compacted manifest prints). The replay goes through `gated_call`, so
 policy, approvals and workspace are the normal ones; a write is refused before anything
 executes.
+
+`harness/modelcf.py` is the other half: replace ONE user message of the stored transcript
+(an observation or a nudge), re-issue one model call and compare the next action
+(`same-action` / `different-action`). Nothing executes, so this works on a failing turn
+whose step was a write. `api_v02.model_counterfactual_run` is its one implementation; its
+`fidelity` is `transcript+live-system` — the volatile per-turn blocks are not restored and
+every answer says so.
 
 ### Learning -> Matrix bridge (one reviewed path)
 
