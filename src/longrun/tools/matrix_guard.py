@@ -264,6 +264,43 @@ def check_write_allowed(path, repo_root=None):
     return True, ""
 
 
+def _store_targets():
+    """Absolute paths of the harness's own RECORD (trace tampering, 2609.30266).
+
+    The `fs.*`/`shell` denies in `config/tools.yaml` are REPO-relative patterns.
+    This list is the LIVE store (data home), resolved through `paths` so the
+    guard never re-derives a mutable path from the repository.
+    """
+    out = []
+    try:
+        from longrun.util import paths as _p
+        data = getattr(_p, "DATA_DIR", "") or ""
+        for _name in ("SESSIONS_DIR", "THREADS_DIR"):
+            _v = getattr(_p, _name, None)
+            if isinstance(_v, str) and _v:
+                out.append(_v)
+        out.append(os.environ.get("LONGRUN_RUNS_DIR") or os.path.join(data, "runs"))
+        out.append(os.environ.get("LONGRUN_HELDOUT_DIR") or os.path.join(data, "heldout"))
+        out.append(os.environ.get("LONGRUN_DB") or os.path.join(data, "events.db"))
+    except Exception:  # noqa: BLE001 — the guard must not break on an import
+        pass
+    # The in-repo spelling needs no entry of its own: `paths.DATA_DIR` IS the
+    # checkout's `data/` while a legacy in-repo home is still being served, and
+    # `config/tools.yaml` keeps the repo-relative fs/shell deny for the rest.
+    return [os.path.realpath(p) for p in out if p]
+
+
+def _is_store(path):
+    """True when `path` IS or is INSIDE the run/session/event/held-out record."""
+    if not path:
+        return False
+    rp = os.path.realpath(path)
+    for root in _store_targets():
+        if rp == root or rp.startswith(root + os.sep):
+            return True
+    return False
+
+
 def check_python_write(code, workspace=None, repo_root=None):
     """Refuse a Python snippet whose LITERAL write target is inside the Nucleous.
 
@@ -316,6 +353,26 @@ def check_python_write(code, workspace=None, repo_root=None):
         return (resolved is not None and _under(resolved, os.path.realpath(root))
                 and is_nucleous_path(resolved, root))
 
+    def _deny_store(resolved, what):
+        """The record is not a workspace file, so it has its own message."""
+        try:
+            shown = os.path.relpath(resolved, os.path.realpath(root)).replace("\\", "/")
+        except ValueError:
+            shown = str(resolved)
+        return (False,
+                "STORE_PROTECTED: python snippet %s inside the harness record (%s). "
+                "The run/session/event/held-out store is not writable by the agent "
+                "it records; write your own outputs under the workspace."
+                % (what, shown))
+
+    def _refuse(resolved, what):
+        """The one write-target verdict this guard can return (None = allow)."""
+        if _is_nucleous(resolved):
+            return _deny(resolved, what)
+        if _is_store(resolved):
+            return _deny_store(resolved, what)
+        return None
+
     _WRITE_MODES = ("w", "a", "x", "+")
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
@@ -335,8 +392,9 @@ def check_python_write(code, workspace=None, repo_root=None):
                 continue
             if isinstance(node.args[0], ast.Constant):
                 resolved = _resolve_literal(node.args[0].value)
-                if _is_nucleous(resolved):
-                    return _deny(resolved, "writes")
+                _v = _refuse(resolved, "writes")
+                if _v:
+                    return _v
             continue
         if not isinstance(func, ast.Attribute):
             continue
@@ -349,8 +407,9 @@ def check_python_write(code, workspace=None, repo_root=None):
                 for arg in list(node.args or [])[:2]:
                     if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
                         resolved = _resolve_literal(arg.value)
-                        if _is_nucleous(resolved):
-                            return _deny(resolved, "writes")
+                        _v = _refuse(resolved, "writes")
+                        if _v:
+                            return _v
             continue
         # shutil.copy/copy2/copytree/move/rmtree(dst, ...)
         if isinstance(func.value, ast.Name) and func.value.id == "shutil":
@@ -358,8 +417,9 @@ def check_python_write(code, workspace=None, repo_root=None):
             if attr in ("copy", "copy2", "copytree", "move", "rmtree"):
                 if len(node.args or []) > idx and isinstance(node.args[idx], ast.Constant):
                     resolved = _resolve_literal(node.args[idx].value)
-                    if _is_nucleous(resolved):
-                        return _deny(resolved, "writes")
+                    _v = _refuse(resolved, "writes")
+                    if _v:
+                        return _v
             continue
         # pathlib: Path("...").write_text/write_bytes/unlink/mkdir/touch/...,
         # or Path("...").open(mode) with a write mode.
@@ -380,8 +440,9 @@ def check_python_write(code, workspace=None, repo_root=None):
                     lit = recv.args[0].value
             if lit is not None:
                 resolved = _resolve_literal(lit)
-                if _is_nucleous(resolved):
-                    return _deny(resolved, "writes")
+                _v = _refuse(resolved, "writes")
+                if _v:
+                    return _v
             continue
     return True, ""
 
