@@ -1140,8 +1140,19 @@ def _issues_from(rows):
                                "sessions" if "sessions" in g["source"] else "runs"),
                     "classes": g["classes"], "samples": g["samples"],
                     "agents": _top_agents(g["agents"]),
+                    # Round 41: the number the ranking uses, stated in the row.
+                    # `recovered` is 0 for a runs-only row — the corpus cannot
+                    # see recovery, so nothing is credited as if it had.
+                    "unresolved": int(g["count"]) - int(g["recovered"]),
                     "action": action, "check": check})
+    # Round 41 (AgentDebugX 2607.18754, RECOVER — and round 31's own data):
+    # severity first, then what did NOT recover. Measured 2026-11-18 live:
+    # `shell.exec · timeout` had 10 of 10 recovered and sat 6th, while
+    # `shell.exec · permission` with 7 unresolved sat 4th; unresolved-first moves
+    # 33 of 37 positions, all within a severity. A fully recovered class is a
+    # stumble (round 31), so it does not outrank a class that keeps failing.
     out.sort(key=lambda i: (_SEV_RANK.get(i["severity"], 3),
+                            -int(i.get("unresolved") or 0),
                             -i["count"], i["tool"], i["family"]))
     return out
 
