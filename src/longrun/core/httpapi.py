@@ -2168,6 +2168,30 @@ def status_payload():
     }
 
 
+def improvement_failures(limit=8):
+    """The failure register the AGENT reads, on the operator's surface (round 42).
+
+    Rounds 21–41 built the register (`self.failures`): the classes, the remedy,
+    the check, the retry and recovery rates, the refusals, the WHO, the two
+    corpora and the unresolved-first order. None of it was visible in Settings ▸
+    Improvements, which listed drafts only. This returns the top `limit` issues —
+    `selfevolve.failure_candidates`' own rows, never re-derived — with the store's
+    session count so the reader knows what was scanned. Measured cost: 125 ms over
+    138 session files (2026-11-18).
+    """
+    from longrun.util import selfevolve
+    try:
+        rep = selfevolve.failure_candidates(limit=limit, include_sessions=True)
+    except Exception:  # noqa: BLE001 — an unreadable store is data, not a crash
+        return {"issues": [], "sessions": 0, "runs": 0, "since": None}
+    keys = ("id", "tool", "family", "severity", "count", "unresolved", "sessions",
+            "recovered", "recovery_rate", "refusal", "from_sessions", "from_runs",
+            "agents", "action", "check")
+    issues = [{k: i.get(k) for k in keys} for i in (rep.get("issues") or [])[:limit]]
+    return {"issues": issues, "sessions": int(rep.get("sessions") or 0),
+            "runs": int(rep.get("runs") or 0), "since": rep.get("since")}
+
+
 def improvement_repairs():
     """The failure register's repair drafts, each with its measured outcome.
 
@@ -2579,6 +2603,9 @@ class Handler(BaseHTTPRequestHandler):
                 # (`resolved` / `fixed-open` / `unobserved`), so the panel can say
                 # what an applied fix did instead of only listing material.
                 "repairs": improvement_repairs(),
+                # Round 42: the register ITSELF — what the agent reads as
+                # `self.failures`, on the operator's surface.
+                "failures": improvement_failures(),
                 "forged": _forged.get("tools") or [],
                 "forged_total": int(_forged.get("count") or 0),
                 "forged_unused": int(_forged.get("unused") or 0),

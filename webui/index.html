@@ -4388,11 +4388,20 @@
             say what it accomplishes, verify it in the sandbox, then promote it. <b>Nothing here is installed.</b></div>
           <div id="impDrafts" class="u-mt6"></div>
         </details>
+        <!-- Round 42: the register the AGENT reads, on the operator's surface:
+             every failure class ranked by severity then by what did not recover,
+             with the agents behind it and the remedy the register names. -->
+        <details class="card" id="impRegisterBox">
+          <summary class="set-t u-ptr" title="The failure register the agent reads: every failure class in the store, ranked by severity and by what did not recover.">Failure register <span id="impRegisterCount" class="remaining"></span></summary>
+          <div class="remaining u-mt6">Ranked by severity, then by what did <b>not</b> recover:
+            <b>unresolved</b> = failures a later call of the same tool and stage did not clear;
+            <b>who</b> = the agents whose sessions produced them. The panel applies nothing.</div>
+          <div id="impRegister" class="u-mt6"></div>
+        </details>
         <!-- Round 36: the FAILURE register turned into work, and what each fix did.
-             A repair draft carries the commit that answered it and the sessions
-             written after it: resolved / still open (N in M) / unobserved (no
-             session after the fix — nothing claimed). Material only, like a skill
-             draft: the panel applies nothing. -->
+             A repair draft carries the commit that answered it and the sessions and
+             run records written after it: resolved / still open (N in M) /
+             unobserved. Material only: the panel applies nothing. -->
         <details class="card" id="impRepairsBox">
           <summary class="set-t u-ptr" title="One draft per measured failure issue, with the commit that answered it and the number of sessions and run records written after it.">Failure repairs <span id="impRepairCount" class="remaining"></span></summary>
           <div class="remaining u-mt6">The register drafts an issue at or above warning, with its remedy and the check that proves it.
@@ -13358,6 +13367,38 @@ async function loadImprovement() {
   // are the evidence (the window's count and denominator), never a verdict.
   const repBox = $("impRepairs"), repCnt = $("impRepairCount");
   const repD = d.repairs || {}, repairs = repD.states || [];
+  // Round 42: the register ITSELF — the list the agent reads as `self.failures`,
+  // ranked by severity then by what did NOT recover, with the agents behind it.
+  const regBox = $("impRegister"), regCnt = $("impRegisterCount");
+  const regD = d.failures || {}, reg = regD.issues || [];
+  if (regCnt) {
+    regCnt.textContent = reg.length
+      ? "(" + reg.length + " issue(s) · " + (regD.sessions || 0) + " session(s) scanned)"
+      : "";
+  }
+  if (regBox) {
+    regBox.innerHTML = "";
+    if (!reg.length) {
+      regBox.innerHTML = '<div class="remaining">no failure class in the store yet — nothing measured</div>';
+    } else {
+      const box = document.createElement("div"); box.className = "imp-ledger";
+      reg.forEach(i => {
+        const who = (i.agents || []).slice(0, 2)
+          .map(a => esc(String(a.id)) + " " + Number(a.count || 0)).join(", ");
+        const c = Number(i.count || 0), un = Number(i.unresolved || 0);
+        const sev = String(i.severity || "");
+        const row = document.createElement("div"); row.className = "imp-row";
+        row.innerHTML = '<span title="' + esc(sev + " — " + un + " of " + c + " unresolved") +
+          '" aria-label="' + esc(sev) + '">' + esc(sev.slice(0, 1).toUpperCase()) +
+          "</span> <b>" + esc(String(i.tool || "?")) + " · " + esc(String(i.family || "?")) +
+          '</b> <span class="remaining">' + c + " failure(s) · " + un + " unresolved" +
+          (who ? " · who: " + who : "") + (i.check ? " · check " + esc(String(i.check)) : "") +
+          " — " + esc(String(i.action || "")) + "</span>";
+        box.appendChild(row);
+      });
+      regBox.appendChild(box);
+    }
+  }
   if (repCnt) {
     const done = repairs.filter(x => x.status === "resolved").length;
     repCnt.textContent = repairs.length
