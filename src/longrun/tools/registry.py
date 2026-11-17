@@ -688,12 +688,16 @@ _LEGACY_SCHEMAS = {
                         "update/conflict for each artifact; scan proposes routines "
                         "from your own sessions (created disabled); ledger verifies "
                         "the hash chain of the improvement record itself (pass "
-                        "repair=true to complete a trim a crash interrupted)."),
+                        "repair=true to complete a trim a crash interrupted); "
+                        "repairs turns the FAILURE REGISTER into one draft per "
+                        "measured issue (evidence, remedy and the check that proves "
+                        "it) — it drafts only and changes nothing."),
         "type": "object",
         "properties": {
             "action": {"type": "string",
                        "enum": ["propose", "mine", "evolve", "verify", "promote",
-                                "forge", "abstract", "review", "scan", "ledger"],
+                                "forge", "abstract", "review", "scan", "ledger",
+                                "repairs"],
                        "default": "propose"},
             "scope": {"type": "string",
                       "enum": ["skill", "project", "global", "mine", "review", "scan"],
@@ -1037,6 +1041,7 @@ _SUBTOOL_FIELDS = {
         # Round 14: the integrity check of the improvement ledger itself, and the
         # one repair it accepts (completing a trim interrupted by a crash).
         "ledger": ["repair"],
+        "repairs": ["limit", "min_severity"],
     },
     "web": {
         "search": ["query", "queries", "max_results", "max_total", "days",
@@ -1106,6 +1111,9 @@ _SUBTOOL_REQUIRED = {
     # inherited improve's namespace requirement and answered "missing scope" —
     # measured live 2026-11-18 through `POST /api/tools/call improve.ledger`.
     "improve.ledger": [],
+    # Round 22: `repairs` reads the register, not `scope` — the same fallback
+    # trap as the ledger row above (an absent row inherits improve's `scope`).
+    "improve.repairs": [],
     "web.search": [], "web.fetch": [],
     "diff.files": ["a", "b"], "diff.text": ["text_a", "text_b"],
     "process.kill": ["pid"],
@@ -1293,6 +1301,11 @@ _SUBTOOL_GUIDANCE = {
         "deleted, reordered or truncated since it was written? Reads only. Pass "
         "repair=true to complete a trim that a crash interrupted — anything else is "
         "reported, never rewritten."
+    ),
+    "improve.repairs": (
+        "Turn the failure register into one draft per measured issue (severity, "
+        "evidence, remedy and the check that proves it). Drafts only: nothing runs, "
+        "nothing is promoted. Optional `limit` and `min_severity` (error|warning|info)."
     ),
     "matrix.status": (
         "Report the live Matrix inventory: discovered tools and hooks, load errors, "

@@ -2397,6 +2397,35 @@ def _improve(args, run_id=None):
                 st.get("evicted"))
         return {"ok": bool(st.get("ok")), "exit_code": 0 if st.get("ok") else 1,
                 "ledger": st, "stdout": line}
+    # Round 22: the failure register turned into WORK — one `kind: "repair"`
+    # draft per issue at/above a severity, carrying the evidence, the remedy and
+    # the check. It drafts only: no code runs, no policy changes, and the write
+    # gate that turns a draft into a change is untouched.
+    if action in ("repairs", "repair-drafts", "from-failures", "from_failures"):
+        from longrun.util import selfevolve
+        try:
+            limit = int(args.get("limit") or 5)
+        except (TypeError, ValueError):
+            limit = 5
+        out = os.path.join(improve.PROPOSAL_DIR, "repairs")
+        rep = selfevolve.issue_drafts(
+            out, limit=max(1, min(limit, 20)),
+            min_severity=str(args.get("min_severity") or "warning").strip().lower())
+        if not rep.get("ok"):
+            return rep
+        lines = ["%-9s %-18s %-16s %3d in %2d session(s)%s → %s"
+                 % ("[%s]" % w.get("severity"), str(w.get("tool"))[:18],
+                    str(w.get("family"))[:16], int(w.get("count") or 0),
+                    int(w.get("sessions") or 0),
+                    (" (check: %s)" % w["check"]) if w.get("check") else "",
+                    w.get("issue"))
+                 for w in rep.get("written") or []]
+        return {"ok": True, "dir": rep.get("dir"), "written": rep.get("written"),
+                "skipped": rep.get("skipped"), "issues": rep.get("issues"),
+                "severity": rep.get("severity"), "runs": rep.get("runs"),
+                "sessions": rep.get("sessions"),
+                "stdout": ("\n".join(lines) if lines else
+                           "(no issue at or above %s)" % rep.get("severity"))}
     # JAG-491: audit the WHOLE backlog (proposals + distilled lessons) with an LLM
     # against the current codebase. One implementation shared with the panel.
     if scope == "review" or action == "review":

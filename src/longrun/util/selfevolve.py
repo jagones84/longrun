@@ -783,11 +783,14 @@ def _issues_from(rows):
         key = (r["tool"], r["family"])
         g = grouped.setdefault(key, {"tool": r["tool"], "family": r["family"],
                                      "count": 0, "sessions": 0, "runs": 0,
-                                     "classes": [], "source": set()})
+                                     "classes": [], "source": set(), "samples": []})
         g["count"] += int(r["count"] or 0)
         g["sessions"] = max(g["sessions"], int(r["sessions"] or 0))
         g["runs"] = max(g["runs"], int(r["runs"] or 0))
         g["source"].add(r["source"])
+        for s in (r.get("samples") or [])[:2]:
+            if len(g["samples"]) < 2 and s not in g["samples"]:
+                g["samples"].append(s)
         g["classes"].append({"error": r["error"], "count": r["count"]})
     out = []
     for (tool, family), g in grouped.items():
@@ -802,10 +805,99 @@ def _issues_from(rows):
                     "runs": g["runs"],
                     "source": ("both" if "both" in g["source"] else
                                "sessions" if "sessions" in g["source"] else "runs"),
-                    "classes": g["classes"], "action": action, "check": check})
-    out.sort(key=lambda i: ({"error": 0, "warning": 1, "info": 2}.get(i["severity"], 3),
+                    "classes": g["classes"], "samples": g["samples"],
+                    "action": action, "check": check})
+    out.sort(key=lambda i: (_SEV_RANK.get(i["severity"], 3),
                             -i["count"], i["tool"], i["family"]))
     return out
+
+
+#: The one ordering of the severity labels (a filter and the sort share it).
+_SEV_RANK = {"error": 0, "warning": 1, "info": 2}
+
+
+def _repair_md(prop):
+    """The human/agent-readable body of a repair draft (no invented content)."""
+    rows = "\n".join("- `%s` × %s" % (c.get("error"), c.get("count"))
+                     for c in (prop.get("classes") or []))
+    samples = "\n".join("  - %s" % s for s in (prop.get("samples") or []))
+    check = prop.get("check")
+    return (
+        "# Repair: %s · %s\n\n"
+        "**Severity:** %s — **%s** failure(s) in **%s** session(s) "
+        "(source: %s).\n\n"
+        "## What fails\n\n%s\n\n"
+        "%s"
+        "## The remedy the register names\n\n> %s\n\n"
+        "## How to prove it\n\n"
+        "%s"
+        "## Status\n\n"
+        "DRAFT — material, not a change. Nothing was executed and no policy was "
+        "touched; state the fix, apply it through the normal gate, and re-read "
+        "`self.failures` (or run the check) to prove the issue is gone.\n"
+        % (prop.get("tool"), prop.get("family"),
+           prop.get("severity"), prop.get("count"), prop.get("sessions"),
+           prop.get("source"), rows,
+           ("```\n%s\n```\n\n" % samples) if samples else "",
+           prop.get("action") or "(no remedy recorded)",
+           ("Run `%s` after the fix; it is the test that proves this family of "
+            "failure is answered.\n\n" % check) if check
+           else "No test covers this family yet — write one before calling the "
+                "fix done.\n\n"))
+
+
+def issue_drafts(out_dir, limit=5, min_severity="warning", sessions_dir=None,
+                 max_sessions=400):
+    """Write one REPAIR draft per failure issue — the register turned into work.
+
+    Round 22. `mine()` drafts a repeated SEQUENCE; the register names a FAILURE
+    with its reach, its samples and — when a test covers the family — the check
+    that proves a fix. This writes one `kind: "repair"` draft per issue at or
+    above `min_severity`, never twice for the same issue id, and executes
+    nothing: the draft is material for the optimizer/operator, and every write
+    still goes through the normal gate.
+    """
+    floor = _SEV_RANK.get(str(min_severity or "warning"), 1)
+    rep = failure_candidates(limit=200, include_sessions=True,
+                             sessions_dir=sessions_dir, max_sessions=max_sessions)
+    issues = [i for i in (rep.get("issues") or [])
+              if _SEV_RANK.get(i.get("severity"), 3) <= floor]
+    written, skipped = [], []
+    try:
+        os.makedirs(out_dir, exist_ok=True)
+    except OSError:
+        return {"ok": False, "error": "cannot create %s" % out_dir}
+    for iss in issues:
+        if len(written) >= max(1, int(limit or 5)):
+            break
+        name = str(iss.get("id") or "fail-issue")
+        d = os.path.join(out_dir, name)
+        if os.path.isfile(os.path.join(d, "proposal.json")):
+            skipped.append(name)
+            continue
+        prop = {"kind": "repair", "status": "proposed", "name": name,
+                "issue": name, "tool": iss.get("tool"),
+                "family": iss.get("family"), "severity": iss.get("severity"),
+                "count": iss.get("count"), "sessions": iss.get("sessions"),
+                "runs": iss.get("runs"), "source": iss.get("source"),
+                "classes": iss.get("classes") or [], "samples": iss.get("samples") or [],
+                "action": iss.get("action"), "check": iss.get("check"),
+                "created": round(time.time(), 3), "origin": "auto",
+                "next": "state the fix, apply it through the gate, prove it"}
+        try:
+            os.makedirs(d, exist_ok=True)
+            write_json(os.path.join(d, "proposal.json"), prop)
+            with open(os.path.join(d, "REPAIR.md"), "w", encoding="utf-8") as f:
+                f.write(_repair_md(prop))
+        except OSError:
+            continue
+        written.append({"issue": name, "path": d, "severity": prop["severity"],
+                        "tool": prop["tool"], "family": prop["family"],
+                        "count": prop["count"], "sessions": prop["sessions"],
+                        "check": prop["check"]})
+    return {"ok": True, "dir": out_dir, "written": written, "skipped": skipped,
+            "issues": len(issues), "severity": str(min_severity),
+            "runs": rep.get("runs"), "sessions": rep.get("sessions")}
 
 
 def mine_history(out_dir, c=None, path=None, note=""):
