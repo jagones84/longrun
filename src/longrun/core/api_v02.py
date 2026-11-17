@@ -2841,9 +2841,17 @@ def handle(handler, method, path, qs, body):
             if not res.get("ok"):
                 code = 404 if "not found" in str(res.get("error") or "") else 400
                 return _r(handler, code, res)
-            rec = res["approval"]
-            _publish("approval.decided", id=rec["id"], decision=body.get("decision"),
-                     by=rec.get("decided_by"), status=rec["status"])
+            rec = res.get("approval") or {}
+            # The decision is already stored; the EVENT must still reach the UI. It
+            # used to read `rec["id"]`/`rec["status"]` unconditionally, so any
+            # decision whose record left the inbox raised KeyError and the client
+            # saw a dropped connection ("Remote end closed") — measured 2026-11-17
+            # rejecting a plan/spec, which now closes its row on purpose. The
+            # requested id is always known, and `decided` is the honest status of a
+            # record that is no longer listed.
+            _publish("approval.decided", id=(rec.get("id") or aid),
+                     decision=body.get("decision"), by=rec.get("decided_by"),
+                     status=rec.get("status") or "decided")
             return _r(handler, 200, rec)
         if path == "/api/agent/control":
             rid, action = body.get("runId") or body.get("run_id"), body.get("action")

@@ -3533,6 +3533,35 @@
     .tctree .tc-kids .tc-kids { margin-left: 4px; padding-left: 6px; }
     .tctree .tc-kids > .toolcard::before { left: -12px; }
   }
+
+  /* JAG-936 (operator, 2026-11-17): *"squeezing session LH panel causes icon to
+     disappear"*. Nothing hid the buttons in code: the rail head was ONE 36px flex
+     row that had to hold the label, the fold control and the four panel buttons
+     (~102px of 24px icons), and below ~205px of rail the last ones were pushed past
+     the `aside`'s `overflow: hidden` and CLIPPED — the operator squeezed the panel
+     and two of the four icons vanished. The head now grows a second line instead of
+     clipping: every icon keeps its 24px target and its place, and the LABEL is the
+     only thing that gives way (it ellipsizes first, and the sessions tab says the
+     same word right above). Declared after the RH-2 head block on purpose — that
+     block pins the one-row 36px geometry this rule relaxes. */
+  aside .rail-head { height: auto; min-height: var(--rail-hd);
+    padding-top: 3px; padding-bottom: 3px; }
+  aside .rail-head h2 { flex-wrap: wrap; row-gap: 4px; min-width: 0; }
+  aside .rail-head h2 .hd-left { flex: 1 1 auto; min-width: 0; }
+  aside .rail-head h2 .hd-name { min-width: 0; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  aside .rail-head h2 .srail-tools { flex: 0 0 auto; margin-left: auto; }
+  aside .rail-head h2 .srail-tools button { flex: 0 0 auto; }
+  /* The rail is 220px wide by DEFAULT (min 150) and its head cannot hold
+     `SESSIONS` + the fold + four 24px icons in one row below ~241px — a fact, not a
+     preference. So the LABEL is the thing that goes first: below 250px the head is
+     one row of controls (fold left, the four panel buttons right), and the word
+     returns with the room. The container query is what makes it a graceful step
+     instead of a clip; the wrap above is the fallback where it is not supported. */
+  #aside { container-type: inline-size; container-name: rail; }
+  @container rail (max-width: 249px) {
+    aside .rail-head h2 .hd-name { display: none; }
+  }
 </style>
 <script>
 /* JAG-352: apply the saved theme + text-weight before first paint (no flash). */
@@ -11287,6 +11316,13 @@ async function loadDocBar() {
   _docState = r || null;
   const a = (r && r.active) || null;
   if (!a && !(r && r.plan_mode)) { bar.hidden = true; return _docState; }
+  // 2026-11-17 (operator): "rejecting spec or plan into the approvals RH panel
+  // doesn't make the approval entity to disappear! also in the msg box in chat".
+  // A rejected document is a CLOSED decision: the bar goes away here exactly like
+  // the inbox row does. The record stays on the session (the next turn's DOCUMENT
+  // block tells the model "the operator REJECTED it"), and a session still LOCKED
+  // by a reject-unlock=false keeps the bar, because ⏏ is the only exit then.
+  if (a && a.status === "rejected" && !r.plan_mode) { bar.hidden = true; return _docState; }
   bar.hidden = false;
   const kind = a ? (a.kind === "spec" ? "spec" : "plan") : "plan";
   $("docIcon").textContent = kind === "spec" ? "📐" : "🗺";

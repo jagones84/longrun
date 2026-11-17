@@ -28,8 +28,10 @@
  * copy button, so the shell changed shape again.
  * 2026-11-17 — bumped to v8 (JAG-934): the phone transcript gutter changed, so the
  * "/" shell changed shape again.
+ * 2026-11-17 — bumped to v9 (JAG-935/936): the composer doc bar closes on a
+ * rejected document and the sessions rail head wraps instead of clipping.
  */
-const CACHE = "longrun-shell-v8";
+const CACHE = "longrun-shell-v9";
 const SHELL = ["/", "/orbit", "/assets/dragsort.js", "/assets/icon-192.png",
                "/assets/icon-512.png", "/assets/apple-touch-icon.png",
                "/assets/icon-maskable-512.png"];

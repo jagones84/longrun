@@ -1266,16 +1266,29 @@ def grant_implement(sid):
 
 
 def reject_plan(sid):
-    """Reject the pending plan: status `rejected`, the lock stays on.
+    """Reject the document: a `proposed` one OR an approved one never implemented.
 
-    Requires a `proposed` plan. Returns True on success.
+    2026-11-17 (operator): *"rejecting spec or plan into the approvals RH panel
+    doesn't make the approval entity to disappear"*. The inbox shows a second row
+    once the CONTENT is approved (it awaits ▶), and `reject` accepted only
+    `proposed`: the click answered 400 ("no proposed plan") and the row stayed in
+    the panel for ever, with an approve button that was disabled too — the entity
+    had no exit. Withdrawing an approved plan whose implementation was NEVER
+    authorised is still the operator's decision; once it IS authorised the
+    document is in force and there is nothing left to reject.
+
+    The lock is untouched here (the caller — `docs.reject` — unlocks); v597 A10
+    pins that. Returns True on success.
     """
     s = load_session(sid)
     if not s:
         raise ValueError("unknown session %r" % (sid,))
     plan = s.get("plan") or {}
-    if plan.get("status") != "proposed":
-        raise ValueError("reject_plan: no proposed plan for session %r" % (sid,))
+    if plan.get("status") not in ("proposed", "approved"):
+        raise ValueError("reject_plan: no plan to reject for session %r" % (sid,))
+    if plan.get("status") == "approved" and plan.get("implement"):
+        raise ValueError("reject_plan: the implementation is already authorised "
+                         "for session %r — nothing left to reject" % (sid,))
     plan["status"] = "rejected"
     plan["implement"] = False
     plan["decided_by"] = plan.get("decided_by") or "operator"

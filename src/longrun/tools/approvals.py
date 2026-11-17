@@ -436,6 +436,14 @@ def _document_records(status=None):
             continue
         kind = str(a.get("kind") or "plan")
         doc_status = str(a.get("status") or "proposed")
+        # 2026-11-17 (operator): *"rejecting spec or plan into the approvals RH
+        # panel doesn't make the approval entity to disappear"*. A rejected
+        # document is NOT a decision waiting for anybody: it has no row here, not
+        # even as `decided`. The record itself stays on the session (the model is
+        # told "the operator REJECTED it" on the next turn), and the composer bar
+        # closes with it — an inbox is a list of open questions.
+        if doc_status == "rejected":
+            continue
         implement = bool(a.get("implement"))
         # Two decisions: the content (proposed → approved/rejected) and the
         # implementation (approved → implement). Either one outstanding = pending.
@@ -471,8 +479,14 @@ def _document_records(status=None):
             "can_implement": (doc_status == "approved" and not implement
                               and not legacy and not a.get("stale")),
             "path": a.get("path") or "",
+            # The row names the decision that is ACTUALLY open: for a proposed
+            # document it is the content, for an approved one it is ▶ (and reject
+            # withdraws it). One sentence with the wrong verb reads as a bug.
             "reason": ("the plan/spec bar awaits your decision — approve the document, then ▶ to "
-                       "authorise the implementation (the file stays on disk)"),
+                       "authorise the implementation (the file stays on disk)"
+                       if doc_status == "proposed" else
+                       "already approved — ▶ authorises the implementation; reject withdraws "
+                       "the document (the file stays on disk)"),
             "decided_by": None if pending else "operator",
             "decided_ts": a.get("decided_ts"),
             "kind": "document",
@@ -535,7 +549,13 @@ def decide_any(aid, decision, by="human"):
                 _docs.reject(sid)
         except Exception as e:  # noqa: BLE001
             return {"ok": False, "error": "document decision failed: %s" % e}
-        rec = next((r for r in _document_records() if r["id"] == key), None) or {}
+        rec = next((r for r in _document_records() if r["id"] == key), None)
+        if not rec:
+            # A rejected document leaves the inbox on purpose (it is not an open
+            # question any more), so the caller still gets an honest answer instead
+            # of an empty body: this id, this session, decided.
+            rec = {"id": key, "session": sid, "kind": "document",
+                   "source": "document", "status": "decided", "tool": "docs"}
         return {"ok": True, "approval": rec}
     rec = decide(key, decision, by)
     if not rec:

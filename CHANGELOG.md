@@ -41,6 +41,26 @@ All notable changes to Longrun are documented here. The format follows
   tool gate. (Locked by `v1052` B1/B1b, N9d/N9d2, N11b/N11b2, O1–O7; `v785` K1–K5; `v763` F1–F2.)
 
 ### Fixed
+- **Rejecting a plan/spec closes the entity — in the inbox and in the chat.** Operator: *"rejecting spec or
+  plan into the approvals RH panel doesn't make the approval entity to disappear! also in the msg box in
+  chat maybe"*. Reproduced live on the screenshot's own state (session `5671e8b2c493`, content approved,
+  awaiting ▶): `POST /api/approvals/doc:<sid> {"decision":"deny"}` answered **400 "reject_plan: no
+  proposed plan"** — `reject_plan` accepted only `proposed`, so the row that appears after an approval had
+  no exit at all (its approve button was disabled too), and behind it a second defect: the route then read
+  `rec["id"]` on a record that no longer existed (KeyError, the connection dropped mid-answer). A rejection
+  is now possible while the decision is still open — `proposed` **or** `approved` with the implementation
+  never authorised (an authorised one has nothing left to reject, and says so) — the decided document is
+  not an inbox row even under `decided`, the event carries the requested id, and the composer bar closes
+  with it. The record itself stays on the session, so the next turn still tells the model "the operator
+  REJECTED it". (Locked by `v1069` A1–A9b.)
+- **Squeezing the sessions rail no longer makes its panel icons vanish.** Operator: *"squeezing session LH
+  panel causes icon to disappear"*. Nothing hid them in code: the rail head was one 36 px flex row holding
+  the label, the fold control and four 24 px buttons (~102 px) while the rail is **220 px by default** (min
+  150) — so at the default width the row already overflowed the panel's `overflow: hidden` and the last
+  buttons were clipped (two of four, measured with CDP at 150/180/220/280). The head now wraps instead of
+  clipping, the icon block can never shrink below the 24 px target, and below 250 px the *label* is what
+  gives way (container query) so the default rail stays one row of controls; the word returns with the
+  room. The inspector head keeps its pinned 36 px geometry. (Locked by `v1070` A1–A7.)
 - **The phone transcript stopped carrying the desktop gutter.** Operator: *"why in mobile format is all that
   empty space in the chat on the left? can you solve it graphically?"* — with a 393 px screenshot where the
   first line of a worked step started a third of the way across the chat. Measured live (CDP, `architect`,
