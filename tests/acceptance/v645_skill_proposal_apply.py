@@ -67,9 +67,25 @@ def make_draft(name, exit_code):
                    "pattern": ["fs.read", "fs.edit"], "origin": "auto"}, f)
     with open(os.path.join(d, "skill.json"), "w", encoding="utf-8") as f:
         json.dump({"name": name, "steps": [{"tool": "fs.read"}, {"tool": "fs.edit"}]}, f)
+    # v1081: a check that ignores its input is not evidence — `verify` now runs
+    # this file against three mutations of skill.json and refuses a check that
+    # exits 0 on all of them. This fixture validates the artifact the way the
+    # generated check does, then honours `exit_code` for the red case.
     with open(os.path.join(d, "check.py"), "w", encoding="utf-8") as f:
-        f.write("import sys\nprint('green' if %d == 0 else 'red')\nsys.exit(%d)\n"
-                % (exit_code, exit_code))
+        f.write(
+            "import json, os, sys\n"
+            "HERE = os.path.dirname(os.path.abspath(__file__))\n"
+            "try:\n"
+            "    art = json.load(open(os.path.join(HERE, 'skill.json'), encoding='utf-8'))\n"
+            "except (OSError, ValueError):\n"
+            "    print('unreadable'); sys.exit(1)\n"
+            "steps = art.get('steps')\n"
+            "if not isinstance(steps, list) or not steps:\n"
+            "    print('no steps'); sys.exit(1)\n"
+            "if any(not isinstance(s, dict) or s.get('tool') not in ('fs.read', 'fs.edit')\n"
+            "       for s in steps):\n"
+            "    print('bad step'); sys.exit(1)\n"
+            "sys.exit(%d)\n" % exit_code)
     return d
 
 
