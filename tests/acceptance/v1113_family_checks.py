@@ -11,9 +11,9 @@ register was under-reporting its own coverage:
     `warning`, and never ranked as a real fault: the register's own answer.
 
   A  every `check` id in `FAMILY_FIX` resolves to a test file (a check cannot rot)
-  B  the families name their test; the one uncovered family still says None
-     (B4/B5 are the round-46/47 re-points: `not-found` → v1114, and the two
-     catch-alls → v523, which pins the evidence their remedies read)
+  B  every family names a test; the round-46/47/48 re-points are the ids that
+     closed the catch-alls (`not-found` → v1114, `nonzero-exit`/`tool-error` →
+     v523, `no-change` → v748)
   C  a gate and a timeout failure carry the check on the issue row
   D  and the line the model reads prints it
 
@@ -64,8 +64,9 @@ check("B1 `timeout` names the test that pins its hint and its remedy",
       selfevolve.FAMILY_FIX["timeout"][1] == "v1094", selfevolve.FAMILY_FIX["timeout"])
 check("B2 `gate` names the test that pins the family's answer",
       selfevolve.FAMILY_FIX["gate"][1] == "v1093", selfevolve.FAMILY_FIX["gate"])
-check("B3 one family still says no test proves its remedy",
-      selfevolve.FAMILY_FIX["no-change"][1] is None, "")
+check("B3 every family names a test that proves its remedy",
+      all(chk for (_action, chk) in selfevolve.FAMILY_FIX.values()),
+      {fam: chk for fam, (_a, chk) in selfevolve.FAMILY_FIX.items()})
 # Round 46 re-point: `not-found` left the catch-alls because v1114 was written to
 # prove its remedy (a missing path names what exists near it). The pin moves with
 # the map; it is not weakened — every named id is still resolved by A1.
@@ -78,6 +79,11 @@ check("B4 `not-found` now names the test that proves its remedy",
 check("B5 the two catch-alls name v523, which pins the evidence they read",
       selfevolve.FAMILY_FIX["nonzero-exit"][1] == "v523"
       and selfevolve.FAMILY_FIX["tool-error"][1] == "v523", "")
+# Round 48 re-point: `no-change` was the last None — v748 F1/F2 pin that an empty
+# step list is refused and that the refusal names `steps`.
+check("B6 `no-change` names the test that proves its refusal",
+      selfevolve.FAMILY_FIX["no-change"][1] == "v748",
+      selfevolve.FAMILY_FIX["no-change"])
 
 # ------------------------------------------------- C: on the issue row -------
 SESS = os.environ["LONGRUN_SESSIONS_DIR"]
@@ -87,12 +93,18 @@ with open(os.path.join(SESS, "s_a.json"), "w", encoding="utf-8") as f:
          "error": "plan mode: session s_a has an unapproved plan"},          # gate
         {"tool": "shell.exec", "ok": False,
          "error": "timeout — the terminal was reset"},                        # timeout
-        # Round 47: `tool-error` now names v523, so this fixture's third card is
-        # `no-change` — the one family still without a proving test.
         {"tool": "todo.update", "ok": False, "error": "changed nothing"},     # no-change
     ]}, f)
 
-rep = selfevolve.failure_candidates(limit=10, include_sessions=True)
+# Every family now names a check, so a MIXED register is produced explicitly:
+# one family is lifted to None for the call and restored after. The coverage
+# arithmetic (both sides) is what this section pins, not today's live share.
+_fam, _pair = "no-change", selfevolve.FAMILY_FIX["no-change"]
+selfevolve.FAMILY_FIX[_fam] = (_pair[0], None)
+try:
+    rep = selfevolve.failure_candidates(limit=10, include_sessions=True)
+finally:
+    selfevolve.FAMILY_FIX[_fam] = _pair
 by_fam = {i["family"]: i for i in rep["issues"]}
 check("C1 the gate issue carries v1093", (by_fam.get("gate") or {}).get("check") == "v1093",
       by_fam.get("gate"))
@@ -101,8 +113,17 @@ check("C2 the timeout issue carries v1094",
 check("C3 the coverage counts them as provable",
       (rep.get("checks") or {}).get("with_check") == 2
       and (rep.get("checks") or {}).get("without_check") == 1, rep.get("checks"))
-check("C4 the uncovered family's issue carries no check",
+check("C4 the lifted family's issue carries no check",
       (by_fam.get("no-change") or {}).get("check") is None, by_fam.get("no-change"))
+_full = selfevolve.failure_candidates(limit=10, include_sessions=True)
+check("C5 with the real map every issue of the fixture carries a check",
+      (_full.get("checks") or {}).get("with_check") == 3
+      and (_full.get("checks") or {}).get("without_check") == 0, _full.get("checks"))
+# Round 48: at full coverage the footer says so instead of "0 say no test …".
+_foot = (T.execute("self", {"action": "failures", "limit": 10})
+         .get("failure_lines") or [])[-1:]
+check("C6 at full coverage the footer says ALL issues name a test",
+      bool(_foot) and _foot[0] == "(checks: all 3 issue(s) name a proving test)", _foot)
 
 # ------------------------------------------------- D: the line ---------------
 lines = (T.execute("self", {"action": "failures", "limit": 10})

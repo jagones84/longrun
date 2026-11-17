@@ -643,13 +643,18 @@ FAILURE_FAMILIES = (
 #: the error text of a semantic failure — so `nonzero-exit` ("read stderr") and
 #: `tool-error` ("read the error text") name it. `no-change` is the one family
 #: with no proving test; it stays None.
+#:
+#: Round 48: that last one was not missing either — v748 F1/F2 pin that an empty
+#: step list is REFUSED and that the refusal names `steps`, which is exactly the
+#: family's remedy ("send the real steps in the update"). Every family now names
+#: a test; the number means "the remedy is pinned", never "the issue is fixed".
 FAMILY_FIX = {
     "timeout": ("start long work with background=true and poll with action=status",
                 "v1094"),
     "missing-argument": ("re-read the tool's schema; the required key is named there", "v510"),
     "not-found": ("confirm the path first (workspace list / sessions tree)", "v1114"),
     "syntax": ("write the script with fs.write, then run the FILE (no heredoc)", "v747"),
-    "no-change": ("send the real steps in the update", None),
+    "no-change": ("send the real steps in the update", "v748"),
     "permission": ("the policy denies it; use the allowed read path", "v1075"),
     "gate": ("this is a GATE, not a fault: in plan mode only read-only tools run — "
              "propose the plan, then call the tool", "v1093"),

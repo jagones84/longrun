@@ -58,11 +58,14 @@ with open(os.path.join(SESS, "s_a.json"), "w", encoding="utf-8") as f:
     json.dump({"id": "s_a", "messages": [], "tool_cards": [
         {"tool": "shell.exec", "ok": False,
          "error": "shell.exec: missing REQUIRED argument 'cmd'"},       # → v510
-        # Round 47: `tool-error` now names v523, so the uncovered side of the
-        # fixture is `no-change` — the one family still without a proving test.
-        {"tool": "todo.update", "ok": False, "error": "changed nothing"},  # → no check
+        {"tool": "todo.update", "ok": False, "error": "changed nothing"},  # → lifted
     ]}, f)
 
+# Round 48: every family now names a test (v748 proves `no-change`), so the
+# uncovered side of this fixture is produced explicitly — one family is lifted to
+# None for the reads and restored after. The arithmetic is what is pinned here.
+_fam, _pair = "no-change", selfevolve.FAMILY_FIX["no-change"]
+selfevolve.FAMILY_FIX[_fam] = (_pair[0], None)
 rep = selfevolve.failure_candidates(limit=10, include_sessions=True)
 ch = rep.get("checks") or {}
 fams = {(i["family"], bool(i.get("check"))) for i in rep["issues"]}
@@ -83,6 +86,7 @@ check("C2 even though only one issue was shown", len(lines) == 2, lines)
 
 # ------------------------------------------------- D: the API -----------------
 api = httpapi.improvement_failures(limit=10)
+selfevolve.FAMILY_FIX[_fam] = _pair
 check("D1 the API carries the same numbers", api.get("checks") == ch, api.get("checks"))
 check("D2 and the rows keep their own check",
       {i["family"]: i.get("check") for i in api["issues"]} ==

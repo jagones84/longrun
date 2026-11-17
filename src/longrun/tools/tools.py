@@ -2135,10 +2135,16 @@ def _self(args, run_id):
             # states the coverage of the WHOLE register, not of the shown rows.
             _ch = rep.get("checks") or {}
             if _ch.get("total"):
-                lines.append("(checks: %d of %d issue(s) name a proving test; %d say "
-                             "no test covers the family yet)"
-                             % (int(_ch.get("with_check") or 0), int(_ch["total"]),
-                                int(_ch.get("without_check") or 0)))
+                # Round 48: "0 say no test covers the family yet" is a sentence
+                # written for the mixed case reading badly at full coverage.
+                if not int(_ch.get("without_check") or 0):
+                    lines.append("(checks: all %d issue(s) name a proving test)"
+                                 % int(_ch["total"]))
+                else:
+                    lines.append("(checks: %d of %d issue(s) name a proving test; %d say "
+                                 "no test covers the family yet)"
+                                 % (int(_ch.get("with_check") or 0), int(_ch["total"]),
+                                    int(_ch.get("without_check") or 0)))
             info["failure_lines"] = lines
         elif action in ("sj", "session-jobs", "sessionjobs", "subjobs"):
             # JAG-533/SJ: the SESSION-scoped job graph (the dependency-ordered
