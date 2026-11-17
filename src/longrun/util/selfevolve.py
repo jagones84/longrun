@@ -1192,6 +1192,113 @@ def mine_history(out_dir, c=None, path=None, note=""):
     return scan(seqs, out_dir, c, note=note, outcomes=ocs, purposes=pps)
 
 
+#: The lifecycle of a repair draft. A skill draft has one (`verified` /
+#: `rejected` / `archived`, stages 2–3); a repair draft had none — measured
+#: 2026-11-18: it was written `proposed` and no code path ever changed it, while
+#: its own Status section told the reader to "re-read `self.failures` to prove
+#: the issue is gone". Round 34 stores the proof instead of asking for it.
+REPAIR_STATES = ("proposed", "fixed-open", "resolved")
+
+
+def repair_mark(out_dir, issue, commit, note="", when=None):
+    """Record that a drafted repair was applied — the loop's closing act.
+
+    Writes `fix: {commit, date, note}` into the draft's `proposal.json` and moves
+    `status` to `fixed`; `repair_states` then says whether the class left. An
+    unknown issue, a missing draft or a name that is not a plain directory all
+    answer `ok: False` — nothing is created here.
+    """
+    name = str(issue or "").strip()
+    if not name or os.path.basename(name) != name or name in (".", ".."):
+        return {"ok": False, "error": "unknown issue name %r" % (issue,)}
+    # A record without a commit is not a record: the point of the close is that a
+    # later reader can retrace the fix (ReqToCode, 2603.13999 — traceability as a
+    # property of the artifact, not a note beside it).
+    commit = str(commit or "").strip()[:64]
+    if not commit:
+        return {"ok": False,
+                "error": "a fix needs the commit that applied it (no commit given)"}
+    d = os.path.join(out_dir, name)
+    p = os.path.join(d, "proposal.json")
+    if not os.path.isfile(p):
+        return {"ok": False, "error": "no repair draft at %s" % p}
+    prop = _read_json(p)
+    if not isinstance(prop, dict) or prop.get("kind") != "repair":
+        return {"ok": False, "error": "not a repair draft: %s" % p}
+    ts = _since_epoch(when)
+    fix = {"commit": commit,
+           "date": round(float(ts if ts is not None else time.time()), 3),
+           "note": str(note or "")[:300]}
+    prop["fix"] = fix
+    prop["status"] = "fixed"
+    try:
+        write_json(p, prop)
+    except OSError as e:
+        return {"ok": False, "error": "cannot write %s: %s" % (p, e)}
+    return {"ok": True, "issue": name, "dir": d, "fix": fix}
+
+
+def repair_states(out_dir, sessions_dir=None, max_sessions=400):
+    """Per repair draft: is its class still happening AFTER its own fix date?
+
+    Round 34. One pass over the store, each draft against its own window; the
+    family identity is the register's own three functions (`runtree.failed`,
+    `error_class`, `failure_family`), never a second rule. `proposed` = no fix
+    recorded; `count_since` is `None` there because there is no window to count.
+    """
+    from longrun.util import runtree
+    states = []
+    try:
+        names = sorted(n for n in os.listdir(out_dir)
+                       if os.path.isfile(os.path.join(out_dir, n, "proposal.json")))
+    except OSError:
+        return {"ok": True, "states": [], "sessions": 0}
+    drafts = []
+    for n in names:
+        prop = _read_json(os.path.join(out_dir, n, "proposal.json"))
+        if not isinstance(prop, dict) or prop.get("kind") != "repair":
+            continue
+        drafts.append((n, prop))
+    if not drafts:
+        return {"ok": True, "states": [], "sessions": 0}
+    root = sessions_dir or paths.SESSIONS_DIR
+    try:
+        entries = [e for e in os.scandir(root) if e.name.endswith(".json")]
+        entries.sort(key=lambda e: e.stat().st_mtime, reverse=True)
+        entries = entries[:max(1, int(max_sessions or 400))]
+    except OSError:
+        entries = []
+    seen = {}          # (tool, family) -> [mtime, …]
+    for ent in entries:
+        try:
+            mt = ent.stat().st_mtime
+        except OSError:
+            continue
+        sess = _read_json(ent.path)
+        if not isinstance(sess, dict):
+            continue
+        for c in sess.get("tool_cards") or []:
+            if not isinstance(c, dict) or not runtree.failed(c):
+                continue
+            head = error_class(c.get("error") or c.get("result"))
+            fam = failure_family(c.get("tool"), head, c.get("error") or c.get("result"))
+            seen.setdefault((str(c.get("tool") or "?"), fam), []).append(mt)
+    for name, prop in drafts:
+        key = (str(prop.get("tool") or ""), str(prop.get("family") or ""))
+        fix = prop.get("fix") if isinstance(prop.get("fix"), dict) else None
+        state = {"issue": name, "tool": key[0], "family": key[1],
+                 "status": "proposed", "fix": fix, "count_since": None}
+        if fix:
+            cutoff = float(fix.get("date") or 0)
+            n = sum(1 for mt in seen.get(key, []) if mt >= cutoff)
+            state["count_since"] = n
+            state["status"] = "resolved" if n == 0 else "fixed-open"
+        states.append(state)
+    states.sort(key=lambda s: (REPAIR_STATES.index(s["status"]), -int(s["count_since"] or 0),
+                               s["issue"]))
+    return {"ok": True, "states": states, "sessions": len(entries)}
+
+
 # ------------------------------------------------- stage 2: synth/verify/archive
 # Voyager-style write-gate: the skill enters `skills/` ONLY if the generated check
 # passes in the sandbox. Nothing but the check is executed (self-contained), so

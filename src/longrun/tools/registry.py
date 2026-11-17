@@ -691,13 +691,15 @@ _LEGACY_SCHEMAS = {
                         "repair=true to complete a trim a crash interrupted); "
                         "repairs turns the FAILURE REGISTER into one draft per "
                         "measured issue (evidence, remedy and the check that proves "
-                        "it) — it drafts only and changes nothing."),
+                        "it) — it drafts only and changes nothing; repair-fixed "
+                        "records the commit that applied a drafted repair, so the "
+                        "next read says resolved or still open."),
         "type": "object",
         "properties": {
             "action": {"type": "string",
                        "enum": ["propose", "mine", "evolve", "verify", "promote",
                                 "forge", "abstract", "review", "scan", "ledger",
-                                "repairs"],
+                                "repairs", "repair-fixed"],
                        "default": "propose"},
             "scope": {"type": "string",
                       "enum": ["skill", "project", "global", "mine", "review", "scan"],
@@ -733,6 +735,18 @@ _LEGACY_SCHEMAS = {
                        "description": ("ledger: complete a trim that a crash "
                                        "interrupted. Refused for any other "
                                        "inconsistency — that is evidence")},
+            # Round 34: closing a repair draft. The commit is required, because a
+            # record nobody can retrace is not a record.
+            "issue": {"type": "string",
+                      "description": ("repair-fixed: the drafted issue id, e.g. "
+                                      "fail-shell-exec-timeout (the folder name "
+                                      "`improve repairs` printed)")},
+            "commit": {"type": "string",
+                       "description": ("repair-fixed: the commit that applied the "
+                                       "fix; the draft's class is counted only in "
+                                       "sessions written after it")},
+            "note": {"type": "string",
+                     "description": "repair-fixed: one line on what the fix was"},
         },
         "required": ["action", "scope"],
     },
@@ -1042,6 +1056,9 @@ _SUBTOOL_FIELDS = {
         # one repair it accepts (completing a trim interrupted by a crash).
         "ledger": ["repair"],
         "repairs": ["limit", "min_severity", "since"],
+        # Round 34: the closing act of a repair — record the commit that applied
+        # it; the next `repairs` read says whether the class left the store.
+        "repair-fixed": ["issue", "commit", "note"],
     },
     "web": {
         "search": ["query", "queries", "max_results", "max_total", "days",
@@ -1114,6 +1131,9 @@ _SUBTOOL_REQUIRED = {
     # Round 22: `repairs` reads the register, not `scope` — the same fallback
     # trap as the ledger row above (an absent row inherits improve's `scope`).
     "improve.repairs": [],
+    # Round 34: the same fallback trap — and the two arguments a close needs are
+    # named here so the call shape is checked before the handler runs.
+    "improve.repair-fixed": ["issue", "commit"],
     "web.search": [], "web.fetch": [],
     "diff.files": ["a", "b"], "diff.text": ["text_a", "text_b"],
     "process.kill": ["pid"],
@@ -1307,7 +1327,15 @@ _SUBTOOL_GUIDANCE = {
         "evidence, remedy and the check that proves it). Drafts only: nothing runs, "
         "nothing is promoted. Optional `limit`, `min_severity` (error|warning|info) "
         "and `since` (ISO date/time or epoch — scope the evidence to what was written "
-        "at or after it; the draft states its window)."
+        "at or after it; the draft states its window). A draft that already carries a "
+        "fix is reported with its outcome: `resolved` (none of its class after the "
+        "fix) or `fixed-open` (N after it)."
+    ),
+    "improve.repair-fixed": (
+        "Close the loop on one drafted repair: record the commit that applied it "
+        "(`issue`, `commit`, optional `note`). The draft keeps `status: fixed` and the "
+        "next read counts the failures of its tool/family written AFTER that moment — "
+        "resolved, or still open with the number. Nothing runs; it is a record."
     ),
     "matrix.status": (
         "Report the live Matrix inventory: discovered tools and hooks, load errors, "

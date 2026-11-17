@@ -2458,6 +2458,29 @@ def _improve(args, run_id=None):
                 st.get("evicted"))
         return {"ok": bool(st.get("ok")), "exit_code": 0 if st.get("ok") else 1,
                 "ledger": st, "stdout": line}
+    # Round 34: the loop's closing act — record the commit that applied a drafted
+    # repair, so the next read can say whether the class left the store.
+    if action in ("repair-fixed", "repair_fixed", "repair-done"):
+        from longrun.util import selfevolve
+        out = os.path.join(improve.PROPOSAL_DIR, "repairs")
+        rep = selfevolve.repair_mark(out, args.get("issue"), args.get("commit"),
+                                     note=args.get("note") or "")
+        if not rep.get("ok"):
+            return rep
+        st = selfevolve.repair_states(out)
+        mine = next((s for s in st.get("states") or []
+                     if s.get("issue") == rep["issue"]), {})
+        if mine.get("status") == "resolved":
+            line = ("repair %s: fixed at %s — resolved (no %s · %s after the fix)"
+                    % (rep["issue"], rep["fix"]["commit"] or "(no commit)",
+                       mine.get("tool"), mine.get("family")))
+        else:
+            line = ("repair %s: fixed at %s — still open (%s occurrence(s) of %s · %s "
+                    "after the fix)"
+                    % (rep["issue"], rep["fix"]["commit"] or "(no commit)",
+                       mine.get("count_since"), mine.get("tool"), mine.get("family")))
+        return {"ok": True, "issue": rep["issue"], "fix": rep["fix"],
+                "state": mine, "stdout": line}
     # Round 22: the failure register turned into WORK — one `kind: "repair"`
     # draft per issue at/above a severity, carrying the evidence, the remedy and
     # the check. It drafts only: no code runs, no policy changes, and the write
@@ -2483,6 +2506,16 @@ def _improve(args, run_id=None):
                     (" (check: %s)" % w["check"]) if w.get("check") else "",
                     w.get("issue"))
                  for w in rep.get("written") or []]
+        # Round 34: a draft that carries a fix states its OUTCOME in the same
+        # answer — the loop closes where it started.
+        st = selfevolve.repair_states(out)
+        for s in st.get("states") or []:
+            if s.get("status") == "proposed":
+                continue
+            lines.append("[%s] %s — %s" % (
+                s["status"], s["issue"],
+                "no occurrence after the fix" if s["status"] == "resolved"
+                else "%d occurrence(s) after the fix" % int(s.get("count_since") or 0)))
         # Round 29: an answer must name the real reason. A re-run that found the
         # issues but skipped them ("already drafted") used to answer "no issue at
         # or above error" — false, and measured live on 2026-11-18.
@@ -2497,6 +2530,7 @@ def _improve(args, run_id=None):
                 "skipped": rep.get("skipped"), "issues": rep.get("issues"),
                 "severity": rep.get("severity"), "runs": rep.get("runs"),
                 "sessions": rep.get("sessions"), "since": rep.get("since"),
+                "states": st.get("states") or [],
                 "stdout": text}
     # JAG-491: audit the WHOLE backlog (proposals + distilled lessons) with an LLM
     # against the current codebase. One implementation shared with the panel.
