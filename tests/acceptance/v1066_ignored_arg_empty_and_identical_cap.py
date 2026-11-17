@@ -19,9 +19,11 @@ Contract pinned here:
   B3 the SAME call with the RIGHT key still succeeds (no new strictness)
   B4 an ignored argument on a call that DOES return data stays a warning (v874 A3)
   A1 the loop counts identical calls across the whole turn (not only consecutive)
-  A2 the third identical call is refused before it runs
+  A2 the HARD block fires ONLY on the re-run of a FAILED call — a SUCCESSFUL
+     repeat (`shell {action:"status"}` polling a job, a re-read after an edit) is
+     NEVER refused, because refusing it broke legitimate work and lied ("it FAILED")
   D1 the plan-mode refusal still says "plan mode" (v597 B2/B5)
-  D2 it now names the OPERATOR action (the ▶ / `docs action=implement`)
+  D2 it now names the OPERATOR action (the ▶ / `forge.py docs implement`)
 
 Deterministic: isolated temp dirs, no model, no network.
 Run: python3 tests/acceptance/v1066_ignored_arg_empty_and_identical_cap.py
@@ -88,8 +90,8 @@ with open(os.path.join(REPO, "src", "longrun", "agent", "agent.py"),
     _src = _fh.read()
 check("A1 the loop keeps a per-turn counter of identical calls",
       "_call_seen = Counter()" in _src, "")
-check("A2 the THIRD identical call is refused before it runs",
-      "_same_before >= 2" in _src, "")
+check("A2 the HARD block fires ONLY on a FAILED re-run (a successful repeat runs on)",
+      "_call_h == _last_failed_hash" in _src and "_same_before >= 2" not in _src, "")
 check("A3 the second identical call raises the nudge",
       "_same_before >= 1" in _src, "")
 
@@ -102,7 +104,7 @@ stores.approve_plan(_sid)          # implement=False -> approved but still locke
 _dec, _why = registry.classify("shell", {"_session": _sid})
 check("D1 the refusal still says 'plan mode' (v597 B2/B5)",
       _dec == "denied" and "plan mode" in _why, repr((_dec, _why)))
-check("D2 it names the OPERATOR action (the ▶ / docs action=implement)",
+check("D2 it names the OPERATOR action (the ▶ / forge.py docs implement)",
       "▶" in _why and "implement" in _why, _why)
 check("D3 it states the real plan status instead of 'unapproved'",
       "APPROVED" in _why and "NOT authorised" in _why, _why)

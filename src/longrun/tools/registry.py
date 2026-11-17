@@ -2908,8 +2908,9 @@ def classify(tool, args, workspace=None, hist=None, allow=None, scope_name=None,
             "plan mode: this session is locked and %s, so %r is blocked (only "
             "read-only tools run). This is NOT a mistake in your call — the "
             "OPERATOR must decide. Tell them, in plain words, exactly that: the "
-            "fix is the ▶ on the plan bar (approve & implement), or "
-            "`docs` action=implement. Propose with `docs` action=plan if there is "
+            "fix is the ▶ on the plan bar, or `forge.py docs implement` (that "
+            "command is the OPERATOR's — your own `docs` tool accepts only "
+            "plan|spec|status). Propose with `docs` action=plan if there is "
             "nothing to decide yet, then STOP and wait."
             % (_state, tool))
     # PT3: `matrix.promote_to_nucleous` / `matrix{action:"promote_to_nucleous"}` is gated EXCLUSIVELY

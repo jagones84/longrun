@@ -6382,17 +6382,17 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             _call_h = _kg.tool_hash(tool, args)
             _same_before = _call_seen[_call_h]
             _call_seen[_call_h] += 1
-            # The verbatim re-run of a FAILED call (JAG-183) and the THIRD run of any
-            # identical call are both refused: a third identical result adds nothing.
-            if _call_h == _last_failed_hash or _same_before >= 2:
+            # JAG-183: only the verbatim re-run of a FAILED call is refused. A call
+            # that SUCCEEDED is NEVER hard-blocked: `shell {action:"status"}` polling
+            # a background job, or re-reading a file AFTER an edit, is the SAME call
+            # repeated ON PURPOSE — refusing it broke legitimate work and told the
+            # model "it FAILED", which was false. A successful repeat is caught by
+            # the SOFT nudge below (`_same_before` feeds `_stuck_note`, non-blocking).
+            if _call_h == _last_failed_hash:
                 _blocked_repeat += 1
                 msgs.append({"role": "assistant", "content": answer})
                 _inject(_repeat_block_note(
-                    tool,
-                    _last_failed_err or ("this exact call already ran twice in this "
-                                         "turn and returned the same result; a third "
-                                         "run adds nothing new"),
-                    _blocked_repeat,
+                    tool, _last_failed_err, _blocked_repeat,
                     _skill_hints(tool + " " + (_last_failed_err or ""))),
                     "nudge")
                 continue
