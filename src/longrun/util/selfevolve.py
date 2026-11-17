@@ -632,11 +632,15 @@ FAILURE_FAMILIES = (
 #: refusal is classified `gate`, capped at `warning`, and never ranked as a real
 #: fault — the register's own answer to the family). Measured before: 15 of 37
 #: issues named a proving test.
+#:
+#: Round 46: `not-found`'s remedy ("confirm the path first") is now paid for by
+#: the harness — a missing `fs.read`/`fs.edit` target names the names that DO
+#: exist near it — so v1114 can prove the family instead of leaving it a label.
 FAMILY_FIX = {
     "timeout": ("start long work with background=true and poll with action=status",
                 "v1094"),
     "missing-argument": ("re-read the tool's schema; the required key is named there", "v510"),
-    "not-found": ("confirm the path first (workspace list / sessions tree)", None),
+    "not-found": ("confirm the path first (workspace list / sessions tree)", "v1114"),
     "syntax": ("write the script with fs.write, then run the FILE (no heredoc)", "v747"),
     "no-change": ("send the real steps in the update", None),
     "permission": ("the policy denies it; use the allowed read path", "v1075"),

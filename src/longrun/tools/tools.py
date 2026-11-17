@@ -739,6 +739,61 @@ def _apply_edits(body, rows):
     return body, counts, None
 
 
+def _nearby_names(folder, want="", limit=6):
+    """The `limit` names in `folder` closest to `want`: (names, more_count)."""
+    try:
+        names = sorted(n for n in os.listdir(folder) if not n.startswith("."))
+    except OSError:
+        return [], 0
+    close = []
+    if want:
+        import difflib
+        close = difflib.get_close_matches(want, names, n=limit, cutoff=0.5)
+    pick = (close + [n for n in names if n not in close])[:limit]
+    shown = [n + "/" if os.path.isdir(os.path.join(folder, n)) else n for n in pick]
+    return shown, max(0, len(names) - len(pick))
+
+
+def _missing_path_hint(path):
+    """Round 46: a not-found refusal names what DOES exist near the path.
+
+    Measured 2026-11-18 over the live store: 6 `fs.read` cards carried only
+    `no such file: <abs path>`, and the model's next call was a guess
+    (`jevarium/config.py` → `server/engine.py`) or a fallback to glob/grep —
+    the remedy the register states ("confirm the path first") was unpaid for by
+    the harness. The sentence is the result's `hint` (observation() already
+    renders `hint:` on a failure), NOT part of `error`: `error_class` reads
+    `error`, and a listing inside it would fork the class per folder. One capped
+    `os.listdir` of the nearest existing folder, no recursion, never raises.
+    """
+    try:
+        target = os.path.abspath(str(path or ""))
+        if os.path.isdir(target):
+            names, more = _nearby_names(target)
+            if not names:
+                return "that is an empty folder"
+            return ("that is a folder, not a file; it has: %s%s"
+                    % (", ".join(names), (" (+%d more)" % more) if more else ""))
+        folder = os.path.dirname(target)
+        absent = False
+        while folder and not os.path.isdir(folder):
+            absent = True
+            up = os.path.dirname(folder)
+            if up == folder:
+                break
+            folder = up
+        names, more = _nearby_names(folder, os.path.basename(target))
+        if not names:
+            return "`%s` does not exist and no folder near it can be listed" % target
+        listing = ", ".join(names) + ((" (+%d more)" % more) if more else "")
+        if absent:
+            return ("`%s` does not exist; the nearest existing folder is `%s`, "
+                    "which has: %s" % (target, folder, listing))
+        return "`%s` has: %s" % (folder, listing)
+    except Exception:  # noqa: BLE001 — a hint is never worth a crash
+        return ""
+
+
 def _fs_read(args, run_id):
     roots = registry.tool_spec("fs.read")["roots"]
     path, err = registry.resolve_path(str(args.get("path", "")), roots,
@@ -746,7 +801,11 @@ def _fs_read(args, run_id):
     if err:
         return {"ok": False, "error": err}
     if not os.path.isfile(path):
-        return {"ok": False, "error": "no such file: %s" % path}
+        res = {"ok": False, "error": "no such file: %s" % path}
+        hint = _missing_path_hint(path)
+        if hint:
+            res["hint"] = hint
+        return res
     _raw_max = args.get("max_bytes")
     # 2026-11-05: the default is a CONFIG value (operator: "no hardcoding").
     max_bytes = (int(_raw_max) if _raw_max not in (None, "")
@@ -923,7 +982,11 @@ def _fs_edit(args, run_id):
     if not ok_mw:
         return {"ok": False, "exit_code": 126, "error": err_mw, "path": path}
     if not os.path.isfile(path):
-        return {"ok": False, "error": "no such file: %s" % path}
+        res = {"ok": False, "error": "no such file: %s" % path}
+        hint = _missing_path_hint(path)
+        if hint:
+            res["hint"] = hint
+        return res
     stale = _stale_refusal(path, args)
     if stale is not None:
         return stale

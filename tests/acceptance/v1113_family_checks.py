@@ -65,7 +65,13 @@ check("B2 `gate` names the test that pins the family's answer",
 check("B3 the catch-alls still say no test covers them",
       selfevolve.FAMILY_FIX["tool-error"][1] is None
       and selfevolve.FAMILY_FIX["nonzero-exit"][1] is None
-      and selfevolve.FAMILY_FIX["not-found"][1] is None, "")
+      and selfevolve.FAMILY_FIX["no-change"][1] is None, "")
+# Round 46 re-point: `not-found` left the catch-alls because v1114 was written to
+# prove its remedy (a missing path names what exists near it). The pin moves with
+# the map; it is not weakened — every named id is still resolved by A1.
+check("B4 `not-found` now names the test that proves its remedy",
+      selfevolve.FAMILY_FIX["not-found"][1] == "v1114",
+      selfevolve.FAMILY_FIX["not-found"])
 
 # ------------------------------------------------- C: on the issue row -------
 SESS = os.environ["LONGRUN_SESSIONS_DIR"]
