@@ -966,7 +966,8 @@ def cmd_sessions(args):
         s = out.get("session") or {}
         print(json.dumps({"id": s.get("id"), "source": out.get("source"),
                           "fork_at": out.get("fork_at"),
-                          "messages": out.get("messages"), "model": s.get("model")},
+                          "messages": out.get("messages"), "model": s.get("model"),
+                          "replay": s.get("replay")},
                          indent=2, ensure_ascii=False))
         if s.get("id"):
             _set_current_session(s["id"])

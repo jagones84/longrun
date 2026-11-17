@@ -105,7 +105,7 @@ See `integrations/paperclip/README.md` for the adapter install and configuration
 |---|---|
 | `sessions ls` | `GET /api/sessions` |
 | `sessions new "title" [--workspace DIR]` | `POST /api/sessions` (or `GET /api/sessions/new?workspace=…` when a folder is named) |
-| `sessions fork ID [--at N] [--title T] [--model M] [--workspace DIR]` | `POST /api/sessions/<id>/fork` (new session with `messages[:N]`; the source is untouched) |
+| `sessions fork ID [--at N] [--title T] [--model M] [--workspace DIR]` | `POST /api/sessions/<id>/fork` (new session with `messages[:N]`; the source is untouched; the reply carries `replay` — `transcript-only`, `unverified-effects` or `effects-not-restored`, plus the workspace `head`/`dirty`) |
 | `sessions use ID` | `GET /api/history?session=ID` (validates, then remembers) |
 | `sessions current` | — (the local pointer) |
 | `sessions rm ID` | `DELETE /api/sessions/<id>` |

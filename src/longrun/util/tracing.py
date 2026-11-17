@@ -65,10 +65,14 @@ def file_digest(path):
         return None
 
 
-def git_revision(repo_root=None):
-    """Short git sha of the checkout, or None. Cached per root for the process."""
+def git_revision(repo_root=None, refresh=False):
+    """Short git sha of the checkout, or None. Cached per root for the process.
+
+    `refresh=True` re-reads and updates the cache: a long-lived process must not
+    stamp a fork with the sha it saw at boot (`replay_record` calls it this way).
+    """
     root = os.path.abspath(repo_root or _paths.REPO_ROOT)
-    if root in _GIT_CACHE:
+    if root in _GIT_CACHE and not refresh:
         return _GIT_CACHE[root]
     rev = None
     try:
@@ -80,6 +84,23 @@ def git_revision(repo_root=None):
         rev = None
     _GIT_CACHE[root] = rev
     return rev
+
+
+def git_dirty(repo_root=None):
+    """Count of `git status --porcelain` lines, or None outside a repo.
+
+    Uncounted on purpose: WHAT is dirty belongs to the operator's tree, not to a
+    run record; the count is what says whether a starting state can be trusted.
+    """
+    root = os.path.abspath(repo_root or _paths.REPO_ROOT)
+    try:
+        out = subprocess.run(["git", "status", "--porcelain"], cwd=root,
+                             capture_output=True, text=True, timeout=5)
+        if out.returncode != 0:
+            return None
+        return sum(1 for line in (out.stdout or "").splitlines() if line.strip())
+    except Exception:  # noqa: BLE001 — no git, no repo, no permission: unknown
+        return None
 
 
 def _config_digests(config_dir=None):

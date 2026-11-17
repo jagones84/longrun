@@ -20,7 +20,8 @@ from longrun.util.fswrite import read_json, write_json, write_text
 from longrun.util.paths import DATA_DIR, SESSIONS_DIR, REPO_ROOT as REPO, _JOBSEQ_FILE
 from longrun.util.steering import (STEER_INBOX, _steer_lock, clear_abort,
                                    forget_steers, live_steers, push_abort)
-from longrun.util.tracing import _REAL_CACHED_TOKENS, _REAL_PROMPT_TOKENS
+from longrun.util.tracing import (_REAL_CACHED_TOKENS, _REAL_PROMPT_TOKENS,
+                                  git_revision, git_dirty)
 from longrun.model import context_limits as ctx_limits
 
 
@@ -56,6 +57,12 @@ def save_tasks(store):
 
 
 _SID_RE = re.compile(r"^[A-Za-z0-9_.-]{1,120}$")
+
+# replay_record: the tools whose card proves the prefix changed the workspace,
+# and the ones that may have (a shell command or a script can run anything).
+_EFFECT_TOOLS = frozenset(("fs.write", "fs.edit"))
+_MAYBE_EFFECT_TOOLS = frozenset(("shell", "shell.exec", "python", "python.run",
+                                 "git", "git.run"))
 
 
 def _valid_sid(sid):
@@ -1335,6 +1342,55 @@ def get_or_create_session(sid, title=None, workspace=None, trust=None):
     return s
 
 
+def replay_record(cards, workspace="", upto_ts=None):
+    """What a fork can and cannot replay of the prefix it inherited.
+
+    S1 (arXiv:2611.11216) measures the same gap on an agent benchmark: the
+    declared settings reconstruct 42/71 executions, an RNG reset lifts that to
+    68/71, and hidden state still diverges in 4. Longrun owns neither a model
+    seed nor a frozen workspace, so a fork must SAY which class of replay it is
+    instead of implying one. Pure over the cards the fork already copies; the
+    git read fails open to None and never breaks a fork.
+
+    Classes: `transcript-only` (the prefix changed nothing outside the
+    transcript — a re-run is as faithful as the model allows),
+    `effects-not-restored` (a definite writer ran: the fork starts from the
+    current tree, not from the tree of that moment), `unverified-effects` (only
+    tools that MAY write ran; their card cannot say).
+    """
+    rows = []
+    for c in cards or []:
+        if not isinstance(c, dict):
+            continue
+        if upto_ts is not None:
+            try:
+                if float(c.get("ts") or 0) > upto_ts:
+                    continue
+            except (TypeError, ValueError):
+                continue
+        rows.append(c)
+    counts = {}
+    for c in rows:
+        tool = str(c.get("tool") or "")
+        counts[tool] = counts.get(tool, 0) + 1
+    writes = sum(n for t, n in counts.items() if t in _EFFECT_TOOLS)
+    possible = sum(n for t, n in counts.items() if t in _MAYBE_EFFECT_TOOLS)
+    if writes:
+        fidelity = "effects-not-restored"
+    elif possible:
+        fidelity = "unverified-effects"
+    else:
+        fidelity = "transcript-only"
+    ws = str(workspace or "")
+    return {"fidelity": fidelity, "cards": len(rows),
+            "writes": writes, "possible": possible,
+            "write_tools": {t: counts[t] for t in sorted(counts)
+                            if t in _EFFECT_TOOLS or t in _MAYBE_EFFECT_TOOLS},
+            "workspace": ws,
+            "head": (git_revision(ws, refresh=True) if ws else None),
+            "dirty": (git_dirty(ws) if ws else None)}
+
+
 def fork_session(sid, at=None, title=None, model=None, workspace=None):
     """Branch a session at message `at` into a NEW session (DeepSeek resume/fork).
 
@@ -1345,6 +1401,10 @@ def fork_session(sid, at=None, title=None, model=None, workspace=None):
     belongs to work the fork did not inherit). `workspace`/`model` default to the
     source and can be overridden, which is what makes a fork an A/B arm: the same
     prefix, a different model.
+
+    `replay` (round 9) is the fork's own fidelity record: `transcript-only`,
+    `effects-not-restored` or `unverified-effects`, plus the workspace HEAD and
+    dirty count — a fork copies words, never state, and must not imply otherwise.
 
     Returns {"ok": True, "session": <new>, "source", "fork_at", "messages"} or
     {"ok": False, "error"} — an out-of-range `at` is refused, never clamped.
@@ -1385,6 +1445,7 @@ def fork_session(sid, at=None, title=None, model=None, workspace=None):
         new["trust"] = src.get("trust")
     if cards:
         new["tool_cards"] = cards
+    new["replay"] = replay_record(cards, new.get("workspace") or "")
     save_session(new)
     ensure_agent(new)                       # a fork IS a new agent (its own A<n>)
     _remember_workspace(new.get("workspace"))
