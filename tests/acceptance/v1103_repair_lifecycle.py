@@ -8,11 +8,14 @@ issue is gone" — a proof nobody stored. Measured 2026-11-18: a repair was writ
 verified/rejected/archived; repairs had none).
 
   A  a draft without a fix is `proposed` and makes no claim (`count_since` None)
-  B  a fix date between two sessions counts ONLY what was written after it
-  C  a fix date after the last session is `resolved` with 0
+  B  a fix date between two sessions counts ONLY what was written after it, and
+     the window carries its denominator (`sessions_since`)
+  C  no occurrence in a NON-empty window is `resolved`; no session at all is
+     `unobserved` — zero out of zero is not evidence
   D  the record is refused without a commit, for an unknown draft, and for a
      name that is not a plain directory (no traversal, nothing created)
-  E  the surface: `improve repair-fixed` and the outcome on `improve.repairs`
+  E  the surface: `improve repair-fixed` (including `when`) and the outcome on
+     `improve.repairs`
   F  the schema: the fields and the two required arguments
 
 Deterministic: temp session dirs, no model, no network, no server.
@@ -64,6 +67,11 @@ def session(sid, cards, mt):
 
 session("s_old", [{"tool": "shell.exec", "ok": False, "error": TIMEOUT}] * 2, OLD)
 session("s_new", [{"tool": "shell.exec", "ok": False, "error": TIMEOUT}], NEW)
+# A LATER session with a different failure: a fix dated before it has a window
+# with sessions in it and none of the class — that is a real `resolved`.
+LATE = time.mktime(time.strptime("2026-08-01 12:00:00", "%Y-%m-%d %H:%M:%S"))
+session("s_late", [{"tool": "fs.read", "ok": False,
+                    "error": "no such file: <path>"}], LATE)
 
 OUT = os.path.join(_tmp, "repairs")
 rep = selfevolve.issue_drafts(OUT, limit=5, min_severity="info")
@@ -77,7 +85,8 @@ check("A2 and starts life as `proposed`", prop.get("status") == "proposed",
 st = {s["issue"]: s for s in selfevolve.repair_states(OUT).get("states") or []}
 check("A3 a draft without a fix makes no claim",
       (st.get(NAME) or {}).get("status") == "proposed"
-      and (st.get(NAME) or {}).get("count_since") is None, st.get(NAME))
+      and (st.get(NAME) or {}).get("count_since") is None
+      and (st.get(NAME) or {}).get("sessions_since") is None, st.get(NAME))
 
 # --------------------------------------------------- B: the window is the fix --
 res = selfevolve.repair_mark(OUT, NAME, "abc123", note="the timeout route",
@@ -92,13 +101,21 @@ st = {s["issue"]: s for s in selfevolve.repair_states(OUT).get("states") or []}
 mine = st.get(NAME) or {}
 check("B3 only what was written AFTER the fix counts",
       mine.get("status") == "fixed-open" and mine.get("count_since") == 1, mine)
+check("B4 and the window carries its denominator (2 sessions after 2026-03-01)",
+      mine.get("sessions_since") == 2, mine)
 
 # ------------------------------------------------------- C: it can resolve ----
 selfevolve.repair_mark(OUT, NAME, "abc123", when="2026-07-01")
 st = {s["issue"]: s for s in selfevolve.repair_states(OUT).get("states") or []}
 mine = st.get(NAME) or {}
-check("C1 a fix after the last session is `resolved`",
-      mine.get("status") == "resolved" and mine.get("count_since") == 0, mine)
+check("C1 no occurrence in a NON-empty window is `resolved`",
+      mine.get("status") == "resolved" and mine.get("count_since") == 0
+      and mine.get("sessions_since") == 1, mine)
+selfevolve.repair_mark(OUT, NAME, "abc123", when="2026-09-01")
+st = {s["issue"]: s for s in selfevolve.repair_states(OUT).get("states") or []}
+mine = st.get(NAME) or {}
+check("C2 zero failures out of ZERO sessions is `unobserved`, not `resolved`",
+      mine.get("status") == "unobserved" and mine.get("sessions_since") == 0, mine)
 
 # ------------------------------------------------------ D: the refusals ------
 bad = selfevolve.repair_mark(OUT, NAME, "")
@@ -123,28 +140,35 @@ check("E1 the tool can mint the draft it will close",
 r = T.execute("improve", {"action": "repair-fixed", "issue": NAME, "commit": "def456"})
 check("E2 the surface records the close",
       r.get("ok") is True and (r.get("fix") or {}).get("commit") == "def456", r)
-check("E3 and states the outcome in the same answer",
-      "resolved" in (r.get("stdout") or "")
-      and (r.get("state") or {}).get("status") == "resolved", r.get("stdout"))
-# a fix dated between the two sessions must read back as still open
-selfevolve.repair_mark(TOOL_DIR, NAME, "def456", when="2026-03-01")
+check("E3 a close dated now has no session after it — `unobserved`, and it says so",
+      "unobserved" in (r.get("stdout") or "")
+      and (r.get("state") or {}).get("status") == "unobserved", r.get("stdout"))
+# A fix dated between the two sessions must read back as still open — and the
+# moment must come from the caller, never from "now" (a commit from last week is
+# not today, or the window hides the evidence that followed it).
+r_when = T.execute("improve", {"action": "repair-fixed", "issue": NAME,
+                               "commit": "def456", "when": "2026-03-01"})
+check("E4 the surface carries `when` into the record (not 'now')",
+      r_when.get("ok") is True
+      and (r_when.get("fix") or {}).get("date") == selfevolve._since_epoch("2026-03-01")
+      and (r_when.get("state") or {}).get("status") == "fixed-open", r_when)
 r2 = T.execute("improve", {"action": "repairs", "limit": 5, "min_severity": "info"})
 states = r2.get("states") or []
-check("E4 `repairs` reports the state of its drafts",
+check("E5 `repairs` reports the state of its drafts",
       any(s.get("issue") == NAME and s.get("status") == "fixed-open" for s in states),
       states)
-check("E5 and prints it, not only the new drafts",
+check("E6 and prints it, not only the new drafts",
       "fixed-open" in (r2.get("stdout") or "")
-      and "occurrence(s) after the fix" in (r2.get("stdout") or ""),
+      and "in the 2 session(s) after the fix" in (r2.get("stdout") or ""),
       (r2.get("stdout") or "")[:300])
 r3 = T.execute("improve", {"action": "repair-fixed", "issue": NAME})
-check("E6 the tool refuses a close without a commit",
+check("E7 the tool refuses a close without a commit",
       r3.get("ok") is False and "commit" in str(r3.get("error") or ""), r3)
 
 # ------------------------------------------------------------- F: the schema --
-check("F1 the field map names the three arguments",
+check("F1 the field map names the four arguments",
       registry._SUBTOOL_FIELDS["improve"]["repair-fixed"]
-      == ["issue", "commit", "note"],
+      == ["issue", "commit", "when", "note"],
       registry._SUBTOOL_FIELDS["improve"].get("repair-fixed"))
 check("F2 and the two required ones",
       registry._SUBTOOL_REQUIRED["improve.repair-fixed"] == ["issue", "commit"],

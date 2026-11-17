@@ -1197,7 +1197,12 @@ def mine_history(out_dir, c=None, path=None, note=""):
 #: 2026-11-18: it was written `proposed` and no code path ever changed it, while
 #: its own Status section told the reader to "re-read `self.failures` to prove
 #: the issue is gone". Round 34 stores the proof instead of asking for it.
-REPAIR_STATES = ("proposed", "fixed-open", "resolved")
+#:
+#: Round 35 adds `unobserved`: measured live the same night, a fix dated 23:23:44
+#: had ZERO sessions written after it, and "resolved" over an empty window is a
+#: claim stronger than its evidence — the exact defect this register exists to
+#: stop. A fix with no session in its window has not been observed yet.
+REPAIR_STATES = ("proposed", "unobserved", "fixed-open", "resolved")
 
 
 def repair_mark(out_dir, issue, commit, note="", when=None):
@@ -1245,6 +1250,10 @@ def repair_states(out_dir, sessions_dir=None, max_sessions=400):
     family identity is the register's own three functions (`runtree.failed`,
     `error_class`, `failure_family`), never a second rule. `proposed` = no fix
     recorded; `count_since` is `None` there because there is no window to count.
+
+    Round 35: the window has a DENOMINATOR. `sessions_since` is how many session
+    files were written after the fix, and a fix with none is `unobserved` — not
+    `resolved`, because zero failures out of zero sessions is not evidence.
     """
     from longrun.util import runtree
     states = []
@@ -1269,11 +1278,13 @@ def repair_states(out_dir, sessions_dir=None, max_sessions=400):
     except OSError:
         entries = []
     seen = {}          # (tool, family) -> [mtime, …]
+    mtimes = []        # every session mtime in the corpus, for the denominator
     for ent in entries:
         try:
             mt = ent.stat().st_mtime
         except OSError:
             continue
+        mtimes.append(mt)
         sess = _read_json(ent.path)
         if not isinstance(sess, dict):
             continue
@@ -1287,15 +1298,19 @@ def repair_states(out_dir, sessions_dir=None, max_sessions=400):
         key = (str(prop.get("tool") or ""), str(prop.get("family") or ""))
         fix = prop.get("fix") if isinstance(prop.get("fix"), dict) else None
         state = {"issue": name, "tool": key[0], "family": key[1],
-                 "status": "proposed", "fix": fix, "count_since": None}
+                 "status": "proposed", "fix": fix, "count_since": None,
+                 "sessions_since": None}
         if fix:
             cutoff = float(fix.get("date") or 0)
+            n_sess = sum(1 for mt in mtimes if mt >= cutoff)
             n = sum(1 for mt in seen.get(key, []) if mt >= cutoff)
             state["count_since"] = n
-            state["status"] = "resolved" if n == 0 else "fixed-open"
+            state["sessions_since"] = n_sess
+            state["status"] = ("unobserved" if n_sess == 0 else
+                               "resolved" if n == 0 else "fixed-open")
         states.append(state)
-    states.sort(key=lambda s: (REPAIR_STATES.index(s["status"]), -int(s["count_since"] or 0),
-                               s["issue"]))
+    states.sort(key=lambda s: (REPAIR_STATES.index(s["status"]),
+                               -int(s["count_since"] or 0), s["issue"]))
     return {"ok": True, "states": states, "sessions": len(entries)}
 
 

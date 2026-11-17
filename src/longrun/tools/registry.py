@@ -745,6 +745,12 @@ _LEGACY_SCHEMAS = {
                        "description": ("repair-fixed: the commit that applied the "
                                        "fix; the draft's class is counted only in "
                                        "sessions written after it")},
+            "when": {"type": "string",
+                     "description": ("repair-fixed: the moment the fix landed (ISO "
+                                     "date/time or epoch) when it is not now — a "
+                                     "commit from last week must not be recorded as "
+                                     "today, or the window hides the evidence that "
+                                     "followed it")},
             "note": {"type": "string",
                      "description": "repair-fixed: one line on what the fix was"},
         },
@@ -1058,7 +1064,7 @@ _SUBTOOL_FIELDS = {
         "repairs": ["limit", "min_severity", "since"],
         # Round 34: the closing act of a repair — record the commit that applied
         # it; the next `repairs` read says whether the class left the store.
-        "repair-fixed": ["issue", "commit", "note"],
+        "repair-fixed": ["issue", "commit", "when", "note"],
     },
     "web": {
         "search": ["query", "queries", "max_results", "max_total", "days",
@@ -1333,9 +1339,11 @@ _SUBTOOL_GUIDANCE = {
     ),
     "improve.repair-fixed": (
         "Close the loop on one drafted repair: record the commit that applied it "
-        "(`issue`, `commit`, optional `note`). The draft keeps `status: fixed` and the "
-        "next read counts the failures of its tool/family written AFTER that moment — "
-        "resolved, or still open with the number. Nothing runs; it is a record."
+        "(`issue`, `commit`, optional `note`). Pass `when` (ISO date/time or epoch) "
+        "when the fix landed before now — the moment is the window. The draft keeps "
+        "`status: fixed` and the next read counts the failures of its tool/family "
+        "written AFTER that moment — resolved, or still open with the number. "
+        "Nothing runs; it is a record."
     ),
     "matrix.status": (
         "Report the live Matrix inventory: discovered tools and hooks, load errors, "
