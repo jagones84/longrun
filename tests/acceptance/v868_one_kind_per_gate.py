@@ -46,6 +46,7 @@ SRC = open(os.path.join(REPO, "src", "longrun", "agent", "agent.py"), encoding="
 # ---- A. each gate carries its own kind ---------------------------------------
 OWN = {
     "failed-call": "_inject(_failed_call_check_prompt(_last_failed_err), \"failed-call\")",
+    "failure-contract": "_inject(_failure_contract_text(_open_failures), \"failure-contract\")",
     "intent-gate": "_inject(_intent_gate_text(), \"intent-gate\")",
     "evidence-gate": "_inject(_evidence_gate_text(), \"evidence-gate\")",
     "action-gate": "_inject(_action_gate_text(), \"action-gate\")",

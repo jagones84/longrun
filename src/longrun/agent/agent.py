@@ -4007,6 +4007,26 @@ def _failed_call_check_prompt(error):
             "present a failed call as a success." % str(error or "")[:300])
 
 
+def _failure_contract_text(failures):
+    """The one structured round a done-claim owes an UNRESOLVED failure.
+
+    FTA (arXiv:2609.35732): false-success reporting is 22.8 % under a baseline
+    policy, 9.3 % with a transparency instruction and 0.8 % with a structured
+    evidence contract, while useful responses rise. The trigger is the quadrant
+    nothing else reads: a failure earlier in the turn that a later success of a
+    DIFFERENT tool hides, closed by a reply that claims the work is done.
+    """
+    lines = ["FAILURE CONTRACT — your reply reports the work as done, but these "
+             "calls failed this turn and nothing later succeeded for them:"]
+    for tool, err in list((failures or {}).items())[:5]:
+        lines.append("  * %s: %s" % (tool, " ".join(str(err).split())[:160]))
+    lines += ["Answer with ONE line per entry above: either what changed so the "
+              "failed step no longer matters, or that it is still NOT done and "
+              "what remains. Do not claim a success the tool record does not "
+              "support."]
+    return "\n".join(lines)
+
+
 def _turn_unfinished(sess, goal_mode):
     """True when the turn would close with work still open (never raises)."""
     try:
@@ -5330,6 +5350,10 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     _tool_repeat = 0
     _last_failed_hash = None  # JAG-183: last FAILED (tool,args) -> verbatim re-run blocked
     _last_failed_err = ""
+    # FTA (2609.35732): a failure a LATER success hides is still a failure the
+    # turn must report. Tool -> its first error, cleared only by that tool's own
+    # success. The existing closure gate reads only the LAST call.
+    _open_failures = {}
     _blocked_repeat = 0
     # 2026-11-17: identical calls ANYWHERE in the turn, not only consecutive ones.
     # The consecutive-only counter (`_tool_repeat`, JAG-178) let session `architect`
@@ -5675,6 +5699,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     _finished_cleanly = False
     _selfcheck_left = _SELFCHECK_MAX
     _failed_checked = False   # one failed-call verdict per turn (never a loop)
+    _fta_used = False         # one failure-contract round per turn (never a loop)
     _evidence_used = False    # one evidence-gate round per turn (never a loop)
     _action_used = False      # one action-gate round per turn (never a loop)
     _intent_used = False      # one closing-check round when the reply ends on a plan
@@ -6532,8 +6557,13 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             if _tool_failed and not _gate_only:
                 _last_failed_hash = _call_h
                 _last_failed_err = obs[:300]
+                _open_failures.setdefault(tool, obs[:200])
             else:
                 _last_failed_hash = None
+                if ok:
+                    # Only THAT tool's own success closes its failure: a later
+                    # success of a different tool hides nothing (FTA, 2609.35732).
+                    _open_failures.pop(tool, None)
             if _gate_only and status == "blocked":
                 # A POLICY block did not execute and is NOT an argument problem, so
                 # the generic failure note ("fix the arguments and call again") sent
@@ -6629,6 +6659,14 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 _selfcheck_left -= 1
                 msgs.append({"role": "assistant", "content": answer})
                 _inject(_failed_call_check_prompt(_last_failed_err), "failed-call")
+                continue
+            if (_open_failures and not _fta_used and _claims_action(answer)
+                    and not _is_aborted(sess["id"])):
+                # FTA (2609.35732): a done-claim with an unresolved failure — one
+                # structured round, then the normal close applies.
+                _fta_used = True
+                msgs.append({"role": "assistant", "content": answer})
+                _inject(_failure_contract_text(_open_failures), "failure-contract")
                 continue
             if (not _intent_used and _narrates_intent(answer)
                     and not _is_aborted(sess["id"])):
@@ -7020,6 +7058,14 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 _selfcheck_left -= 1
                 msgs.append({"role": "assistant", "content": answer})
                 _inject(_failed_call_check_prompt(_last_failed_err), "failed-call")
+                continue
+            if (_open_failures and not _fta_used and _claims_action(answer)
+                    and not _is_aborted(sess["id"])):
+                # FTA (2609.35732): a prose done-claim while a failure is still
+                # unresolved. Same one structured round as the finish path.
+                _fta_used = True
+                msgs.append({"role": "assistant", "content": answer})
+                _inject(_failure_contract_text(_open_failures), "failure-contract")
                 continue
             if (_effort == "full" and not _request_verified and _total_work_steps
                     and not _is_aborted(sess["id"])):
