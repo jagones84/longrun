@@ -636,6 +636,13 @@ FAILURE_FAMILIES = (
 #: Round 46: `not-found`'s remedy ("confirm the path first") is now paid for by
 #: the harness — a missing `fs.read`/`fs.edit` target names the names that DO
 #: exist near it — so v1114 can prove the family instead of leaving it a label.
+#:
+#: Round 47: the last two catch-alls were catch-alls because nobody had checked,
+#: not because no test proves them. v523 pins exactly what both remedies rest on —
+#: "a failed run still shows partial stdout and stderr" plus the verdict line and
+#: the error text of a semantic failure — so `nonzero-exit` ("read stderr") and
+#: `tool-error` ("read the error text") name it. `no-change` is the one family
+#: with no proving test; it stays None.
 FAMILY_FIX = {
     "timeout": ("start long work with background=true and poll with action=status",
                 "v1094"),
@@ -646,8 +653,8 @@ FAMILY_FIX = {
     "permission": ("the policy denies it; use the allowed read path", "v1075"),
     "gate": ("this is a GATE, not a fault: in plan mode only read-only tools run — "
              "propose the plan, then call the tool", "v1093"),
-    "nonzero-exit": ("read stderr in the observation and correct the command", None),
-    "tool-error": ("read the error text and fix the argument", None),
+    "nonzero-exit": ("read stderr in the observation and correct the command", "v523"),
+    "tool-error": ("read the error text and fix the argument", "v523"),
 }
 
 

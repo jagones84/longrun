@@ -58,14 +58,16 @@ with open(os.path.join(SESS, "s_a.json"), "w", encoding="utf-8") as f:
     json.dump({"id": "s_a", "messages": [], "tool_cards": [
         {"tool": "shell.exec", "ok": False,
          "error": "shell.exec: missing REQUIRED argument 'cmd'"},       # → v510
-        {"tool": "fs.read", "ok": False, "error": "boom"},              # → no check
+        # Round 47: `tool-error` now names v523, so the uncovered side of the
+        # fixture is `no-change` — the one family still without a proving test.
+        {"tool": "todo.update", "ok": False, "error": "changed nothing"},  # → no check
     ]}, f)
 
 rep = selfevolve.failure_candidates(limit=10, include_sessions=True)
 ch = rep.get("checks") or {}
 fams = {(i["family"], bool(i.get("check"))) for i in rep["issues"]}
 check("B1 one family with a check, one without",
-      fams == {("missing-argument", True), ("tool-error", False)}, fams)
+      fams == {("missing-argument", True), ("no-change", False)}, fams)
 check("B2 the coverage counts the whole register",
       ch.get("with_check") == 1 and ch.get("without_check") == 1
       and ch.get("total") == 2, ch)
@@ -84,7 +86,7 @@ api = httpapi.improvement_failures(limit=10)
 check("D1 the API carries the same numbers", api.get("checks") == ch, api.get("checks"))
 check("D2 and the rows keep their own check",
       {i["family"]: i.get("check") for i in api["issues"]} ==
-      {"missing-argument": "v510", "tool-error": None}, api["issues"])
+      {"missing-argument": "v510", "no-change": None}, api["issues"])
 
 # ------------------------------------------------- E: the panel ---------------
 UI = open(os.path.join(REPO, "webui", "index.html"), encoding="utf-8").read()
