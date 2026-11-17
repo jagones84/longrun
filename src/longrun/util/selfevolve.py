@@ -607,6 +607,12 @@ def error_class(text):
 FAILURE_FAMILIES = (
     ("permission", ("denied", "permission", "hard-deny", "not permitted",
                     "refused", "protected")),
+    # Round 24: the GATE doing its job is not a fault. Measured 2026-11-18: 6 of
+    # the 24 "shell.exec tool-error" failures were the plan gate refusing — a
+    # policy answer that a repair cannot fix.
+    ("gate", ("plan mode", "unapproved plan", "waiting for approval",
+              "approval required", "requires approval", "needs approval",
+              "awaiting approval", "approval pending")),
     ("timeout", ("timeout", "timed out", "exit 124")),
     ("missing-argument", ("missing required argument", "required:")),
     ("not-found", ("no such file", "not found", "does not exist")),
@@ -624,17 +630,38 @@ FAMILY_FIX = {
     "syntax": ("write the script with fs.write, then run the FILE (no heredoc)", "v747"),
     "no-change": ("send the real steps in the update", None),
     "permission": ("the policy denies it; use the allowed read path", "v1075"),
+    "gate": ("this is a GATE, not a fault: in plan mode only read-only tools run — "
+             "propose the plan, then call the tool", None),
     "nonzero-exit": ("read stderr in the observation and correct the command", None),
     "tool-error": ("read the error text and fix the argument", None),
 }
 
 
-def failure_family(tool, head):
-    """The family label of one (tool, normalized error) class."""
+#: Families whose needles are specific enough to search the WHOLE error text.
+#: Measured 2026-11-18: "timeout" also lives inside a tool's schema listing
+#: (`Arg types: {'command': str, 'timeout_secs': int}`) and pulled 19
+#: missing-argument failures into `timeout` — so a generic needle reads the class
+#: head only, and only these read past it.
+TAIL_FAMILIES = ("gate",)
+
+
+def failure_family(tool, head, text=None):
+    """The family label of one class.
+
+    The class head is the identity and the first place the family is read. When
+    the caller has the raw text, the families in `TAIL_FAMILIES` may also match
+    past the 80-char head — a plan-gate refusal can begin with the harness's
+    `[shell.exec] exit=<n> …` prefix, which says nothing about the cause.
+    """
     s = str(head or "").lower()
     for name, needles in FAILURE_FAMILIES:
         if any(n in s for n in needles):
             return name
+    tail = str(text or "").lower()[:400]
+    if tail:
+        for name, needles in FAILURE_FAMILIES:
+            if name in TAIL_FAMILIES and any(n in tail for n in needles):
+                return name
     return "nonzero-exit" if "exit=" in s else "tool-error"
 
 
@@ -645,6 +672,18 @@ def _severity(count, sessions):
     if sessions >= 2 or count >= 3:
         return "warning"
     return "info"
+
+
+def severity_for(family, count, sessions):
+    """The label a row really gets: a GATE refusal is never `error`.
+
+    Round 24. `_severity` ranks BREAKAGE; a gate refusal is the policy doing its
+    job (measured 2026-11-18: 6 of the 24 `shell.exec tool-error` failures were
+    the plan gate). It stays a `warning` — the agent kept trying — but it must
+    not outrank a real fault, because the repair drafts follow the severity.
+    """
+    sev = _severity(count, sessions)
+    return "warning" if (family == "gate" and sev == "error") else sev
 
 
 def session_failures(sessions_dir=None, limit=200, max_sessions=400):
@@ -681,14 +720,18 @@ def session_failures(sessions_dir=None, limit=200, max_sessions=400):
                 if isinstance(ec, int) and ec:
                     head = "exit=<n> (no error text)"
             row = buckets.setdefault((tool, head),
-                                     {"count": 0, "sessions": set(), "samples": []})
+                                     {"count": 0, "sessions": set(), "samples": [],
+                                      "probe": ""})
             row["count"] += 1
             row["sessions"].add(ent.name[:-5])
+            if not row["probe"]:
+                row["probe"] = str(card.get("error") or card.get("result") or "")[:400]
             if len(row["samples"]) < 2:
                 row["samples"].append(
                     str(card.get("error") or card.get("result") or "")[:160])
     rows = [{"tool": t, "error": e, "count": v["count"],
-             "sessions": len(v["sessions"]), "samples": v["samples"]}
+             "sessions": len(v["sessions"]), "samples": v["samples"],
+             "probe": v.get("probe") or ""}
             for (t, e), v in buckets.items()]
     rows.sort(key=lambda r: (-r["count"], r["tool"], r["error"]))
     return {"ok": True, "classes": rows[:max(1, int(limit or 200))],
@@ -739,9 +782,12 @@ def failure_candidates(path=None, limit=10, min_count=1, include_sessions=False,
             tool = str(step.get("tool") or "?")
             head = error_class(step.get("error"))
             row = buckets.setdefault((tool, head), {"count": 0, "runs": set(),
-                                                    "sessions": 0, "samples": []})
+                                                    "sessions": 0, "samples": [],
+                                                    "probe": ""})
             row["count"] += 1
             row["runs"].add(fn[:-5])
+            if not row["probe"]:
+                row["probe"] = str(step.get("error") or "")[:400]
     scanned = 0
     if include_sessions:
         live = session_failures(sessions_dir=sessions_dir, max_sessions=max_sessions)
@@ -749,14 +795,16 @@ def failure_candidates(path=None, limit=10, min_count=1, include_sessions=False,
         for cls in live.get("classes") or []:
             key = (str(cls.get("tool") or "?"), str(cls.get("error") or ""))
             row = buckets.setdefault(key, {"count": 0, "runs": set(),
-                                           "sessions": 0, "samples": []})
+                                           "sessions": 0, "samples": [], "probe": ""})
             row["count"] += int(cls.get("count") or 0)
             row["sessions"] = max(row["sessions"], int(cls.get("sessions") or 0))
             row["samples"] = (row["samples"] + list(cls.get("samples") or []))[:2]
+            if not row["probe"]:
+                row["probe"] = str(cls.get("probe") or "")[:400]
     rows = []
     for (tool, head), v in buckets.items():
         in_runs, in_sessions = bool(v["runs"]), bool(v["sessions"])
-        family = failure_family(tool, head)
+        family = failure_family(tool, head, v.get("probe"))
         action, check = FAMILY_FIX.get(family, FAMILY_FIX["tool-error"])
         rows.append({"id": "fail-%s-%s-%s" % (
                          re.sub(r"[^a-z0-9]+", "-", tool.lower()).strip("-") or "tool",
@@ -765,7 +813,7 @@ def failure_candidates(path=None, limit=10, min_count=1, include_sessions=False,
                      "runs": len(v["runs"]), "sessions": v["sessions"],
                      "source": ("both" if in_runs and in_sessions else
                                 "sessions" if in_sessions else "runs"),
-                     "family": family, "severity": _severity(v["count"], v["sessions"]),
+                     "family": family, "severity": severity_for(family, v["count"], v["sessions"]),
                      "action": action, "check": check,
                      "samples": v["samples"]})
     rows.sort(key=lambda r: (-r["count"], r["tool"], r["error"]))
@@ -800,7 +848,7 @@ def _issues_from(rows):
                         re.sub(r"[^a-z0-9]+", "-", tool.lower()).strip("-") or "tool",
                         family),
                     "tool": tool, "family": family,
-                    "severity": _severity(g["count"], g["sessions"]),
+                    "severity": severity_for(g["family"], g["count"], g["sessions"]),
                     "count": g["count"], "sessions": g["sessions"],
                     "runs": g["runs"],
                     "source": ("both" if "both" in g["source"] else
