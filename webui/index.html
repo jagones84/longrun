@@ -4394,10 +4394,10 @@
              session after the fix — nothing claimed). Material only, like a skill
              draft: the panel applies nothing. -->
         <details class="card" id="impRepairsBox">
-          <summary class="set-t u-ptr" title="One draft per measured failure issue, with the commit that answered it and the number of sessions written after it.">Failure repairs <span id="impRepairCount" class="remaining"></span></summary>
+          <summary class="set-t u-ptr" title="One draft per measured failure issue, with the commit that answered it and the number of sessions and run records written after it.">Failure repairs <span id="impRepairCount" class="remaining"></span></summary>
           <div class="remaining u-mt6">The register drafts an issue at or above warning, with its remedy and the check that proves it.
-            <b>resolved</b> = none of its class in the sessions after the fix; <b>still open</b> = N in M;
-            <b>unobserved</b> = no session after the fix, so nothing is claimed. Nothing here is applied by the panel.</div>
+            <b>resolved</b> = none of its class in the sessions and run records after the fix; <b>still open</b> = N in M;
+            <b>unobserved</b> = no session or run after the fix, so nothing is claimed. Nothing here is applied by the panel.</div>
           <div id="impRepairs" class="u-mt6"></div>
         </details>
         <!-- EV-20: a forged Matrix tool that was never used after it landed is
@@ -13380,10 +13380,15 @@ async function loadImprovement() {
         const st = s.status || "proposed";
         const n = (s.sessions_since === null || s.sessions_since === undefined)
           ? null : Number(s.sessions_since);
+        // Round 39: the window names BOTH corpora — a class that lives in harness
+        // run records is judged there too, so "0 in 3 sessions" alone can be false.
+        const nr = Number(s.runs_since || 0);
+        const win = nr ? (n + " session(s) + " + nr + " run record(s)") : (n + " session(s)");
         const ev = st === "proposed" ? "no commit recorded"
-          : st === "unobserved" ? "no session after the fix — nothing claimed"
-          : st === "resolved" ? "0 in " + n + " session(s) after the fix"
-          : (Number(s.count_since || 0) + " in " + n + " session(s) after the fix");
+          : st === "unobserved" ? "no session or run after the fix — nothing claimed"
+          : st === "resolved" ? "0 in " + win + " after the fix"
+          : (Number(s.count_since_sessions || 0) + " card(s) + " +
+             Number(s.count_since_runs || 0) + " run step(s) in " + win + " after the fix");
         const fix = (s.fix && s.fix.commit)
           ? " · " + esc(String(s.fix.commit).slice(0, 12)) : "";
         const row = document.createElement("div"); row.className = "imp-row";

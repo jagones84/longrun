@@ -2489,21 +2489,21 @@ def _improve(args, run_id=None):
         mine = next((s for s in st.get("states") or []
                      if s.get("issue") == rep["issue"]), {})
         if mine.get("status") == "unobserved":
-            line = ("repair %s: fixed at %s — unobserved (no session written after "
-                    "the fix yet, so nothing is claimed)"
+            line = ("repair %s: fixed at %s — unobserved (no session or run record "
+                    "after the fix yet, so nothing is claimed)"
                     % (rep["issue"], rep["fix"]["commit"] or "(no commit)"))
         elif mine.get("status") == "resolved":
             line = ("repair %s: fixed at %s — resolved (no %s · %s in the %s "
-                    "session(s) after the fix)"
+                    "after the fix)"
                     % (rep["issue"], rep["fix"]["commit"] or "(no commit)",
                        mine.get("tool"), mine.get("family"),
-                       mine.get("sessions_since")))
+                       _window_label(mine)))
         else:
             line = ("repair %s: fixed at %s — still open (%s occurrence(s) of %s · %s "
-                    "in the %s session(s) after the fix)"
+                    "in the %s after the fix)"
                     % (rep["issue"], rep["fix"]["commit"] or "(no commit)",
                        mine.get("count_since"), mine.get("tool"), mine.get("family"),
-                       mine.get("sessions_since")))
+                       _window_label(mine)))
         return {"ok": True, "issue": rep["issue"], "fix": rep["fix"],
                 "state": mine, "stdout": line}
     # Round 22: the failure register turned into WORK — one `kind: "repair"`
@@ -2538,14 +2538,15 @@ def _improve(args, run_id=None):
         for s in st.get("states") or []:
             if s.get("status") == "proposed":
                 continue
-            n_sess = int(s.get("sessions_since") or 0)
+            window = _window_label(s)
             lines.append("[%s] %s — %s" % (
                 s["status"], s["issue"],
-                "no session after the fix yet, nothing claimed" if s["status"] == "unobserved"
-                else "no occurrence in the %d session(s) after the fix" % n_sess
+                "no session or run record after the fix yet, nothing claimed"
+                if s["status"] == "unobserved"
+                else "no occurrence in the %s after the fix" % window
                 if s["status"] == "resolved"
-                else "%d occurrence(s) in the %d session(s) after the fix"
-                     % (int(s.get("count_since") or 0), n_sess)))
+                else "%d occurrence(s) in the %s after the fix"
+                     % (int(s.get("count_since") or 0), window)))
         # Round 29: an answer must name the real reason. A re-run that found the
         # issues but skipped them ("already drafted") used to answer "no issue at
         # or above error" — false, and measured live on 2026-11-18.
@@ -4471,6 +4472,21 @@ def _result_is_empty(res: Any) -> bool:
             return len(res[key]) == 0
     out = res.get("stdout")
     return isinstance(out, str) and out.strip().lower() in _EMPTY_STDOUT
+
+
+def _window_label(state: dict) -> str:
+    """The measured window of a repair close, both corpora named (round 39).
+
+    `repair_states` counts session files AND harness run records after the fix;
+    a reader must see which of the two carried the denominator, because a class
+    that lives only in run records has no session to be judged by.
+    """
+    n_sess = int(state.get("sessions_since") or 0)
+    n_runs = int(state.get("runs_since") or 0)
+    label = "%d session(s)" % n_sess
+    if n_runs:
+        label += " + %d run record(s)" % n_runs
+    return label
 
 
 def _missing_args_reply(tool: str, missing: list[str],

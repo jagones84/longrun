@@ -1376,7 +1376,7 @@ def repair_mark(out_dir, issue, commit, note="", when=None):
     return {"ok": True, "issue": name, "dir": d, "fix": fix}
 
 
-def repair_states(out_dir, sessions_dir=None, max_sessions=400):
+def repair_states(out_dir, sessions_dir=None, max_sessions=400, runs_dir=None):
     """Per repair draft: is its class still happening AFTER its own fix date?
 
     Round 34. One pass over the store, each draft against its own window; the
@@ -1387,8 +1387,16 @@ def repair_states(out_dir, sessions_dir=None, max_sessions=400):
     Round 35: the window has a DENOMINATOR. `sessions_since` is how many session
     files were written after the fix, and a fix with none is `unobserved` — not
     `resolved`, because zero failures out of zero sessions is not evidence.
+
+    Round 39: the window is the WHOLE trace store. Measured 2026-11-18: an issue
+    now names its two corpora (`from_sessions`/`from_runs`), and a class that
+    also lives in harness run records could read `resolved` from a session-only
+    measurement while its run steps still failed. `runs_since` is the second
+    denominator, `count_since` is both corpora, and `unobserved` needs BOTH to
+    be empty.
     """
     from longrun.util import runtree
+    from longrun.harness import record as rec_mod
     states = []
     try:
         names = sorted(n for n in os.listdir(out_dir)
@@ -1427,24 +1435,54 @@ def repair_states(out_dir, sessions_dir=None, max_sessions=400):
             head = error_class(c.get("error") or c.get("result"))
             fam = failure_family(c.get("tool"), head, c.get("error") or c.get("result"))
             seen.setdefault((str(c.get("tool") or "?"), fam), []).append(mt)
+    # Round 39: the second corpus, the same three functions.
+    rroot = runs_dir or os.path.join(rec_mod.dir_path(), "runs")
+    try:
+        rentries = [e for e in os.scandir(rroot) if e.name.endswith(".json")]
+        rentries.sort(key=lambda e: e.stat().st_mtime, reverse=True)
+        rentries = rentries[:max(1, int(max_sessions or 400))]
+    except OSError:
+        rentries = []
+    in_runs, rmtimes = {}, []
+    for ent in rentries:
+        try:
+            mt = ent.stat().st_mtime
+        except OSError:
+            continue
+        rmtimes.append(mt)
+        rec = _read_json(ent.path)
+        if not isinstance(rec, dict):
+            continue
+        for step in rec.get("steps") or []:
+            if not isinstance(step, dict) or step.get("ok") is not False:
+                continue
+            head = error_class(step.get("error"))
+            fam = failure_family(step.get("tool"), head, step.get("error"))
+            in_runs.setdefault((str(step.get("tool") or "?"), fam), []).append(mt)
     for name, prop in drafts:
         key = (str(prop.get("tool") or ""), str(prop.get("family") or ""))
         fix = prop.get("fix") if isinstance(prop.get("fix"), dict) else None
         state = {"issue": name, "tool": key[0], "family": key[1],
                  "status": "proposed", "fix": fix, "count_since": None,
-                 "sessions_since": None}
+                 "sessions_since": None, "runs_since": None}
         if fix:
             cutoff = float(fix.get("date") or 0)
             n_sess = sum(1 for mt in mtimes if mt >= cutoff)
-            n = sum(1 for mt in seen.get(key, []) if mt >= cutoff)
-            state["count_since"] = n
+            n_runs = sum(1 for mt in rmtimes if mt >= cutoff)
+            c_sess = sum(1 for mt in seen.get(key, []) if mt >= cutoff)
+            c_runs = sum(1 for mt in in_runs.get(key, []) if mt >= cutoff)
+            state["count_since"] = c_sess + c_runs
+            state["count_since_sessions"] = c_sess
+            state["count_since_runs"] = c_runs
             state["sessions_since"] = n_sess
-            state["status"] = ("unobserved" if n_sess == 0 else
-                               "resolved" if n == 0 else "fixed-open")
+            state["runs_since"] = n_runs
+            state["status"] = ("unobserved" if (n_sess == 0 and n_runs == 0) else
+                               "resolved" if (c_sess + c_runs) == 0 else "fixed-open")
         states.append(state)
     states.sort(key=lambda s: (REPAIR_STATES.index(s["status"]),
                                -int(s["count_since"] or 0), s["issue"]))
-    return {"ok": True, "states": states, "sessions": len(entries)}
+    return {"ok": True, "states": states, "sessions": len(entries),
+            "runs": len(rentries)}
 
 
 # ------------------------------------------------- stage 2: synth/verify/archive

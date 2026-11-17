@@ -2183,13 +2183,16 @@ def improvement_repairs():
     try:
         rep = selfevolve.repair_states(out)
     except Exception:  # noqa: BLE001 — an unreadable folder is data, not a crash
-        return {"states": [], "total": 0, "open": 0, "sessions": 0}
+        return {"states": [], "total": 0, "open": 0, "sessions": 0, "runs": 0}
     states = [s for s in (rep.get("states") or []) if isinstance(s, dict)]
     return {"states": states, "total": len(states),
             # `open` is a draft nobody has closed yet; a fix with no session after
             # it is `unobserved`, which is not open work — it is waiting for data.
             "open": sum(1 for s in states if s.get("status") == "proposed"),
-            "sessions": int(rep.get("sessions") or 0)}
+            "sessions": int(rep.get("sessions") or 0),
+            # Round 39: the second denominator — a class that lives in harness
+            # run records is judged there too.
+            "runs": int(rep.get("runs") or 0)}
 
 
 class Handler(BaseHTTPRequestHandler):

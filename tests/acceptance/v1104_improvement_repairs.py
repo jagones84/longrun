@@ -115,8 +115,9 @@ check("E3 every state has a glyph", all(
     ('%s: "' % k) in UI or ('"%s"' % k) in UI
     for k in ("resolved", "fixed-open", "unobserved", "proposed")), "")
 check("E4 the words name the outcome, not a verdict alone",
-      "no session after the fix — nothing claimed" in UI
-      and "session(s) after the fix" in UI, "")
+      "no session or run after the fix — nothing claimed" in UI
+      and '0 in " + win + " after the fix' in UI
+      and "run step(s) in " in UI, "")
 check("E5 the state glyph is NAMED (title + aria-label) — no bare emoji",
       'aria-label="' in UI and 'title="' in UI and "word[st]" in UI, "")
 
