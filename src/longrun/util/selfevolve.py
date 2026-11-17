@@ -1228,9 +1228,7 @@ def _repair_md(prop):
         "## How to prove it\n\n"
         "%s"
         "## Status\n\n"
-        "DRAFT — material, not a change. Nothing was executed and no policy was "
-        "touched; state the fix, apply it through the normal gate, and re-read "
-        "`self.failures` (or run the check) to prove the issue is gone.\n"
+        "%s"
         % (prop.get("tool"), prop.get("family"),
            prop.get("severity"), prop.get("count"), kind, units, where,
            prop.get("source"), who_line, window, retried, recovery, rows,
@@ -1239,7 +1237,60 @@ def _repair_md(prop):
            ("Run `%s` after the fix; it is the test that proves this family of "
             "failure is answered.\n\n" % check) if check
            else "No test covers this family yet — write one before calling the "
-                "fix done.\n\n"))
+                "fix done.\n\n",
+           _status_text(prop)))
+
+
+def _status_text(prop):
+    """The Status section of a draft — DRAFT until a fix is recorded (round 40).
+
+    Measured 2026-11-18: all 3 fixed drafts still said "Nothing was executed",
+    because `repair_mark` wrote `proposal.json` and never touched `REPAIR.md`.
+    A record that contradicts its own file is the defect this register exists to
+    stop, so the Status section is derived from the record, never left behind.
+    """
+    fix = prop.get("fix") if isinstance(prop.get("fix"), dict) else None
+    if not fix:
+        return ("DRAFT — material, not a change. Nothing was executed and no policy "
+                "was touched; state the fix, apply it through the normal gate, and "
+                "re-read `self.failures` (or run the check) to prove the issue is "
+                "gone.\n")
+    when = time.strftime("%Y-%m-%d %H:%M",
+                         time.localtime(float(fix.get("date") or 0)))
+    note = (" — " + str(fix["note"])) if fix.get("note") else ""
+    return ("**FIXED** at `%s` on %s%s.\n\n"
+            "The window above is counted from that moment: re-read `self.failures` "
+            "(or run the check) to see whether the class left. A fix with an empty "
+            "window is `unobserved`, not `resolved`.\n"
+            % (fix.get("commit") or "?", when, note))
+
+
+def _stamp_status(md_path, prop):
+    """Rewrite a REPAIR.md's Status SECTION from the record, keeping the rest.
+
+    Only the Status block is replaced: an operator's notes elsewhere in the file
+    — before or after it — survive. A missing file is rebuilt from the record.
+    """
+    try:
+        with open(md_path, encoding="utf-8") as f:
+            txt = f.read()
+    except OSError:
+        txt = ""
+    idx = txt.find("## Status")
+    if idx < 0:
+        head, tail = txt.rstrip(), ""
+    else:
+        after = txt[idx + len("## Status"):]
+        nxt = after.find("\n## ")
+        head = txt[:idx].rstrip()
+        tail = after[nxt:].strip("\n") if nxt >= 0 else ""
+    if not head:
+        head = _repair_md(prop).split("## Status")[0].rstrip()
+    body = head + "\n\n## Status\n\n" + _status_text(prop).rstrip("\n") + "\n"
+    if tail:
+        body += "\n" + tail + "\n"
+    with open(md_path, "w", encoding="utf-8") as f:
+        f.write(body)
 
 
 def issue_drafts(out_dir, limit=5, min_severity="warning", sessions_dir=None,
@@ -1373,6 +1424,12 @@ def repair_mark(out_dir, issue, commit, note="", when=None):
         write_json(p, prop)
     except OSError as e:
         return {"ok": False, "error": "cannot write %s: %s" % (p, e)}
+    # Round 40: the record and its readable copy agree. Before this, a fixed
+    # draft's REPAIR.md still read "Nothing was executed" (measured: 3 of 3).
+    try:
+        _stamp_status(os.path.join(d, "REPAIR.md"), prop)
+    except OSError:
+        pass  # the JSON record is the truth; the markdown is its readable copy
     return {"ok": True, "issue": name, "dir": d, "fix": fix}
 
 
