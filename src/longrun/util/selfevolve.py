@@ -1045,6 +1045,9 @@ def failure_candidates(path=None, limit=10, min_count=1, include_sessions=False,
                      "repeats": v.get("repeats", 0),
                      "retry_rate": retry_signal(v.get("repeats", 0), v["count"]),
                      "recovered": v.get("recovered", 0),
+                     # Round 43: the same measure the issue and its class list use.
+                     "unresolved": (int(v["count"] or 0)
+                                    - int(v.get("recovered") or 0)),
                      # None = the corpus cannot see order (run records only);
                      # 0.0 is a measured "never recovered".
                      "recovery_rate": (None if not in_sessions else
@@ -1107,10 +1110,21 @@ def _issues_from(rows):
                              "from_sessions": int(r.get("from_sessions") or 0),
                              "from_runs": int(r.get("from_runs") or 0),
                              "repeats": int(r.get("repeats") or 0),
-                             "recovered": int(r.get("recovered") or 0)})
+                             "recovered": int(r.get("recovered") or 0),
+                             # Round 43: the measure the class order uses, one
+                             # level below the issue's own.
+                             "unresolved": (int(r["count"] or 0)
+                                            - int(r.get("recovered") or 0))})
     out = []
     for (tool, family), g in grouped.items():
-        g["classes"] = sorted(g["classes"], key=lambda c: -c["count"])[:3]
+        # Round 43: the classes of an issue are ordered by what did NOT recover,
+        # the same measure as the issues themselves. Measured 2026-11-18:
+        # `shell.exec · missing-argument` listed its 10-card fully-recovered class
+        # (0 unresolved) above a 1-card class that never recovered, and `REPAIR.md`
+        # copied that order as "What fails".
+        g["classes"] = sorted(g["classes"],
+                              key=lambda c: (-c["unresolved"], -c["count"],
+                                             c["error"]))[:3]
         # Round 38: the reach is the union of the classes' sessions; a runs-only
         # issue has no ids and keeps the (zero) count it always had.
         reach = len(g["sids"]) if g["sids"] else g["sessions"]
