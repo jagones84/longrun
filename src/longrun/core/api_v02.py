@@ -2818,35 +2818,15 @@ def handle(handler, method, path, qs, body):
             # through the same gate, and report whether the observation moved
             # (CausalFlow, arXiv:2605.25338). The workspace is the LIVE tree, so
             # the answer carries that caveat instead of implying a frozen state.
+            # Round 16: the body lives in `counterfactual_run` because the
+            # `sessions` tool calls the SAME function — one implementation.
             sid = path[len("/api/sessions/"):-len("/counterfactual")].strip("/")
             b = body or {}
-            handle = str(b.get("handle") or "").strip()
-            if not handle:
-                return _r(handler, 400, {"error": "handle required (a card #id)"})
-            ws, sess = _session_ws(sid)
-            if not sess:
-                return _r(handler, 404, {"error": "session not found"})
-            card = _srv().card_by_handle(sess, handle)
-            if card is None:
-                return _r(handler, 404, {"error": "no card with that handle"})
-            from longrun.harness import counterfactual as _cf
-            plan = _cf.plan(card, b.get("change") if "change" in b else b.get("args"))
-            if plan.get("error"):
-                return _r(handler, 400, plan)
-            res = gated_call(plan["tool"], plan["args"], run_id=sid,
-                             wait=b.get("wait", True), by="counterfactual",
-                             workspace=ws, obs_max=_chat_obs_full())
-            out = res.get("result") if isinstance(res, dict) else None
-            cmp_ = _cf.compare(card, out if isinstance(out, dict) else {},
-                               (res or {}).get("observation") or "")
-            _publish("counterfactual.run", session=sid, tool=plan["tool"],
-                     handle=handle, changed=plan["changed"], same=cmp_["same"])
-            return _r(handler, 200, {"ok": True, "session": sid, "handle": handle,
-                                     "fidelity": "live-tree",
-                                     "caveat": "the workspace is the current tree, "
-                                               "not the tree at the card's ts",
-                                     "plan": plan, "execution": res,
-                                     "compare": cmp_})
+            out = counterfactual_run(
+                sid, b.get("handle"),
+                b.get("change") if "change" in b else b.get("args"),
+                b.get("wait", True), "counterfactual")
+            return _r(handler, out.pop("status", 200), out)
         if path == "/api/tools/call":
             tool = body.get("tool")
             if not tool:
@@ -4991,6 +4971,47 @@ def _chat_obs_full():
         return int(_cl.get("render_max"))
     except Exception:  # noqa: BLE001 — a missing limit falls back to the renderer default
         return 1600
+
+
+def counterfactual_run(sid, handle, change, wait=True, by="counterfactual"):
+    """Change ONE fact of a recorded PURE call, replay it, compare the observation.
+
+    The ONE implementation behind the HTTP route, the CLI and the `sessions`
+    counterfactual action: the agent must be able to diagnose its own failure
+    instead of the instrument being operator-only (round 16). Everything runs
+    through `gated_call`, so the replay carries the same policy, approvals and
+    workspace as a normal call; `harness.counterfactual.plan` decides whether the
+    step may be replayed at all (a write is a second experiment, not an
+    intervention).
+
+    Returns a dict with a `status` key (400/404 on a refusal) so each caller maps
+    it to its own surface — HTTP code, tool exit code, CLI line.
+    """
+    sid = str(sid or "").strip()
+    handle = str(handle or "").strip()
+    if not handle:
+        return {"ok": False, "status": 400, "error": "handle required (a card #id)"}
+    ws, sess = _session_ws(sid)
+    if not sess:
+        return {"ok": False, "status": 404, "error": "session not found"}
+    card = _srv().card_by_handle(sess, handle)
+    if card is None:
+        return {"ok": False, "status": 404, "error": "no card with that handle"}
+    from longrun.harness import counterfactual as _cf
+    plan = _cf.plan(card, change)
+    if plan.get("error"):
+        return {"ok": False, "status": 400, "error": plan["error"], "plan": plan}
+    res = gated_call(plan["tool"], plan["args"], run_id=sid, wait=wait, by=by,
+                     workspace=ws, obs_max=_chat_obs_full())
+    out = res.get("result") if isinstance(res, dict) else None
+    cmp_ = _cf.compare(card, out if isinstance(out, dict) else {},
+                       (res or {}).get("observation") or "")
+    _publish("counterfactual.run", session=sid, tool=plan["tool"], handle=handle,
+             changed=plan["changed"], same=cmp_["same"], by=by)
+    return {"ok": True, "status": 200, "session": sid, "handle": handle,
+            "fidelity": "live-tree",
+            "caveat": "the workspace is the current tree, not the tree at the card's ts",
+            "plan": plan, "execution": res, "compare": cmp_}
 
 
 def _codebase_hint(ws, res):

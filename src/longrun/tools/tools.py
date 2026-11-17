@@ -3128,6 +3128,63 @@ def _sessions(args, run_id):
         return {"ok": True, "exit_code": 0, "session": sid, "card": view,
                 "stdout": json.dumps(view, ensure_ascii=False)[:2000], "stderr": "",
                 "backend": "host", "sandboxed": False}
+    if action in ("counterfactual", "cf"):
+        # Round 16: the causal instrument was operator-only (HTTP route + CLI), so
+        # an agent asked "why did that step fail?" could only correlate. It can now
+        # change ONE fact of a recorded PURE call and read the outcome flip
+        # (REFLECT, arXiv:2606.09071) — same gate, same purity rule, same function
+        # the route uses (`api_v02.counterfactual_run`).
+        sid = _session_id(args.get("session") or args.get("id") or "")
+        handle = str(args.get("handle") or args.get("card") or "").strip()
+        if not sid or not handle:
+            return {"ok": False, "exit_code": 64, "stdout": "", "stderr": "",
+                    "error": "session and handle are required for "
+                             "action=counterfactual. The handle is the #id in the "
+                             "compacted manifest, in `sessions tree`, or the id a "
+                             "`sessions card` read returned.",
+                    "backend": "host", "sandboxed": False}
+        change = args.get("change")
+        if isinstance(change, str):
+            try:
+                change = json.loads(change)
+            except ValueError:
+                return {"ok": False, "exit_code": 64, "stdout": "", "stderr": "",
+                        "error": "change must be a JSON object of arguments, e.g. "
+                                 "{\"command\": \"cat other.py\"}",
+                        "backend": "host", "sandboxed": False}
+        if not isinstance(change, dict) or not change:
+            return {"ok": False, "exit_code": 64, "stdout": "", "stderr": "",
+                    "error": "change is required: the ONE argument to change, e.g. "
+                             "{\"path\": \"other.py\"} or {\"command\": \"ls src\"}",
+                    "backend": "host", "sandboxed": False}
+        _ok, _why = _may_message(run_id, sid)
+        if not _ok:
+            return {"ok": False, "exit_code": 126, "permission_denied": True,
+                    "session": sid, "stdout": "", "stderr": "",
+                    "error": "counterfactual refused: %s" % _why,
+                    "backend": "host", "sandboxed": False}
+        from longrun.core import api_v02 as _api
+        res = _api.counterfactual_run(sid, handle, change,
+                                      wait=args.get("wait", True), by="tool")
+        if not res.get("ok"):
+            return {"ok": False, "exit_code": 1, "session": sid, "handle": handle,
+                    "stdout": "", "stderr": "",
+                    "error": res.get("error") or "counterfactual refused",
+                    "status_code": res.get("status"),
+                    "backend": "host", "sandboxed": False}
+        cmp_ = res.get("compare") or {}
+        plan = res.get("plan") or {}
+        line = ("counterfactual %s on %s: changed %s -> %s"
+                % (handle, plan.get("tool"), ", ".join(plan.get("changed") or []),
+                   cmp_.get("verdict")))
+        if cmp_.get("changed"):
+            line += " (moved: %s)" % ", ".join(cmp_["changed"])
+        return {"ok": True, "exit_code": 0, "session": sid, "handle": handle,
+                "verdict": cmp_.get("verdict"), "changed": cmp_.get("changed") or [],
+                "fidelity": res.get("fidelity"), "caveat": res.get("caveat"),
+                "purity": plan.get("purity"), "compare": cmp_,
+                "stdout": line, "stderr": "",
+                "backend": "host", "sandboxed": False}
     if action in ("read", "get", "show", "transcript"):
         sid = _session_id(args.get("session") or args.get("id") or "")
         if not sid:

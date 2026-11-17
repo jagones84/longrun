@@ -454,6 +454,12 @@ _LEGACY_SCHEMAS = {
                         "waits for the peer turn to finish and returns its reply; "
                         "action=read can inspect the live transcript meanwhile. "
                         "action=compact / action=reset -> free a session's context. "
+                        "action=card -> dereference ONE recorded tool call by the "
+                        "#handle the compacted manifest prints. "
+                        "action=counterfactual -> change ONE fact of that recorded "
+                        "call, re-run it (both sides must be a pure read) and report "
+                        "whether the observation moved: the causal answer to 'why did "
+                        "this step fail', instead of a correlation. "
                         "Your OWN session is always allowed. ANOTHER session must be "
                         "BELOW you in the reporting line (any level, same team); "
                         "compact shrinks the transcript (force=true bypasses the "
@@ -463,7 +469,8 @@ _LEGACY_SCHEMAS = {
         "type": "object",
         "properties": {
             "action": {"type": "string",
-                       "enum": ["list", "read", "send", "wait", "compact", "reset"],
+                       "enum": ["list", "read", "send", "wait", "compact", "reset",
+                                "card", "counterfactual"],
                        "default": "list"},
             "session": {"type": "string",
                         "description": ("the target agent's NAME exactly as "
@@ -491,6 +498,18 @@ _LEGACY_SCHEMAS = {
             },
             "message_id": {"type": "string",
                            "description": "message_id returned by action=send (action=wait)"},
+            "handle": {"type": "string",
+                       "description": ("action=card|counterfactual: the #handle of ONE "
+                                       "recorded tool call (the manifest prints it, "
+                                       "`sessions tree` lists the ids)")},
+            "change": {"type": "object",
+                       "description": ("action=counterfactual: the ONE argument to "
+                                       "change, e.g. {\"path\": \"other.py\"} or "
+                                       "{\"command\": \"cat other.py\"}. Both the "
+                                       "recorded call and the change must be a pure "
+                                       "read — a write is refused, not replayed")},
+            "wait": {"type": "boolean", "default": True,
+                     "description": "action=counterfactual: wait for the replay to finish"},
             "timeout_secs": {"type": "integer", "minimum": 0, "maximum": 900,
                              "default": 180,
                              "description": "maximum wait; 0 checks once, then retry with the same id"},
@@ -955,6 +974,11 @@ _SUBTOOL_FIELDS = {
         "wait": ["message_id", "timeout_secs"],
         "compact": ["session", "to", "force"],
         "reset": ["session", "to"],
+        # Round 16: the handle round 10 started printing, and the causal step it
+        # points at — the agent could SEE `#h` in the manifest but had no action to
+        # read or intervene on it.
+        "card": ["session", "handle"],
+        "counterfactual": ["session", "handle", "change", "wait"],
     },
     "workspace": {"set": ["agent", "workspace", "scope", "create"]},
     "chapters": {
@@ -1029,6 +1053,9 @@ _SUBTOOL_REQUIRED = {
     "docs.plan": ["prompt"], "docs.spec": ["prompt"],
     "sessions.read": ["session"],
     "sessions.wait": ["message_id"],
+    # Round 16: both act on ONE recorded call, so the handle is not optional.
+    "sessions.card": ["session", "handle"],
+    "sessions.counterfactual": ["session", "handle", "change"],
     "workspace.set": ["workspace"],
     "chapters.read": ["id"], "chapters.title": ["id", "title"],
     "memory.store": ["content"], "memory.recall": ["query"],
@@ -1336,6 +1363,8 @@ _SUBTOOL_GUIDANCE = {
     "index.status": "Report index counts for this workspace; optional `workspace`.",
     "knowledge.status": "Report notebook and source counts, index state and the embedding backend. No arguments.",
     "sessions.list": "List other sessions with agent, title, age and running state; optional `query` and `limit`.",
+    "sessions.card": "Dereference ONE recorded tool call by its `#handle` (the one the compacted manifest prints): full args, error and result, no re-execution.",
+    "sessions.counterfactual": "Change ONE fact of a recorded PURE call and replay it through the same gate; reports whether the observation moved (`same-observation` / `different-observation`). A write is refused, never replayed.",
     "sessions.read": "Read one session's full transcript (messages, tool calls, results, injections) in order; `session` required, `limit`/`tail` bound it.",
     "sessions.compact": "Compact one session now; `session` (or `to`) selects it, `force=true` only when the operator explicitly asked to compact early.",
     "sessions.reset": "Clear one session's transcript and start it fresh; `session` (or `to`) is required. Destructive and irreversible.",
@@ -2494,6 +2523,9 @@ PLAN_READ_ONLY_TOOLS = frozenset({
     "knowledge.search", "knowledge.status",
     "matrix.git_diff", "matrix.git_log", "matrix.seams", "matrix.status",
     "memory.core", "memory.health", "memory.recent", "memory.recall",
+    # reading ONE recorded call is exploration; `sessions.counterfactual` is NOT
+    # here — it executes the replay, so a locked plan must not reach it.
+    "sessions.card",
     "process.list",
     "routine.get", "routine.list",
     "ruleaudit.list", "ruleaudit.scan",

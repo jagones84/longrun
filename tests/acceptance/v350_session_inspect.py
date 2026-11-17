@@ -50,8 +50,10 @@ check("A3 the namespace approval is auto (the reporting-line gate is the guard)"
       str((spec or {}).get("approval")))
 sch = registry.TOOL_SCHEMAS.get("sessions") or {}
 _actions = set((sch.get("properties", {}).get("action", {}) or {}).get("enum", []))
-check("A4 it documents list + read + send + wait (+ compact/reset, v939)",
-      _actions == {"list", "read", "send", "wait", "compact", "reset"},
+check("A4 it documents list + read + send + wait (+ compact/reset, v939, "
+      "card/counterfactual, v1085)",
+      _actions == {"list", "read", "send", "wait", "compact", "reset",
+                   "card", "counterfactual"},
       str(sorted(_actions)))
 
 # --- B: list — discovery (which session?) -----------------------------------

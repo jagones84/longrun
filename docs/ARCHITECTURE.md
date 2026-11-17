@@ -352,6 +352,17 @@ runtime (no MCP/host credentials), and no local scientific superiority is
 measured. Rules, skill discovery, approval, atomic-write and path owners remain
 authoritative.
 
+### Replaying one step (the agent's own diagnosis)
+
+`harness/counterfactual.py` changes ONE fact of a recorded call and reports whether the
+observation moved; `harness/shellread.py` decides what may be replayed (a pure read, both
+sides of the intervention). `api_v02.counterfactual_run` is the ONE implementation behind
+every surface — `POST /api/sessions/<id>/counterfactual`, `forge.py sessions
+counterfactual`, and the agent's `sessions` action `counterfactual` (`card` dereferences
+the `#handle` the compacted manifest prints). The replay goes through `gated_call`, so
+policy, approvals and workspace are the normal ones; a write is refused before anything
+executes.
+
 ### Learning -> Matrix bridge (one reviewed path)
 
 The evidence loop can now also update the mutable Matrix zone, without giving
