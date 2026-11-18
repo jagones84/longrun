@@ -2790,11 +2790,19 @@ def catalog():
         }
         # D-12: the shipped policy lists, so the Permissions page can show a rule
         # the operator removed and put it back. Only non-empty ones are sent.
+        # Round 102c: a deny entry may be a mapping `{pattern, why[, proof]}` since
+        # round 63, and `str(mapping)` published a Python repr as the "default
+        # rule" — the page rendered `{'pattern': …}` and "restore default" would
+        # have installed that repr as a regex (a silently disabled guardrail).
+        # `_deny_parts` is the ONE normalizer; the catalogue publishes patterns.
         _ship = shipped_tool(name, ship) or {}
+        _dflt = {"deny": _deny_parts(_ship.get("deny"))[0],
+                 "always_ask": [str(x) for x in (_ship.get("always_ask") or [])
+                                if not isinstance(x, dict)]}
         for _k in ("deny", "always_ask"):
-            _vals = _ship.get(_k)
-            if isinstance(_vals, list) and _vals:
-                row[_k + "_default"] = [str(x) for x in _vals]
+            _vals = _dflt[_k]
+            if _vals:
+                row[_k + "_default"] = _vals
         out.append(row)
     return out
 

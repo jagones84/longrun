@@ -58,8 +58,18 @@ def proposals_on_disk():
 seed("s-ok")
 
 # ---- A) a valid delta is parsed and submitted as a registry proposal --------
+# 2026-11-18 (round 102c): `^echo(\s|$)` is LIVE on shell.exec.auto_approve, so the
+# applier correctly dropped this delta as a no-op and A1-A4/G1 went red — the
+# pin's subject is "a delta that CHANGES something lands", not one rule's text.
+# The entry is derived from the live list so it can never become a no-op.
+_live_auto = (registry.tool_spec("shell.exec") or {}).get("auto_approve") or []
+_entry = "^echo(\\s|$)"
+_seq = 0
+while _entry in _live_auto:
+    _seq += 1
+    _entry = "^echo-%d(\\s|$)" % _seq
 _delta = {"target": "shell.exec", "field": "auto_approve",
-          "add": ["^echo(\\s|$)"], "reason": "repeated friction on echo",
+          "add": [_entry], "reason": "repeated friction on echo",
           "confidence": "medium"}
 optimizer._call_model = lambda prompt, model=None: json.dumps(_delta)
 r = optimizer.run("s-ok")

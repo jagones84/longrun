@@ -75,8 +75,12 @@ check("A2 git.run reads the shipped `git` block",
 check("A3 an unknown tool has no shipped entry",
       registry.shipped_tool("nope.nope") is None)
 _row = row("shell.exec")
+# Round 102c: a shipped deny entry may be a mapping {pattern, why[, proof]} (round
+# 63), and the catalogue publishes PATTERNS — the ONE normalizer is `_deny_parts`.
+# Comparing the patterns with the raw mappings compared two shapes, not two lists.
+_ship_pats = registry._deny_parts(_ship.get("deny"))[0]
 check("A4 the catalogue carries the shipped defaults",
-      (_row.get("deny_default") or []) == (_ship.get("deny") or []), _row.get("deny_default"))
+      (_row.get("deny_default") or []) == _ship_pats, _row.get("deny_default"))
 # 2026-11-14: this pin hardcoded `["^push(\\s|$)"]`, and the shipped list gained a
 # second rule on 2026-11-10 (`^(log|diff|show)\b.*--output`). The test's subject is
 # "the catalogue publishes the SHIPPED list and reset restores it", not its content,
@@ -99,7 +103,7 @@ check("B3 the removed rule is STILL offered as a default",
 _r2 = api_v02.update_policy({"tool": "shell.exec", "reset": ["deny"]})
 registry.load_config(reload=True)
 check("B4 reset is accepted", _r2.get("ok") is True, _r2)
-check("B5 the shipped list is back", (row("shell.exec").get("deny") or []) == _ship["deny"],
+check("B5 the shipped list is back", (row("shell.exec").get("deny") or []) == _ship_pats,
       row("shell.exec").get("deny"))
 _d2, _why2 = registry.classify("shell.exec", {"command": "rm -rf / "})
 check("B6 the command is refused again", _d2 == "denied", (_d2, _why2))

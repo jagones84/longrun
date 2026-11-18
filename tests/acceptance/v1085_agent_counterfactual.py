@@ -143,7 +143,7 @@ r = T._sessions({"action": "counterfactual", "session": "s1", "handle": "h1",
 check("B3 a broken change JSON is exit 64, not a crash",
       r.get("exit_code") == 64 and "JSON" in (r.get("error") or ""), r.get("error"))
 
-old = patch(T, _may_message=lambda caller, target: (False, "sideways across teams"),
+old = patch(T, _may_message=lambda caller, target, verb="message": (False, "sideways across teams"),
             _session_id=lambda v: "s1")
 try:
     r = T._sessions({"action": "counterfactual", "session": "s1", "handle": "h1",
@@ -165,7 +165,7 @@ def fake_run(sid, handle, change, wait=True, by="counterfactual"):
             "compare": {"verdict": "different-observation", "changed": ["result"]}}
 
 
-old = patch(T, _may_message=lambda caller, target: (True, ""),
+old = patch(T, _may_message=lambda caller, target, verb="message": (True, ""),
             _session_id=lambda v: "s1")
 old2 = patch(api_v02, counterfactual_run=fake_run)
 try:

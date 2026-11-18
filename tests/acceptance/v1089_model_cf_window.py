@@ -132,7 +132,7 @@ try:
           out.get("error"))
 
     # ---- T: the tool prints the window ------------------------------------
-    old5 = patch(T, _may_message=lambda c, t: (True, ""), _session_id=lambda v: "s1")
+    old5 = patch(T, _may_message=lambda c, t, verb="message": (True, ""), _session_id=lambda v: "s1")
     try:
         r = T._sessions({"action": "model_counterfactual", "session": "s1",
                          "index": TARGET, "change": {"content": "other"}}, "c")

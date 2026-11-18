@@ -199,7 +199,7 @@ r = T._sessions({"action": "model_counterfactual", "session": "s1", "index": 2,
 check("T2 broken change JSON is exit 64", r.get("exit_code") == 64
       and "JSON" in (r.get("error") or ""), r.get("error"))
 
-old = patch(T, _may_message=lambda caller, target: (False, "sideways"))
+old = patch(T, _may_message=lambda caller, target, verb="message": (False, "sideways"))
 try:
     r = T._sessions({"action": "model_counterfactual", "session": "s1", "index": 2,
                      "change": {"content": "x"}}, "caller")
@@ -220,7 +220,7 @@ def fake_run(sid, index, change, model=None, by="model-counterfactual"):
             "usage": {"prompt_tokens": 10}}
 
 
-old = patch(T, _may_message=lambda caller, target: (True, ""), _session_id=lambda v: "s1")
+old = patch(T, _may_message=lambda caller, target, verb="message": (True, ""), _session_id=lambda v: "s1")
 old2 = patch(api_v02, model_counterfactual_run=fake_run)
 try:
     r = T._sessions({"action": "model_counterfactual", "session": "s1", "index": 2,
@@ -251,6 +251,64 @@ _enum = ((registry.TOOL_SCHEMAS.get("sessions") or {}).get("properties") or {}) 
 check("G3 the action is in the namespace enum", "model_counterfactual" in _enum, _enum)
 check("G4 it spends a model call, so it is NOT plan-read-only",
       "sessions.model_counterfactual" not in registry.PLAN_READ_ONLY_TOOLS)
+
+# ---- S: the CLI verb (round 102c) --------------------------------------------
+# The route and the agent tool existed; the OPERATOR's own shell could not run the
+# owed check, so the CLI was not the twin of the API for this verb. The CLI builds
+# the same request the route documents (no second implementation).
+import argparse  # noqa: E402
+import contextlib  # noqa: E402
+import io  # noqa: E402
+
+from longrun.core import forge as CLI  # noqa: E402
+
+posted = []
+
+
+def fake_req(method, path, body=None, timeout=300):
+    posted.append((method, path, body))
+    return {"ok": True, "status": 200, "model": "m1",
+            "fidelity": "transcript+live-system", "caveat": "c",
+            "original": "old", "replacement": "new",
+            "recorded_action": {"action": "tool"}, "replayed_action": {"action": "tool"},
+            "compare": {"verdict": "different-action", "moved": ["args"]}}
+
+
+def _ns(**kw):
+    base = {"action": "model-counterfactual", "value": None, "content": None,
+            "session": None, "workspace": None, "at": None, "title": None,
+            "model": None, "arg": None}
+    base.update(kw)
+    return argparse.Namespace(**base)
+
+
+old = patch(CLI, req=fake_req, _current_session=lambda: "s1")
+try:
+    _buf = io.StringIO()
+    with contextlib.redirect_stdout(_buf):
+        CLI.cmd_sessions(_ns(value="211", content="new text"))
+    ok_out = _buf.getvalue()
+    for bad in (_ns(value="211"), _ns(value="x", content="y")):
+        try:
+            with contextlib.redirect_stderr(io.StringIO()):
+                CLI.cmd_sessions(bad)
+            posted.append(("NO-EXIT", None, None))
+        except SystemExit as exc:
+            posted.append(("exit", exc.code, None))
+finally:
+    restore(CLI, old)
+
+check("S1 the CLI posts the documented route and body",
+      posted and posted[0][0] == "POST"
+      and posted[0][1] == "/api/sessions/s1/counterfactual/model"
+      and posted[0][2] == {"index": 211, "change": {"content": "new text"}},
+      posted[:1])
+check("S2 no request without --content, exit 2",
+      posted[1][0] == "exit" and posted[1][1] == 2, posted[1:])
+check("S3 no request for a non-integer index, exit 2",
+      posted[2][0] == "exit" and posted[2][1] == 2, posted[2:])
+check("S4 stdout names the verdict and the model",
+      "different-action" in ok_out and "m1" in ok_out, ok_out[:200])
 
 print("\n---\nv1087: %d/%d PASS" % (sum(RESULTS), len(RESULTS)))
 raise SystemExit(0 if all(RESULTS) else 1)

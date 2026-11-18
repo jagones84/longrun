@@ -16,6 +16,7 @@ Run: python3 tests/acceptance/v958_identity_migration.py
 """
 import json
 import os
+import re
 import shutil
 import sqlite3
 import sys
@@ -39,6 +40,7 @@ from longrun.core import events as EV             # noqa: E402
 
 OLD = LRA._LEGACY_SESSION_ID
 NEW = LRA.ARCHITECT_SESSION_ID
+_LEGACY_RE = re.compile(r"longrunAgent|longrun_agent|longrun-agent(?![-a-z])")
 results = []
 
 
@@ -93,7 +95,12 @@ for root in ("src", "webui", "config"):
                 text = open(p, encoding="utf-8", errors="replace").read()
             except OSError:
                 continue
-            if OLD in text or "longrun_agent" in text or "longrun-agent" in text:
+            # 2026-11-18 (round 102c): the dash spelling is ALSO the prefix of the
+            # editor-dock postMessage vocabulary (`longrun-agent-editor`,
+            # `longrun-agents-action`), which is a different object — measured 4
+            # such protocol names and 0 identity uses. The identity spellings stay
+            # forbidden in every file; the protocol names are not the identity.
+            if _LEGACY_RE.search(text):
                 _hits.append(os.path.relpath(p, REPO))
 check("A1 exactly ONE file still names the retired identity (the migration)",
       _hits == [os.path.join("src", "longrun", "agent", "architect.py")], _hits)
