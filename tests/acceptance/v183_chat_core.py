@@ -198,31 +198,41 @@ check("D3 archived open work does not publish current-plan incompleteness",
 
 
 # ---- scenario J: archived open work cannot bypass current-plan closure -----
+# Round 91 (the pin was red and VACUOUS): the turn used to START with an open
+# todo, so JAG-189's stale-plan exception answered the first prose reply directly
+# and the close gate never ran — and J1 matched the word "REJECTED" inside the
+# SYSTEM PROMPT, so it passed without any rejection. The plan is now written
+# INSIDE the turn (which is what makes it the model's own work), and J1 matches
+# the gate's own sentence. `todo.write` supersedes the previous plan's open node
+# by design (JAG-177), so J2 expects `cancelled`, never `done` and never `todo`.
 _gj = server.taskgraph.ensure("v183j", session_id="v183j")
 server.taskgraph.add_node(_gj, "archived open step")
 server.taskgraph.begin_plan(_gj)
-server.taskgraph.add_node(_gj, "current open step")
+_J_WRITE = '{"action":"todo.write","todos":[{"label":"current open step"}]}'
 _J_UPDATE = ('{"action":"todo.update","steps":[{"index":0,"status":"done",'
              '"evidence":"verified current result"}]}')
+_REJECT_LINE = "your final answer was REJECTED"
 
 
 def script_current_plan(n: int) -> str:
-    """Return a premature answer, a plan close, then the final result."""
-    seq = ("premature answer", _J_UPDATE, "current plan completed")
+    """Write the plan, answer prematurely, close the step, then finish."""
+    seq = (_J_WRITE, "premature answer", _J_UPDATE, "current plan completed")
     return seq[n] if n < len(seq) else "current plan completed"
 
 
 ev_j, _ = run_turn("v183j", script_current_plan, gated_ok)
 _rejected_j = [d for k, d in ev_j if k == "harness.inject"
-               and "REJECTED" in (d.get("text") or "")]
+               and _REJECT_LINE in (d.get("text") or "")]
 check("J1 archived open work cannot bypass the current-plan close gate",
       bool(_rejected_j), "rejected_injects=%d" % len(_rejected_j))
 _gj = server.taskgraph.load("v183j") or {}
 _current_j = server.taskgraph.plan_nodes(_gj)
-check("J2 the current plan closes while archived work stays untouched",
+_archived_j = [n for n in _gj.get("nodes", []) if n.get("plan") != _gj.get("plan")]
+check("J2 the current plan closes, and the archived open step is cancelled, never done",
       len(_current_j) == 1 and _current_j[0].get("status") == "done"
-      and any(n.get("status") == "todo" and n.get("plan") != _gj.get("plan")
-              for n in _gj.get("nodes", [])), str(_gj.get("nodes", [])))
+      and bool(_archived_j)
+      and all(n.get("status") == "cancelled" for n in _archived_j),
+      str(_gj.get("nodes", [])))
 
 
 # ---- scenario E: harness-action cards are PERSISTED for reload (JAG-190) ---
