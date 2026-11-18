@@ -1,7 +1,9 @@
 # Longrun CLI — `forge.py`
 
-> Verified 2026-11-15: structure current (thin stdlib client over `/api/*`,
+> Verified 2026-11-18: structure current (thin stdlib client over `/api/*`,
 > same surface as WebUI). If a command 404s, §3 is stale — fix it same-commit.
+> Behavioural proof: `tests/acceptance/v785_cli_command_cases.py` (67 cases,
+> handlers driven with `req` stubbed).
 
 Command the harness from the terminal. `forge.py` is a thin, **stdlib-only** client
 over the *same* REST API the WebUI and the mobile app use: it duplicates **no**
@@ -10,7 +12,69 @@ the UI, its endpoint is reachable from here.
 
 ---
 
-## 0. TL;DR
+## 0. How to use this document as a skill
+
+Read this section if you are an agent (or a person) landing in Longrun with no
+context. It is the order you act in, not another command list; §2 stays the
+manual.
+
+### 0.1 The one fact that unlocks everything
+
+**An agent IS a session.** The org chart's `AX` is a *handle*; the session id is
+the *address*. Every chat verb targets a session, so `--session A50` and
+`--session 0e13bdb23c5b` now reach the same transcript (the CLI resolves `AX` for
+you, §2). Everything the CLI writes is the same store the WebUI renders: a turn you
+send from here appears in that agent's chat, with its tool cards, on reload.
+
+### 0.2 The loop: find → talk → watch → inspect → act
+
+| You want to | Run | What you get |
+|---|---|---|
+| see the org chart and each agent's session | `agents ls` | `AX  name  role  session  model  -> reports-to` |
+| talk to one agent | `chat "…" --session A50` | the reply; `session:` printed; the CLI remembers it |
+| **watch it work, live** | `chat "…" --session A50 --stream` | the model's text **and** the flow: `→ tool args`, `← result`, `[harness:…]`, `[approval]`, `[plan]`, `[verify]` |
+| follow a turn that was started elsewhere (WebUI, a job, a routine) | §4.2 `/api/chat/live` + `/api/chat/attach` | the same event stream, replayed from the durable log |
+| reconstruct a finished turn | `sessions history A50 --full` | every message untruncated + every card with args/exit/result/thought |
+| see the raw event ledger of a session | `events --session A50 --kind tool.result --limit 50` | one line per event, newest first |
+| know why a turn failed | `sessions tree A50` | stage→step tree, first failed step, its reason |
+| know what the model actually sees | `context show --session A50` | tokens, `pct`, the assembled context |
+| start a job / release a wave / approve | `jobs new … --to A54`, `jobs run J12`, `jobs wake`, `approvals ls/approve` | §2 |
+
+### 0.3 The three things that must appear in the WebUI
+
+1. **A turn**: `chat` writes to the session you named; open that agent's chat and
+   reload — the transcript is the same file the WebUI reads.
+2. **A job**: `jobs new` + `jobs run` create the job row the Control deck's Jobs
+   panel lists (scoped to the session by `agents`/`coordinator`).
+3. **A document**: `docs plan|spec` write under the session's workspace and lock
+   the session; `docs approve` / `docs implement` are the two decisions the
+   composer bar shows.
+
+If a surface looks stale, the page's shell fingerprint changed: accept the reload
+banner instead of re-sending the command.
+
+### 0.4 Guard rails (they cost real work if ignored)
+
+* **Never wrap `chat` in `timeout`** — the socket is the turn's lifeline; closing it
+  aborts the turn server-side (§2).
+* **Check `context show --session <SID>` `pct` before a long brief**; above ~10%
+  compact first (`context compact --session <SID>`), or the brief competes with the
+  transcript it is meant to steer.
+* **Restart only when idle** (`GET /api/chat/live` = `{"active": []}` **and**
+  `GET /api/tools/running` = `{"running": []}`), then `systemctl --user restart longrun`.
+  A CLI change needs no restart — it is a client, not the service.
+* **Never invent ids.** `AX` from `agents ls`, `JN` from `jobs ls`, `SID` from
+  `sessions ls`; an unknown one fails loudly instead of creating a row.
+
+### 0.5 What this document cannot prove
+
+It drives the backend, so it proves *data and control*. It does not prove *rendering*:
+a screenshot + `getComputedStyle` through the browser is a separate act (project
+rules §"Testing the WebUI live"). Say which of the two you did.
+
+---
+
+## 0.9 TL;DR
 
 ```bash
 cd /home/jagones/Repositories/MyRepos/longrun
@@ -20,8 +84,9 @@ python3 forge.py --help
 ```
 
 * **Data commands** print pretty JSON (or aligned tables for `ls` commands).
-* **Streaming commands** print live text: `chat --stream`, `agent`, `feed`,
-  `blackboard watch`, `swarm` finishes with a summary.
+* **Streaming commands** print live text: `chat --stream` (text **and** the render
+  flow: tool calls, results, harness injects, approvals, plan/verify notes),
+  `agent`, `feed`, `blackboard watch`, `swarm` finishes with a summary.
 * The token is **never** stored in the repo; it lives in `~/.longrun/config/env`.
 * **Testing the CLI against a live service:** §6 is the one recipe — every session +
   document verb, on a throwaway pointer and workspace, failing loudly on the first red.
@@ -47,7 +112,7 @@ Legend: `[x]` = optional, `<x>` = required, `A | B` = alternatives.
 
 | Command | Endpoint | Notes |
 |---|---|---|
-| `chat "msg" [--session ID] [--model ALIAS] [--stream] [--new]` | `POST /api/chat` (or `SSE /api/chat/stream`) | no `--session`: this CLI's CURRENT session (printed as `session: ID`); `--new` forces a fresh one |
+| `chat "msg" [--session ID|AX] [--model ALIAS] [--stream] [--new]` | `POST /api/chat` (or `SSE /api/chat/stream`) | no `--session`: this CLI's CURRENT session (printed as `session: ID`); an agent id (`A50`) resolves to that agent's session — an UNKNOWN `AX` exits 1 instead of creating a row; `--new` forces a fresh one |
 | `agent "goal" [--max-steps N] [--model ALIAS]` | `SSE /api/agent/run` | tool-enabled loop, iterations printed |
 | `control pause\|resume\|abort RUN_ID` | `POST /api/agent/control` | stop/pause a running agent |
 
@@ -109,7 +174,7 @@ See `integrations/paperclip/README.md` for the adapter install and configuration
 | `sessions use ID` | `GET /api/history?session=ID` (validates, then remembers) |
 | `sessions current` | — (the local pointer) |
 | `sessions rm ID` | `DELETE /api/sessions/<id>` |
-| `sessions history [ID]` | `GET /api/history?session=ID` (ID omitted → current) |
+| `sessions history [ID|AX] [--full]` | `GET /api/history?session=ID` (ID omitted → current; `--full` = every message untruncated + every tool card with args/exit/result/thought) |
 | `sessions card HANDLE` | `GET /api/history?session=<current>&card=<handle>` (ONE tool card by the handle the compacted manifest prints: `#id`, or `t<ms>` for a card persisted before ids) |
 | `sessions counterfactual HANDLE --arg k=v` | `POST /api/sessions/<id>/counterfactual` (change ONE argument of a recorded **read-only** call, re-execute it through the same gate, report `same-observation` / `different-observation`; a mutating card is refused) |
 | `sessions model-counterfactual INDEX --content "text"` | `POST /api/sessions/<id>/counterfactual/model` (replace ONE stored message's CONTENT, re-ask the session's model, report `same-action` / `different-action`; nothing executes, one model call; INDEX is the `#N` from `sessions history`, `-1` = last) |
@@ -610,11 +675,46 @@ are aliases of the same verbs.
 
 These connect to a `text/event-stream` and print until `Ctrl-C` / completion:
 
-* `chat "msg" --stream` — chat deltas; reasoning on the `think` channel.
+* `chat "msg" --stream` — the turn as the chat renders it: the model's text,
+  reasoning on the `think` channel, and the render events
+  `→ tool args` / `← result` / `[harness:kind] note` / `[approval] tool id` /
+  `[plan] …` / `[verify] …`. The server sends them on this same stream
+  (`httpapi.chat_stream_gen` passes `_emit` to `chat_once`), so the terminal sees
+  what the WebUI card stack shows.
 * `agent "goal"` — `agent.iteration`, `agent.thought`, `agent.observation`,
   `agent.finish`.
-* `feed` — the loopback event feed (`backlog` + live events).
+* `feed` — the loopback event feed (`backlog` + live events), all sessions.
 * `blackboard watch` — new blackboard entries.
+
+### 4.1 Reading the flow afterwards (no streaming)
+
+| Question | Command |
+|---|---|
+| what was said, full text | `sessions history <ID\|AX> --full` |
+| what tools ran, with args and output | same `--full` (cards section), or `events --session <SID> --kind tool.result` |
+| what the harness injected (nudges, gates) | `events --session <SID> --kind harness.inject` |
+| why it failed | `sessions tree <ID\|AX>` |
+
+`events` prints newest first and truncates each payload at 140 chars; `--full` does not
+truncate the transcript. Use `events` to locate, `--full` to read.
+
+### 4.2 Following a turn that was started somewhere else
+
+A turn started by the WebUI, a job, a routine or another terminal keeps running when
+your client disconnects — the CLI never re-attaches by itself. The two endpoints the
+WebUI uses work from `curl` too (token in `~/.longrun/config/env`):
+
+```bash
+# is anything running right now? (the same gate before a restart)
+curl -s -H "Authorization: Bearer $LONGRUN_TOKEN" http://127.0.0.1:8790/api/chat/live
+# {"active": ["<SID>", …]}  ->  follow that turn from its durable log
+curl -N -s -H "Authorization: Bearer $LONGRUN_TOKEN" \
+  "http://127.0.0.1:8790/api/chat/attach?session=<SID>"
+```
+
+`attach` replays the turn's events (`chat.delta`, `tool.call`, `tool.result`,
+`harness.inject`, approvals, plan/verify) and then tails new ones until `done`, so a
+reconnected client shows exactly what a turn begun in that tab would show.
 
 ---
 

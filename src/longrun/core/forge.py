@@ -164,8 +164,27 @@ def _clear_current_session(sid=""):
         pass
 
 
-def _session_or_current(explicit):
-    return str(explicit or "").strip() or _current_session()
+def _chat_ref(explicit, required=True):
+    """The session a chat/inspection command targets: a session id OR an agent id (AX).
+
+    2026-11-18 (operator: "parlare con i miei agenti"): `--session A50` was taken
+    LITERALLY, so the turn went to a session named "A50" and vanished from the rail
+    — the same class as the "empty session" report. An unknown AX now fails loudly
+    instead of inventing a row.
+    """
+    ref = str(explicit or "").strip() or _current_session()
+    if not ref:
+        if required:
+            _no_current_session()
+        return ""
+    if re.match(r"^A\d+$", ref):
+        a = _agent_row(req("GET", "/api/agents/tree"), ref)
+        sid = (a or {}).get("session")
+        if not sid:
+            print("error: no agent %s in the org chart" % ref, file=sys.stderr)
+            sys.exit(1)
+        return sid
+    return ref
 
 
 def _no_current_session():
@@ -196,8 +215,57 @@ def sse(path):
         return
 
 
+def _brief(value, n=140):
+    """One line, bounded — for args/results on the live stream."""
+    if isinstance(value, (dict, list)):
+        try:
+            text = json.dumps(value, ensure_ascii=False)
+        except (TypeError, ValueError):
+            text = str(value)
+    else:
+        text = "" if value is None else str(value)
+    text = " ".join(text.split())
+    return text if len(text) <= n else text[:n] + "…"
+
+
+# The render events the WebUI draws as cards, and the one-line shape the CLI
+# prints for each. 2026-11-18 (operator: "vederli real time … con tutto il flusso
+# di informazioni"): `--stream` used to print chat.delta only, although the server
+# sends every one of these on the SAME turn stream (httpapi.chat_stream_gen passes
+# `_emit` to `chat_once`). The CLI was discarding the flow, not missing it.
+_STREAM_RENDER = {
+    "tool.call":        lambda d: "\n→ %s %s" % (d.get("tool") or "?",
+                                                 _brief(d.get("args") or {})),
+    "tool.result":      lambda d: "  ← %s ok=%s%s%s" % (
+        d.get("tool") or "?", d.get("ok"),
+        (" exit=" + str(d.get("exit_code"))) if d.get("exit_code") not in (None, "") else "",
+        ("  " + _brief(d.get("error") or d.get("result") or d.get("observation"), 100))
+        if (d.get("error") or d.get("result") or d.get("observation")) else ""),
+    "tool.output":      lambda d: "  | %s" % _brief(d.get("text"), 120),
+    "harness.inject":   lambda d: "\n[harness%s] %s" % (
+        (":" + str(d.get("inject_kind"))) if d.get("inject_kind") else "",
+        _brief(d.get("text"), 180)),
+    "harness.drop":     lambda d: "\n[harness] dropped %s" % _brief(d.get("kind") or d, 120),
+    "approval.request": lambda d: "\n[approval] %s needs approval (id %s)" % (
+        d.get("tool") or "?", d.get("id") or ""),
+    "approval.resolved": lambda d: "[approval] %s %s" % (
+        d.get("tool") or "?", d.get("status") or ""),
+    "plan.incomplete":  lambda d: "\n[plan] incomplete: %s step(s) still open" % d.get("open"),
+    "plan.continuing":  lambda d: "\n[plan] continuing",
+    "plan.stopped":     lambda d: "\n[plan] stopped: %s" % _brief(d.get("reason") or "", 120),
+    "verify.run":       lambda d: "\n[verify] %s %s ok=%s" % (
+        d.get("tool") or "?", d.get("path") or "", d.get("ok")),
+    "hitl.request":     lambda d: "\n[hitl] %s" % _brief(d.get("question") or d, 160),
+}
+
+
 def stream_chat(path):
-    """Stream one chat turn; return the session id the server adopted (or "")."""
+    """Stream one chat turn; return the session id the server adopted (or "").
+
+    Prints the model's text (reasoning dimmed) AND the render events the WebUI
+    draws as cards — tool calls, results, harness injects, approvals, plan and
+    verify notes — so the terminal shows the same flow as the chat.
+    """
     adopted = ""
     for ev, payload in sse(path):
         try:
@@ -216,6 +284,9 @@ def stream_chat(path):
                 sys.stdout.write("\x1b[90m…think\x1b[0m ")
             sys.stdout.write(d.get("text", ""))
             sys.stdout.flush()
+        elif ev in _STREAM_RENDER:
+            print(_STREAM_RENDER[ev](d or {}))
+            sys.stdout.flush()
         elif ev == "error":
             print("\n[error] %s" % d.get("error"), file=sys.stderr)
         elif ev == "done":
@@ -225,7 +296,8 @@ def stream_chat(path):
 
 def cmd_chat(args):
     # `--session` > current pointer; `--new` forces a fresh session (old behaviour).
-    sid = "" if getattr(args, "new", False) else _session_or_current(args.session)
+    # An agent id (AX) resolves to the agent's session, so "talk to A50" needs no lookup.
+    sid = "" if getattr(args, "new", False) else _chat_ref(args.session, required=False)
     if args.stream:
         url = "/api/chat/stream?message=%s" % _q(args.message)
         if sid:
@@ -907,6 +979,38 @@ def cmd_feed(_):
         pass
 
 
+def _print_history_full(out):
+    """`sessions history --full`: the transcript and the tool cards, untruncated.
+
+    2026-11-18 (operator: "tutto il flusso di informazioni"): the compact view cuts
+    every message at 200 chars and reduces a tool card to one line, which is enough
+    to find a turn and not enough to reconstruct it. This prints what the WebUI
+    renders: each message in order (harness injects flagged), then every card with
+    its arguments, exit code, error, result and the thought that chose it.
+    """
+    msgs = out.get("messages") or []
+    for i, m in enumerate(msgs):
+        print("\n[%03d %s%s]" % (i, m.get("role") or "?", " · internal" if m.get("internal") else ""))
+        print(m.get("content") or "")
+    cards = out.get("tool_cards") or []
+    if cards:
+        print("\n--- tool cards (%d, in the order they ran) ---" % len(cards))
+        for c in cards:
+            print("\n→ %s  ok=%s%s backend=%s%s" % (
+                c.get("tool") or "?", c.get("ok"),
+                ("  exit=%s" % c.get("exit_code")) if c.get("exit_code") not in (None, "") else "",
+                c.get("backend") or "-",
+                ("  node=%s" % c.get("node")) if c.get("node") else ""))
+            if c.get("args"):
+                print("  args:   %s" % c.get("args"))
+            if c.get("error"):
+                print("  error:  %s" % c.get("error"))
+            if c.get("result"):
+                print("  result: %s" % c.get("result"))
+            if c.get("think"):
+                print("  think:  %s" % c.get("think"))
+
+
 def cmd_sessions(args):
     if args.action == "ls":
         out = req("GET", "/api/sessions")
@@ -1063,14 +1167,15 @@ def cmd_sessions(args):
                           "replayed_action": out.get("replayed_action")},
                          indent=2, ensure_ascii=False))
     elif args.action in ("history", "graph", "tree"):
-        ref = str(args.value or "").strip() or _current_session()
-        if not ref:
-            _no_current_session()
+        ref = _chat_ref(args.value)
         if args.action == "history":
             out = req("GET", "/api/history?session=" + _q(ref))
             if out.get("error"):
                 print("error:", out["error"], file=sys.stderr)
                 sys.exit(1)
+            if getattr(args, "full", False):
+                _print_history_full(out)
+                return
             for m in out.get("messages", []):
                 print("[%-9s] %s" % (m.get("role"), (m.get("content") or "").replace("\n", " ")[:200]))
             for c in out.get("tool_cards", []) or []:
@@ -1194,7 +1299,7 @@ def cmd_context(args):
     # Same contract as `chat`/`docs`: no `--session` = the CLI's current session.
     # Without it `context show` answered `{"session": null, "available": false}`,
     # which reads as "the meter is broken" instead of "you did not name a session".
-    sid = _session_or_current(args.session)
+    sid = _chat_ref(args.session, required=False)
     if args.action == "show":
         url = "/api/context" + ("?session=" + _q(sid) if sid else "")
         print(json.dumps(req("GET", url), indent=2, ensure_ascii=False))
@@ -1355,9 +1460,12 @@ def cmd_agents(args):
     if args.action == "ls":
         out = req("GET", "/api/agents/tree")
         for a in out.get("agents", []):
-            print(" %-4s %-18s %-14s %-26s %s" % (
+            # 2026-11-18 (operator: "parlare con i miei agenti"): an agent IS a
+            # session, and that session is what `chat --session` takes — printing it
+            # is what makes the round trip possible without a lookup.
+            print(" %-4s %-22s %-18s %-12s %-26s %s" % (
                 a.get("id"), a.get("name") or "", a.get("role") or "",
-                a.get("model") or "default",
+                a.get("session") or "-", a.get("model") or "default",
                 ("-> " + a["reports_to"]) if a.get("reports_to") else ""))
     elif args.action == "new":
         name = (args.value or "").strip()
@@ -1529,6 +1637,8 @@ def main():
         p.add_argument("value", nargs="?"); p.add_argument("--workspace"); \
         p.add_argument("--at"); p.add_argument("--title"); p.add_argument("--model"); \
         p.add_argument("--arg", action="append"); p.add_argument("--content"); \
+        p.add_argument("--full", action="store_true",
+                       help="history: the transcript and tool cards untruncated"); \
         p.set_defaults(fn=cmd_sessions)
     p = sub.add_parser("docs"); p.add_argument("action", choices=["status", "plan", "spec", "approve", "implement", "reject", "unlock"]); \
         p.add_argument("value", nargs="?"); p.add_argument("--session"); \

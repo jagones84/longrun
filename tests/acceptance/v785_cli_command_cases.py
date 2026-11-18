@@ -369,5 +369,95 @@ check("M16 context show without --session reads the current session",
       code == 0 and '"pct"' in o and ("GET", "/api/context?session=sid-6") in [
           (c["method"], c["path"]) for c in calls], (o, calls))
 
+# --------------------- N: an agent id reaches its session (2026-11-18) --------
+# Operator: "parlare con i miei agenti … vederli real time … con tutto il flusso".
+# `--session A50` used to be taken LITERALLY (a turn in a session named "A50"),
+# and `agents ls` never printed the session, so the round trip had no documented path.
+_TREE_S = {"agents": [{"id": "A48", "session": "sess-a48"},
+                      {"id": "A49", "session": ""}]}
+o, e, code, calls = run(forge.cmd_chat,
+                        Args(message="ping", session="A48", model=None, stream=False, new=False),
+                        {("GET", "/api/agents/tree"): _TREE_S,
+                         ("POST", "/api/chat"): {"session": "sess-a48", "reply": "pong"}})
+check("N1 `chat --session A48` resolves the agent to its session",
+      body_of(calls, "POST", "/api/chat") == {"message": "ping", "session": "sess-a48", "model": None}
+      and "pong" in o, (o, calls))
+o, e, code, calls = run(forge.cmd_chat,
+                        Args(message="x", session="A999", model=None, stream=False, new=False),
+                        {("GET", "/api/agents/tree"): _TREE_S})
+check("N2 an unknown agent id fails loudly instead of inventing a session",
+      code == 1 and "no agent A999" in e and not body_of(calls, "POST", "/api/chat"),
+      {"exit": code, "err": e, "calls": calls})
+o, e, code, calls = run(forge.cmd_chat,
+                        Args(message="y", session="plain-sid", model=None, stream=False, new=False),
+                        {("POST", "/api/chat"): {"session": "plain-sid", "reply": "ok"}})
+check("N3 a plain session id is posted unchanged (no lookup)",
+      body_of(calls, "POST", "/api/chat")["session"] == "plain-sid"
+      and not any(c["path"] == "/api/agents/tree" for c in calls), calls)
+o, e, code, calls = run(forge.cmd_sessions, Args(action="history", value="A48"),
+                        {("GET", "/api/agents/tree"): _TREE_S,
+                         ("GET", "/api/history?session=sess-a48"): {"messages": [
+                             {"role": "user", "content": "hello"}]}})
+check("N4 history accepts the agent id too",
+      code == 0 and "hello" in o
+      and ("GET", "/api/history?session=sess-a48") in [(c["method"], c["path"]) for c in calls],
+      (o, calls))
+
+# --------------------- O: agents ls prints the session ------------------------
+_o, _e, _c, _ = run(forge.cmd_agents, Args(action="ls"),
+                    {("GET", "/api/agents/tree"): _TREE_S})
+check("O1 the agent row carries the session `chat --session` takes",
+      "sess-a48" in _o and "A48" in _o, _o)
+
+# --------------------- P: history --full reconstructs a turn ------------------
+_HF = {("GET", "/api/agents/tree"): _TREE_S,
+       ("GET", "/api/history?session=sess-a48"): {
+           "messages": [{"role": "user", "content": "x" * 400},
+                        {"role": "user", "content": "[harness] nudge", "internal": True}],
+           "tool_cards": [{"tool": "shell.exec", "ok": True, "exit_code": 0,
+                           "backend": "terminal", "args": '{"command": "ls -la"}',
+                           "result": "y" * 400, "think": "list the folder"}]}}
+_o, _e, _c, _ = run(forge.cmd_sessions,
+                    Args(action="history", value="A48", full=True), _HF)
+check("P1 --full prints the message untruncated and flags an internal inject",
+      ("x" * 400) in _o and "· internal" in _o, _o[-400:])
+check("P2 --full prints the card's args, exit, result and the thought",
+      '{"command": "ls -la"}' in _o and "exit=0" in _o
+      and ("y" * 400) in _o and "think:  list the folder" in _o, _o[-600:])
+_o, _e, _c, _ = run(forge.cmd_sessions, Args(action="history", value="A48", full=False), _HF)
+check("P3 without --full the compact row is kept (no behaviour change)",
+      ("x" * 400) not in _o and "[tool     ] shell.exec ok=True backend=terminal" in _o, _o[-400:])
+
+# --------------------- Q: --stream shows the flow, not only the text ---------
+# The server sends tool.call / tool.result / harness.inject on the SAME turn stream
+# (httpapi passes `_emit` to `chat_once`); the CLI used to print chat.delta only, so
+# a terminal could not see what the agent did — the operator's report.
+_FRAMES = [
+    ("chat.run", '{"session": "sess-a48"}'),
+    ("chat.delta", '{"text": "thinking out loud", "channel": "think"}'),
+    ("chat.delta", '{"text": "Checking the file."}'),
+    ("tool.call", '{"tool": "fs.read", "args": {"path": "README.md"}}'),
+    ("tool.result", '{"tool": "fs.read", "ok": true, "result": "# Longrun"}'),
+    ("harness.inject", '{"inject_kind": "nudge", "text": "you have 3 open todos"}'),
+    ("approval.request", '{"tool": "shell.exec", "id": "ap7"}'),
+    ("done", "{}"),
+]
+_old_sse = forge.sse
+forge.sse = lambda path: iter(_FRAMES)
+_out, _err = io.StringIO(), io.StringIO()
+try:
+    with contextlib.redirect_stdout(_out), contextlib.redirect_stderr(_err):
+        _adopted = forge.stream_chat("/api/chat/stream?message=x")
+finally:
+    forge.sse = _old_sse
+_s = _out.getvalue()
+check("Q1 stream_chat returns the session the server adopted", _adopted == "sess-a48", _adopted)
+check("Q2 the text and the dimmed reasoning are printed",
+      "Checking the file." in _s and "think" in _s, _s)
+check("Q3 a tool call and its result are printed with the arguments",
+      "→ fs.read" in _s and '"path": "README.md"' in _s and "← fs.read ok=True" in _s, _s)
+check("Q4 a harness inject and an approval request are printed",
+      "[harness:nudge] you have 3 open todos" in _s and "[approval] shell.exec" in _s, _s)
+
 print("\n---\nv785: %d/%d PASS" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)
