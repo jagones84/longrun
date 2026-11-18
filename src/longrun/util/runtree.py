@@ -33,6 +33,11 @@ import os
 from longrun.plan import taskgraph
 from longrun.util import selfevolve
 
+#: The statuses a plan node is considered FINISHED in. A finished node with no
+#: tool call is a CLAIM (round 64); anything else with no call is simply not
+#: started. Both are reported, never conflated.
+DONE_STATUSES = ("done", "completed", "complete")
+
 
 def failed(card):
     """True when a card names a failure: a bad verdict, or a non-zero exit.
@@ -115,7 +120,7 @@ def build(sess, graph=None):
     """
     flat = steps(sess)
     nodes = list(((graph or {}).get("nodes") or []))
-    stages, open_steps, seen = [], [], set()
+    stages, open_steps, claimed_steps, seen = [], [], [], set()
     for n in nodes:
         nid = str(n.get("id") or "")
         if not nid:
@@ -126,11 +131,20 @@ def build(sess, graph=None):
                "status": str(n.get("status") or "todo")}
         if mine:
             stages.append({**row, "steps": mine, "n": len(mine)})
+        elif row["status"] in DONE_STATUSES:
+            # Round 64 (arXiv:2611.21407 — "a scorer that reads exit status
+            # credits work that was never written"): a step marked DONE with NO
+            # tool call is a CLAIM, not an open plan item. Measured live
+            # 2026-11-18: 528 of 912 planned nodes are exactly that, and the
+            # readers called them all "planned but never executed". Keeping the
+            # two apart is the harness's own version of the paper's artifact
+            # check: it names the work nothing on disk proves.
+            claimed_steps.append(row)
         else:
-            # A plan step that executed NOTHING is information, not clutter: it
-            # is where a turn claimed progress without a tool call. It stays in
-            # its own list so the tree of what RAN is not padded with 33 empty
-            # stages (measured on a live session: 33 nodes, 24 steps).
+            # A plan step that executed NOTHING and is not done is information
+            # too: it is where a turn stopped before acting. It stays in its own
+            # list so the tree of what RAN is not padded with empty stages
+            # (measured on a live session: 33 nodes, 24 steps).
             open_steps.append(row)
     orphans = [s for s in flat if s["node"] not in seen]
     if orphans:
@@ -150,11 +164,16 @@ def build(sess, graph=None):
             "planned": bool(nodes),
             "stages": stages,
             "open": open_steps,
+            "claimed": claimed_steps,
             "steps": flat,
             "counts": {"steps": len(flat),
                        "failed": sum(1 for s in flat if s["failed"]),
                        "stages": len(stages),
-                       "open": len(open_steps)},
+                       "open": len(open_steps),
+                       "claimed": len(claimed_steps)},
+            "claim_note": ("" if not claimed_steps else
+                           "%d step(s) are marked done with NO tool call — nothing on "
+                           "disk proves them" % len(claimed_steps)),
             "onset": ond,
             "verdict": _verdict(ond, title)}
 

@@ -90,16 +90,22 @@ check("B4 a card whose todo is gone is KEPT, in its own stage",
       b["stages"][2]["status"] == "orphan" and b["stages"][2]["n"] == 1,
       b["stages"][2])
 check("B5 the counts add up", b["counts"] == {"steps": 3, "failed": 1, "stages": 3,
-                                             "open": 0}, b["counts"])
+                                             "open": 0, "claimed": 0}, b["counts"])
 b5 = RT.build({"id": "sB2", "tool_cards": [card("fs.read", node="n1", after=1)]},
               {"nodes": [{"id": "n1", "label": "ran", "status": "done"},
                          {"id": "n2", "label": "claimed, never executed", "status": "done"},
                          {"id": "n3", "label": "no call either", "status": "todo"}]})
 check("B6 a plan step with NO tool call is not a stage of the tree",
       [s["id"] for s in b5["stages"]] == ["n1"], [s["id"] for s in b5["stages"]])
-check("B7 it is kept, separated, because a claim without work is a finding",
-      [s["id"] for s in b5["open"]] == ["n2", "n3"]
-      and b5["counts"]["open"] == 2, b5["open"])
+# Round 64: a DONE node with no call is a CLAIM; a TODO node with no call is
+# simply not started. They used to share one list ("open"), which read as if the
+# turn had merely left them alone.
+check("B7 a done step with no call is kept apart as a CLAIM",
+      [s["id"] for s in b5["claimed"]] == ["n2"] and b5["counts"]["claimed"] == 1,
+      b5["claimed"])
+check("B8 a step never started is open, not a claim",
+      [s["id"] for s in b5["open"]] == ["n3"] and b5["counts"]["open"] == 1, b5["open"])
+check("B9 the claim is stated in one line", b5["claim_note"].startswith("1 step(s) are marked done"))
 
 # ------------------------------------------------------ C: no plan at all ---
 c = RT.build({"id": "sC", "tool_cards": [card("fs.read", after=1), card("fs.write", after=3)]})

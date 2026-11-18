@@ -1056,6 +1056,11 @@ def cmd_sessions(args):
                 print(out["verdict"])
             else:
                 print("no failed step in %d step(s)" % (out.get("counts") or {}).get("steps", 0))
+            # Round 64: a step marked DONE with no tool call is a CLAIM; it is a
+            # different fact from a step that was never started, and the two used
+            # to share one line ("planned but never executed").
+            if out.get("claim_note"):
+                print(out["claim_note"])
             for st in out.get("stages") or []:
                 print("\n%s  [%s]  %d step(s)" % (st.get("id"), st.get("status"), st.get("n") or 0))
                 print("  %s" % st.get("label"))
@@ -1065,9 +1070,14 @@ def cmd_sessions(args):
                                                  ("  " + s.get("reason", "")[:90])
                                                  if s.get("failed") else ""))
             if out.get("open"):
-                print("\nplanned but never executed (no tool call): %d"
+                print("\nplanned but never started (no tool call): %d"
                       % len(out["open"]))
                 for st in out["open"]:
+                    print("  %s  [%s]  %s" % (st.get("id"), st.get("status"), st.get("label")))
+            if out.get("claimed"):
+                print("\nmarked done with no tool call (nothing on disk proves them): %d"
+                      % len(out["claimed"]))
+                for st in out["claimed"]:
                     print("  %s  [%s]  %s" % (st.get("id"), st.get("status"), st.get("label")))
     elif args.action == "reset":
         print(json.dumps(req("POST", "/api/sessions/%s/graph/reset" % args.value, {}),
