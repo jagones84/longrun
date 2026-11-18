@@ -1446,6 +1446,31 @@ def _stamp_status(md_path, prop):
         f.write(body)
 
 
+#: The evidence a repair draft records. One list so a NEW draft and a REFRESHED
+#: one describe the same issue in the same shape — two builders would drift.
+_REPAIR_EVIDENCE_KEYS = ("family", "severity", "count", "sessions",
+                         "from_sessions", "from_runs", "repeats", "retry_rate",
+                         "recovered", "recovery_rate", "refusal", "runs",
+                         "source", "classes", "samples", "agents", "action",
+                         "check")
+
+
+def _repair_evidence(name, iss, since):
+    """The register's evidence for one issue, as a draft carries it.
+
+    Round 38: the corpus split travels with the count. Round 37: the draft names
+    whose sessions hit the class, so a reader can route the fix without opening
+    the register. `since` states the window the numbers were read in (round 29).
+    """
+    ev = {"kind": "repair", "status": "proposed", "name": name, "issue": name,
+          "tool": iss.get("tool"), "since": since,
+          "origin": "auto",
+          "next": "state the fix, apply it through the gate, prove it"}
+    for key in _REPAIR_EVIDENCE_KEYS:
+        ev[key] = iss.get(key)
+    return ev
+
+
 def issue_drafts(out_dir, limit=5, min_severity="warning", sessions_dir=None,
                  max_sessions=400, since=None):
     """Write one REPAIR draft per failure issue — the register turned into work.
@@ -1460,6 +1485,14 @@ def issue_drafts(out_dir, limit=5, min_severity="warning", sessions_dir=None,
     Round 29: `since` scopes the evidence (see `failure_candidates`) and travels
     into the draft — `proposal.json` carries the epoch and `REPAIR.md` states the
     window, so an all-time count can never be mistaken for "still happening".
+
+    Round 61: an existing draft is not simply skipped. An UNFIXED one whose
+    evidence changed is REWRITTEN from the current issue (the prior numbers move
+    to `previous`, `created` is kept, `refreshed_ts` records the update); a draft
+    that carries a `fix` is the record of an applied change and is never touched;
+    an unchanged draft is left alone; and a WINDOWED read (`since`) never rewrites
+    an all-time draft with a partial count. Refreshes are reported separately and
+    do not count against `limit`, which caps NEW drafts.
     """
     floor = _SEV_RANK.get(str(min_severity or "warning"), 1)
     rep = failure_candidates(limit=200, include_sessions=True,
@@ -1467,39 +1500,62 @@ def issue_drafts(out_dir, limit=5, min_severity="warning", sessions_dir=None,
                              since=since)
     issues = [i for i in (rep.get("issues") or [])
               if _SEV_RANK.get(i.get("severity"), 3) <= floor]
-    written, skipped = [], []
+    written, refreshed, skipped = [], [], []
     try:
         os.makedirs(out_dir, exist_ok=True)
     except OSError:
         return {"ok": False, "error": "cannot create %s" % out_dir}
     for iss in issues:
-        if len(written) >= max(1, int(limit or 5)):
-            break
         name = str(iss.get("id") or "fail-issue")
         d = os.path.join(out_dir, name)
-        if os.path.isfile(os.path.join(d, "proposal.json")):
-            skipped.append(name)
+        prop_json = os.path.join(d, "proposal.json")
+        ev = _repair_evidence(name, iss, rep.get("since"))
+        if os.path.isfile(prop_json):
+            prev = _read_json(prop_json)
+            # Round 61: the draft is the artifact a reader acts on, so an UNFIXED
+            # one must say what the register says NOW. Measured 2026-11-18: 34 of
+            # 37 drafts were frozen at their birth numbers — `shell.exec ·
+            # nonzero-exit` still claimed 18 failures / 2 sessions while the
+            # register (after round 53 re-classified those cards) counts 3.
+            if not isinstance(prev, dict):
+                skipped.append(name)
+                continue
+            # A draft that records a fix is the record of an applied change: its
+            # numbers are the evidence at fix time and `repair_states` judges what
+            # came after. Rewriting it would destroy the before/after pair.
+            if prev.get("fix") or prev.get("status") in ("fixed", "resolved"):
+                skipped.append(name)
+                continue
+            # A windowed read is a partial view; it never narrows an all-time draft.
+            if rep.get("since") is not None:
+                skipped.append(name)
+                continue
+            if all(prev.get(k) == ev.get(k) for k in _REPAIR_EVIDENCE_KEYS):
+                skipped.append(name)
+                continue
+            before = {k: prev.get(k) for k in ("count", "sessions", "family",
+                                               "severity", "repeats", "recovered")}
+            merged = dict(prev)
+            merged.update(ev)
+            merged["refreshed_ts"] = round(time.time(), 3)
+            merged["previous"] = before
+            try:
+                write_json(prop_json, merged)
+                with open(os.path.join(d, "REPAIR.md"), "w", encoding="utf-8") as f:
+                    f.write(_repair_md(merged))
+            except OSError:
+                continue
+            refreshed.append({"issue": name, "path": d,
+                              "count": merged.get("count"),
+                              "previous": before.get("count"),
+                              "family": merged.get("family"),
+                              "severity": merged.get("severity")})
             continue
-        prop = {"kind": "repair", "status": "proposed", "name": name,
-                "issue": name, "tool": iss.get("tool"),
-                "family": iss.get("family"), "severity": iss.get("severity"),
-                "count": iss.get("count"), "sessions": iss.get("sessions"),
-                # Round 38: the corpus split travels with the count.
-                "from_sessions": iss.get("from_sessions"),
-                "from_runs": iss.get("from_runs"),
-                "repeats": iss.get("repeats"), "retry_rate": iss.get("retry_rate"),
-                "recovered": iss.get("recovered"),
-                "recovery_rate": iss.get("recovery_rate"),
-                "refusal": bool(iss.get("refusal")),
-                "runs": iss.get("runs"), "source": iss.get("source"),
-                "since": rep.get("since"),
-                "classes": iss.get("classes") or [], "samples": iss.get("samples") or [],
-                # Round 37: the draft names whose sessions hit the class, so a
-                # reader can route the fix without opening the register.
-                "agents": iss.get("agents") or [],
-                "action": iss.get("action"), "check": iss.get("check"),
-                "created": round(time.time(), 3), "origin": "auto",
-                "next": "state the fix, apply it through the gate, prove it"}
+        # The cap is on NEW drafts; a refresh is maintenance of an existing one.
+        if len(written) >= max(1, int(limit or 5)):
+            break
+        prop = dict(ev)
+        prop["created"] = round(time.time(), 3)
         try:
             os.makedirs(d, exist_ok=True)
             write_json(os.path.join(d, "proposal.json"), prop)
@@ -1512,7 +1568,8 @@ def issue_drafts(out_dir, limit=5, min_severity="warning", sessions_dir=None,
                         "count": prop["count"], "sessions": prop["sessions"],
                         "repeats": prop.get("repeats"),
                         "check": prop["check"]})
-    return {"ok": True, "dir": out_dir, "written": written, "skipped": skipped,
+    return {"ok": True, "dir": out_dir, "written": written, "refreshed": refreshed,
+            "skipped": skipped,
             "issues": len(issues), "severity": str(min_severity),
             "runs": rep.get("runs"), "sessions": rep.get("sessions"),
             "since": rep.get("since")}

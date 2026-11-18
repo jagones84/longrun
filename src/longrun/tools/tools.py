@@ -2675,6 +2675,17 @@ def _improve(args, run_id=None):
                     (" (check: %s)" % w["check"]) if w.get("check") else "",
                     w.get("issue"))
                  for w in rep.get("written") or []]
+        # Round 61: an existing unfixed draft whose numbers moved is REWRITTEN, not
+        # skipped — saying "already have one" over a draft that was just corrected
+        # would hide the correction from the reader. A draft whose count is
+        # unchanged was refreshed for its evidence (samples/classes/agents), and
+        # the line says that instead of repeating the same number twice.
+        lines.extend(("[refreshed] %s — %s failure(s) now (was %s)"
+                      % (w.get("issue"), w.get("count"), w.get("previous")))
+                     if w.get("previous") != w.get("count") else
+                     ("[refreshed] %s — %s failure(s), evidence updated"
+                      % (w.get("issue"), w.get("count")))
+                     for w in rep.get("refreshed") or [])
         # Round 34: a draft that carries a fix states its OUTCOME in the same
         # answer — the loop closes where it started. Round 35: with its window's
         # denominator, because "0 in 0 sessions" is not "resolved".
@@ -2702,6 +2713,7 @@ def _improve(args, run_id=None):
         else:
             text = "(no issue at or above %s)" % rep.get("severity")
         return {"ok": True, "dir": rep.get("dir"), "written": rep.get("written"),
+                "refreshed": rep.get("refreshed"),
                 "skipped": rep.get("skipped"), "issues": rep.get("issues"),
                 "severity": rep.get("severity"), "runs": rep.get("runs"),
                 "sessions": rep.get("sessions"), "since": rep.get("since"),
