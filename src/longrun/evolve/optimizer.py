@@ -325,6 +325,13 @@ def _extract_json(text):
 
 
 _LITERAL_RE = re.compile(r"[A-Za-z0-9_./:@-]{3,}")
+# Round 83: a literal written with regex escapes (`127\.0\.0\.1`, `\.env`) was cut at
+# the backslash — the tokenizer saw `127`, `0`, `0`, `1` — so no candidate ever
+# contained the address and the witness for that rule was never built. Measured: the
+# optimizer proposed removing the `127.0.0.1` control-API guard, `_uncovered_removal`
+# returned None, and the delta reached the inbox although no other live rule matches
+# `curl 127.0.0.1/api/settings`. The escaped punctuation is unescaped BEFORE tokenizing.
+_ESCAPED_PUNCT_RE = re.compile(r"\\([./:@_-])")
 
 
 def _removal_witness(pattern, remaining):
@@ -344,7 +351,7 @@ def _removal_witness(pattern, remaining):
     except re.error:  # noqa: SIM105 — an uncompilable pattern is left to the validator
         return None
     lits = []
-    for m in _LITERAL_RE.finditer(pattern):
+    for m in _LITERAL_RE.finditer(_ESCAPED_PUNCT_RE.sub(r"\1", pattern)):
         # `(?:curl|wget)` yields `:curl` — the `?:` prefix is regex syntax, not
         # part of any input (measured: the joined candidate started with `:curl`
         # and matched nothing, so a real non-duplicate found no witness).
