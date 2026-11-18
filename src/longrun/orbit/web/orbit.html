@@ -3434,6 +3434,23 @@ class JobsView {
     if (!this.scopeAgent) return false;
     return (j.agents || []).includes(this.scopeAgent) || j.coordinator === this.scopeAgent;
   }
+  /* 2026-11-18 (A54, round 103): the first version of this header listed a HARDCODED
+     three states ("running · blocked · pending"), so a session whose rows were
+     7 `error` + 16 `done` printed "0 running / 23" above them — the same lie as the
+     "0 running / 9" the operator reported. Every state PRESENT is now counted, from
+     the rows themselves; `done` goes last because it is the resting state. */
+  _countText(rows){
+    const order = ["running", "blocked", "pending", "queued", "created", "partial", "error", "done"];
+    const by = {};
+    rows.forEach(j => { const s = (j && j.status) || "unknown"; by[s] = (by[s] || 0) + 1; });
+    const states = Object.keys(by).sort((a, b) => {
+      const ia = order.indexOf(a), ib = order.indexOf(b);
+      const ra = ia < 0 ? order.length : ia, rb = ib < 0 ? order.length : ib;
+      return (ra - rb) || (a < b ? -1 : a > b ? 1 : 0);
+    });
+    return rows.length
+      ? (states.map(s => by[s] + " " + s).join(" \u00b7 ") + " / " + rows.length) : "\u2014";
+  }
   _sjHtml(){
     if (this.scope !== "session") return "";
     const jobs = (this.sj && this.sj.jobs) || [];
@@ -3507,16 +3524,9 @@ class JobsView {
        panel"): the header counted only RUNNING and TOTAL, so a BLOCKED job (live:
        J37) was invisible in the summary, and the in-session ledger was not counted
        at all though its rows are listed right below. The count now describes the
-       ROWS THIS PANEL SHOWS: every state that is present, plus the in-session jobs
-       when the session scope is on. */
+       ROWS THIS PANEL SHOWS, and every state that is present (see `_countText`). */
     const _sjJobs = (this.scope === "session" && this.sj) ? (this.sj.jobs || []) : [];
-    const _shown = this.jobs.length + _sjJobs.length;
-    const _n = s => this.jobs.filter(j => j.status === s).length +
-                     _sjJobs.filter(j => j.status === s).length;
-    const _parts = ["running", "blocked", "pending"].filter(s => _n(s))
-      .map(s => _n(s) + " " + s);
-    $("jobsCount").textContent = _shown
-      ? ((_parts.length ? _parts.join(" \u00b7 ") : "0 running") + " / " + _shown) : "\u2014";
+    $("jobsCount").textContent = this._countText(this.jobs.concat(_sjJobs));
     $("jobs").innerHTML = this._sjHtml() + (this.jobs.map(j => {
       const subs = j.subjobs || {};
       // JAG-322/335/484: the job's SUBJOBS (J8.1, J8.1.1 …) — who was assigned what,

@@ -26,7 +26,10 @@ src/longrun/orbit/web/orbit.html. No server, model or network.
 Run: python3 tests/acceptance/v1044_session_agents_panels.py
 """
 import os
+import shutil
+import subprocess
 import sys
+import tempfile
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 UI = open(os.path.join(REPO, "webui", "index.html"), encoding="utf-8").read()
@@ -163,11 +166,50 @@ check("F4 a job outside the slice widens to ALL before focusing",
       'if (!rec && this.scope === "session")' in ORBIT and "this.scope = \"all\";" in ORBIT)
 # 2026-11-18 (operator: "the chat session jobs number is not synced in the job panel"):
 # the header counted only RUNNING and TOTAL (a live BLOCKED job was invisible) and left
-# the in-session ledger out although its rows are listed right below.
-check("F5 the header counts EVERY state the panel shows, plus the in-session ledger",
-      '["running", "blocked", "pending"].filter(s => _n(s))' in ORBIT
-      and "const _shown = this.jobs.length + _sjJobs.length;" in ORBIT
-      and "_parts.join(" in ORBIT)
+# the in-session ledger out although its rows are listed right below. The FIRST fix
+# hardcoded three states, so A54's round 103 found a session of 7 `error` + 16 `done`
+# still printing "0 running / 23" above them: F5 is behavioural — the shipped block is
+# executed on fixtures under node — and pins that no state list is hardcoded.
+check("F5 the header counts EVERY state present, never a hardcoded list",
+      "_countText(rows)" in ORBIT
+      and '["running", "blocked", "pending"].filter(s => _n(s))' not in ORBIT
+      and "this._countText(this.jobs.concat(_sjJobs))" in ORBIT)
+
+_C5 = ""
+_i5 = ORBIT.find("  _countText(rows){")
+if _i5 >= 0:
+    _j5 = ORBIT.find("\n  }", _i5)
+    if _j5 > 0:
+        _C5 = ORBIT[_i5:_j5 + 4]
+if not _C5:
+    check("F5b the count block is present and delimited", False, "markers missing")
+elif not shutil.which("node"):
+    print("SKIP the count block was not executed (node not installed)")
+else:
+    _harness = r"""
+const view = {
+__BLOCK__
+};
+const t = (name, rows) => console.log(name + "\t" + view._countText(rows));
+t("A", [{status:"running"},{status:"blocked"},{status:"error"},{status:"partial"},
+        {status:"done"},{status:"done"}]);
+t("B", [{status:"done"},{status:"done"}]);
+t("C", []);
+t("D", [{status:"error"},{status:"error"},{status:"done"}]);   // A54's live shape
+""".replace("__BLOCK__", _C5)
+    _js = os.path.join(tempfile.gettempdir(), "v1044_count_text.js")
+    with open(_js, "w", encoding="utf-8") as _fh:
+        _fh.write(_harness)
+    _run = subprocess.run(["node", _js], capture_output=True, text=True, timeout=60)
+    _lines = [ln.split("\t") for ln in _run.stdout.strip().splitlines() if "\t" in ln]
+    _got = dict(_lines)
+    check("F5c every state present is counted, done last",
+          _got.get("A") == "1 running \u00b7 1 blocked \u00b7 1 partial \u00b7 1 error \u00b7 2 done / 6",
+          _got.get("A") or _run.stderr[-200:])
+    check("F5d a session with no running job does not pretend one is running",
+          _got.get("B") == "2 done / 2" and _got.get("D") == "2 error \u00b7 1 done / 3",
+          (_got.get("B"), _got.get("D")))
+    check("F5e an empty panel still shows a dash", _got.get("C") == "\u2014", _got.get("C"))
 check("F6 the empty in-session separator names the team jobs below it",
       "no subagent job \u00b7 " in ORBIT and "team job" in ORBIT
       and "This is empty (the in-session ledger)" not in ORBIT)
