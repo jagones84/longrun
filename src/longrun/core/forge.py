@@ -38,6 +38,7 @@ Usage:
   python3 forge.py memory surface FILE.json | teams audit FILE.json | toolgraph build|feedback FILE.json
   python3 forge.py memory boundary|conflicts FILE.json | instructions audit FILE.json
   python3 forge.py memory ledger FILE.json | episodes audit FILE.json | contract check FILE.json
+  python3 forge.py recovery adjudicate FILE.json | effects coverage|verify FILE.json | context cost FILE.json
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -639,6 +640,73 @@ def cmd_contract(args):
     out = api_contract.check(doc.get("contract") or {}, doc.get("sequence") or [])
     print(json.dumps(out, indent=2, ensure_ascii=False))
     sys.exit(0 if out["verdict"] == "pass" else 1)
+
+
+def cmd_recovery(args):
+    """Round 116 (arXiv:2610.41453): what a timeout lets you re-issue safely."""
+    from longrun.harness import effect_recovery
+    if not getattr(args, "file", None):
+        print("usage: recovery adjudicate|trace FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "trace":
+        out = effect_recovery.trace_safety(doc.get("trace") or [], doc.get("capabilities") or {})
+        print(json.dumps(out, indent=2, ensure_ascii=False))
+        sys.exit(0 if out["verdict"] == "clean" else 1)
+    out = effect_recovery.adjudicate(doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0 if out["certificate"] in ("goal-satisfied", "safe-stop") else 1)
+
+
+def cmd_effects(args):
+    """Round 116 (arXiv:2610.35981): effect-typed tools — coverage or trace safety."""
+    from longrun.harness import effect_types
+    if not getattr(args, "file", None):
+        print("usage: effects coverage|verify FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "coverage":
+        out = effect_types.coverage(doc.get("catalog") or {})
+        print(json.dumps(out, indent=2, ensure_ascii=False))
+        sys.exit(0 if out["verdict"] == "typed" else 1)
+    out = effect_types.verify_trace(doc.get("trace") or [], doc.get("catalog") or {})
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0 if out["verdict"] == "safe" else 1)
+
+
+def _context_cost(args):
+    """Round 116 (arXiv:2611.22238): price a run, or compare two policies, in money."""
+    from longrun.harness import context_cost
+    path = getattr(args, "file", None) or getattr(args, "value", None)
+    if not path:
+        print("usage: context cost FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    prices = doc.get("prices")
+    if "runs" in doc:
+        out = context_cost.screen(doc.get("runs") or {}, prices, doc.get("baseline") or "baseline")
+    elif "treatment" in doc:
+        out = context_cost.compare(doc.get("baseline") or {}, doc["treatment"], prices,
+                                   doc.get("label") or "treatment")
+    else:
+        out = context_cost.run_cost(doc.get("run") or doc, prices)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0 if out.get("verdict") not in ("more-expensive", "no-baseline") else 1)
 
 
 def cmd_instructions(args):
@@ -1558,6 +1626,9 @@ def cmd_docs(args):
 
 
 def cmd_context(args):
+    # Round 116: `context cost FILE.json` prices a run or compares two policies.
+    if args.action == "cost":
+        return _context_cost(args)
     # Same contract as `chat`/`docs`: no `--session` = the CLI's current session.
     # Without it `context show` answered `{"session": null, "available": false}`,
     # which reads as "the meter is broken" instead of "you did not name a session".
@@ -2161,6 +2232,12 @@ def main():
     p = sub.add_parser("contract"); p.add_argument("action", choices=["check"]); \
         p.add_argument("file", nargs="?", help="JSON: {contract, sequence}"); \
         p.set_defaults(fn=cmd_contract)
+    p = sub.add_parser("recovery"); p.add_argument("action", choices=["adjudicate", "trace"]); \
+        p.add_argument("file", nargs="?", help="JSON: capabilities, obligations, evidence (+ proposed, residual)"); \
+        p.set_defaults(fn=cmd_recovery)
+    p = sub.add_parser("effects"); p.add_argument("action", choices=["coverage", "verify"]); \
+        p.add_argument("file", nargs="?", help="JSON: {catalog, trace}"); \
+        p.set_defaults(fn=cmd_effects)
     p = sub.add_parser("instructions"); p.add_argument("action", choices=["audit"]); \
         p.add_argument("file", nargs="?", help="JSON: {text, cards}"); \
         p.set_defaults(fn=cmd_instructions)
@@ -2205,7 +2282,7 @@ def main():
         p.add_argument("--implement", action="store_true",
                        help="approve AND authorise the implementation (the bar's ▶)"); \
         p.add_argument("--model"); p.set_defaults(fn=cmd_docs)
-    p = sub.add_parser("context"); p.add_argument("action", choices=["show", "compact", "preview", "items"]); \
+    p = sub.add_parser("context"); p.add_argument("action", choices=["show", "compact", "preview", "items", "cost"]); \
         p.add_argument("value", nargs="?"); p.add_argument("--session"); p.set_defaults(fn=cmd_context)
     p = sub.add_parser("hooks"); p.set_defaults(fn=cmd_hooks)
     p = sub.add_parser("routing"); p.add_argument("action", choices=["show", "update"]); \
