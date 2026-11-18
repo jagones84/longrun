@@ -49,6 +49,7 @@ Usage:
   python3 forge.py memcredit arbitrate FILE.json | lessongate probe FILE.json | seclattice admit FILE.json
   python3 forge.py optmemory continuity FILE.json | detour classify FILE.json | patchprobe compare FILE.json
   python3 forge.py poison trace FILE.json | boundary evaluate FILE.json | gapleak verify FILE.json
+  python3 forge.py binding alignment FILE.json | gateway utility FILE.json | scoring advise FILE.json
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -1394,6 +1395,104 @@ def cmd_gapleak(args):
         out = gap_leak.compare(doc.get("before") or {}, doc.get("after") or {})
     print(json.dumps(out, indent=2, ensure_ascii=False))
     sys.exit(1 if out.get("preserved_required") is False else 0)
+
+
+def cmd_binding(args):
+    """Round 128 (arXiv:2611.21577): a tool advertisement is not a provider identity."""
+    from longrun.harness import provider_binding
+    if not getattr(args, "file", None):
+        print("usage: binding alignment|pressure|bind|resolve|outcomes|judge|sweep FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action in ("alignment", "pressure"):
+        out = getattr(provider_binding, args.action)(doc.get("advert") or {},
+                                                     doc.get("reference") or {})
+    elif args.action == "bind":
+        out = provider_binding.bind(doc.get("advert") or doc, doc.get("expected_provider"))
+    elif args.action == "resolve":
+        out = provider_binding.resolve(doc.get("candidates") or [], doc.get("reference"),
+                                       doc.get("authorized_provider"))
+    elif args.action in ("outcomes", "judge"):
+        out = getattr(provider_binding, args.action)(doc.get("trials") or [])
+    else:
+        out = provider_binding.sweep(doc.get("rows") or [])
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(1 if (args.action == "bind" and not out.get("provider_bound"))
+             or (args.action == "resolve" and out.get("decision") != "bound") else 0)
+
+
+def cmd_gateway(args):
+    """Round 128 (arXiv:2611.19123): code mode, stubs, router and fallback accounting."""
+    from longrun.harness import gateway_shape
+    if not getattr(args, "file", None):
+        print("usage: gateway utility|delta|holm|claim|stub|hints|fallback|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "utility":
+        out = gateway_shape.utility(doc.get("cell") or doc)
+    elif args.action == "delta":
+        out = gateway_shape.paired_delta(doc.get("base") or [], doc.get("candidate") or [],
+                                         resamples=doc.get("resamples") or 2000)
+    elif args.action == "holm":
+        out = gateway_shape.holm(doc.get("pvalues") or [])
+    elif args.action == "claim":
+        out = gateway_shape.claim(doc.get("delta"), doc.get("ci") or [0.0, 0.0],
+                                  doc.get("p_adjusted"))
+    elif args.action == "stub":
+        out = gateway_shape.stub(doc.get("tool") or doc)
+    elif args.action == "hints":
+        out = gateway_shape.hint_effect(doc.get("hinted") or {}, doc.get("bare") or {})
+    elif args.action == "fallback":
+        out = gateway_shape.compare_fallbacks(doc.get("unbounded") or {},
+                                             doc.get("bounded") or {})
+    else:
+        out = gateway_shape.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_scoring(args):
+    """Round 128 (arXiv:2611.20335): pointwise, setwise or candidate attention."""
+    from longrun.harness import scoring_mode
+    if not getattr(args, "file", None):
+        print("usage: scoring depends|reversal|select|paired|advise|binary|learn FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "depends":
+        out = scoring_mode.depends_on_candidates(doc.get("mode"))
+    elif args.action == "reversal":
+        out = scoring_mode.reversal(doc.get("pair") or doc)
+    elif args.action == "select":
+        out = scoring_mode.select(doc.get("mode"), doc.get("scores") or {})
+    elif args.action == "paired":
+        out = scoring_mode.paired_success(doc.get("instances") or [])
+    elif args.action == "advise":
+        out = scoring_mode.advise(doc.get("task"), doc.get("candidates") or 16)
+    elif args.action == "binary":
+        out = scoring_mode.binary_diagnostic(doc.get("gold_yes_rate"),
+                                             doc.get("predicted_yes"))
+    else:
+        out = scoring_mode.learnability(doc.get("mode"), doc.get("relational_share"))
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
 
 
 def cmd_instructions(args):
@@ -3049,6 +3148,21 @@ def main():
         p.add_argument("action", choices=["gap", "disclosure", "verify", "compare"]); \
         p.add_argument("file", nargs="?", help="JSON: {requested, authorized, reachable}, {form, policy, third_party}, {form, summary, required}, or {before, after}"); \
         p.set_defaults(fn=cmd_gapleak)
+    p = sub.add_parser("binding"); \
+        p.add_argument("action", choices=["alignment", "pressure", "bind", "resolve",
+                                          "outcomes", "judge", "sweep"]); \
+        p.add_argument("file", nargs="?", help="JSON: {advert, reference}, {advert, expected_provider}, {candidates, reference, authorized_provider}, {trials}, or {rows}"); \
+        p.set_defaults(fn=cmd_binding)
+    p = sub.add_parser("gateway"); \
+        p.add_argument("action", choices=["utility", "delta", "holm", "claim", "stub",
+                                          "hints", "fallback", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: a cell, {base, candidate}, {pvalues}, {delta, ci, p_adjusted}, {tool}, {hinted, bare}, {unbounded, bounded}, or {profile}"); \
+        p.set_defaults(fn=cmd_gateway)
+    p = sub.add_parser("scoring"); \
+        p.add_argument("action", choices=["depends", "reversal", "select", "paired",
+                                          "advise", "binary", "learn"]); \
+        p.add_argument("file", nargs="?", help="JSON: {mode}, {pair}, {mode, scores}, {instances}, {task, candidates}, {gold_yes_rate, predicted_yes}, or {mode, relational_share}"); \
+        p.set_defaults(fn=cmd_scoring)
     p = sub.add_parser("instructions"); p.add_argument("action", choices=["audit"]); \
         p.add_argument("file", nargs="?", help="JSON: {text, cards}"); \
         p.set_defaults(fn=cmd_instructions)
