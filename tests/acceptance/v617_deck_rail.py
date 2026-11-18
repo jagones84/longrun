@@ -56,8 +56,14 @@ check("A3 rail buttons are keyboard-native with a visible current state",
 check("B1 buttons call the ONE applyView truth",
       'b.onclick = () => this.applyView(b.dataset.view)' in ORBIT)
 check("B2 saved view restores through the rail (unknown lands on first view)",
+      # 732a6c2 (v1044): a hosted single-panel window must open on ITS panel, so the
+      # boot expression gained `this.embedPanel ||`; `saved` is still the operand
+      # that restores the remembered view, and applyView still lands an unknown
+      # name on the first view.
       'localStorage.getItem("orbit_view_v1")' in ORBIT
-      and "this.applyView(saved" in ORBIT)
+      and "this.applyView(this.embedPanel || saved" in ORBIT
+      and "this.PANELS.includes(view)" in ORBIT
+      and 'view = "view:" + this.views[0].id' in ORBIT)
 check("B3 aria-current repaints inside applyView (one decider)",
       'b.setAttribute("aria-current", "page")' in ORBIT
       and "b.removeAttribute(\"aria-current\")" in ORBIT)

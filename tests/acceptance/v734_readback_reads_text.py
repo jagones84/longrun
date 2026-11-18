@@ -133,38 +133,77 @@ check("D1 an unreadable workbook is a fact, not a crash",
       and (A.review(WS, "x", since=SINCE) or "") != "")
 
 # ---- E: a data URL is never rendered as a page -------------------------------
+# Deterministic and OFFLINE: the payloads are served by a local `http.server` on
+# 127.0.0.1:0 (thread), never by the outside network. `_web_fetch` refuses loopback
+# by design (the SSRF guard) and builds its own opener, so the test routes that
+# opener at the fixture server and lets the two fixture hosts through the guard —
+# the URL STRINGS stay the production ones, which is what E2's github `raw`
+# translation needs.
+import http.server  # noqa: E402
+import threading  # noqa: E402
+import urllib.parse  # noqa: E402
+import urllib.request  # noqa: E402
+
 from longrun.tools import tools as T  # noqa: E402
 
-
-def _fake(url, body):
-    """Point urllib at a canned body (offline)."""
-    class _R:
-        def read(self, _n=None):
-            return body
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *a):
-            return False
-
-    T.urllib.request.urlopen = lambda req, timeout=0: _R()
+_HTML = b"<!DOCTYPE html><html>page</html>"
+_CSV = b"handle,title\ndark-denim-top,Dark Denim Top ripped hem effect\n"
+_PAYLOADS = {
+    "/o/r/blob/master/apparel.csv": _HTML,
+    "/data/apparel.csv": _CSV,
+}
 
 
-_orig_open = T.urllib.request.urlopen
-_fake("x", b"<!DOCTYPE html><html>page</html>")
-_data, _err = T._web_fetch("https://github.com/o/r/blob/master/apparel.csv", 4096)
-check("E1 a .csv URL that answers with HTML is reported, not rendered",
-      _data is None and "HTML PAGE" in (_err or ""), _err)
-check("E2 the answer names the RAW url to ask for",
-      "raw.githubusercontent.com/o/r/master/apparel.csv" in (_err or ""), _err)
+class _Fixture(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):  # noqa: N802 — stdlib handler name
+        body = _PAYLOADS.get(urllib.parse.urlparse(self.path).path)
+        if body is None:
+            self.send_error(404)
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
-_fake("x", b"handle,title\ndark-denim-top,Dark Denim Top ripped hem effect\n")
-_data2, _err2 = T._web_fetch("https://example.org/data/apparel.csv", 4096)
-check("E3 a real data file arrives byte-identical (no page rendering)",
-      _err2 is None and "ripped hem effect" in (_data2 or {}).get("text", ""),
-      (_data2, _err2))
-T.urllib.request.urlopen = _orig_open
+    def log_message(self, *a):  # keep the test output clean
+        pass
+
+
+_srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _Fixture)
+_port = _srv.server_address[1]
+threading.Thread(target=_srv.serve_forever, daemon=True).start()
+# no proxy: an HTTP_PROXY in the environment must not intercept 127.0.0.1
+_local = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
+class _ToFixture:
+    """The tool's opener, redirected to the local server at the same path."""
+
+    def open(self, req, timeout=None):
+        full = getattr(req, "full_url", req)
+        path = urllib.parse.urlparse(full).path
+        return _local.open("http://127.0.0.1:%d%s" % (_port, path), timeout=timeout)
+
+
+_orig_opener, _orig_guard = T._opener, T._public_host
+T._opener = lambda check: _ToFixture()
+T._public_host = lambda url: (True, urllib.parse.urlparse(url).hostname or "fixture")
+try:
+    _data, _err = T._web_fetch("https://github.com/o/r/blob/master/apparel.csv", 4096)
+    check("E1 a .csv URL that answers with HTML is reported, not rendered",
+          _data is None and "HTML PAGE" in (_err or ""), _err)
+    check("E2 the answer names the RAW url to ask for",
+          "raw.githubusercontent.com/o/r/master/apparel.csv" in (_err or ""), _err)
+
+    _data2, _err2 = T._web_fetch("https://example.org/data/apparel.csv", 4096)
+    check("E3 a real data file arrives byte-identical (no page rendering)",
+          _err2 is None and "ripped hem effect" in (_data2 or {}).get("text", ""),
+          (_data2, _err2))
+finally:
+    T._opener, T._public_host = _orig_opener, _orig_guard
+    _srv.shutdown()
+    _srv.server_close()
 
 print("\n---")
 print("v734: %d/%d PASS" % (sum(results), len(results)))

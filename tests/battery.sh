@@ -140,6 +140,14 @@ _run_one() {
   test_status=$?
   elapsed_ms=$(( $(date +%s%3N) - start_ms ))
   printf 'END   %-42s rc=%s %sms\n' "$name" "$test_status" "$elapsed_ms" >> "$PROGRESS"
+  # 2026-11-18 (release gate): a test killed by a SIGNAL (rc>128 — the 8
+  # "Segmentation fault (core dumped)" lines of the 14:58 full run) printed no
+  # PASS/FAIL at all, so the summary showed three missing slots and no file name.
+  # Name it: a crash is a different fact from a red pin.
+  if [ "$test_status" -gt 128 ]; then
+    printf 'CRASH %-42s signal=%s\n' "$name" "$((test_status - 128))"
+    echo 1 > "$RES/$name.crash"
+  fi
   if [ "$timing" = "1" ]; then
     printf '%s\t%s\n' "$elapsed_ms" "$name" >> "$RES/timing"
   fi
@@ -187,13 +195,21 @@ done
 for lg in "$RES"/*.log; do
   [ -e "$lg" ] || continue
   echo "===== $(basename "$lg" .log) ====="
+  if [ -e "${lg%.log}.crash" ]; then
+    echo "CRASH the test was killed by a signal before printing any assertion"
+  fi
   grep -E "^FAIL" "$lg" | head -20
+done
+
+crashes=0
+for cf in "$RES"/*.crash; do
+  [ -e "$cf" ] && crashes=$((crashes + 1))
 done
 
 rm -rf "$TMP"
 
-printf 'DONE  pass=%s total=%s fail=%s %s\n' \
-  "$pass" "$total" "$fail" "$(date -u +%FT%TZ)" >> "$PROGRESS"
+printf 'DONE  pass=%s total=%s fail=%s crashes=%s %s\n' \
+  "$pass" "$total" "$fail" "$crashes" "$(date -u +%FT%TZ)" >> "$PROGRESS"
 
 # Stamps: which gate ran, when, with what result. `.agent/logs/` is gitignored, so
 # this is operator memory, not a shipped artifact. The last FULL run is what the
@@ -203,8 +219,8 @@ mkdir -p "$STAMP_DIR"
 MODE="full"
 [ "${LONGRUN_BATTERY_FULL:-0}" = "1" ] || MODE="fast"
 [ -n "$ONLY" ] && MODE="targeted"
-printf 'date=%s mode=%s pass=%s total=%s fail=%s tests=%s\n' \
-  "$(date -u +%FT%TZ)" "$MODE" "$pass" "$total" "$fail" "${ONLY:-all}" \
+printf 'date=%s mode=%s pass=%s total=%s fail=%s crashes=%s tests=%s\n' \
+  "$(date -u +%FT%TZ)" "$MODE" "$pass" "$total" "$fail" "$crashes" "${ONLY:-all}" \
   > "$STAMP_DIR/battery-last-run.txt"
 if [ "$MODE" = "full" ]; then
   cp "$STAMP_DIR/battery-last-run.txt" "$STAMP_DIR/battery-last-full.txt"
@@ -217,7 +233,7 @@ if [ "$fail" -eq 0 ]; then
     echo "=== battery: $pass/$total GREEN ==="
   fi
 else
-  echo "=== battery: $pass/$total (FAILURES — see above) ==="
+  echo "=== battery: $pass/$total (FAILURES — see above)$([ "$crashes" -gt 0 ] && echo " · $crashes CRASHED") ==="
 fi
 LAST_FULL="$STAMP_DIR/battery-last-full.txt"
 if [ -f "$LAST_FULL" ]; then

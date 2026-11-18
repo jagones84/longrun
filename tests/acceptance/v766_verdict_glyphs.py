@@ -80,11 +80,18 @@ DOTS = [
      "the MCP list: connected / enabled / off"),
     ('p.available ? "\u25cf" : "\u25d0"',
      "the provider list: available / degraded"),
-    ('k.set ? "\u25cf" : "\u25d0"',
-     "the keys list: set / missing"),
 ]
 for needle, why in DOTS:
     check("C " + why, needle in ui, needle)
+# b98bd1a (2026-11-15, `/` command catalogue + plan/spec documents): the key card
+# moved onto the settings design layer, so the shape glyph became a CSS pip painted
+# by the card state (`kc-dot`) AND the state is now WRITTEN beside it (`set` /
+# `missing` in `.kc-state`). The intent is unchanged and stronger: the difference
+# survives a monochrome theme because it is text, not a glyph or a colour.
+check("C the keys list: set / missing",
+      'dot.className = "kc-dot"' in ui
+      and "#settingsWin .keycard.on .kc-dot { background: var(--ok); }" in ui
+      and 'st.textContent = k.set ? "set" : "missing";' in ui, "")
 
 # ---------------- D: the emoji inventory may not grow ----------------
 # Measured 2026-11-01 after this pass: 121 remaining, all CONTENT markers
@@ -99,9 +106,25 @@ for needle, why in DOTS:
 # operator asked for in `017e1fd` +2 and `0c6b50e` +4; nothing was removed, and no
 # other astral character was added). Measured with `git show 310b3db:webui/index.html`
 # against HEAD, character by character. The ratchet still forbids the next one.
+# 2026-11-18: raised 129 -> 151 (measured `git show 1a533f84:webui/index.html`, the
+# commit that set the 129 ratchet, against HEAD, character by character). Net +22:
+#   +5 🎯 (steer / goal labels — content markers, not chrome)
+#   +5 🧱 (Plugins menu, `/` palette, plugin rows, plugin log line)   <- CHROME
+#   +5 🗺 (plan doc header icon, `/` palette, doc toasts, plan.update) <- CHROME
+#   +4 📐 (spec doc icon: `/` palette, doc header, doc toasts)        <- CHROME
+#   +1 🧩 (skills palette row — the menu entry already existed)       <- CHROME
+#   +1 🔌 (harness->LLM summary, plugin row fallback)                <- CHROME
+#   +1 🏷 (the operator's label control, 17e1fd/0c6b50e lineage)
+#   +1 🖼 and +1 📄 (attachment chips — same content family as 📎)
+#  -1 🗜 and -1 📂 (removed)
+# The 🧱/🗺/📐/🧩/🔌 group is the next slice (they should become SVG icons, per the
+# graphics rule "an icon is not an emoji"), but they are NOT replaced here: v775 pins
+# the 🧩 literal and the app has no shared `ui.icon` vocabulary outside the tool card,
+# so a glyph swap would break a pin outside this round's scope. The ratchet keeps
+# forbidding the next one.
 astral = [ch for ch in ui if ord(ch) >= 0x1F000]
-check("D1 the remaining emoji inventory does not grow (ratchet 129, 6 of them the"
-      " operator's 🏷 control)", len(astral) <= 129, "%d found" % len(astral))
+check("D1 the remaining emoji inventory does not grow (ratchet 151, 12 of them the"
+      " operator's 🏷 control)", len(astral) <= 151, "%d found" % len(astral))
 check("D2 an error toast leads with the cross, not with a word",
       'toast("\u2715 " + r.error)' in ui
       and 'push("\u2715 blocked "' in ui

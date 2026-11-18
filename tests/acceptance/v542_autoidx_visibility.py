@@ -102,7 +102,9 @@ check("C3 the Codebase panel renders the auto-index state",
       # v640: the label is no longer title-case, and the freshness verdict joined
       # the same line (two lines said the same thing) — the facts pinned here are
       # unchanged: the state, when the watcher last ran, and the no-watcher case.
-      "auto-index <b>" in UI and "_cbAgo(last.at)" in UI
+      # 80fb48a (v1001): `_cbAgo` became the shared `_ago` (My Artifacts reuses it),
+      # so the "last pass" timestamp is the same fact with the current spelling.
+      "auto-index <b>" in UI and "_ago(last.at)" in UI
       and "no watcher for this workspace" in UI
       and "cb-line cb-wrap" in UI)
 
@@ -178,9 +180,11 @@ check("E7 a warm watcher short-circuits the scan",
       and _api._watcher_is_current({"enabled": True, "watcher": {
           "watched": True, "interval_s": 10, "last": {"at": time.time() - 3600}}}) is False)
 check("E8 the panel renders the stale badge, the green OK and the build time",
+      # 80fb48a (v1001): the shared `_ago` replaced `_cbAgo`; the build time is
+      # still rendered, from the same `built_at` field.
       'class="cb-stale"' in UI and "newer than the index" in UI
       and 'class="cb-fresh"' in UI and "no re-index needed" in UI
-      and "_cbAgo(s.built_at)" in UI)
+      and "_ago(s.built_at)" in UI)
 check("E9 the indexed file list closes when `files` is clicked again",
       "if (_cbFilesOpen) { _cbFilesOpen = false;" in UI
       and 'id="cbFilesBox"' in UI)

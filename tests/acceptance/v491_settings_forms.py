@@ -69,6 +69,26 @@ def _schema_paths(file):
             for f in s["fields"]}
 
 
+# 2026-11-15 (10d95fb "feat(market): filter by catalogue, curated macro-areas, and
+# the full registry mirror"): the Marketplace is a top-level PAGE whose knobs are
+# read SERVER-SIDE — core/market.py (DEFAULTS + config_view), core/market_sync.py
+# and core/market_taxonomy.py. There is deliberately NO Settings form: a second
+# writer would be a second truth. So the pin names where these leaves ARE
+# documented, and still requires the module that reads each leaf to name it — a
+# file listed here without a live reader is a failure, not an exemption.
+SERVER_ONLY = {
+    "market.yaml": {
+        "doc": "config/market.yaml",
+        "anchor": "# How many `featured: true` items",
+        "reader": "src/longrun/core/market.py",
+    },
+    "market_taxonomy.yaml": {
+        "doc": "docs/ARCHITECTURE.md",
+        "anchor": "config/market_taxonomy.yaml",
+        "reader": "src/longrun/core/market_taxonomy.py",
+    },
+}
+
 missing = []
 checked = 0
 for name in sorted(os.listdir(os.path.join(REPO, "config"))):
@@ -92,6 +112,10 @@ for name in sorted(os.listdir(os.path.join(REPO, "config"))):
     for leaf in leaves:
         checked += 1
         if leaf in known or _prefix_hit(leaf, prefixes):
+            continue
+        _so = SERVER_ONLY.get(name)
+        if (_so and _so["anchor"] in _read(_so["doc"])
+                and leaf in _read(_so["reader"])):
             continue
         missing.append(name + ":" + leaf)
 check("A1 every config leaf is a form field or a documented dedicated panel",

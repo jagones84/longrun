@@ -71,7 +71,10 @@ check("A4 the preview window also divides its width by the zoom (94vw is unscale
       "width: min(calc(1180px / var(--zoom, 1)), calc(94vw / var(--zoom, 1)));" in ui)
 check("A5 every popup goes through the ONE placement",
       # v1029: definition + preview ⋯ + artifact/edits right-click + plan-todo right-click
-      ui.count("_placeMenu(m,") == 4 and "openPvMenu" in ui and "openFileCtx" in ui
+      # 3d81a4e (2026-11-15): the session row and its team header became body-level
+      # popovers that open at the right-click pointer (`if (ev …) _placeMenu(...)` plus
+      # the kebab fallback), so the same ONE helper now has 8 call sites.
+      ui.count("_placeMenu(m,") == 8 and "openPvMenu" in ui and "openFileCtx" in ui
       and "_placeMenu(m, ev.clientX, ev.clientY, false);" in ui)
 
 # --- B: the page's scope model — ONE owner, in v1004 -------------------------

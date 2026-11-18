@@ -100,9 +100,16 @@ check("C3 a card is still ONE door (human.ask)",
 
 # ---- D: mobile -----------------------------------------------------------
 _mq = UI.split("@media (max-width: 640px)")
+# 9e8ef27 (2026-11-18, "the settings window's phone geometry is not beaten by later
+# rules"): the second `.sw-main { padding: 12px }` in the 640px block was REMOVED — it
+# lost the cascade to the one unconditional owner (`padding: 10px 12px`, v639 rhythm),
+# so the phone keeps that padding and only declares the overflow guard here. The
+# intent (full width, no horizontal overflow) is unchanged and v1136 pins the
+# single-padding contract structurally.
 check("D1 the phone layout is full width with no overflow",
       "width: 100% !important; max-width: 100vw !important" in UI
-      and "#settingsWin .sw-main { padding: 12px; overflow-x: hidden; }" in UI,
+      and "#settingsWin .sw-main { overflow-x: hidden; }" in UI
+      and "#settingsWin .sw-main { flex: 1; min-width: 0; overflow-y: auto; padding: 10px 12px; }" in UI,
       "settings mobile rule missing")
 check("D2 the rule row wraps on a phone",
       ".perm-row { flex-wrap: wrap; align-items: flex-start; }" in UI)

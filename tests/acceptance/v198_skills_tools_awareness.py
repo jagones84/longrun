@@ -161,7 +161,25 @@ check("G3 disabled-tools footer is absent or compact",
 # ---- H: skill-library health audit (JAG-203, read-only) ----
 _aud = skills.audit_skills()
 check("H1 audit counts the library", _aud.get("count") == len(sk), "count=%s" % _aud.get("count"))
-_dupnames = {n for ns in _aud["duplicate_descriptions"].values() for n in ns}
+# 2026-11-18: the duplicated MCP-builder pair left the installed library —
+# `mcp-server-builder-guide` was retired (`skills/_retired/removed-20261117/`), and the
+# library is user-local (gitignored), so a pin on its live content asserts a state the
+# repo cannot own. H2 locks the audit's own contract instead, with the same fixture
+# style as F4b: two skills sharing one long description are reported together under it.
+_saved_list_for_audit = skills.list_skills
+skills.list_skills = lambda: [
+    {"name": "mcp-builder", "category": "dev", "title": "MCP builder", "abspath": "/skill/mcp-builder",
+     "path": "skills/dev/mcp-builder/SKILL.md",
+     "description": "Guide for creating high-quality MCP servers that enable LLMs to interact with external services."},
+    {"name": "mcp-server-builder-guide", "category": "dev", "title": "MCP server builder",
+     "abspath": "/skill/mcp-server-builder-guide", "path": "skills/dev/mcp-server-builder-guide/SKILL.md",
+     "description": "Guide for creating high-quality MCP servers that enable LLMs to interact with external services."},
+]
+try:
+    _dup_aud = skills.audit_skills()
+finally:
+    skills.list_skills = _saved_list_for_audit
+_dupnames = {n for ns in _dup_aud["duplicate_descriptions"].values() for n in ns}
 check("H2 audit finds the duplicated MCP-builder description",
       {"mcp-builder", "mcp-server-builder-guide"} <= _dupnames, str(sorted(_dupnames))[:80])
 _res_aud = tools.execute("skills", {"action": "audit"})

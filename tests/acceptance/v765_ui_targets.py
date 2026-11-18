@@ -96,8 +96,13 @@ check("B4 the rail head controls are 24x24 and sized in ONE place",
 check("B5 the tool-card disclosure is a 28px row, not an 18px strip",
       "min-height: 28px" in rule(".toolcard-head"), rule(".toolcard-head")[:80])
 check("B6 the tool-card verdict is a pip painted by the card state",
-      '<span class="tc-ic" aria-hidden="true"></span>' in ui
-      and ".toolcard.ok .tc-ic { background: var(--ok); }" in ui
+      # 82c0397: the pip became a per-tool SVG icon (it also names the tool), so
+      # the card state paints it through `color` + `stroke: currentColor` instead
+      # of a background dot. The "no emoji text write" half is unchanged.
+      '<span class="tc-ic" aria-hidden="true">${ui.icon}</span>' in ui
+      and ".toolcard.ok .tc-ic { color: var(--ok); }" in ui
+      and ".toolcard.err .tc-ic { color: var(--err); }" in ui
+      and "stroke: currentColor" in rule(".toolcard .tc-ic svg")
       and 'textContent = data.ok ? "✅" : "⛔"' not in ui)
 
 # ---- C. no regression of the pins that matter --------------------------------

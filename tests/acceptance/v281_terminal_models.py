@@ -123,7 +123,10 @@ check("GET /api/tools exposes reasoning",
 check("the terminal routes are registered",
       '"/api/term/exec"' in av and '"/api/term/poll"' in av and '"/api/term/reset"' in av)
 check("term.py uses a persistent bash + a completion sentinel",
-      '"/bin/bash"' in trm and "__SF_DONE__" in trm)
+      # 98dc3414 (2026-11-18): the POSIX executable is no longer the literal
+      # `"/bin/bash"` here — `osutil.shell_path()` is the ONE answer (override,
+      # `$SHELL`, `/bin/bash`, `/bin/sh`), shared with host execution and hooks.
+      "osutil.shell_path()" in trm and "__SF_DONE__" in trm)
 
 # --- 5) UI -------------------------------------------------------------------
 check("the model popover is anchored above its own button",

@@ -53,7 +53,11 @@ def block(start, end):
 
 AGENT = block("_drawAgent(){", "_drawAll(){")
 ALL = block("_drawAll(){", "_wire(svg){")
-PILLS = block("_pills(jobs, subs, jpos, spos, opts){", "_drawAll(){")
+# cfdae72 (2026-11-09, "the pill-band rule is ONE shared _pillLanes for BOTH modes"):
+# the label text and the measured pill width moved into `_jobLbl`/`_subLbl`, which
+# `_pills` renders with — one truth for text and width. This block therefore starts at
+# `_jobLbl` so the pill-label contract (count / coord) is still pinned at its owner.
+PILLS = block("_jobLbl(j, opts){", "_drawAll(){")
 WIRE = block("_wire(svg){", "_pop(){")
 PLAN = block("_planOf(sid){", "_drawAgent(){")
 
@@ -63,8 +67,14 @@ check("A1 the focused agent's subjobs are selected from the payload",
 check("A2 the jobs come from the subjobs AND the tasks' jid",
       "normJ" in AGENT and "n.jid" in AGENT)
 check("A3 both lanes exist in AGENT mode", "jpos" in AGENT and "spos" in AGENT)
+# cfdae72: the AGENT view no longer keeps a private `46 + lane` offset — the SHARED
+# `_pillLanes` layout returns `top`, the first y below the whole pill band, and both
+# the node grid and the canvas height start there. Same intent: the lane pushes the
+# task grid down, so nothing overlaps.
 check("A4 the task grid is pushed down by the lane (no overlap)",
-      "46 + lane" in AGENT and "const lane" in AGENT)
+      "const lanes = this._pillLanes(jobs, subs, {w: w, owner: a.id, counts: true})" in AGENT
+      and "y: lanes.top + (j + 0.5) * RH" in AGENT
+      and "h = lanes.top + sh.maxRows * RH + 16" in AGENT)
 check("A5 the AGENT view draws the pills, marked as the owner of its own job",
       "this._pills(jobs, subs, jpos, spos, {owner: a.id, counts: true})" in AGENT)
 check("A6 a job is drawn above its subjobs",
@@ -77,12 +87,15 @@ check("A9 the header names the jobs and subjobs in scope",
       "job\" + (jobs.length > 1" in AGENT and "subjob\" + (subs.length > 1" in AGENT)
 
 # ---- B) the relations that are NOT arrows ---------------------------------
+# cfdae72 moved these three relations into `_jobLbl`/`_subLbl` (inside PILLS), where
+# the same text also measures the pill width. The intent is unchanged: a subjob's
+# task count is a label, the count is AGENT-only, and "coord" names the owner.
 check("B1 subjob -> N tasks is a COUNT, not one arrow per task",
-      "(q.todos || []).length" in PILLS and "(s.todos || []).forEach" not in AGENT)
+      "(s.todos || []).length" in PILLS and "(s.todos || []).forEach" not in AGENT)
 check("B2 the count only appears in AGENT mode (ALL already has the cluster edge)",
       "opts.counts && n" in PILLS)
 check("B3 the job pill names the coordinator's ownership instead of inventing an arrow",
-      "j.coordinator === opts.owner" in PILLS and "·coord" in PILLS)
+      "j.coordinator === opts.owner" in PILLS and r'" \u00b7coord"' in PILLS)
 check("B4 the pill geometry follows its label (no clipped text)",
       "lbl.length * 6.6 + 16" in PILLS and "lbl.length * 7 + 18" in PILLS)
 check("B5 the pill markup has ONE owner",

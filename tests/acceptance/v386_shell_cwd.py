@@ -219,8 +219,15 @@ with open(os.path.join(REPO, "webui", "index.html"), encoding="utf-8") as _f:
     _HTML = _f.read()
 check("H1 the policy card states the universal, mode-governed rule",
       "outside the session workspace" in _HTML and "enforced in code" in _HTML, "")
-check("H2 the now-inert `Outside workspace` toggle is gone from the UI",
-      'mk("outside_workspace"' not in _HTML and "Outside workspace</span>" not in _HTML, "")
+# ed7a649 (JAG-388) removed the old one-click `mk("outside_workspace", …)` policy
+# toggle. 5094da59 (JAG-491, "object editors for every config knob") later re-exposed
+# the still-stored knob as a plain Settings <select id="apOutside"> (pinned by v491 D5
+# and v506); the policy BUTTON is what must stay gone — only `approvals.mode` relaxes
+# the boundary (G1–G13).
+check("H2 the old `Outside workspace` policy toggle is gone (a settings editor remains)",
+      'mk("outside_workspace"' not in _HTML
+      and 'data-pol="outside_workspace"' not in _HTML
+      and '<select id="apOutside"' in _HTML, "")
 
 print("---")
 passed = sum(results)

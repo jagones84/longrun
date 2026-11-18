@@ -91,7 +91,9 @@ check("D2 a runs-panel row's right-click is the session menu",
       "openSessMenu(a, s, ag, e);" in UI)
 check("D3 an approval answers a right-click with its own two decisions",
       "if (a.can_approve !== false) items.push({ ic: \"✓\", label: \"Approve\"" in UI
-      and 'label: "Deny"' in UI
+      # af28a09 (2026-11-16): documents joined the Approvals inbox, so the negative
+      # decision is spelled by kind — "Reject" for a document, "Deny" for a tool.
+      and 'label: a.kind === "document" ? "Reject" : "Deny"' in UI
       and "_openCtx(e.clientX, e.clientY, kind" in UI)
 
 print("---")

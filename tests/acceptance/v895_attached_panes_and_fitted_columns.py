@@ -75,9 +75,13 @@ check("C2 it renders the symbol, not the word",
       '\'">\\u2726</span>\'' in ORBIT and '\'">AI</span>\'' not in ORBIT)
 check("C3 the empty-prompt star is a 10px glyph with no margin",
       ".req{color:var(--err);font-weight:700;margin-left:0;font-size:10px;line-height:1}" in ORBIT)
+# 92ca0af (2026-11-15, "context saturation visibility"): a third mark, `ctxChip`,
+# joined the row's second line between the two prompt marks. The contract is
+# unchanged — aiBadge and voidMark still ride inside the `.asub` line (vertical
+# space), they were not moved back into a column.
 check("C4 both marks ride the row's SECOND line (vertical space, not a column)",
       "const voidMark = voidP ?" in ORBIT
-      and '\'<span class="asub">\' + aiBadge + voidMark + \'<span class="arole">\'' in ORBIT)
+      and '\'<span class="asub">\' + aiBadge + voidMark + ctxChip + \'<span class="arole">\'' in ORBIT)
 
 # ---------------- D: the model column fits what it shows ----------------------
 check("D1 the cell shows the WHOLE model ref (no last-segment truncation)",

@@ -109,7 +109,11 @@ else:
 
 # ------------------------------------------------------------------ 2) composer
 check("2 the composer toolbar is a flat strip (no per-button frames)",
-      "#composerBar .cb-left > button, #composerBar .cb-right > button," in HTML
+      # 9b6a5e0 (v867) made queue/steer an icon button (`.qmode-wrap`), so that
+      # selector now sits between the left and right button groups; the flat strip
+      # (no frames) is unchanged.
+      "#composerBar .cb-left > button, #composerBar .qmode-wrap > button," in HTML
+      and "#composerBar .cb-right > button, #composerBar .cb-right .model-wrap > button {" in HTML
       and "background: transparent; border: 0; box-shadow: none; color: var(--dim);" in HTML)
 
 # ------------------------------------------------------------------ 3) notebooks

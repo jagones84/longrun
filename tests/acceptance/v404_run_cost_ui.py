@@ -102,9 +102,12 @@ check("B3 the new-agent inputs are no longer full-width",
 
 # ------------------------------------------------------------------ C) org chart
 check("C1 single-click still previews the constellation (+ JAG-451 focuses the agent)",
+      # 9a2b583 (2026-11-16, operator) formatted the pick callback over several lines
+      # and added the embed-panel preview; the single-click contract is unchanged.
       "if (this.onPick) this.onPick(this.bySid[n.dataset.sid]);" in ORBIT
-      and 'this.org = new OrgChartView((a) => { this.tac.open(a, "agent")' in ORBIT
-      and "this.agents.focusAgent(a.session)" in ORBIT)
+      and re.search(r'this\.org = new OrgChartView\(\s*\(a\) => \{\s*'
+                    r'this\.tac\.open\(a, "agent"\);[\s\S]{0,200}?'
+                    r'this\.agents\.focusAgent\(a\.session\)', ORBIT) is not None)
 check("C2 double-click still opens the agent's session in the main app",
       "n.ondblclick = () => { if (this.onGoTo) this.onGoTo(this.bySid[n.dataset.sid]); };" in ORBIT
       and "gotoAgent(agent){ if (!agent) return;" in ORBIT)

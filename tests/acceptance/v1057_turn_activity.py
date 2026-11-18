@@ -28,7 +28,10 @@ check("A3 header markup", 'head.className = "turnhead";' in html
 check("A4 live clock", "setInterval(_turnPaint, 1000)" in html)
 check("A5 tally classes", "const _TALLY_LABEL = {" in html and "function _toolBump" not in html
       and "function _turnBump(tool)" in html)
-check("A6 todo bookkeeping excluded", 'if (t.startsWith("todo.")) return;   // plan bookkeeping, not work' in html)
+check("A6 todo bookkeeping excluded",
+      # ee8c545 (2026-11-15): `model.attempt` is a record of the model call, not work
+      # either — the same guard now excludes both, with its own comment.
+      'if (t.startsWith("todo.") || t === "model.attempt") return;   // plan bookkeeping / a record, not work' in html)
 check("A7 frozen on chat.done", "if (d.session && d.session === sessionId) _turnEnd(d.duration_s);" in html)
 check("A8 frozen on reload with persisted duration", "_turnEnd(m.duration_s, false);" in html)
 check("A9 live answer attaches sources then footer",

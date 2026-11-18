@@ -176,6 +176,11 @@ for view, marker in VIEW_CLASS.items():
     body = class_body(marker)
     members = (set(re.findall(r"this\.([A-Za-z_$][\w$]*)\s*=", body))
                | set(re.findall(r"^  (?:async )?([A-Za-z_$][\w$]*)\(", body, re.M)))
+    # 9a2b583: OrbitApp may INJECT an optional callback onto a sibling instance
+    # (`this.tac.onFocus = …`, called defensively as `if (this.onFocus)`), so an
+    # assignment from the app is a member too — the trap this check guards
+    # (`this.teamById` on AgentsView) still stays red, as nothing injects it.
+    members |= set(re.findall(r"this\.%s\.([A-Za-z_$][\w$]*)\s*=" % view, app_body))
     for member in sorted(set(re.findall(r"this\.%s\.([A-Za-z_$][\w$]*)" % view, app_body))):
         if member not in members:
             unknown.append("%s.%s" % (view, member))

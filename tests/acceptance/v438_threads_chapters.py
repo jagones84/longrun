@@ -272,8 +272,11 @@ check("10f the per-free rewind uses the chapter's anchor",
 check("10g the ledger fallback is guarded by a count match (compaction-safe)",
       "dets.length === _threadGroups.length" in idx)
 check("10h loadHistory re-applies thread titles after the rebuild",
-      re.search(r"applyThreadTitles\(\);\s*if \(_historyReplaySession === _historySid\) "
-                r"_historyReplaySession = null;", idx) is not None)
+      # 05c68d0 (2026-11-10) inserted the pending-user reconcile between the title
+      # re-apply and the replay-marker reset; the order is unchanged.
+      re.search(r"applyThreadTitles\(\);[\s\S]{0,400}?"
+                r"if \(_historyReplaySession === _historySid\) _historyReplaySession = null;",
+                idx) is not None)
 check("10i a finished turn refreshes the labels WITHOUT re-appending the chat",
       re.search(r"loadThreadTitles\(turnSession \|\| sessionId\)\.then\(applyThreadTitles\)", idx) is not None)
 # loadHistory APPENDS to #log (it does not clear it) — so every caller must clear first,

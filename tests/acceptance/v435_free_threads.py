@@ -34,7 +34,10 @@ def _fn(src, header):
         out.append(ln)
         if i == 0 and ln.rstrip().endswith("}"):
             break
-        if i > 0 and ln.strip() == "}":
+        # 2026-11-16: `who()` gained an indented block (the ↻ retry button) before
+        # its free-group wiring; stop at the function's own column-0 brace, not at
+        # the first indented `}`, or every body with a nested block is truncated.
+        if i > 0 and ln.startswith("}"):
             break
     return "\n".join(out)
 

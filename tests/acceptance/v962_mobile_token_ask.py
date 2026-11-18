@@ -45,8 +45,14 @@ check("B1 the stored token is validated at boot",
       "if (await tokenState(TOKEN) !== \"rejected\") return TOKEN;" in UI, "")
 check("B2 a rejected stored token is cleared before the ask",
       'TOKEN = ""; localStorage.removeItem("sf_token");' in UI, "")
+# 06cce0d (2026-11-14, "Never destroy a saved token on a rejected 401"): the ask now
+# receives the rejected token as its initial value and its result is still the value
+# written to `sf_token` — an accepted token replaces it, a cancelled dialog keeps the
+# saved one. Same intent: what the dialog returned is what the browser stores.
 check("B3 the ask result is what the browser stores",
-      "TOKEN = await askServerToken();" in UI
+      "const t = await askServerToken(TOKEN);" in UI
+      and 'if (t) { TOKEN = t; localStorage.setItem("sf_token", TOKEN); }' in UI
+      and 'TOKEN = (await askServerToken("")) || "";' in UI
       and 'localStorage.setItem("sf_token", TOKEN);' in UI, "")
 
 # --- C: an offline phone must not stall on the probe --------------------------

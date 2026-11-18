@@ -126,8 +126,14 @@ check("a job is refused when the coordinator produced no reply",
       "coordinator produced no final reply" in j)
 
 ui = read("webui", "index.html")
+# 05c68d0 (2026-11-10, "Keep the operator's own message in the chat") split the old
+# one-line attach into an early return + render + attach, still inside the GLOBAL
+# feed's `chat.user` listener (the last one in the file; the send path has its own).
+_chat_user = ui[ui.rindex('es.addEventListener("chat.user"'):]
+_chat_user = _chat_user[:_chat_user.index("});")]
 check("the feed follows a turn that starts on the open session",
-      "if (d.session && d.session === sessionId) attachIfRunning(sessionId);" in ui)
+      "if (!d.session || d.session !== sessionId) return;" in _chat_user
+      and "attachIfRunning(sessionId);" in _chat_user)
 check("the feed pulls the reply when the turn ends off-stream",
       "function _rebuildOnFeedDone(sid)" in ui and "_rebuildOnFeedDone(d.session);" in ui)
 check("the old one-line-only chat.done handler is gone",

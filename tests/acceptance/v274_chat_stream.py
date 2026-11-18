@@ -57,7 +57,11 @@ check("the latest activity is stamped on the bar", '_nowLast = "→ " + name;' i
 check("_openSection exists", "function _openSection(nid) {" in html)
 check("a node's section is REUSED and moved to the bottom (no duplicated tree)",
       'last.isConnected && last.parentNode === lg' in html
-      and "if (last.nextElementSibling) lg.appendChild(last);" in html)
+      # 05c68d0 (2026-11-10): a user message after the section is a turn boundary —
+      # the section is then history and stays ABOVE it; otherwise it is moved down.
+      and "const _next = last.nextElementSibling;" in html
+      and "if (_boundary) {" in html
+      and "if (_next) lg.appendChild(last);" in html)
 check("a section opens fresh only when the node has none yet",
       "const det = _mkSection(_nodeById(nid) || { id: nid, label: \"\", status: \"doing\" });" in html)
 check("_logAppend routes through _openSection",
