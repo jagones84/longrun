@@ -30,6 +30,8 @@ Usage:
   python3 forge.py setup run PLAN.json [--workspace DIR] [--reuse] [--state DIR]
   python3 forge.py invariants | manifest
   python3 forge.py skills stale [--json] | skills value FILE.json | skills repair FILE.json --map old=new
+  python3 forge.py reuse audit FILE.json [--allow t1,t2] | principals check FILE.json
+  python3 forge.py residency plan FILE.json --capacity N [--current SID]
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -1482,6 +1484,65 @@ def cmd_skills(args):
                      indent=2, ensure_ascii=False))
 
 
+def cmd_reuse(args):
+    """Round 110 (arXiv:2611.09254): repeated deterministic reads in a card file."""
+    from longrun.harness import reuse
+    path = getattr(args, "file", None)
+    if not path:
+        print("usage: reuse audit FILE.json [--allow a,b]", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    cards = doc.get("cards") if isinstance(doc, dict) else doc
+    allow = None
+    if getattr(args, "allow", None):
+        allow = [t.strip() for t in str(args.allow).split(",") if t.strip()]
+    out = reuse.audit(cards or [], allow=allow)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+
+
+def cmd_principals(args):
+    """Round 110 (arXiv:2611.08768): principal-context authorization + laundering."""
+    from longrun.harness import principals
+    path = getattr(args, "file", None)
+    if not path:
+        print("usage: principals check FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    out = principals.check(doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0 if out.get("allow") else 1)
+
+
+def cmd_residency(args):
+    """Round 110 (arXiv:2611.13412): the park/admit band over a session file."""
+    from longrun.util import residency
+    path = getattr(args, "file", None)
+    if not path:
+        print("usage: residency plan FILE.json --capacity N [--current SID]",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    sessions = doc.get("sessions") if isinstance(doc, dict) else doc
+    out = residency.plan(sessions or [], getattr(args, "capacity", 0),
+                         current=getattr(args, "current", None))
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+
+
 def cmd_invariants(_):
     """Round 107 (arXiv:2611.19960): the corner cases written down as checks."""
     from longrun.harness import invariants
@@ -1868,6 +1929,18 @@ def main():
         p.add_argument("--write", action="store_true",
                        help="repair: write the result back to the file"); \
         p.set_defaults(fn=cmd_skills)
+    p = sub.add_parser("reuse"); p.add_argument("action", choices=["audit"]); \
+        p.add_argument("file", nargs="?", help="JSON: a card list or {\"cards\": [...]}"); \
+        p.add_argument("--allow", help="comma-separated read-only tool allowlist"); \
+        p.set_defaults(fn=cmd_reuse)
+    p = sub.add_parser("principals"); p.add_argument("action", choices=["check"]); \
+        p.add_argument("file", nargs="?", help="JSON: action, influences, permissions, objects"); \
+        p.set_defaults(fn=cmd_principals)
+    p = sub.add_parser("residency"); p.add_argument("action", choices=["plan"]); \
+        p.add_argument("file", nargs="?", help="JSON: a session list or {\"sessions\": [...]}"); \
+        p.add_argument("--capacity", type=int, default=0, help="cache pool size in tokens"); \
+        p.add_argument("--current", help="the session that reached a turn boundary"); \
+        p.set_defaults(fn=cmd_residency)
     sub.add_parser("selfcheck").set_defaults(fn=cmd_selfcheck)
     p = sub.add_parser("providers"); p.add_argument("action", nargs="?", default="ls", choices=["ls", "add", "rm", "default", "rm-model"]); \
         p.add_argument("value", nargs="?"); p.set_defaults(fn=cmd_providers)

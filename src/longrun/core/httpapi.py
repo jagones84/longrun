@@ -2944,6 +2944,33 @@ class Handler(BaseHTTPRequestHandler):
             import longrun.tools.registry as _reg
             return self._send(200, skills_maintenance.maintain(
                 os.path.join(_reg.REPO, "skills"), repo=_reg.REPO))
+        if path.startswith("/api/sessions/") and path.endswith("/reuse"):
+            # Round 110 (arXiv:2611.09254): repeated deterministic tool reads in
+            # the stored cards — what safe reuse would have saved, and which keys
+            # produced different outputs (unsafe, never reused). Read-only.
+            sid = path[len("/api/sessions/"):-len("/reuse")].strip("/")
+            if not sid or "/" in sid or ".." in sid:
+                return self._send(404, {"error": "session not found"})
+            sess = load_session(sid)
+            if not sess:
+                return self._send(404, {"error": "session not found"})
+            from longrun.harness import reuse
+            allow = [t.strip() for t in (qs.get("allow") or "").split(",") if t.strip()] or None
+            return self._send(200, reuse.audit(sess.get("tool_cards") or [], allow=allow,
+                                              version=qs.get("version") or ""))
+        if path == "/api/residency":
+            # Round 110 (arXiv:2611.13412): the park/admit band over the sessions
+            # that exist right now. `capacity` (the cache pool, tokens) is
+            # required; the caller's pool size is not something we can invent.
+            cap = _int_arg(qs, "capacity", 0)
+            if cap <= 0:
+                return self._send(400, {"error": "capacity (tokens) required"})
+            from longrun.memory.stores import list_sessions
+            from longrun.util import residency
+            rows = [{"id": r.get("id"), "ctx_tokens": r.get("ctx_tokens") or 0,
+                     "admitted": bool(r.get("running"))}
+                    for r in list_sessions()]
+            return self._send(200, residency.plan(rows, cap, current=qs.get("current")))
         if path.startswith("/api/sessions/") and path.endswith("/transport"):
             # Round 108 (arXiv:2611.18471): what compaction kept of the evidence a
             # verifier would cite, and the provenance block that restores it.
