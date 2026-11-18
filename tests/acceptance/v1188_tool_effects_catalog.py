@@ -55,10 +55,10 @@ check("a mutating declaration names the resource it writes",
       all(v.get("writes") for v in REG.TOOL_EFFECTS.values()
           if v.get("effect") in ("write", "delete", "append", "external")))
 
-check("a declared read tool publishes its effect",
+check("a declared read tool publishes its effect and its idempotency",
       rows["fs.read"].get("effect") == "read"
       and rows["fs.read"].get("reads") == ["file"]
-      and rows["fs.read"].get("idempotent") is False, rows.get("fs.read"))
+      and rows["fs.read"].get("idempotent") is True, rows.get("fs.read"))
 check("a declared write tool publishes non-idempotency",
       rows["fs.write"].get("effect") == "write"
       and rows["fs.write"].get("idempotent") is False
@@ -84,6 +84,13 @@ check("coverage counts exactly the declared tools",
       {"typed": cov["typed"], "untyped": cov["untyped"], "total": len(rows)})
 check("a partially typed catalog is reported as partial, never as untyped",
       cov["verdict"] == "partial" and cov["invalid"] == [], cov["verdict"])
+check("coverage counts exactly the idempotent declarations",
+      0 < cov["idempotent"] == sum(1 for v in REG.TOOL_EFFECTS.values() if v.get("idempotent"))
+      and all(v.get("idempotent") for v in REG.TOOL_EFFECTS.values()
+              if v.get("effect") == "read"), cov)
+check("no mutating tool claims idempotency without proof",
+      not any(v.get("idempotent") for v in REG.TOOL_EFFECTS.values()
+              if v.get("effect") in ("write", "delete", "append", "external")))
 check("every declared tool exists in the live catalog",
       set(REG.TOOL_EFFECTS) <= set(rows),
       sorted(set(REG.TOOL_EFFECTS) - set(rows)))
@@ -106,6 +113,21 @@ undecl = ET.verify_trace([{"tool": "sessions.list"}], catalog)
 check("an undeclared live tool still makes a trace unverifiable",
       undecl["verdict"] == "unsafe"
       and any(f["kind"] == "undeclared-tool" for f in undecl["findings"]), undecl)
+
+# ---- 4. the declarations feed the tool graph (round 121) --------------------
+from longrun.harness import tool_graph as TG          # noqa: E402
+lg = TG.build(list(rows.values()))
+ledges = {(e["from"], e["to"]): e for e in lg["edges"]}
+check("the live catalog yields a typed writer->reader edge",
+      ("memory.store", "memory.recall") in ledges
+      and any(r.startswith("effect:memory") for r in
+              ledges[("memory.store", "memory.recall")]["reasons"]),
+      ledges.get(("memory.store", "memory.recall")))
+check("a reader is not chained back into the writer",
+      ("memory.recall", "memory.store") not in ledges)
+check("an untyped live tool contributes no effect edge",
+      not any(r.startswith("effect:") for e in lg["edges"]
+              for r in e["reasons"] if e["from"] == "sessions.list"))
 
 print("\n%d/%d checks passed" % (sum(RESULTS), len(RESULTS)))
 sys.exit(0 if all(RESULTS) else 1)

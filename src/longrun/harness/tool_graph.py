@@ -11,7 +11,9 @@ module keeps explicit: a value defined over tool TYPES cannot separate a correct
 tool called with a wrong argument — so the feedback always names the required
 arguments and the missing ones.
 
-  * `build(catalog, transitions, probes)` -> nodes + scored edges;
+  * `build(catalog, transitions, probes)` -> nodes + scored edges; a catalog row
+    that declares its effect contributes a typed edge from a writer of a resource
+    to the readers of that same resource (round 121, arXiv:2610.35981 rows);
   * `rank(graph, after)` -> candidate next tools, by incoming confidence;
   * `feedback(graph, goal, candidate, state_types)` -> action-goal feedback that
     says what the candidate needs and what the state provides.
@@ -25,6 +27,7 @@ BASE_PARAM = 0.4
 OBS_GAIN = 0.2
 PROBE_GAIN = 0.4
 FAIL_PENALTY = 0.2
+EFFECT_GAIN = 0.3
 
 
 def _spec(tool):
@@ -54,9 +57,15 @@ def _match(out, inp):
 
 def build(catalog, transitions=None, probes=None):
     nodes = {}
+    typed = {}
     for tool in catalog or ():
         if isinstance(tool, dict) and tool.get("name"):
             nodes[str(tool["name"])] = _spec(tool)
+            if tool.get("writes") or tool.get("reads"):
+                typed[str(tool["name"])] = {
+                    "reads": [str(r) for r in tool.get("reads") or ()],
+                    "writes": [str(r) for r in tool.get("writes") or ()],
+                }
     edges = {}
 
     def _edge(a, b):
@@ -79,6 +88,20 @@ def build(catalog, transitions=None, probes=None):
                 else:
                     continue
                 break
+
+    # Round 121: a declared writer precedes the readers of the resource it writes.
+    # Two writers of the same resource are NOT chained — that is a conflict, and
+    # the effect checker owns that verdict, not this graph.
+    for a, ea in typed.items():
+        for b, eb in typed.items():
+            if a == b or not ea["writes"]:
+                continue
+            shared = sorted(set(ea["writes"]) & set(eb["reads"]))
+            if not shared:
+                continue
+            e = _edge(a, b)
+            e["reasons"].append("effect:%s" % ",".join(shared))
+            e["confidence"] = min(1.0, e["confidence"] + EFFECT_GAIN)
 
     for t in transitions or ():
         if not isinstance(t, dict):

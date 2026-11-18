@@ -153,6 +153,21 @@ e3 = next(e for e in g3["edges"] if e["from"] == "code.search" and e["to"] == "e
 check("a probe that works without the predecessor lowers the edge",
       e3["confidence"] < 0.4 and any("not needed" in r for r in e3["reasons"]), e3)
 
+# Round 121: a declared effect contributes a typed writer->reader edge.
+TYPED = [
+    {"name": "mem.store", "effect": "append", "writes": ["memory"]},
+    {"name": "mem.recall", "effect": "read", "reads": ["memory"]},
+    {"name": "file.dump", "effect": "write", "writes": ["file"]},
+]
+gt = TG.build(TYPED)
+tedges = {(e["from"], e["to"]): e for e in gt["edges"]}
+check("a declared writer precedes the reader of that resource",
+      ("mem.store", "mem.recall") in tedges
+      and any(r == "effect:memory" for r in tedges[("mem.store", "mem.recall")]["reasons"]),
+      tedges.get(("mem.store", "mem.recall")))
+check("two writers of the same resource are not chained",
+      ("mem.store", "file.dump") not in tedges and ("file.dump", "mem.store") not in tedges)
+
 ranked = TG.rank(g2, after="code.search")
 check("ranking returns the strongest next tool after a given one",
       ranked and ranked[0]["tool"] == "edit.apply" and ranked[0]["confidence"] == 1.0, ranked)

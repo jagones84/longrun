@@ -41,6 +41,7 @@ Usage:
   python3 forge.py recovery adjudicate FILE.json | effects coverage|verify FILE.json | context cost FILE.json
   python3 forge.py commit decide FILE.json | expectations verify FILE.json | governance decide FILE.json
   python3 forge.py capsule compile|replay FILE.json | flow judge FILE.json | selfdirected audit FILE.json
+  python3 forge.py harnessevo diagnose|admit FILE.json | contextpipeline deliver FILE.json | stepzero extract FILE.json
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -850,6 +851,79 @@ def cmd_selfdirected(args):
            else self_directed.audit(doc))
     print(json.dumps(out, indent=2, ensure_ascii=False))
     sys.exit(0 if out.get("verdict") in ("self-directed", "improved", None) else 1)
+
+
+def cmd_harnessevo(args):
+    """Round 121 (arXiv:2611.22299): attribute a failure and gate a harness edit."""
+    from longrun.harness import harness_evolution
+    if not getattr(args, "file", None):
+        print("usage: harnessevo diagnose|admit|bloat FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "diagnose":
+        out = harness_evolution.diagnose(doc)
+    elif args.action == "bloat":
+        out = harness_evolution.bloat(doc.get("rules") or doc)
+    else:
+        out = harness_evolution.admit(doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0 if out.get("attribution") in ("harness", None)
+             and out.get("decision") in ("merge", "route", "keep", None) else 1)
+
+
+def cmd_contextpipeline(args):
+    """Round 121 (arXiv:2610.36114): measure what a tool result loses before delivery."""
+    from longrun.harness import context_pipeline
+    if not getattr(args, "file", None):
+        print("usage: contextpipeline boundaries | deliver|profile FILE.json", file=sys.stderr)
+        sys.exit(2)
+    if args.action == "boundaries":
+        print(json.dumps(context_pipeline.boundaries(), indent=2, ensure_ascii=False))
+        sys.exit(0)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "deliver":
+        out = context_pipeline.deliver(doc.get("payload") or doc,
+                                       doc.get("budget", 0), doc.get("mode", "prefix"))
+    else:
+        out = context_pipeline.profile(doc.get("runs") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0 if out.get("ok", True) else 1)
+
+
+def cmd_stepzero(args):
+    """Round 121 (arXiv:2611.01953): gate the first processing of an opaque carrier."""
+    from longrun.harness import step_zero
+    if not getattr(args, "file", None):
+        print("usage: stepzero peek|extract|bind FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    budget = doc.get("budget", step_zero.DEFAULT_BUDGET)
+    if args.action == "peek":
+        out = step_zero.peek(doc.get("members") or doc, budget)
+    elif args.action == "extract":
+        out = step_zero.extract(doc.get("members") or doc, budget,
+                                doc.get("protect"), bool(doc.get("allow_overwrite")))
+    else:
+        out = step_zero.bind_write(doc.get("declared_name"), doc.get("body_sha"),
+                                   doc.get("declared_sha"), doc.get("protect"),
+                                   bool(doc.get("allow_overwrite")))
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0 if out.get("decision") in ("safe", "commit", "write", None) else 1)
 
 
 def cmd_instructions(args):
@@ -2426,6 +2500,16 @@ def main():
     p = sub.add_parser("selfdirected"); p.add_argument("action", choices=["audit", "transfer"]); \
         p.add_argument("file", nargs="?", help="JSON: a self-improvement run record"); \
         p.set_defaults(fn=cmd_selfdirected)
+    p = sub.add_parser("harnessevo"); p.add_argument("action", choices=["diagnose", "admit", "bloat"]); \
+        p.add_argument("file", nargs="?", help="JSON: rollouts, or one candidate edit, or rules"); \
+        p.set_defaults(fn=cmd_harnessevo)
+    p = sub.add_parser("contextpipeline"); \
+        p.add_argument("action", choices=["boundaries", "deliver", "profile"]); \
+        p.add_argument("file", nargs="?", help="JSON: {payload, budget, mode} or {runs}"); \
+        p.set_defaults(fn=cmd_contextpipeline)
+    p = sub.add_parser("stepzero"); p.add_argument("action", choices=["peek", "extract", "bind"]); \
+        p.add_argument("file", nargs="?", help="JSON: {members, budget, protect} or {declared_name, body_sha, declared_sha}"); \
+        p.set_defaults(fn=cmd_stepzero)
     p = sub.add_parser("instructions"); p.add_argument("action", choices=["audit"]); \
         p.add_argument("file", nargs="?", help="JSON: {text, cards}"); \
         p.set_defaults(fn=cmd_instructions)

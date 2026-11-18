@@ -1628,23 +1628,27 @@ KNOWN_NAMESPACES = frozenset(k.split(".", 1)[0] for k in TOOL_SCHEMAS.keys()) | 
 # the ONE owner of the declaration: it is published on the catalogue row and never
 # copied into a second table.
 TOOL_EFFECTS = {
-    "fs.read": {"effect": "read", "reads": ["file"]},
+    # Round 121: a pure read is idempotent by definition — repeating it produces no
+    # additional effect and returns the same content while the resource is
+    # unchanged (the HTTP GET convention). Only reads are declared this way; a
+    # mutating tool stays False until repeating it is provably a no-op.
+    "fs.read": {"effect": "read", "idempotent": True, "reads": ["file"]},
     "fs.write": {"effect": "write", "idempotent": False, "writes": ["file"]},
     "fs.edit": {"effect": "write", "idempotent": False,
                 "reads": ["file"], "writes": ["file"]},
     "shell.exec": {"effect": "external", "idempotent": False, "writes": ["host"]},
     "python.run": {"effect": "external", "idempotent": False, "writes": ["host"]},
     "git.run": {"effect": "external", "idempotent": False, "writes": ["repo"]},
-    "web.search": {"effect": "read", "reads": ["network"]},
-    "web.fetch": {"effect": "read", "reads": ["network"]},
-    "http.fetch": {"effect": "read", "reads": ["network"]},
-    "memory.recall": {"effect": "read", "reads": ["memory"]},
+    "web.search": {"effect": "read", "idempotent": True, "reads": ["network"]},
+    "web.fetch": {"effect": "read", "idempotent": True, "reads": ["network"]},
+    "http.fetch": {"effect": "read", "idempotent": True, "reads": ["network"]},
+    "memory.recall": {"effect": "read", "idempotent": True, "reads": ["memory"]},
     "memory.store": {"effect": "append", "idempotent": False, "writes": ["memory"]},
     "sessions.send": {"effect": "external", "idempotent": False, "writes": ["session"]},
     "agent.delete": {"effect": "delete", "idempotent": False,
                      "reads": ["agent"], "writes": ["agent"]},
-    "skills.read": {"effect": "read", "reads": ["skill"]},
-    "skills.search": {"effect": "read", "reads": ["skill"]},
+    "skills.read": {"effect": "read", "idempotent": True, "reads": ["skill"]},
+    "skills.search": {"effect": "read", "idempotent": True, "reads": ["skill"]},
     "docs.plan": {"effect": "write", "idempotent": False, "writes": ["document"]},
 }
 
