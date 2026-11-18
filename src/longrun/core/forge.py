@@ -34,6 +34,7 @@ Usage:
   python3 forge.py residency plan FILE.json --capacity N [--current SID]
   python3 forge.py procedure run FILE.json | intent check|audit FILE.json
   python3 forge.py handoff audit FILE.json
+  python3 forge.py approvals audit FILE.json | autonomy check FILE.json | skills prune FILE.json
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -448,6 +449,23 @@ def cmd_tools(args):
 
 
 def cmd_approvals(args):
+    if args.action == "audit":
+        # Round 112 (arXiv:2611.19237): refusal safety vs authorization
+        # completeness over caller-supplied decision/call/dispatch/effect records.
+        from longrun.harness import approval_audit
+        if not args.value:
+            print("usage: approvals audit FILE.json", file=sys.stderr)
+            sys.exit(2)
+        try:
+            with open(args.value, encoding="utf-8") as fh:
+                doc = json.load(fh)
+        except (OSError, ValueError) as e:
+            print("bad file:", e, file=sys.stderr)
+            sys.exit(2)
+        rows = doc.get("records") if isinstance(doc, dict) else doc
+        out = approval_audit.audit(rows or [])
+        print(json.dumps(out, indent=2, ensure_ascii=False))
+        sys.exit(0 if out.get("verdict") == "clean" else 1)
     if args.action == "ls":
         out = req("GET", "/api/approvals")
         print("stats:", json.dumps(out.get("stats", {})))
@@ -1443,6 +1461,27 @@ def cmd_setup(args):
 def cmd_skills(args):
     """Round 109: skill staleness, paired value, explicit repair (arXiv:2611.22525, -22017)."""
     from longrun.harness import skills_maintenance, skill_value
+    if args.action == "prune":
+        # Round 112 (arXiv:2611.19823): compact a skill without touching contract lines.
+        from longrun.harness import skill_prune
+        path = getattr(args, "value", None)
+        if not path:
+            print("usage: skills prune FILE.json [--budget N] [--write]", file=sys.stderr)
+            sys.exit(2)
+        try:
+            with open(path, encoding="utf-8") as fh:
+                doc = json.load(fh)
+        except (OSError, ValueError) as e:
+            print("bad file:", e, file=sys.stderr)
+            sys.exit(2)
+        text = doc.get("text") if isinstance(doc, dict) else doc
+        out = skill_prune.prune(text or "", budget_tokens=getattr(args, "budget", None))
+        if getattr(args, "write", False):
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(out["text"])
+        print(json.dumps({k: v for k, v in out.items() if k != "text"},
+                         indent=2, ensure_ascii=False))
+        return
     if args.action == "stale":
         import longrun.tools.registry as _reg
         out = skills_maintenance.maintain(os.path.join(_reg.REPO, "skills"),
@@ -1484,6 +1523,24 @@ def cmd_skills(args):
             fh.write(res["text"])
     print(json.dumps({"changes": res["changes"], "written": bool(getattr(args, "write", False))},
                      indent=2, ensure_ascii=False))
+
+
+def cmd_autonomy(args):
+    """Round 112 (arXiv:2611.10058): bounded/observable/reversible autonomy scorecard."""
+    from longrun.harness import autonomy
+    path = getattr(args, "file", None)
+    if not path:
+        print("usage: autonomy check FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    rows = doc.get("actions") if isinstance(doc, dict) else doc
+    out = autonomy.scoreboard(rows or [])
+    print(json.dumps(out, indent=2, ensure_ascii=False))
 
 
 def cmd_reuse(args):
@@ -1894,7 +1951,7 @@ def main():
         p.add_argument("value", nargs="?"); p.add_argument("value2", nargs="?"); \
         p.set_defaults(fn=cmd_tools)
     p = sub.add_parser("approvals"); \
-        p.add_argument("action", choices=["ls", "show", "approve", "deny", "rm", "clear"]); \
+        p.add_argument("action", choices=["ls", "show", "approve", "deny", "rm", "clear", "audit"]); \
         p.add_argument("value", nargs="?"); p.add_argument("--status"); \
         p.add_argument("--all", action="store_true"); p.set_defaults(fn=cmd_approvals)
     p = sub.add_parser("runs"); \
@@ -1983,13 +2040,18 @@ def main():
     sub.add_parser("self").set_defaults(fn=cmd_self)
     sub.add_parser("invariants").set_defaults(fn=cmd_invariants)
     sub.add_parser("manifest").set_defaults(fn=cmd_manifest)
-    p = sub.add_parser("skills"); p.add_argument("action", choices=["stale", "value", "repair"]); \
-        p.add_argument("value", nargs="?", help="value/repair: the JSON file"); \
+    p = sub.add_parser("skills"); p.add_argument("action", choices=["stale", "value", "repair", "prune"]); \
+        p.add_argument("value", nargs="?", help="value/repair/prune: the JSON file"); \
         p.add_argument("--map", action="append",
                        help="repair: exact rename, old=new (repeatable)"); \
+        p.add_argument("--budget", type=int, default=None,
+                       help="prune: token budget (chars/4 estimate)"); \
         p.add_argument("--write", action="store_true",
-                       help="repair: write the result back to the file"); \
+                       help="repair/prune: write the result back to the file"); \
         p.set_defaults(fn=cmd_skills)
+    p = sub.add_parser("autonomy"); p.add_argument("action", choices=["check"]); \
+        p.add_argument("file", nargs="?", help="JSON: {actions:[{action, allowlist, ...}]} or a list"); \
+        p.set_defaults(fn=cmd_autonomy)
     p = sub.add_parser("reuse"); p.add_argument("action", choices=["audit"]); \
         p.add_argument("file", nargs="?", help="JSON: a card list or {\"cards\": [...]}"); \
         p.add_argument("--allow", help="comma-separated read-only tool allowlist"); \
