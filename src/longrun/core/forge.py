@@ -42,6 +42,7 @@ Usage:
   python3 forge.py commit decide FILE.json | expectations verify FILE.json | governance decide FILE.json
   python3 forge.py capsule compile|replay FILE.json | flow judge FILE.json | selfdirected audit FILE.json
   python3 forge.py harnessevo diagnose|admit FILE.json | contextpipeline deliver FILE.json | stepzero extract FILE.json
+  python3 forge.py harnessrecord audit FILE.json | conduct score FILE.json | completion check FILE.json
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -924,6 +925,70 @@ def cmd_stepzero(args):
                                    bool(doc.get("allow_overwrite")))
     print(json.dumps(out, indent=2, ensure_ascii=False))
     sys.exit(0 if out.get("decision") in ("safe", "commit", "write", None) else 1)
+
+
+def cmd_harnessrecord(args):
+    """Round 122 (arXiv:2610.40917): is the harness that ran described, and did it stay in envelope?"""
+    from longrun.harness import harness_record
+    if not getattr(args, "file", None):
+        print("usage: harnessrecord audit|degradation|drift FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "audit":
+        out = harness_record.audit(doc)
+    elif args.action == "degradation":
+        out = harness_record.degradation(doc.get("changes") or doc,
+                                         doc.get("declared") or {})
+    else:
+        out = harness_record.drift(doc.get("declared") or {},
+                                  doc.get("observed") or {})
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0 if out.get("ok") is not False and out.get("decision") != "block" else 1)
+
+
+def cmd_conduct(args):
+    """Round 122 (arXiv:2611.06116): score the action log, then compare it with the message."""
+    from longrun.harness import conduct_audit
+    if not getattr(args, "file", None):
+        print("usage: conduct score|stated|matrix FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "score":
+        out = conduct_audit.score(doc.get("episode") or doc)
+    elif args.action == "stated":
+        out = conduct_audit.stated(doc.get("episode") or doc)
+    else:
+        out = conduct_audit.matrix(doc.get("rows") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0 if out.get("outcome") in ("correct", None) and out.get("agrees") is not False else 1)
+
+
+def cmd_completion(args):
+    """Round 122 (arXiv:2611.21407): an exit status is not a deliverable."""
+    from longrun.harness import completion_gate
+    if not getattr(args, "file", None):
+        print("usage: completion check|ladder FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    out = (completion_gate.ladder(doc.get("rows") or doc) if args.action == "ladder"
+           else completion_gate.check(doc.get("run") or doc))
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0 if out.get("complete") is not False else 1)
 
 
 def cmd_instructions(args):
@@ -2510,6 +2575,16 @@ def main():
     p = sub.add_parser("stepzero"); p.add_argument("action", choices=["peek", "extract", "bind"]); \
         p.add_argument("file", nargs="?", help="JSON: {members, budget, protect} or {declared_name, body_sha, declared_sha}"); \
         p.set_defaults(fn=cmd_stepzero)
+    p = sub.add_parser("harnessrecord"); \
+        p.add_argument("action", choices=["audit", "degradation", "drift"]); \
+        p.add_argument("file", nargs="?", help="JSON: a harness record, or {changes, declared}, or {declared, observed}"); \
+        p.set_defaults(fn=cmd_harnessrecord)
+    p = sub.add_parser("conduct"); p.add_argument("action", choices=["score", "stated", "matrix"]); \
+        p.add_argument("file", nargs="?", help="JSON: {episode} or {rows}"); \
+        p.set_defaults(fn=cmd_conduct)
+    p = sub.add_parser("completion"); p.add_argument("action", choices=["check", "ladder"]); \
+        p.add_argument("file", nargs="?", help="JSON: {run} or {rows}"); \
+        p.set_defaults(fn=cmd_completion)
     p = sub.add_parser("instructions"); p.add_argument("action", choices=["audit"]); \
         p.add_argument("file", nargs="?", help="JSON: {text, cards}"); \
         p.set_defaults(fn=cmd_instructions)
