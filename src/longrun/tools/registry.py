@@ -2889,10 +2889,18 @@ def _tee_target(seg):
 
 _EXEC_VERBS = ("bash", "sh", "zsh", "dash", "ksh", "source", "exec", "eval",
                "python", "python3", "node", "perl", "ruby", "php")
+# A wrapper that carries a program it does not name itself (`xargs`, `sudo`, …)
+# still means "this command runs code". Measured 2026-11-18 (round 97): six
+# shapes — xargs, `sh -c`, `eval`, `<(cat f)`, nohup, sudo — were auto on a body
+# that had just been written and then executed.
+_EXEC_WRAPPERS = ("xargs", "nohup", "sudo", "env", "command", "time", "nice")
+_EXEC_TOKEN = re.compile(r"(?:^|[;&|(\n\s])(?:%s)(?=$|[\s;|&)])"
+                         % "|".join(_EXEC_VERBS + _EXEC_WRAPPERS))
 
 
 def _executes(target, text):
-    """True when `text` runs `target` as code (an interpreter, `. f`, or `f`)."""
+    """True when `text` can run `target` as code (interpreter, `. f`, `f`, or a
+    wrapper around any of those)."""
     if not target:
         return False
     t = re.escape(target)
@@ -2903,7 +2911,9 @@ def _executes(target, text):
         r"(?:^|[;&|(\n])[ \t]*\.[ \t]+%s%s" % (t, stop),
         r"(?:^|[;&|(\n])[ \t]*%s%s" % (t, stop),
     )
-    return any(re.search(p, text) for p in pats)
+    if any(re.search(p, text) for p in pats):
+        return True
+    return target in text and bool(_EXEC_TOKEN.search(text))
 
 
 def _deny_text(text):

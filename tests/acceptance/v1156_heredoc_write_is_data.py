@@ -157,6 +157,25 @@ check("F7 a READ of the file just filled is still data", not _D, _W)
 _D, _W = denied("cat > /tmp/r96_h.txt <<'EOF'\ncat .env\nEOF\ngrep -c . /tmp/r96_h.txt")
 check("F8 grep on the file just filled is still data", not _D, _W)
 
+# ---- G: a WRAPPER still runs the file (round 97, A54's untested list) -------
+for name, cmd in (
+        ("G1 xargs", "cat > /tmp/r97_a.sh <<'EOF'\ncat .env\nEOF\n"
+                     "xargs -0 bash /tmp/r97_a.sh < /dev/null"),
+        ("G2 `sh -c`", "cat > /tmp/r97_b.sh <<'EOF'\ncat .env\nEOF\n"
+                       "sh -c 'bash /tmp/r97_b.sh'"),
+        ("G3 eval", "cat > /tmp/r97_c.sh <<'EOF'\ncat .env\nEOF\n"
+                    "eval \"bash /tmp/r97_c.sh\""),
+        ("G4 process substitution", "cat > /tmp/r97_d.sh <<'EOF'\ncat .env\nEOF\n"
+                                    "bash <(cat /tmp/r97_d.sh)"),
+        ("G5 nohup", "cat > /tmp/r97_e.sh <<'EOF'\ncat .env\nEOF\nnohup bash /tmp/r97_e.sh"),
+        ("G6 sudo", "cat > /tmp/r97_f.sh <<'EOF'\ncat .env\nEOF\nsudo -n bash /tmp/r97_f.sh"),
+):
+    _D, _W = denied(cmd)
+    check("%s still counts as running the file" % name, _D, _W)
+
+_D, _W = denied("cat > /tmp/r97_g.txt <<'EOF'\ncat .env\nEOF\nwc -c < /tmp/r97_g.txt")
+check("G7 a read stays data beside a wrapper-free command", not _D, _W)
+
 print()
 print("%d/%d OK" % (sum(1 for r in results if r), len(results)))
 sys.exit(0 if all(results) else 1)
