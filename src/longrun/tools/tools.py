@@ -2686,12 +2686,24 @@ def _improve(args, run_id=None):
                      ("[refreshed] %s — %s failure(s), evidence updated"
                       % (w.get("issue"), w.get("count")))
                      for w in rep.get("refreshed") or [])
+        # Round 62: an orphan draft is marked, not deleted — say so, with the
+        # successor when the same tool still has a class.
+        lines.extend("[stale] %s — no class at this id any more%s"
+                     % (w.get("issue"),
+                        (" (the current one is %s)" % w["successor"])
+                        if w.get("successor") else "")
+                     for w in rep.get("stale") or [])
         # Round 34: a draft that carries a fix states its OUTCOME in the same
         # answer — the loop closes where it started. Round 35: with its window's
         # denominator, because "0 in 0 sessions" is not "resolved".
         st = selfevolve.repair_states(out)
         for s in st.get("states") or []:
             if s.get("status") == "proposed":
+                continue
+            # Round 62: a stale draft has no window and no fix — its sentence is
+            # the `[stale]` line above, and "0 occurrence(s) in the 0 session(s)
+            # after the fix" would invent a measurement that does not exist.
+            if s.get("status") == "stale":
                 continue
             window = _window_label(s)
             lines.append("[%s] %s — %s" % (
@@ -2713,7 +2725,7 @@ def _improve(args, run_id=None):
         else:
             text = "(no issue at or above %s)" % rep.get("severity")
         return {"ok": True, "dir": rep.get("dir"), "written": rep.get("written"),
-                "refreshed": rep.get("refreshed"),
+                "refreshed": rep.get("refreshed"), "stale": rep.get("stale"),
                 "skipped": rep.get("skipped"), "issues": rep.get("issues"),
                 "severity": rep.get("severity"), "runs": rep.get("runs"),
                 "sessions": rep.get("sessions"), "since": rep.get("since"),

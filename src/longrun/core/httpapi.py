@@ -2216,6 +2216,9 @@ def improvement_repairs():
             # `open` is a draft nobody has closed yet; a fix with no session after
             # it is `unobserved`, which is not open work — it is waiting for data.
             "open": sum(1 for s in states if s.get("status") == "proposed"),
+            # Round 62: a draft whose class left the register is kept as a record
+            # but is not work — counted apart so `open` never includes it.
+            "stale": sum(1 for s in states if s.get("status") == "stale"),
             "sessions": int(rep.get("sessions") or 0),
             # Round 39: the second denominator — a class that lives in harness
             # run records is judged there too.

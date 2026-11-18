@@ -1403,6 +1403,18 @@ def _status_text(prop):
     stop, so the Status section is derived from the record, never left behind.
     """
     fix = prop.get("fix") if isinstance(prop.get("fix"), dict) else None
+    stale = prop.get("stale") if isinstance(prop.get("stale"), dict) else None
+    if not fix and stale:
+        # Round 62: the class this draft names is gone from the register. The
+        # record stays (it is why the draft existed), but it must not read as work.
+        when = time.strftime("%Y-%m-%d %H:%M",
+                             time.localtime(float(stale.get("ts") or 0)))
+        succ = stale.get("successor")
+        return ("**STALE** since %s — %s. Kept as a record: nothing here is open "
+                "work, because no call can fail this way any more. %s\n"
+                % (when, stale.get("reason") or "the register no longer produces this id",
+                   ("The current draft for the same tool is `%s`." % succ) if succ
+                   else "No current draft shares this tool."))
     if not fix:
         return ("DRAFT — material, not a change. Nothing was executed and no policy "
                 "was touched; state the fix, apply it through the normal gate, and "
@@ -1568,7 +1580,47 @@ def issue_drafts(out_dir, limit=5, min_severity="warning", sessions_dir=None,
                         "count": prop["count"], "sessions": prop["sessions"],
                         "repeats": prop.get("repeats"),
                         "check": prop["check"]})
+    # Round 62: an ORPHAN draft — an id the register no longer produces — is kept
+    # as a record but must stop reading as open work. Measured 2026-11-18: 6 of 37
+    # drafts named classes that had vanished (`fail-http-fetch-nonzero-exit` next
+    # to the live `web.fetch` one), and both the panel and `open` counted them.
+    # Only an ALL-TIME read can say an id is gone; a window is a partial view.
+    stale = []
+    if rep.get("since") is None:
+        live_ids = {str(i.get("id") or "") for i in issues}
+        successor_of = {str(i.get("tool") or ""): str(i.get("id") or "")
+                        for i in issues}
+        try:
+            names = sorted(n for n in os.listdir(out_dir)
+                           if os.path.isfile(os.path.join(out_dir, n,
+                                                          "proposal.json")))
+        except OSError:
+            names = []
+        for name in names:
+            if name in live_ids:
+                continue
+            draft_json = os.path.join(out_dir, name, "proposal.json")
+            prev = _read_json(draft_json)
+            if not isinstance(prev, dict) or prev.get("kind") != "repair":
+                continue
+            if prev.get("fix") or prev.get("status") in ("fixed", "resolved"):
+                continue          # history: a fixed draft is never reclassified
+            if prev.get("stale"):
+                continue          # already marked — idempotent
+            succ = successor_of.get(str(prev.get("tool") or ""))
+            prev["status"] = "stale"
+            prev["stale"] = {"ts": round(time.time(), 3),
+                             "reason": "no class at this id in the register",
+                             "successor": succ}
+            try:
+                write_json(draft_json, prev)
+                _stamp_status(os.path.join(out_dir, name, "REPAIR.md"), prev)
+            except OSError:
+                continue
+            stale.append({"issue": name, "tool": prev.get("tool"),
+                          "family": prev.get("family"), "successor": succ})
     return {"ok": True, "dir": out_dir, "written": written, "refreshed": refreshed,
+            "stale": stale,
             "skipped": skipped,
             "issues": len(issues), "severity": str(min_severity),
             "runs": rep.get("runs"), "sessions": rep.get("sessions"),
@@ -1596,7 +1648,12 @@ def mine_history(out_dir, c=None, path=None, note=""):
 #: had ZERO sessions written after it, and "resolved" over an empty window is a
 #: claim stronger than its evidence — the exact defect this register exists to
 #: stop. A fix with no session in its window has not been observed yet.
-REPAIR_STATES = ("proposed", "unobserved", "fixed-open", "resolved")
+#:
+#: Round 62 adds `stale`: an unfixed draft whose id the register no longer
+#: produces (a renamed tool, a re-classified family). Measured 2026-11-18: 6 of 37
+#: drafts named classes that no longer exist, and the panel counted them as open
+#: work. Kept as a record, never as work — sorted last, after every real state.
+REPAIR_STATES = ("proposed", "unobserved", "fixed-open", "resolved", "stale")
 
 
 def repair_mark(out_dir, issue, commit, note="", when=None):
@@ -1745,6 +1802,11 @@ def repair_states(out_dir, sessions_dir=None, max_sessions=400, runs_dir=None):
             state["runs_since"] = n_runs
             state["status"] = ("unobserved" if (n_sess == 0 and n_runs == 0) else
                                "resolved" if (c_sess + c_runs) == 0 else "fixed-open")
+        elif prop.get("stale"):
+            # Round 62: the record says the class is gone; the panel must not read
+            # it as an unfixed draft somebody still owes.
+            state["status"] = "stale"
+            state["stale"] = prop.get("stale")
         states.append(state)
     states.sort(key=lambda s: (REPAIR_STATES.index(s["status"]),
                                -int(s["count_since"] or 0), s["issue"]))
