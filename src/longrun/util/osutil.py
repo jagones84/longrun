@@ -20,6 +20,7 @@ Windows branch is unit-testable from Linux.
 """
 
 import os
+import re
 import shlex
 import shutil
 import signal
@@ -80,6 +81,38 @@ def popen_kwargs(on_windows=None):
     if _win(on_windows):
         return {"creationflags": _CREATE_NEW_PROCESS_GROUP}
     return {"start_new_session": True}
+
+
+#: A variable NAME that carries a credential. Round 66 (arXiv:2611.15223 — a
+#: control is checked, bypassed or prevented): `shell` auto-approves `^env$` as a
+#: read-only command, and the child inherited the SERVICE's environment — measured
+#: 2026-11-18, one `env` printed `LONGRUN_TOKEN` plus nine provider keys
+#: (`OPENROUTER_API_KEY`, `DEEPSEEK_API_KEY`, `BRAVE_API_KEY`, …) straight into the
+#: model's context. The object was never the command, it was the child's world:
+#: scrubbing it here also closes `env > /tmp/e` + `fs.read /tmp/e`, which no
+#: command rule can see.
+_SECRET_NAME_RE = re.compile(
+    r"(^|_)(TOKEN|KEY|KEYS|APIKEY|SECRET|SECRETS|PASSWORD|PASSWD|CREDENTIAL|"
+    r"CREDENTIALS)(_|$)", re.I)
+
+
+def scrubbed_env(passthrough=()):
+    """``os.environ`` minus every credential-shaped name, plus ``passthrough``.
+
+    Used for every child the harness starts for an agent action (the session
+    shell, host execution inside a run, a background job). `passthrough` is the
+    operator's explicit list (`config/tools.yaml` → `shell.env_passthrough`) for a
+    credential a tool legitimately USES without printing it (`GITHUB_TOKEN` for
+    `gh`, say) — naming one re-opens its leak, which is the operator's call.
+    MCP servers are started with their own configured environment and are not
+    scrubbed: they are the tool, not the agent's shell.
+    """
+    keep = {str(k).strip().upper() for k in (passthrough or ()) if str(k).strip()}
+    out = {}
+    for name, value in os.environ.items():
+        if name.upper() in keep or not _SECRET_NAME_RE.search(name):
+            out[name] = value
+    return out
 
 
 def kill_tree(proc, on_windows=None, grace=5):

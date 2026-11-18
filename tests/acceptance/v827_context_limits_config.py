@@ -112,9 +112,15 @@ _loaded_shell = registry.load_config().get("shell") or {}
 check("A5f the loader carries the shell block (no whitelist drop)",
       not [k for k in _yaml_shell if k not in _loaded_shell],
       sorted(k for k in _yaml_shell if k not in _loaded_shell))
-_shell_drift = {k: (CL.shell(k), _loaded_shell.get(k)) for k in CL.SHELL_DEFAULTS
+_shell_drift = {k: (CL.shell(k), _loaded_shell.get(k))
+                for k in CL.SHELL_DEFAULTS if isinstance(CL.SHELL_DEFAULTS[k], int)
                 if _loaded_shell.get(k) is None or CL.shell(k) != int(_loaded_shell[k])}
 check("A5g each shell limit resolves to the loaded config value", not _shell_drift, _shell_drift)
+# Round 66: `env_passthrough` is the block's ONE list-valued key (the credentials a
+# child shell keeps); it resolves through `shell_list`, not `shell` (an int read).
+check("A5g2 the list-valued key resolves through shell_list",
+      CL.shell_list("env_passthrough") == list(_loaded_shell.get("env_passthrough") or []),
+      (CL.shell_list("env_passthrough"), _loaded_shell.get("env_passthrough")))
 check("A5h tools/term.py binds the shell limits",
       int(T.MAX_SHELLS) == CL.shell("max_shells")
       and int(T.IDLE_TIMEOUT) == CL.shell("idle_timeout_secs")

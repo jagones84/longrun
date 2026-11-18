@@ -86,6 +86,9 @@ SHELL_DEFAULTS = {
     "max_shells": 8,             # oldest idle shell is reaped beyond this
     "idle_timeout_secs": 3600,   # a shell idle this long is reaped
     "backlog": 2000,             # events kept per shell (cursor catch-up)
+    # Round 66: credentials a child shell KEEPS (empty = none). `osutil.scrubbed_env`
+    # drops every credential-shaped variable; this is the operator's escape hatch.
+    "env_passthrough": [],
 }
 SHELL_ENV = {
     "max_shells": "LONGRUN_SHELL_MAX",
@@ -233,6 +236,19 @@ def shell(name, override=None):
     """One `shell:` limit as an int (`max_shells`/`idle_timeout_secs`/`backlog`)."""
     return _as_int(_raw("shell", SHELL_DEFAULTS, SHELL_ENV, name, override),
                    SHELL_DEFAULTS, name)
+
+
+def shell_list(name, override=None):
+    """One `shell:` value as a list of trimmed strings (a comma string is accepted).
+
+    Round 66: `shell.env_passthrough` is the operator's allowlist of credentials a
+    child shell keeps; `_as_int` cannot read it, and every spawner (the terminal,
+    host execution in a run, a background job) must read the SAME list.
+    """
+    got = _section("shell", SHELL_DEFAULTS, override).get(name)
+    if isinstance(got, str):
+        return [p.strip() for p in got.split(",") if p.strip()]
+    return [str(p).strip() for p in (got or ()) if str(p).strip()]
 
 
 def limit(name, override=None):

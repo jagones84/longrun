@@ -26,6 +26,8 @@ import subprocess
 import threading
 import time
 
+from longrun.model import context_limits as ctx_limits
+from longrun.util import osutil
 from longrun.util.paths import DATA_DIR
 
 LOG_DIR = os.path.join(DATA_DIR, "bgjobs")
@@ -68,7 +70,11 @@ def start(command, cwd=None, label=None, session=None):
         except OSError as e:
             return {"ok": False, "error": "cannot open the log: %s" % e}
         kwargs = {"cwd": cwd or None, "stdout": out, "stderr": subprocess.STDOUT,
-                  "stdin": subprocess.DEVNULL, "shell": True}
+                  "stdin": subprocess.DEVNULL, "shell": True,
+                  # Round 66: a background job is an agent action too — same scrubbed
+                  # environment as the session shell (`shell.env_passthrough` is the
+                  # one allowlist).
+                  "env": osutil.scrubbed_env(ctx_limits.shell_list("env_passthrough"))}
         if WINDOWS:
             kwargs["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
         else:

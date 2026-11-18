@@ -221,6 +221,12 @@ shell:
   max_shells: 8             # oldest idle shell is reaped beyond this
   idle_timeout_secs: 3600   # a shell idle this long is reaped
   backlog: 2000             # events kept per shell (cursor catch-up)
+  # Round 66: the session shell starts with every credential-shaped variable
+  # REMOVED (`osutil.scrubbed_env`), because one `env` — auto-approved under
+  # `tools.shell` as read-only — printed LONGRUN_TOKEN and nine provider keys into
+  # the model's context (measured 2026-11-18). Name a variable here to let a tool
+  # keep it for its own use (`GITHUB_TOKEN` for `gh`); naming one re-opens its leak.
+  env_passthrough: []
 
 # ---- webhook intake (2026-11-06) --------------------------------------------
 # External events (GitHub, CI, a script) become one-agent JOBS. The store with the
@@ -401,6 +407,9 @@ tools:
   shell:
     enabled: true
     approval: required
+    # Round 66: the session shell starts with every credential-shaped variable
+    # removed — the allowlist is `shell.env_passthrough` in the TOP-LEVEL `shell:`
+    # block above (`context_limits.shell_list` reads that block, not this one).
     # read-only / non-mutating commands are auto-approved (still recorded)
     auto_approve:
       - "^ls(\\s|$)"

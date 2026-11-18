@@ -743,7 +743,10 @@ def run(command, run_id=None, timeout=None, workspace=None, backend=None, job_id
     else:
         # host execution: either the operator explicitly opted out
         # (config sandbox.backend: none) or no real backend is available.
+        # Round 66: the child gets the scrubbed environment, like the session
+        # shell — host execution in a run must not hand it the API bearer.
         res = _run_tracked(osutil.shell_argv(command), timeout=timeout, cwd=ws,
+                           env=osutil.scrubbed_env(ctx_limits.shell_list("env_passthrough")),
                            job_id=job_id)
         res["backend"] = "none(host)"
         res["sandboxed"] = False

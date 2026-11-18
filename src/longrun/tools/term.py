@@ -87,6 +87,16 @@ def _kind(argv):
     return "posix"
 
 
+def _env_passthrough():
+    """`shell.env_passthrough` — credentials the operator lets a tool KEEP.
+
+    Round 66: the child's environment is scrubbed of every credential-shaped
+    variable (`osutil.scrubbed_env`); this list is the only way one comes back,
+    and it is read per shell start so a config edit needs no code change.
+    """
+    return ctx_limits.shell_list("env_passthrough")
+
+
 def _quote_path(path, kind):
     """Quote a directory for a `cd` inside the persistent shell."""
     p = str(path or "")
@@ -117,10 +127,14 @@ class Shell:
         self._on_output = None
         self.argv = _shell_argv()
         self.kind = _kind(self.argv)
+        # Round 66: the shell is ONE for the human and the agent, so it starts with
+        # the SERVICE's credentials removed — one `env` used to print LONGRUN_TOKEN
+        # and every provider key. `shell.env_passthrough` re-admits a credential a
+        # tool legitimately uses (the operator's call).
         self.proc = subprocess.Popen(
             self.argv,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            cwd=self.cwd, bufsize=0,
+            cwd=self.cwd, bufsize=0, env=osutil.scrubbed_env(_env_passthrough()),
             # Fix1: the shell leads its OWN process group, so an interrupt
             # aimed at a hung child (os.killpg PGID, SIGINT) reaches the child
             # and never the harness server. Without this the shell shares the
