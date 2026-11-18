@@ -48,12 +48,13 @@ def check(name, ok, detail=""):
 
 
 # --- A: the parser keeps both shapes -----------------------------------------
-pats, notes = R._deny_parts(["alpha", {"pattern": "beta", "why": "because b"},
-                            {"pattern": "gamma"}, {"why": "no pattern"}])
+pats, notes, proofs = R._deny_parts(["alpha", {"pattern": "beta", "why": "because b"},
+                                     {"pattern": "gamma"}, {"why": "no pattern"}])
 check("A1 bare and mapped patterns both survive",
       pats == ["alpha", "beta", "gamma"], pats)
 check("A2 only a pattern WITH a why gets a note",
       notes == {"beta": "because b"}, notes)
+check("A3 round 68: no proof is invented from a why", proofs == {}, proofs)
 
 # --- B/C/D: the shipped rules explain themselves ------------------------------
 d, why = R.classify("shell.exec", {"command": "cat .env"})

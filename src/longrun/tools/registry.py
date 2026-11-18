@@ -2372,7 +2372,7 @@ def tool_spec(name, ext_snapshot=None, mtx_snapshot=None):
     if entry is None and ext:
         entry = {}  # external MCP default policy below
     entry = entry or {}
-    deny_patterns, deny_notes = _deny_parts(entry.get("deny"))
+    deny_patterns, deny_notes, deny_proofs = _deny_parts(entry.get("deny"))
     return {
         "name": name,
         "origin": ("delegation" if is_delegation else
@@ -2393,8 +2393,10 @@ def tool_spec(name, ext_snapshot=None, mtx_snapshot=None):
         # Round 63: `deny` stays a plain pattern list (the panel, `_match` and the
         # policy report read strings); the optional `why` of a rule travels beside
         # it, keyed by its own pattern, so a refusal can explain itself.
+        # Round 68: `deny_proof` does the same for the test that proves the rule.
         "deny": deny_patterns,
         "deny_why": deny_notes,
+        "deny_proof": deny_proofs,
         "always_ask": list(entry.get("always_ask") or []),
         "allow_hosts": list(entry.get("allow_hosts") or []),
         "roots": list(entry.get("roots") or ["."]),
@@ -2464,6 +2466,7 @@ def policy_report():
     unknown = {k: v for k, v in hits.items() if ":unknown_arg:" in k}
     rules = {k: v for k, v in hits.items() if ":unknown_arg:" not in k}
     configured = []
+    proofs = {}
     try:
         # Key by the CANONICAL tool name — the same name `note_rule_hit` records —
         # so a rule inherited from a namespace entry (`shell:`) is matched against
@@ -2480,6 +2483,9 @@ def policy_report():
                     key = "%s:%s:%s" % (name, kind, pat)
                     if key not in configured:
                         configured.append(key)
+                    proof = (spec.get("deny_proof") or {}).get(pat) if kind == "deny" else None
+                    if proof:
+                        proofs[key] = proof
     except Exception:  # noqa: BLE001
         pass
     # Round 67 (arXiv:2611.15223 guardscope — a control is checked, bypassed or
@@ -2491,10 +2497,15 @@ def policy_report():
     # instead of inflating the count. Measured 2026-11-18: configured 23, fired 38,
     # never 2 — after the two `.env` reader rules were removed in round 65 their
     # history kept the count above the policy.
+    # Round 68: a never-fired rule is only half the story — one proven by a test is
+    # evidence-backed, one without a proof is the state the operator must audit.
     fired = [r for r in configured if r in rules]
     retired = sorted(r for r in rules if r not in configured)
+    never = sorted(r for r in configured if r not in rules)
     return {"firings": rules, "unknown_args": unknown,
-            "never_fired": sorted(r for r in configured if r not in rules),
+            "never_fired": never,
+            "never_fired_unproven": [r for r in never if r not in proofs],
+            "never_fired_proof": {r: proofs[r] for r in never if r in proofs},
             "retired_rules": retired,
             "configured_rules": len(configured), "fired_rules": len(fired)}
 
@@ -2782,7 +2793,7 @@ def _subject(tool, args):
 
 
 def _deny_parts(entries):
-    """Split a configured deny list into (patterns, notes).
+    """Split a configured deny list into (patterns, notes, proofs).
 
     Round 63: a deny entry may be a bare regex (the historical shape) or a
     mapping `{pattern, why}`. The WHY lives beside the rule that enforces it —
@@ -2792,8 +2803,13 @@ def _deny_parts(entries):
     the model was told WHICH rule fired and never what to use instead; 4 of the
     14 never recovered. The message shape before the dash is unchanged, which is
     what the pins (`v801`, `v987`, `v618`) and `failure_family` read.
+
+    Round 68: the same mapping may carry `proof: <test id>` — the test that makes
+    the rule a PROVEN guardrail even when it has never fired. `policy_report`
+    uses it for `never_fired`: a rule that has no firing and no proof is
+    `never_fired_unproven`, which is the one state the operator must audit.
     """
-    patterns, notes = [], {}
+    patterns, notes, proofs = [], {}, {}
     for entry in entries or ():
         if isinstance(entry, dict):
             pattern = str(entry.get("pattern") or "").strip()
@@ -2803,11 +2819,14 @@ def _deny_parts(entries):
             why = str(entry.get("why") or "").strip()
             if why:
                 notes[pattern] = why
+            proof = str(entry.get("proof") or "").strip()
+            if proof:
+                proofs[pattern] = proof
             continue
         text = str(entry or "")
         if text:
             patterns.append(text)
-    return patterns, notes
+    return patterns, notes, proofs
 
 
 def _match(patterns, text):

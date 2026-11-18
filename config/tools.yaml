@@ -467,7 +467,11 @@ tools:
       # requirement could not be met any other way. Powering off is now an ordinary
       # command; re-add the pattern here to make it impossible again (the agent
       # would then only see "BLOCKED" with the rule named).
-      - ">\\s*/dev/(sd|nvme|mmcblk)"
+      # 2026-11-18 round 68: never fired in 138 live sessions (nothing wrote to a
+      # block device). `proof` names the test that makes it a PROVEN guardrail
+      # rather than an unexercised one — `policy_report` separates the two.
+      - pattern: ">\\s*/dev/(sd|nvme|mmcblk)"
+        proof: v1134_never_fired_guardrail_proof
       - pattern: "LONGRUN_TOKEN"
         why: "the API bearer is the operator's credential — a tool call never needs to read it, and reading it would let a command act as the operator"
       # 2026-11-17 (operator: *"dont make permission to read .env is enougt?"*):
@@ -574,6 +578,9 @@ tools:
     deny:
       - pattern: "(^|/)\\.env(\\.(?!template$)[^/]*)?$"
         why: "the env file holds the API bearer and every provider key — editing it would let a tool rewrite the harness's own credentials"
+        # 2026-11-18 round 68: never fired in 138 live sessions (the shell and
+        # fs.read guards catch the same object first); the rule is PROVEN, not dead.
+        proof: v1134_never_fired_guardrail_proof
       - pattern: "(^|/)data/(runs|sessions|threads|heldout|proposals|improvement)(/|$)"
         why: "the harness's own evidence store — an edit there would rewrite the record it audits itself with; work in the workspace instead"
       - pattern: "(^|/)data/events\\.db$"

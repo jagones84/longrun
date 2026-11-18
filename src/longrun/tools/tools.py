@@ -2104,10 +2104,13 @@ def _self(args, run_id):
                 "configured": _rep.get("configured_rules"),
                 "fired": _rep.get("fired_rules"),
                 "never_fired": len(_rep.get("never_fired") or []),
+                # Round 68: of the never-fired rules, the ones NO test proves — the
+                # only state that is both unexercised and unproven.
+                "unproven": len(_rep.get("never_fired_unproven") or []),
                 "retired": len(_rep.get("retired_rules") or []),
                 "unknown_args": len(_rep.get("unknown_args") or {}),
-                "note": ("a guardrail that never fired is untested, not proof of safety; "
-                         "`/api/tools` carries the rule names"),
+                "note": ("a guardrail that never fired is untested unless a test proves it; "
+                         "`/api/tools` carries the rule names and their proofs"),
             }
         except Exception:  # noqa: BLE001 — the self report must never fail on policy
             pass
