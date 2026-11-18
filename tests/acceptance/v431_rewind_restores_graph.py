@@ -48,6 +48,8 @@ def _node(nid, created=0.0):
 
 
 class _FakeSrv:
+    saved_truncate = None
+
     def load_plan(self):
         return {"goal": "", "steps": []}
 
@@ -63,8 +65,11 @@ class _FakeSrv:
     def save_tasks(self, store):
         pass
 
-    def save_session(self, sess):
-        pass
+    def save_session(self, sess, truncate=False):
+        # 2026-11-18: `9d517cc` made a rollback actually REWIND the transcript, so
+        # the restore calls save_session(..., truncate=True). This fake predated
+        # the kwarg and the test died on the signature, hiding the whole file.
+        type(self).saved_truncate = truncate
 
 
 checkpoints._srv = lambda: _FakeSrv()          # no real server import
@@ -87,6 +92,8 @@ resA = checkpoints.rollback(cpA["id"])
 check("A3 rollback reports the graph restore", isinstance(resA.get("graph"), dict), resA)
 check("A4 the todo graph is GONE after rollback (not just hidden)",
       taskgraph.load(SID) is None, taskgraph.load(SID))
+check("A5 the rewind asks the server to TRUNCATE the transcript",
+      _FakeSrv.saved_truncate is True, _FakeSrv.saved_truncate)
 
 # ---- case B: one node at anchor -> rollback drops the later one --------------
 os.makedirs(taskgraph.GRAPH_DIR, exist_ok=True)

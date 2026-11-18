@@ -47,7 +47,10 @@ def run_chat(reply_obj):
     """Drive `cmd_chat` (non-stream) with `req` stubbed; return (stdout, stderr, exit, calls)."""
     calls = {}
 
-    def fake_req(method, path, body=None):
+    def fake_req(method, path, body=None, **kw):
+        # 2026-11-18: `cmd_chat` passes `timeout=_LONG_TIMEOUT` (M14 in v785: the
+        # CLI must never kill a turn); this fake predated the kwarg and died on the
+        # signature, hiding the whole file.
         calls.update(method=method, path=path, body=body)
         return reply_obj
 

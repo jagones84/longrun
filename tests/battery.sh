@@ -111,6 +111,27 @@ else
 fi
 
 # One isolated test run (its own throwaway data dirs).
+_isolated_py() {           # $1 = test path, $2 = dir; returns the test's exit code
+  PYTHONPYCACHEPREFIX="$PYC" \
+  LONGRUN_DATA_DIR="$2/data" \
+  LONGRUN_CONFIG_DIR="$2/cfg" \
+  LONGRUN_SESSIONS_DIR="$2/sessions" \
+  LONGRUN_DB="$2/events.db" \
+  LONGRUN_GRAPH_DIR="$2/graphs" \
+  LONGRUN_EDITS_DIR="$2/edits" \
+  LONGRUN_RUNS_DIR="$2/runs" \
+  LONGRUN_ROLES_DIR="$2/roles" \
+  LONGRUN_COSTS_DIR="$2/costs" \
+  LONGRUN_THREADS_DIR="$2/threads" \
+  LONGRUN_PRICES_FILE="$2/prices.json" \
+  LONGRUN_MATRIX_SRC="$2/matrix_src" \
+  LONGRUN_MATRIX_DOT="$2/matrix_dot" \
+  LONGRUN_OPTIMIZER=0 \
+  LONGRUN_OFFLINE=1 \
+  python3 "$1" > "$2/log" 2>&1
+}
+export -f _isolated_py
+
 _run_one() {
   t="$1"
   name="$(basename "$t" .py)"
@@ -120,34 +141,33 @@ _run_one() {
   printf 'START %-42s %s\n' "$name" "$(date -u +%FT%TZ)" >> "$PROGRESS"
   mkdir -p "$d/cfg" "$d/sessions" "$d/graphs" "$d/edits" "$d/runs" \
            "$d/roles" "$d/costs" "$d/threads" "$d/data" "$d/matrix_src" "$d/matrix_dot"
-  PYTHONPYCACHEPREFIX="$PYC" \
-  LONGRUN_DATA_DIR="$d/data" \
-  LONGRUN_CONFIG_DIR="$d/cfg" \
-  LONGRUN_SESSIONS_DIR="$d/sessions" \
-  LONGRUN_DB="$d/events.db" \
-  LONGRUN_GRAPH_DIR="$d/graphs" \
-  LONGRUN_EDITS_DIR="$d/edits" \
-  LONGRUN_RUNS_DIR="$d/runs" \
-  LONGRUN_ROLES_DIR="$d/roles" \
-  LONGRUN_COSTS_DIR="$d/costs" \
-  LONGRUN_THREADS_DIR="$d/threads" \
-  LONGRUN_PRICES_FILE="$d/prices.json" \
-  LONGRUN_MATRIX_SRC="$d/matrix_src" \
-  LONGRUN_MATRIX_DOT="$d/matrix_dot" \
-  LONGRUN_OPTIMIZER=0 \
-  LONGRUN_OFFLINE=1 \
-  python3 "$t" > "$d/log" 2>&1
+  _isolated_py "$t" "$d"
   test_status=$?
+  # 2026-11-18 (release gate): a test killed by a SIGNAL (rc>128 — the 7 SIGSEGV of
+  # the 15:13 full run) printed no PASS/FAIL at all, so the summary showed missing
+  # slots and no file name. Name it, and give a crashed test ONE clean retry: every
+  # one of those seven passes alone, so a signal is contention, not a verdict. A
+  # second crash is reported as a crash and stays red.
+  if [ "$test_status" -gt 128 ]; then
+    first_sig=$((test_status - 128))
+    printf 'CRASH %-42s signal=%s — retrying alone\n' "$name" "$first_sig"
+    printf 'CRASH %-42s signal=%s retry\n' "$name" "$first_sig" >> "$PROGRESS"
+    rm -rf "$d"
+    d="$(mktemp -d "${TMPDIR:-/tmp}/sf-t-XXXXXX")"
+    mkdir -p "$d/cfg" "$d/sessions" "$d/graphs" "$d/edits" "$d/runs" \
+             "$d/roles" "$d/costs" "$d/threads" "$d/data" "$d/matrix_src" "$d/matrix_dot"
+    _isolated_py "$t" "$d"
+    test_status=$?
+    if [ "$test_status" -eq 0 ]; then
+      printf 'RETRY %-42s passed on a second run (first was signal=%s)\n' "$name" "$first_sig"
+      printf 'RETRY %-42s signal=%s then pass\n' "$name" "$first_sig" >> "$PROGRESS"
+    elif [ "$test_status" -gt 128 ]; then
+      printf 'CRASH %-42s signal=%s (twice)\n' "$name" "$((test_status - 128))"
+      echo 1 > "$RES/$name.crash"
+    fi
+  fi
   elapsed_ms=$(( $(date +%s%3N) - start_ms ))
   printf 'END   %-42s rc=%s %sms\n' "$name" "$test_status" "$elapsed_ms" >> "$PROGRESS"
-  # 2026-11-18 (release gate): a test killed by a SIGNAL (rc>128 — the 8
-  # "Segmentation fault (core dumped)" lines of the 14:58 full run) printed no
-  # PASS/FAIL at all, so the summary showed three missing slots and no file name.
-  # Name it: a crash is a different fact from a red pin.
-  if [ "$test_status" -gt 128 ]; then
-    printf 'CRASH %-42s signal=%s\n' "$name" "$((test_status - 128))"
-    echo 1 > "$RES/$name.crash"
-  fi
   if [ "$timing" = "1" ]; then
     printf '%s\t%s\n' "$elapsed_ms" "$name" >> "$RES/timing"
   fi
