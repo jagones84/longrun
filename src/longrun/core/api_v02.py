@@ -1749,8 +1749,9 @@ def agent_stream_gen_v2(goal, max_steps, model, run_id, script=None, workspace=N
             # proposes harness changes. Additive: failure never breaks the run.
             try:
                 from longrun.evolve import optimizer as _opt
-                _sid = session_obj.get("id") if isinstance(session_obj, dict) else None
-                _opt.run(_sid or run_id)
+                if _opt.enabled():   # round 90: one switch for both call sites
+                    _sid = session_obj.get("id") if isinstance(session_obj, dict) else None
+                    _opt.run(_sid or run_id)
             except Exception:  # noqa: BLE001 — optimizer must never fail a run
                 pass
             # JAG-479: release the running bracket ONLY after the reply is stored, so

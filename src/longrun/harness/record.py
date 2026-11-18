@@ -198,7 +198,12 @@ def _steps(cards):
             # (`dill 0.4.1`), not the failure, and the recorder must class a call
             # exactly as its session card does (12 of 18 `shell.exec · tool-error`
             # classes were such singleton output heads).
-            "error": str(selfevolve.failure_text(card))[:ERROR_MAX],
+            # Round 90: `failure_text` names a FAILURE. Applied to a successful
+            # card it returns its first output line, so the record said
+            # `ok: true` with `error: "candidate inspection completed"` — a
+            # successful step carried a fake error (v693's `success` case).
+            "error": ("" if card.get("ok") is True
+                      else str(selfevolve.failure_text(card))[:ERROR_MAX]),
             "backend": card.get("backend") or "",
             "args_keys": sorted(args.keys()),
             "args_len": len(_canonical(args)),

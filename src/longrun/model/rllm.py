@@ -88,7 +88,16 @@ def router_models():
     JAG-66: `n_ctx` is the model's REAL context window (from `meta.n_ctx`, or the
     `--ctx-size` in its launch args) — the source of truth for the token budget.
     JAG-447r: `failed` marks a model the router could not load.
+
+    Round 90: `LONGRUN_OFFLINE=1` (exported by `tests/battery.sh`) returns `[]`
+    without opening a socket. A deterministic test that saves a session queues the
+    context backfill (`stores.py:715`), whose `context_usage` lands here — the
+    battery then made a real `connect` to the local router from a process that
+    promises "no live model, network, or server" (v693's guard caught it).
     """
+    if str(os.environ.get("LONGRUN_OFFLINE") or "").strip().lower() \
+            in ("1", "true", "yes", "on"):
+        return []
     try:
         with urllib.request.urlopen(ROUTER_BASE + "/v1/models", timeout=6) as r:
             data = json.loads(r.read().decode("utf-8") or "{}")

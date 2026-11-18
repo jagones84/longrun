@@ -134,6 +134,8 @@ _run_one() {
   LONGRUN_PRICES_FILE="$d/prices.json" \
   LONGRUN_MATRIX_SRC="$d/matrix_src" \
   LONGRUN_MATRIX_DOT="$d/matrix_dot" \
+  LONGRUN_OPTIMIZER=0 \
+  LONGRUN_OFFLINE=1 \
   python3 "$t" > "$d/log" 2>&1
   test_status=$?
   elapsed_ms=$(( $(date +%s%3N) - start_ms ))

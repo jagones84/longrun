@@ -7497,7 +7497,8 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     # the session. The optimizer writes proposals, not code changes.
     try:
         from longrun.evolve import optimizer as _opt
-        _opt.run(sess["id"])
+        if _opt.enabled():
+            _opt.run(sess["id"])
     except Exception:  # noqa: BLE001 — optimizer must never break a session
         pass
     if _gate_fired:

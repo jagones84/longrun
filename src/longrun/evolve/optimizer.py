@@ -29,6 +29,21 @@ OPTIMIZER_LOG = os.environ.get("LONGRUN_OPTIMIZER_LOG") or os.path.join(
 # Minimum session activity to trigger the optimizer: at least one tool call.
 MIN_TOOL_CALLS = 1
 
+
+def enabled():
+    """Whether the post-turn proposer may run. ON by default, opt-out by env.
+
+    Measured 2026-11-18: every chat turn with >=1 tool call ended with one
+    `deepseek:deepseek-chat` call (18 in the last hour, 202 in the log), and a
+    DETERMINISTIC test that drives `chat_once` therefore reached the network —
+    `v693` failed with `connect(('3.173.21.63', 443))` and the battery had been
+    spending money silently. One switch, read by the only call site
+    (`agent.py:7500`); `tests/battery.sh` exports `LONGRUN_OPTIMIZER=0` so no
+    test can spend a model call, and production is unchanged (unset = on).
+    """
+    return str(os.environ.get("LONGRUN_OPTIMIZER", "1")).strip().lower() \
+        not in ("0", "false", "no", "off")
+
 # RRSI (arXiv:2609.24972, abstract): recursive harness editing must condition the
 # proposer on the evolution history ("encourages unexplored trajectories") and a
 # pruner drops changes that are "no longer useful". The inbox is that history: the

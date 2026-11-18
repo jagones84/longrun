@@ -25,6 +25,13 @@ for key in ("CONFIG_DIR", "DATA_DIR", "DATA_HOME", "SESSIONS_DIR", "GRAPH_DIR",
 os.environ["LONGRUN_DB"] = os.path.join(TMP, "events.db")
 os.environ["LONGRUN_HOOKS"] = os.path.join(TMP, "hooks.yaml")
 os.environ["LONGRUN_PRICES_FILE"] = os.path.join(TMP, "prices.json")
+# The post-turn proposer is a LIVE model call (round 90): a deterministic test
+# that drives `chat_once` must never reach the network. The battery exports this
+# too; set here so running the file alone is deterministic as well.
+os.environ["LONGRUN_OPTIMIZER"] = "0"
+# The context backfill's meter asks the router for the model's window
+# (`rllm.router_models`); in this process there is no router to ask.
+os.environ["LONGRUN_OFFLINE"] = "1"
 sys.path.insert(0, os.path.join(REPO, "src"))
 
 # Match the service import order: server breaks the agent/server cycle.
