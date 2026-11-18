@@ -480,10 +480,73 @@ _SAFE_DEVICES = frozenset({
 })
 
 
+def _split_redirects(segment):
+    """Insert spaces around `>`/`>>` only where the SHELL would see them.
+
+    Round 55: a `>` inside single or double quotes is a literal character
+    (`echo "$f -> $(cat $f)"`, `printf '%s -> %s'`), but the old
+    `re.sub(r">>?", …)` rewrote it everywhere — the token after the arrow
+    (`$`, `` ` ``, `$(cat`) then read as an unresolvable write target and six
+    measured READ-ONLY commands were refused as Nucleous writes.
+    """
+    out = []
+    quote = ""
+    i, n = 0, len(segment)
+    while i < n:
+        ch = segment[i]
+        if quote:
+            out.append(ch)
+            if ch == "\\" and quote == '"' and i + 1 < n:
+                out.append(segment[i + 1])
+                i += 2
+                continue
+            if ch == quote:
+                quote = ""
+            i += 1
+            continue
+        if ch in ("'", '"'):
+            quote = ch
+            out.append(ch)
+            i += 1
+            continue
+        if ch == "\\" and i + 1 < n:
+            out.append(segment[i:i + 2])
+            i += 2
+            continue
+        if ch == ">":
+            j = i + 1
+            while j < n and segment[j] == ">":
+                j += 1
+            out.append(" " + segment[i:j] + " ")
+            i = j
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def _backticks_as_subshell(cmd):
+    """Spell backticks as `$( … )` so the segment splitter descends into them.
+
+    A backtick substitution inside double quotes still runs (and can redirect),
+    so a quote-aware redirect scan alone would lose `echo "`echo x > p`"`.
+    An unbalanced backtick leaves an open `$(`, which the splitter treats as a
+    segment boundary — the fail-closed direction.
+    """
+    out, opening = [], True
+    for ch in str(cmd or ""):
+        if ch == "`":
+            out.append("$(" if opening else ")")
+            opening = not opening
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
 def _shell_tokens(segment):
     """Tokens of one command segment: fd duplications dropped, redirections apart."""
     s = re.sub(r"\d*>&\d+", " ", segment)
-    s = re.sub(r">>?", r" \g<0> ", s)  # `>>` stays one token, `>` its own
+    s = _split_redirects(s)  # `>>` stays one token, `>` its own, outside quotes only
     s = s.replace("<", " < ")
     out = []
     for raw in s.split():
@@ -602,6 +665,7 @@ def check_shell_command(command, cwd=None, repo_root=None):
         return True, ""
     if nucleous_write_unlocked():
         return True, ""
+    cmd = _backticks_as_subshell(cmd)
     root, _msrc, _mdot = _roots(repo_root)
     whence = os.path.realpath(cwd or root)
     for segment in _SEGMENT_SPLIT_RE.split(cmd):
