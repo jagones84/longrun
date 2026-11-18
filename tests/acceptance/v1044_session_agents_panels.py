@@ -161,6 +161,18 @@ check("F3 the session slice uses the agent's jobs and keeps a settled toggle",
       and "else if (changed) this.scope = \"session\";" in ORBIT)
 check("F4 a job outside the slice widens to ALL before focusing",
       'if (!rec && this.scope === "session")' in ORBIT and "this.scope = \"all\";" in ORBIT)
+# 2026-11-18 (operator: "the chat session jobs number is not synced in the job panel"):
+# the header counted only RUNNING and TOTAL (a live BLOCKED job was invisible) and left
+# the in-session ledger out although its rows are listed right below.
+check("F5 the header counts EVERY state the panel shows, plus the in-session ledger",
+      '["running", "blocked", "pending"].filter(s => _n(s))' in ORBIT
+      and "const _shown = this.jobs.length + _sjJobs.length;" in ORBIT
+      and "_parts.join(" in ORBIT)
+check("F6 the empty in-session separator names the team jobs below it",
+      "no subagent job \u00b7 " in ORBIT and "team job" in ORBIT
+      and "This is empty (the in-session ledger)" not in ORBIT)
+check("F7 a finished job no longer wears a `blocked by` chip",
+      '["pending", "queued", "blocked"].indexOf(j.status) >= 0' in ORBIT)
 
 print("---")
 passed = sum(results)

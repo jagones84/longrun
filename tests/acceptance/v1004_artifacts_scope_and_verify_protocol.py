@@ -124,8 +124,11 @@ check("B1 the page asks two folder questions and no third",
       and 'new URLSearchParams({ limit: "500", scope: "workspace", workspace: _art.ws })' in load
       and 'qs.set("session"' not in load and "scope: \"journal\"" not in load)
 check("B2 the control's options come from the sessions panel, never from the rows",
-      'const opts = [["session", "This session · " + mine]' in ui
-      and '["all", "All sessions · " + n + " folder"' in ui
+      # 2026-11-18: the labels now name FOLDERS ("This session's folder" / "All
+      # sessions' folders") because that is what these two scopes answer, while the
+      # RH Workspace panel lists the session's journal — a different set.
+      'const opts = [["session", "This session\'s folder · " + mine]' in ui
+      and '["all", "All sessions\' folders · " + n + " folder"' in ui
       and "const mine = _art.titles[sessionId] || _art.wsName" in ui
       and "_art.all.forEach(a => { seen[a.session" not in ui)
 check("B3 choosing an answer re-queries the folder (never filters the old rows)",

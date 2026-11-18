@@ -4664,7 +4664,7 @@
         <div class="card">
           <div id="editsList"><div class="remaining">open a session, then ↻</div></div>
           <div class="acts">
-            <span id="editsStat" class="remaining"></span>
+            <span id="editsStat" class="remaining" title="files THIS SESSION wrote (the journal) — the MyArtifacts page lists the session's whole FOLDER, which is a different set"></span>
             <button class="lnk" data-call="loadEdits" title="reload the pending changes">refresh</button>
             <button class="lnk" data-call="approveEdits" data-args='[null]' title="keep every changed file as written, clear the list">approve all</button>
             <button class="lnk" data-call="rejectEdits" data-args='[null]' title="restore every changed file to its pre-image">reject all</button>
@@ -19805,8 +19805,12 @@ function _artSessPaint() {
   if (!sel) return;
   const mine = _art.titles[sessionId] || _art.wsName || "this session";
   const n = Number(_art.folders || 0);
-  const opts = [["session", "This session · " + mine],
-                ["all", "All sessions · " + n + " folder" + (n === 1 ? "" : "s")]];
+  /* 2026-11-18 (operator: "webui arts [must be] synced each to the other"): the two
+     answers are FOLDERS (v1005), while the RH Workspace panel lists what the session
+     WROTE (its journal) — the same words over different sets read as a desync. The
+     options now name the object they list. */
+  const opts = [["session", "This session's folder · " + mine],
+                ["all", "All sessions' folders · " + n + " folder" + (n === 1 ? "" : "s")]];
   sel.innerHTML = opts.map(o => '<option value="' + _attr(o[0]) + '">' + esc(o[1]) + "</option>").join("");
   sel.value = _art.scope;
 }

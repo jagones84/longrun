@@ -3437,8 +3437,17 @@ class JobsView {
   _sjHtml(){
     if (this.scope !== "session") return "";
     const jobs = (this.sj && this.sj.jobs) || [];
-    if (!jobs.length)
-      return '<div class="sj-sep"><b>In-session jobs</b><span>no subagent job in this chat</span></div>';
+    if (!jobs.length){
+      // 2026-11-18 (operator: "the chat session jobs number is not synced in the job
+      // panel"): the bare sentence sat DIRECTLY above the team jobs this agent owns,
+      // so the panel read "no subagent job in this chat" next to nine real rows.
+      // Say what is empty (the in-session ledger) and name what is below.
+      const team = (this.jobs || []).length;
+      return '<div class="sj-sep"><b>In-session jobs</b><span>' + (team
+        ? ('no subagent job · ' + team + ' team job' + (team === 1 ? '' : 's') +
+           (this.scopeAgent ? ' for ' + esc(this.scopeAgent) : '') + ' below')
+        : 'no subagent job in this chat') + '</span></div>';
+    }
     const rows = jobs.map(j => {
       const subs = j.subjobs || [];
       const key = "sj:" + String(j.id);
@@ -3494,7 +3503,20 @@ class JobsView {
     this.sj = sj || this.sj || [];
     this._paintScope();
     this.jobs = this.allJobs.filter(j => this._inScope(j));
-    $("jobsCount").textContent = this.jobs.length ? (this.jobs.filter(j => j.status === "running").length + " running / " + this.jobs.length) : "—";
+    /* 2026-11-18 (operator: "the chat session jobs number is not synced in the job
+       panel"): the header counted only RUNNING and TOTAL, so a BLOCKED job (live:
+       J37) was invisible in the summary, and the in-session ledger was not counted
+       at all though its rows are listed right below. The count now describes the
+       ROWS THIS PANEL SHOWS: every state that is present, plus the in-session jobs
+       when the session scope is on. */
+    const _sjJobs = (this.scope === "session" && this.sj) ? (this.sj.jobs || []) : [];
+    const _shown = this.jobs.length + _sjJobs.length;
+    const _n = s => this.jobs.filter(j => j.status === s).length +
+                     _sjJobs.filter(j => j.status === s).length;
+    const _parts = ["running", "blocked", "pending"].filter(s => _n(s))
+      .map(s => _n(s) + " " + s);
+    $("jobsCount").textContent = _shown
+      ? ((_parts.length ? _parts.join(" \u00b7 ") : "0 running") + " / " + _shown) : "\u2014";
     $("jobs").innerHTML = this._sjHtml() + (this.jobs.map(j => {
       const subs = j.subjobs || {};
       // JAG-322/335/484: the job's SUBJOBS (J8.1, J8.1.1 …) — who was assigned what,
@@ -3528,7 +3550,11 @@ class JobsView {
       const relHtml = (j.coordinator || crew.length
         ? '<span class="rl" title="coordinator ' + esc(j.coordinator || "") + ' · team ' + esc(crew.join(",")) + '">' +
           esc(j.coordinator || "unassigned") + (crew.length ? ' ⇢ ' + esc(crew.join(",")) : "") + '</span>' : "") +
-        (j.blocked_by && j.blocked_by.length
+        /* 2026-11-18 (operator, same report): `blocked_by` is a dependency of a job
+           that has NOT started; once it runs or finishes the chip read as "still
+           blocked" on a DONE row (live: J35/J32/J29 done, each wearing "blocked by
+           J3x"). The chip is painted only while the dependency can still hold. */
+        ((j.blocked_by && j.blocked_by.length && ["pending", "queued", "blocked"].indexOf(j.status) >= 0)
           ? '<span class="rl" title="job dependencies">blocked by ' + esc(j.blocked_by.join(", ")) + '</span>' : "") +
         /* I-7: one path written by two of this job's agents — one overwrite may
            have lost work while both reported success. */
