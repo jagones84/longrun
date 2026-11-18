@@ -48,6 +48,7 @@ Usage:
   python3 forge.py skilladapter bind FILE.json | intake admit FILE.json
   python3 forge.py memcredit arbitrate FILE.json | lessongate probe FILE.json | seclattice admit FILE.json
   python3 forge.py optmemory continuity FILE.json | detour classify FILE.json | patchprobe compare FILE.json
+  python3 forge.py poison trace FILE.json | boundary evaluate FILE.json | gapleak verify FILE.json
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -1326,6 +1327,73 @@ def cmd_patchprobe(args):
     print(json.dumps(out, indent=2, ensure_ascii=False))
     sys.exit(0 if out.get("valid") is not False and out.get("verdict") != "INCONCLUSIVE"
              else 1)
+
+
+def cmd_poison(args):
+    """Round 127 (arXiv:2611.09721): a payload's lifecycle through agent memory."""
+    from longrun.harness import memory_poison
+    if not getattr(args, "file", None):
+        print("usage: poison trace|descendants FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "trace":
+        out = memory_poison.trace(doc.get("run") or doc)
+    else:
+        out = memory_poison.descendants(doc.get("store") or {}, doc.get("poisoned") or [])
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(1 if out.get("isr") == 0 or out.get("br") == 0 else 0)
+
+
+def cmd_boundary(args):
+    """Round 127 (arXiv:2611.21259): identity, authorization and propagation at a seam."""
+    from longrun.harness import trust_boundary
+    if not getattr(args, "file", None):
+        print("usage: boundary evaluate|classify FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "evaluate":
+        out = trust_boundary.evaluate(doc.get("call") or doc)
+    else:
+        out = trust_boundary.classify(doc.get("outcome") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(1 if out.get("decision") == "deny" else 0)
+
+
+def cmd_gapleak(args):
+    """Round 127 (arXiv:2611.22223): information gap, disclosure, submission-time filter."""
+    from longrun.harness import gap_leak
+    if not getattr(args, "file", None):
+        print("usage: gapleak gap|disclosure|verify|compare FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "gap":
+        out = gap_leak.gap(doc.get("requested") or [], doc.get("authorized") or [],
+                           doc.get("reachable") or [])
+    elif args.action == "disclosure":
+        out = gap_leak.disclosure(doc.get("form") or {}, doc.get("policy") or [],
+                                  doc.get("third_party") or [])
+    elif args.action == "verify":
+        out = gap_leak.verify(doc.get("form") or {}, doc.get("summary") or {},
+                              doc.get("required") or [])
+    else:
+        out = gap_leak.compare(doc.get("before") or {}, doc.get("after") or {})
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(1 if out.get("preserved_required") is False else 0)
 
 
 def cmd_instructions(args):
@@ -2971,6 +3039,16 @@ def main():
         p.add_argument("action", choices=["verdict", "compare", "provenance", "validate"]); \
         p.add_argument("file", nargs="?", help="JSON: {control_ok, effect_seen, token_ok}, {b0, sibling}, {runs, advisory}, or {runs}"); \
         p.set_defaults(fn=cmd_patchprobe)
+    p = sub.add_parser("poison"); p.add_argument("action", choices=["trace", "descendants"]); \
+        p.add_argument("file", nargs="?", help="JSON: {run} or {store, poisoned}"); \
+        p.set_defaults(fn=cmd_poison)
+    p = sub.add_parser("boundary"); p.add_argument("action", choices=["evaluate", "classify"]); \
+        p.add_argument("file", nargs="?", help="JSON: {call} or {outcome}"); \
+        p.set_defaults(fn=cmd_boundary)
+    p = sub.add_parser("gapleak"); \
+        p.add_argument("action", choices=["gap", "disclosure", "verify", "compare"]); \
+        p.add_argument("file", nargs="?", help="JSON: {requested, authorized, reachable}, {form, policy, third_party}, {form, summary, required}, or {before, after}"); \
+        p.set_defaults(fn=cmd_gapleak)
     p = sub.add_parser("instructions"); p.add_argument("action", choices=["audit"]); \
         p.add_argument("file", nargs="?", help="JSON: {text, cards}"); \
         p.set_defaults(fn=cmd_instructions)
