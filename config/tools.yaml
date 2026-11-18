@@ -459,22 +459,27 @@ tools:
       # command; re-add the pattern here to make it impossible again (the agent
       # would then only see "BLOCKED" with the rule named).
       - ">\\s*/dev/(sd|nvme|mmcblk)"
-      - "LONGRUN_TOKEN"
-      - "grep[^\\n]*\\.env"
+      - pattern: "LONGRUN_TOKEN"
+        why: "the API bearer is the operator's credential — a tool call never needs to read it, and reading it would let a command act as the operator"
+      - pattern: "grep[^\\n]*\\.env"
+        why: "the env file holds the API bearer and every provider key — read what is configured with `self.info` or the providers list instead"
       # 2026-11-17 (operator: *"dont make permission to read .env is enougt?"*):
       # the `grep` rule above left every OTHER reader open — `cat .env`,
       # `head .env`, `base64 .env` — and the file is what the API bearer and every
       # provider key live in. The fs tools deny it by path (below) and this covers
       # the shell spelling. `.env.template` is tracked and stays readable.
-      - "\\b(cat|head|tail|less|more|strings|xxd|od|base64|cp|rsync|scp)\\b[^\\n]*\\.env(?:\\.(?!template\\b)[^\\s]*)?(?:\\s|$)"
+      - pattern: "\\b(cat|head|tail|less|more|strings|xxd|od|base64|cp|rsync|scp)\\b[^\\n]*\\.env(?:\\.(?!template\\b)[^\\s]*)?(?:\\s|$)"
+        why: "the env file holds the API bearer and every provider key — `self.info` and the providers list show the configured values, `.env.template` the shape"
       # 2026-11-17: the same reason the orchestration endpoints were denied: a
       # shell-capable agent must not reach the CONTROL API around the tool gate.
       # With ONE token (no second operator key) this is the real barrier for a
       # policy write (`/api/tools`, `/api/settings`) and for self-approving a
       # document (`/api/docs/approve|implement`) — `_policy_refusal` only refuses
       # a body that carries a session, and a curl body carries none.
-      - "(?:curl|wget)[^\\n]*127\\.0\\.0\\.1[^\\n]*/api/(jobs|agents|teams|architect|tools|settings|docs|fs|edits)"
-      - "(?:curl|wget)[^\\n]*localhost[^\\n]*/api/(jobs|agents|teams|architect|tools|settings|docs|fs|edits)"
+      - pattern: "(?:curl|wget)[^\\n]*127\\.0\\.0\\.1[^\\n]*/api/(jobs|agents|teams|architect|tools|settings|docs|fs|edits)"
+        why: "a tool call must not reach the control API around the gate — call the tool itself (fs.*, docs, self.*, sessions.*); the agent has no policy-write verb"
+      - pattern: "(?:curl|wget)[^\\n]*localhost[^\\n]*/api/(jobs|agents|teams|architect|tools|settings|docs|fs|edits)"
+        why: "a tool call must not reach the control API around the gate — call the tool itself (fs.*, docs, self.*, sessions.*); the agent has no policy-write verb"
       # 2026-11-18 (trace tampering arXiv:2609.30266 + instrument evasion
       # arXiv:2609.30217): the `fs.*` verbs deny the run/transcript/event/held-out
       # store by path; a shell-capable agent must not reach it another way, and
@@ -511,8 +516,10 @@ tools:
     # graded on. (heldout.py already keeps it in the DATA HOME; this covers a
     # legacy in-checkout data/.)
     deny:
-      - "(^|/)\\.env(\\.(?!template$)[^/]*)?$"
-      - "(^|/)data/heldout(/|$)"
+      - pattern: "(^|/)\\.env(\\.(?!template$)[^/]*)?$"
+        why: "the env file holds the API bearer and every provider key — reading it would hand a tool the operator's credentials; `self.info` and the providers list show what is configured, and `.env.template` shows the shape"
+      - pattern: "(^|/)data/heldout(/|$)"
+        why: "the sealed held-out judge grades this harness — an agent may not read the cases it is graded on"
 
   # write a file (host-side, constrained to the allowed roots; JAG-59: the repo
   # root so the agent can create/edit the DGX repos it works on)
@@ -531,9 +538,12 @@ tools:
     # outside the checkout (paths.py JAG-533); this covers a legacy in-checkout
     # data/. Hard deny: `approvals.mode=full` never lifts it.
     deny:
-      - "(^|/)\\.env(\\.(?!template$)[^/]*)?$"
-      - "(^|/)data/(runs|sessions|threads|heldout|proposals|improvement)(/|$)"
-      - "(^|/)data/events\\.db$"
+      - pattern: "(^|/)\\.env(\\.(?!template$)[^/]*)?$"
+        why: "the env file holds the API bearer and every provider key — writing it would let a tool rewrite the harness's own credentials"
+      - pattern: "(^|/)data/(runs|sessions|threads|heldout|proposals|improvement)(/|$)"
+        why: "data/runs, sessions, threads, heldout, proposals and improvement are the harness's evidence about itself — writing them would rewrite the record; write your own files under the workspace"
+      - pattern: "(^|/)data/events\\.db$"
+        why: "events.db is the harness's audit log — writing it would rewrite history"
 
   # surgical edit: exact search/replace inside a file (safer than rewriting
   # the whole file with fs.write); same roots as fs.write
@@ -545,9 +555,12 @@ tools:
       - "~/Repositories"
     # 2026-11-18 (trace tampering, arXiv:2609.30266): same store deny as fs.write.
     deny:
-      - "(^|/)\\.env(\\.(?!template$)[^/]*)?$"
-      - "(^|/)data/(runs|sessions|threads|heldout|proposals|improvement)(/|$)"
-      - "(^|/)data/events\\.db$"
+      - pattern: "(^|/)\\.env(\\.(?!template$)[^/]*)?$"
+        why: "the env file holds the API bearer and every provider key — editing it would let a tool rewrite the harness's own credentials"
+      - pattern: "(^|/)data/(runs|sessions|threads|heldout|proposals|improvement)(/|$)"
+        why: "the harness's own evidence store — an edit there would rewrite the record it audits itself with; work in the workspace instead"
+      - pattern: "(^|/)data/events\\.db$"
+        why: "events.db is the harness's audit log — an edit would rewrite history"
 
   # git — read-only subcommands auto-approved, mutating ones need approval
   git:

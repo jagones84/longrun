@@ -2372,6 +2372,7 @@ def tool_spec(name, ext_snapshot=None, mtx_snapshot=None):
     if entry is None and ext:
         entry = {}  # external MCP default policy below
     entry = entry or {}
+    deny_patterns, deny_notes = _deny_parts(entry.get("deny"))
     return {
         "name": name,
         "origin": ("delegation" if is_delegation else
@@ -2389,7 +2390,11 @@ def tool_spec(name, ext_snapshot=None, mtx_snapshot=None):
         "enabled": bool(entry.get("enabled", False)),
         "approval": entry.get("approval", "required"),
         "auto_approve": list(entry.get("auto_approve") or []),
-        "deny": list(entry.get("deny") or []),
+        # Round 63: `deny` stays a plain pattern list (the panel, `_match` and the
+        # policy report read strings); the optional `why` of a rule travels beside
+        # it, keyed by its own pattern, so a refusal can explain itself.
+        "deny": deny_patterns,
+        "deny_why": deny_notes,
         "always_ask": list(entry.get("always_ask") or []),
         "allow_hosts": list(entry.get("allow_hosts") or []),
         "roots": list(entry.get("roots") or ["."]),
@@ -2764,6 +2769,35 @@ def _subject(tool, args):
     return json.dumps(args, sort_keys=True)
 
 
+def _deny_parts(entries):
+    """Split a configured deny list into (patterns, notes).
+
+    Round 63: a deny entry may be a bare regex (the historical shape) or a
+    mapping `{pattern, why}`. The WHY lives beside the rule that enforces it —
+    one truth, no second table to drift — and `classify` appends it to the
+    refusal. Measured 2026-11-18: 13 `shell.exec · permission` cards answered
+    with nothing but the regex (`matches hard-deny pattern 'LONGRUN_TOKEN'`), so
+    the model was told WHICH rule fired and never what to use instead; 4 of the
+    14 never recovered. The message shape before the dash is unchanged, which is
+    what the pins (`v801`, `v987`, `v618`) and `failure_family` read.
+    """
+    patterns, notes = [], {}
+    for entry in entries or ():
+        if isinstance(entry, dict):
+            pattern = str(entry.get("pattern") or "").strip()
+            if not pattern:
+                continue
+            patterns.append(pattern)
+            why = str(entry.get("why") or "").strip()
+            if why:
+                notes[pattern] = why
+            continue
+        text = str(entry or "")
+        if text:
+            patterns.append(text)
+    return patterns, notes
+
+
 def _match(patterns, text):
     for p in patterns:
         try:
@@ -3004,7 +3038,13 @@ def classify(tool, args, workspace=None, hist=None, allow=None, scope_name=None,
     hit = _match(spec["deny"], subject)
     if hit:
         note_rule_hit(tool, "deny", hit)
-        return "denied", "matches hard-deny pattern %r" % hit
+        why = (spec.get("deny_why") or {}).get(hit)
+        # Round 63: the rule may carry its own explanation (what it protects and
+        # what to use instead). The shape before the dash is unchanged — the pins
+        # and `failure_family` read it — and a rule without a note answers exactly
+        # as it did before.
+        return "denied", ("matches hard-deny pattern %r — denied because %s" % (hit, why)
+                          if why else "matches hard-deny pattern %r" % hit)
     if spec["approval"] == "denied":
         return "denied", "tool policy is 'denied'"
     # JAG-535/538: exclusive tools enforce a dual-permission model — the tool must
