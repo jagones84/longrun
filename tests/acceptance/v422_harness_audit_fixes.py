@@ -126,7 +126,9 @@ check("D3 a second read returns the same values from the cache",
 # ---- E. the streaming anchor lives INSIDE the worker / turn lock -------------
 with open(os.path.join(REPO, "src", "longrun", "core", "httpapi.py"), encoding="utf-8") as f:
     http = f.read()
-start = http.index("def chat_stream_gen(")
+# ff28324 moved the worker out of `chat_stream_gen` into `_start_chat_worker`;
+# the anchor contract is unchanged and lives in that worker.
+start = http.index("def _start_chat_worker(")
 worker = http.index("def worker()", start)
 before_worker = http[start:worker]
 check("E1 the request thread no longer anchors the turn",
@@ -148,7 +150,9 @@ with open(os.path.join(REPO, "src", "longrun", "core", "sse.py"), encoding="utf-
 check("F1 the coalescer really can raise where the flush is called",
       "def flush(self):" in sse_src and 'self._emit("think", text)' in sse_src)
 _fin = http.index("_coalesce.flush()  # JAG-265")
-_block = http[_fin - 700:_fin + 1400]
+# ff28324 added the detached-reply check and its comments between the flush and
+# the release; the contract window must still cover the release.
+_block = http[_fin - 700:_fin + 2600]
 check("F2 the CoT flush is wrapped in its own try",
       "try:\n                _coalesce.flush()  # JAG-265" in _block)
 check("F3 the release is unconditional — it survives a raising cleanup AND a raising turn_end",

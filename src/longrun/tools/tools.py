@@ -1231,6 +1231,18 @@ def _http(args, run_id):
             return {"ok": False, "error": perr, "backend": "host(http/public)",
                     "sandboxed": False}
         body = _truncate(pub["text"], 8192)
+        if pub.get("soft_404"):
+            # v1170: the public reader reached a DIFFERENT page. Keep the bytes
+            # (they may be useful) but do not report a clean HTTP 200 success.
+            return {"ok": False, "exit_code": 1, "soft_404": True,
+                    "error": ("soft-404: requested %s, the server served %s"
+                              % (url, pub.get("final_url") or "?")),
+                    "stdout": ("HTTP 200 (%s, public reader)\n"
+                               "[!] SOFT-404: requested %s, the server served %s\n%s"
+                               % (pub.get("host") or host, url,
+                                  pub.get("final_url") or "?", body)),
+                    "stderr": "", "status": 200, "bytes": len(pub["text"]),
+                    "backend": "host(http/public)", "sandboxed": False}
         return {"ok": True, "exit_code": 0,
                 "stdout": "HTTP 200 (%s, public reader)\n%s"
                           % (pub.get("host") or host, body),
@@ -1265,11 +1277,23 @@ def _browser(args, run_id):
         if perr:
             return {"ok": False, "error": perr,
                     "backend": "host(browser)", "sandboxed": False}
-        data, err = {"status": 200, "body": pub["text"], "host": pub["host"]}, None
+        data, err = {"status": 200, "body": pub["text"], "host": pub["host"],
+                     "final_url": pub.get("final_url"),
+                     "soft_404": pub.get("soft_404")}, None
     if err:
         return {"ok": False, "error": err, "backend": "host(browser)", "sandboxed": False}
     html = data["body"]
     text = _strip_html(html)
+    if data.get("soft_404"):
+        # v1170: the same reader as `web.fetch` — a redirect target is not the
+        # requested page and must not be returned as a clean success.
+        return {"ok": False, "exit_code": 1, "soft_404": True,
+                "stdout": ("[!] SOFT-404: requested %s, the server served %s\n%s"
+                           % (url, data.get("final_url") or "?", _truncate(text, 8192))),
+                "error": ("soft-404: requested %s, the server served %s"
+                          % (url, data.get("final_url") or "?")),
+                "status": data["status"], "bytes": len(html),
+                "backend": "host(browser)", "sandboxed": False}
     return {"ok": True, "exit_code": 0, "stdout": _truncate(text, 8192), "stderr": "",
             "status": data["status"], "bytes": len(html), "backend": "host(browser)",
             "sandboxed": False, "note": "lightweight HTML->text extractor, not a headless browser"}
@@ -1657,6 +1681,42 @@ def _raw_alternative(url):
     return ""
 
 
+def _same_target(requested, final):
+    """True when `final` is the SAME page as `requested` (query/fragment ignored).
+
+    v1170: a soft-404 is a redirect or a catch-all page whose PATH is not the
+    one asked for. A scheme change (http->https) or a query string is benign; a
+    different host or path is not.
+    """
+    if not final:
+        return True
+    try:
+        a, b = urllib.parse.urlsplit(requested), urllib.parse.urlsplit(final)
+    except Exception:  # noqa: BLE001 — an unparseable URL is not a soft-404 proof
+        return True
+    if not a.hostname or not b.hostname:
+        return True
+    return ((a.hostname or "").lower() == (b.hostname or "").lower()
+            and (a.path or "/").rstrip("/") == (b.path or "/").rstrip("/"))
+
+
+def _reader_source(text):
+    """The `URL Source:` line a page reader may prepend, or None."""
+    for line in (text or "").splitlines()[:30]:
+        match = re.match(r"^\s*URL\s+Source:\s*(\S+)\s*$", line, re.I)
+        if match:
+            return match.group(1)
+    return None
+
+
+def _web_page(requested, final, text, via, host):
+    """One fetched page, with the redirect/soft-404 verdict attached."""
+    soft = not _same_target(requested, final)
+    return {"url": requested, "final_url": final or requested, "text": text,
+            "via": via, "host": host, "soft_404": bool(soft),
+            "redirected_to": (final or requested) if soft else None}
+
+
 def _web_fetch(url, max_bytes):
     """Readable page text: try the keyless r.jina.ai reader, else direct HTML->text.
 
@@ -1680,9 +1740,10 @@ def _web_fetch(url, max_bytes):
         try:
             req = urllib.request.Request(url, headers={"User-Agent": _WEB_UA})
             with _open(req, timeout=25) as r:
+                final = r.geturl() or url
                 raw = r.read(max_bytes).decode("utf-8", "replace")
             if raw.strip() and not raw.lstrip()[:15].lower().startswith(("<!doctype", "<html")):
-                return {"url": url, "text": raw, "via": "direct", "host": host}, None
+                return _web_page(url, final, raw, "direct", host), None
             raw_url = _raw_alternative(url)
             return None, ("the server answered with an HTML PAGE, not the data file "
                           "%s — ask for the raw URL%s and fetch that instead"
@@ -1695,14 +1756,16 @@ def _web_fetch(url, max_bytes):
         with _open(req, timeout=30) as r:
             text = r.read(max_bytes).decode("utf-8", "replace")
         if text.strip():
-            return {"url": url, "text": text, "via": "jina", "host": host}, None
+            # v1170: the reader may name the page it served; compare it when it does.
+            return _web_page(url, _reader_source(text) or url, text, "jina", host), None
     except Exception:  # noqa: BLE001
         pass
     try:
         req = urllib.request.Request(url, headers={"User-Agent": _WEB_UA})
         with _open(req, timeout=25) as r:
+            final = r.geturl() or url
             raw = r.read(max_bytes).decode("utf-8", "replace")
-        return {"url": url, "text": _strip_html(raw), "via": "direct", "host": host}, None
+        return _web_page(url, final, _strip_html(raw), "direct", host), None
     except Exception as e:  # noqa: BLE001
         return None, "fetch failed: %s" % e
 
@@ -1756,7 +1819,7 @@ def _web_open(args, t0):
         finally:
             ex.shutdown(wait=False, cancel_futures=True)
 
-    pages, chunks, any_ok = [], [], False
+    pages, chunks, hard_ok = [], [], False
     for u in urls:
         data, err = got.get(u) or (None, "not fetched (wall clock)")
         if err or not data:
@@ -1764,26 +1827,46 @@ def _web_open(args, t0):
             pages.append({"url": u, "ok": False, "error": msg})
             chunks.append("## %s\n[error] %s" % (u, msg))
             continue
-        any_ok = True
         text = str(data.get("text") or "")
+        soft = bool(data.get("soft_404"))
+        if not soft:
+            hard_ok = True
         pages.append({"url": data.get("url") or u, "ok": True,
                       "via": data.get("via"), "host": data.get("host"),
-                      "bytes": len(text)})
-        chunks.append("## %s (%s, %d bytes)\n%s"
-                      % (data.get("url") or u, data.get("via"), len(text), text))
-    first = next((p for p in pages if p.get("ok")), {})
-    out = {"ok": any_ok, "exit_code": 0 if any_ok else 1, "stderr": "",
+                      "bytes": len(text), "final_url": data.get("final_url"),
+                      "soft_404": soft,
+                      "redirected_to": data.get("redirected_to")})
+        if soft:
+            # v1170: the content is the redirect target, not the requested page.
+            # It is kept (the operator may want it) but never as a clean success.
+            chunks.append("## %s (%s, %d bytes)\n[!] SOFT-404: requested %s, "
+                          "the server served %s\n%s"
+                          % (data.get("url") or u, data.get("via"), len(text),
+                             data.get("url") or u, data.get("final_url") or "?", text))
+        else:
+            chunks.append("## %s (%s, %d bytes)\n%s"
+                          % (data.get("url") or u, data.get("via"), len(text), text))
+    first = next((p for p in pages if p.get("ok") and not p.get("soft_404")), {})
+    out = {"ok": hard_ok, "exit_code": 0 if hard_ok else 1, "stderr": "",
            "stdout": _truncate("\n\n".join(chunks), 65536),
            "data": _web_data({"action": "fetch", "pages": pages,
                               "duration_ms": int((time.time() - t0) * 1000)}),
            "duration_ms": int((time.time() - t0) * 1000),
+           "soft_404": any(p.get("soft_404") for p in pages),
            "backend": "host(web)", "sandboxed": False}
     if len(urls) == 1:
-        out["url"] = first.get("url") or urls[0]
+        out["url"] = first.get("url") or (pages[0].get("url") if pages else urls[0])
         out["via"] = first.get("via")
-    if not any_ok:
-        out["error"] = "; ".join("%s: %s" % (p["url"], p.get("error"))
-                                 for p in pages)[:400]
+    if not hard_ok:
+        bits = []
+        for page in pages:
+            if page.get("soft_404"):
+                bits.append("%s: soft-404 (the server served %s)"
+                            % (page.get("url"), page.get("final_url") or "?"))
+            else:
+                bits.append("%s: %s" % (page.get("url"),
+                                        page.get("error") or "fetch failed"))
+        out["error"] = "; ".join(bits)[:400]
     return out
 
 
@@ -3902,6 +3985,15 @@ def _knowledge(args, run_id):
     """
     from longrun.memory import knowledge as kb
     args = args or {}
+    # v1169: the schema declares `notebook` as a string. The dispatcher already
+    # refuses an integer for the agent path; a DIRECT caller (tests, research,
+    # the HTTP route) used to have it coerced by `str(...)` and then search the
+    # wrong scope. One refusal for every caller.
+    raw_notebook = args.get("notebook")
+    if raw_notebook is not None and not isinstance(raw_notebook, str):
+        msg = ("'notebook' must be a string id or name, you sent %s %r — quote it"
+               % (type(raw_notebook).__name__, raw_notebook))
+        return {"ok": False, "exit_code": 64, "error": msg, "stdout": msg}
     action = (args.get("action") or "search").lower()
     sid = str(run_id or "").strip() or None
     requested_session = str(args.get("session") or "").strip()
@@ -3986,17 +4078,33 @@ def _knowledge(args, run_id):
     except (TypeError, ValueError):
         k = 8
     # JAG-451: docs attached to a chat are auto-ingested into the session's own
-    # notebook. Query THAT first (so an attached PDF is retrievable without
-    # raw text extraction), then fall back to the global notebooks. An explicitly
-    # named notebook still wins.
+    # notebook. Query THAT first (so an attached PDF is retrievable without raw
+    # text extraction), then the shared notebooks. An explicitly named notebook
+    # still wins.
+    # v1169: a session hit is NOT evidence that the shared base is empty. Both
+    # scopes are searched and merged (session first), because the contract says
+    # "session first, then shared notebooks". The old fallback only queried the
+    # shared base when the session had no hit, so one session match hid every
+    # shared document.
     notebook = args.get("notebook")
     if not notebook and sid:
-        res = kb.search(query, None, k=k, kind=args.get("kind"), session=sid,
-                        include_text=True)
-        scope = "current session notebook"
-        if not res.get("results"):
-            res = kb.search(query, None, k=k, kind=args.get("kind"), include_text=True)
-            scope = "shared notebooks (no session match)"
+        sess_res = kb.search(query, None, k=k, kind=args.get("kind"), session=sid,
+                             include_text=True)
+        shared_res = kb.search(query, None, k=k, kind=args.get("kind"),
+                               include_text=True)
+        merged, seen = [], set()
+        for result in ((sess_res.get("results") or [])
+                       + (shared_res.get("results") or [])):
+            key = (result.get("notebook"), result.get("source"),
+                   result.get("start"), result.get("end"))
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(result)
+        res = dict(shared_res)
+        res["results"] = merged[:k]
+        res["mode"] = shared_res.get("mode") or sess_res.get("mode")
+        scope = "current session notebook + shared notebooks"
     else:
         res = kb.search(query, notebook, k=k, kind=args.get("kind"), include_text=True)
         scope = "selected notebook" if notebook else "shared notebooks"
@@ -4654,6 +4762,34 @@ def _shape_notes(tool: str, args: Any) -> list[tuple[str, str]]:
             # here is a programming error the gate must name (exit 64).
             notes.append(("type", "%r must be a string, you sent %s %r — quote it"
                           % (key, type(value).__name__, value)))
+        elif ptype in ("integer", "number") and (
+                spec.get("minimum") is not None or spec.get("maximum") is not None):
+            # v1171: a declared range used to be advisory. The handler then
+            # clamped the value in silence (a -5 timeout became 1 second), so the
+            # caller could not tell which limit actually ran.
+            lo, hi = spec.get("minimum"), spec.get("maximum")
+            num = value
+            if isinstance(value, bool):
+                notes.append(("type", "%r must be an %s, you sent a boolean"
+                              % (key, ptype)))
+                continue
+            if isinstance(value, str):
+                # v874 A6: a numeric STRING for an integer argument is accepted.
+                try:
+                    num = int(value) if ptype == "integer" else float(value)
+                except (TypeError, ValueError):
+                    notes.append(("type",
+                                  "%r must be an %s, you sent str %r — pass a number"
+                                  % (key, ptype, value)))
+                    continue
+            elif not isinstance(value, (int, float)):
+                continue  # a list/object was already named by the scalar branch
+            if (lo is not None and num < lo) or (hi is not None and num > hi):
+                notes.append(("range",
+                              "%r is out of range: %s..%s (you sent %r)"
+                              % (key,
+                                 lo if lo is not None else "-inf",
+                                 hi if hi is not None else "+inf", value)))
     return notes
 
 
@@ -4767,7 +4903,7 @@ def _dispatch_execute_raw(tool, args, run_id=None):
     # later with a nonsense message ("no such file: ['/tmp/a', '/tmp/b']", "no such
     # file: .../12345") the model cannot act on.
     _broken = [text for kind, text in _shape_notes(tool, args)
-               if kind in ("scalar", "type")]
+               if kind in ("scalar", "type", "range")]
     if _broken:
         return _missing_args_reply(tool, [], [], [], args=args)
     fn = _DISPATCH.get(tool)

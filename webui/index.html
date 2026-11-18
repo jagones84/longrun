@@ -12257,7 +12257,7 @@ async function resetPlan() {
    buttons for one store. One control: resetPlan(). */
 /* JAG-91/JAG-127: LLM selector — ALL providers' models, grouped, keyboard-navigable,
    persisted in localStorage (ref = "<provider>:<model>"). */
-let _modelsCache = [];   // flat [{ref,id,provider,pname,local,available,ctx,loaded}]
+let _modelsCache = [];   // flat [{ref,id,provider,pname,local,configured,reachable,available,ctx,loaded}]
 let _modelItems = [];    // items currently rendered, in visual order
 let _modelHi = 0;        // highlighted index (keyboard)
 let _sessModel = {};     // JAG-157: per-session model {sessionId: modelRef}
@@ -12346,7 +12346,10 @@ async function loadModels() {
     const flat = [];
     (d.providers || []).forEach(p => (p.models || []).forEach(m => flat.push({
       ref: m.ref || (p.id + ":" + m.id), id: m.id, provider: p.id,
-      pname: p.name || p.id, local: !!p.local, available: p.available !== false,
+      pname: p.name || p.id, local: !!p.local,
+      configured: p.configured !== false,
+      reachable: (typeof p.reachable === "boolean") ? p.reachable : null,
+      available: p.available !== false,
       ctx: m.context_length || 0, loaded: !!m.loaded, vision: m.vision,
     })));
     _modelsCache = flat;
@@ -12408,7 +12411,8 @@ function renderModelMenu(q) {
   const groups = {};
   _modelsCache.forEach(m => {
     if (query && !(m.ref.toLowerCase().includes(query) || m.id.toLowerCase().includes(query))) return;
-    const g = groups[m.provider] = groups[m.provider] || { name: m.pname, local: m.local, available: m.available, items: [] };
+    const g = groups[m.provider] = groups[m.provider] || { name: m.pname, local: m.local,
+      configured: m.configured, reachable: m.reachable, available: m.available, items: [] };
     g.items.push(m);
   });
   Object.keys(groups)
@@ -12416,12 +12420,17 @@ function renderModelMenu(q) {
     .forEach(pid => {
       const g = groups[pid];
       const h = document.createElement("div"); h.className = "mh";
-      h.textContent = g.name + (g.local ? " · local" : "") + (g.available ? "" : " · no key");
+      h.textContent = g.name + (g.local ? " · local" : "")
+        + (g.configured ? "" : " · no key")
+        + (g.reachable === false ? " · unreachable" : "");
       box.appendChild(h);
       g.items.forEach(m => {
         const it = document.createElement("div");
         it.className = "mi" + (m.ref === cur ? " active" : "");
-        const dot = document.createElement("span"); dot.textContent = m.loaded ? "●" : (m.available ? "○" : "⊘");
+        const dot = document.createElement("span");
+        dot.textContent = m.loaded ? "●" : (m.reachable === false ? "⊘" : (m.available ? "○" : "⊘"));
+        dot.title = m.reachable === false ? "configured, endpoint unreachable"
+          : (m.available ? "available" : "no key");
         const nm = document.createElement("span");
         nm.style.cssText = "flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
         nm.textContent = m.id;
@@ -16442,12 +16451,16 @@ async function loadProviders() {
       head.title = "expand / collapse the model list";
       const caret = document.createElement("span"); caret.textContent = "▸";
       caret.style.cssText = "flex:0 0 auto;width:12px;text-align:center;color:var(--dim)";
-      const dot = document.createElement("span"); dot.textContent = p.available ? "●" : "◐";
+      const dot = document.createElement("span");
+      dot.textContent = p.reachable === false ? "⊘" : (p.configured === false ? "◐" : "●");
+      dot.title = p.reachable === false ? "configured, endpoint unreachable"
+        : (p.configured === false ? "no key" : "configured");
       const name = document.createElement("div"); name.style.cssText = "flex:1;min-width:0";
       const t = document.createElement("div"); t.style.fontWeight = "600";
       t.textContent = p.id + (p.local ? " · local" : "");
       const sub = document.createElement("div"); sub.className = "remaining";
       sub.textContent = (p.name || "") + " · " + (p.kind || "") + " · " + (p.base_url || "") +
+        (p.configured === false ? " · no key" : (p.reachable === false ? " · unreachable" : "")) +
         "  (" + (p.models || []).length + " models)";
       name.append(t, sub);
       const test = document.createElement("button"); test.className = "ghost"; test.textContent = "test";

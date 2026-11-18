@@ -101,13 +101,17 @@ check("C4 a single org-chart click also focuses the agent in the Agents panel",
 
 
 # ---- D) session-scoped knowledge retrieval --------------------------------
+# v1169: the session hit no longer HIDES the shared base — both scopes are
+# searched, session first, and the scope says so.
 check("D1 the knowledge tool searches the session notebook first",
-      "session=sid,\n                        include_text=True)" in tools_src
+      "sess_res = kb.search(query, None, k=k" in tools_src
+      and "session=sid," in tools_src
       and "sid = str(run_id or \"\").strip() or None" in tools_src
       and "session must match the current chat" in tools_src)
-check("D2 it falls back to a global search when the session has no hit",
-      "if not res.get(\"results\"):" in tools_src
-      and "kb.search(query, None, k=k, kind=args.get(\"kind\"), include_text=True)" in tools_src)
+check("D2 it ALSO searches the shared notebooks (not only as a fallback)",
+      "shared_res = kb.search(query, None, k=k" in tools_src
+      and 'scope = "current session notebook + shared notebooks"' in tools_src
+      and 'scope = "shared notebooks (no session match)"' not in tools_src)
 check("D3 an explicit notebook still wins",
       "res = kb.search(query, notebook, k=k, kind=args.get(\"kind\"), include_text=True)" in tools_src)
 check("D4 the tool schema says chat attachments are session-indexed and must not be re-added",

@@ -258,11 +258,13 @@ check("3f1 Knowledge lists the current session notebook without exposing other s
           and n.get("owner") == "sid-A" for n in listed_nbs)
       and all(n.get("owner") != "sid-B" for n in listed_nbs if n.get("is_session")),
       {"notebooks": listed_nbs})
+# v1169: the session scope now searches BOTH scopes (a session hit no longer
+# hides the shared base), and the returned scope says so.
 check("3f2 session search returns the full matched chunk, not only a snippet",
       any("Unique session attachment marker: amber quartz." in r.get("text", "")
           for r in search_tool.get("results", []))
       and "Unique session attachment marker: amber quartz." in search_tool.get("stdout", "")
-      and search_tool.get("scope") == "current session notebook",
+      and search_tool.get("scope") == "current session notebook + shared notebooks",
       {"results": search_tool.get("results", [])})
 check("3f2a direct Knowledge search keeps the compact snippet-only response by default",
       all("text" not in r for r in session_results.get("results", [])),

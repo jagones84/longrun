@@ -47,6 +47,14 @@ _RUNTIME_MESSAGES = {
         "Top up the account or raise the key's limit in the provider dashboard, then retry.",
         "keys",
     ),
+    # A 403 is "authorised but forbidden" (region, account policy, model access),
+    # not an authentication failure: 401 is the credential error.
+    "provider.request_forbidden": (
+        "error", "Provider refused the request",
+        "The provider refused this request (permissions, region or account policy). "
+        "This is not a key problem; check the provider account and model access in Settings → Models.",
+        "models",
+    ),
     "provider.unreachable": (
         "error", "Provider is unreachable",
         "Longrun could not reach the configured provider. Check its URL and network connection in Settings → Models.",
@@ -665,6 +673,31 @@ def summarize(issues: list[dict]) -> dict:
             "actionable": counts["error"] + counts["warning"]}
 
 
+def _error_body_text(error: BaseException, limit: int = 4096) -> str:
+    """Best-effort, bounded body text of a provider failure (never rendered).
+
+    `urllib.error.HTTPError` carries the provider's JSON body in its file object;
+    `str(error)` is only "HTTP Error 403: Forbidden". The body is read ONCE for
+    the statuses whose meaning depends on it (401/402/403) and is never copied
+    into an issue. A consumed or absent file object yields "".
+    """
+    body = getattr(error, "body", None)
+    if isinstance(body, (bytes, bytearray)):
+        return bytes(body)[:limit].decode("utf-8", "replace")
+    if isinstance(body, str):
+        return body[:limit]
+    read = getattr(error, "read", None)
+    if not callable(read):
+        return ""
+    try:
+        raw = read(limit)
+    except Exception:  # noqa: BLE001 — an absent/consumed fp is not a failure
+        return ""
+    if isinstance(raw, (bytes, bytearray)):
+        return bytes(raw)[:limit].decode("utf-8", "replace")
+    return str(raw or "")[:limit]
+
+
 def classify_model_error(error: BaseException, model: str | None = None,
                          session: str | None = None) -> dict:
     """Map a provider exception to a stable message without returning its body or URL."""
@@ -674,16 +707,27 @@ def classify_model_error(error: BaseException, model: str | None = None,
     except (TypeError, ValueError):
         status = None
     if status is None:
-        match = re.search(r"\b(401|403|404|429|5\d{2})\b", str(error))
+        match = re.search(r"\b(401|402|403|404|429|5\d{2})\b", str(error))
         status = int(match.group(1)) if match else None
     reason = getattr(error, "reason", None)
     text = str(error).lower()
+    if status in (401, 402, 403):
+        # The quota markers live in the provider BODY, not in `str(HTTPError)`.
+        text += " " + _error_body_text(error).lower()
+    # Specific markers only: a bare "credit"/"billing"/"insufficient" also
+    # appears in permission refusals ("insufficient permissions", "credit card
+    # verification") that are NOT a quota. A 401 is ALWAYS the credential error;
+    # only 402 and a 403 whose body names a limit are quota.
     quota = any(word in text for word in (
-        "insufficient", "quota", "out of credits", "credit", "key limit",
-        "limit exceeded", "spending limit", "payment required", "billing"))
-    if status == 402 or (status in (401, 403) and quota):
+        "quota", "out of credits", "no credit", "credit balance",
+        "credit limit", "key limit", "limit exceeded", "spending limit",
+        "payment required", "insufficient credit", "insufficient quota",
+        "insufficient funds"))
+    if status == 402 or (status == 403 and quota):
         code = "provider.quota_exhausted"
-    elif status in (401, 403):
+    elif status == 403:
+        code = "provider.request_forbidden"
+    elif status == 401:
         code = "provider.auth_rejected"
     elif status == 404:
         code = "provider.model_not_found"

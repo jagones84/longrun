@@ -17,6 +17,7 @@ import atexit
 import json
 import os
 import re
+import socket
 import threading
 import time
 
@@ -144,7 +145,11 @@ def refresh_env(force=False):
                         line = line[7:].strip()
                     k, v = line.split("=", 1)
                     k, v = k.strip(), v.strip().strip("'\"")
-                    if k:
+                    # v708: the FIRST file wins. An explicit LONGRUN_ENV_FILE is
+                    # listed before the config files and the repo `.env`; letting
+                    # a later file overwrite it made the CLI ignore the file it
+                    # was told to use (and read the developer's repo token).
+                    if k and k not in values:
                         values[k] = v
         except OSError:
             continue
@@ -490,14 +495,84 @@ def api_key(provider):
     return os.environ.get(env) or None
 
 
-def available(provider):
-    """True when the provider can be called: local, or its key is present."""
+def configured(provider):
+    """True when the provider is DECLARED usable: local, or its key is present."""
     if provider.get("local"):
         return True
     env = provider.get("api_key_env")
     if not env:
         return True
     return bool(api_key(provider))
+
+
+def available(provider):
+    """Routing helper: "can this provider be picked?" — an alias of `configured`.
+
+    Kept name-compatible for `default_ref`/routing: the routing decision is about
+    a key being present, not about a live TCP probe.
+    """
+    return configured(provider)
+
+
+# v1172: a catalog row must not say `available: true` for an endpoint that
+# refuses the connection. The probe is a short TCP connect in a TRACKED
+# background thread (`_spawn_bg` joins them at exit — the SIGSEGV fix above);
+# the request path only reads the cache and never blocks.
+_REACH_TTL = 30.0
+_REACH_TIMEOUT = 1.0
+_REACH = {}                 # (host, port) -> (monotonic deadline, bool)
+_REACH_INFLIGHT = set()
+_REACH_LOCK = threading.Lock()
+
+
+def _endpoint_key(provider):
+    base = str((provider or {}).get("base_url") or "").strip()
+    if not base:
+        return None
+    try:
+        from urllib.parse import urlsplit
+        parsed = urlsplit(base if "://" in base else "http://" + base)
+        host = parsed.hostname
+        if not host:
+            return None
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        return host, int(port)
+    except Exception:  # noqa: BLE001 — a malformed base_url is "unknown", not dead
+        return None
+
+
+def _probe_endpoint(key):
+    ok = False
+    try:
+        sock = socket.create_connection(key, timeout=_REACH_TIMEOUT)
+        sock.close()
+        ok = True
+    except OSError:
+        ok = False
+    with _REACH_LOCK:
+        _REACH[key] = (time.monotonic() + _REACH_TTL, ok)
+        _REACH_INFLIGHT.discard(key)
+
+
+def reachable(provider):
+    """Cached TCP reachability: True/False, or None until the first probe ends.
+
+    Never blocks the request path. A provider without `base_url` (the router) is
+    "unknown" (`None`), not dead.
+    """
+    key = _endpoint_key(provider)
+    if key is None:
+        return None
+    now = time.monotonic()
+    with _REACH_LOCK:
+        hit = _REACH.get(key)
+        if hit and hit[0] > now:
+            return hit[1]
+        if key in _REACH_INFLIGHT:
+            return hit[1] if hit else None
+        _REACH_INFLIGHT.add(key)
+    _spawn_bg(lambda: _probe_endpoint(key), name="lr-provider-probe")
+    return hit[1] if hit else None
 
 
 def headers(provider):
@@ -1028,7 +1103,13 @@ def catalog(loaded_aliases=None):
         # them in the chat catalogue (they would be empty rows / clutter).
         if p.get("embed_only"):
             continue
-        avail = available(p)
+        # v1172: `configured` is the DECLARED usability (local or key present);
+        # `reachable` is the cached TCP probe; `available` no longer advertises a
+        # provider the probe has found dead. Until the first probe answers,
+        # `reachable` is None and `available` stays the configured value.
+        configured_p = configured(p)
+        reach = reachable(p) if configured_p else None
+        avail = configured_p and reach is not False
         models = []
         known = set()
         for m in chat_models(p):
@@ -1066,6 +1147,8 @@ def catalog(loaded_aliases=None):
             "id": p.get("id"), "name": p.get("name") or p.get("id"),
             "kind": p.get("kind"), "base_url": p.get("base_url"),
             "local": bool(p.get("local")),
+            "configured": configured_p,
+            "reachable": reach,
             "available": avail,
             "key_env": p.get("api_key_env"),
             "models": models,

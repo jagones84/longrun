@@ -74,12 +74,12 @@ for needle, why in PAIRS:
 
 # ---------------- C: status dots are shapes ----------------
 DOTS = [
-    ('m.loaded ? "\u25cf" : (m.available ? "\u25cb" : "\u2298")',
-     "the model menu: loaded / available / no key"),
+    ('m.loaded ? "\u25cf" : (m.reachable === false ? "\u2298" : (m.available ? "\u25cb" : "\u2298"))',
+     "the model menu: loaded / available / unreachable"),
     ('c.connected ? "\u25cf" : (c.enabled ? "\u25d0" : "\u25cb")',
      "the MCP list: connected / enabled / off"),
-    ('p.available ? "\u25cf" : "\u25d0"',
-     "the provider list: available / degraded"),
+    ('p.reachable === false ? "\u2298" : (p.configured === false ? "\u25d0" : "\u25cf")',
+     "the provider list: configured / unreachable"),
 ]
 for needle, why in DOTS:
     check("C " + why, needle in ui, needle)

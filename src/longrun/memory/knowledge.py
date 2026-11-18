@@ -978,6 +978,13 @@ def search(query, notebook=None, k=8, kind=None, embed_model=None, session=None,
     """
     query = str(query or "").strip()
     out = {"query": query, "notebook": notebook, "results": [], "mode": "bm25"}
+    # v1169: an id is a STRING (a name or `nb_…`/`default`). An integer used to be
+    # coerced downstream and answered a NORMAL result for a scope that never
+    # existed; the caller believed the search was scoped.
+    if notebook is not None and not isinstance(notebook, str):
+        out["ok"] = False
+        out["error"] = "notebook must be a string id or name"
+        return out
     if not query:
         return out
     db = _connect()

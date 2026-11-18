@@ -149,9 +149,11 @@ check("B3 the system prompt is still sent to the model every turn (display rule 
       "msgs[0].get(\"role\") != \"system\"" in AGENT and "text = msgs[0].get(\"content\")" in AGENT)
 
 # ------------------------------------------------- C: dispatch + links -------
+# ff28324 moved the SSE producer into `_start_chat_worker`; `chat_stream_gen`
+# still accepts the argument and hands it over positionally.
 check("C1 chat_stream_gen accepts and persists the ORIGINATING session",
       "sender_session=None" in HTTPAPI and '"sender_session": sender_session' in HTTPAPI
-      and "sender_session=sender_session)" in HTTPAPI)
+      and "sender_session, goal_mode" in HTTPAPI)
 check("C2 the attach replay carries the assignment message",
       '"chat.run", "chat.delta", "chat.done", "chat.user",' in HTTPAPI)
 check("C3 a dispatch card remembers the teammate's session",

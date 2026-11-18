@@ -143,7 +143,11 @@ _LEGACY_SCHEMAS = {
                     "description": "status/stop: the job id returned when it started"},
             "lines": {"type": "integer",
                       "description": "action=read: how many trailing lines (default 80)"},
-            "timeout_secs": {"type": "integer", "description": "optional timeout override"},
+            # v1171: the handler clamps 1..3600 in silence (`term.run_capture`).
+            # The contract now says so, and the validator refuses a value that
+            # would otherwise be silently rewritten.
+            "timeout_secs": {"type": "integer", "minimum": 1, "maximum": 3600,
+                             "description": "optional timeout override (1-3600 seconds)"},
             # JAG-386: the model naturally reaches for `cwd` (the `git` tool
             # documents it), but the shell only honoured an undocumented
             # `workspace` key — so an explicit working directory was silently
@@ -854,7 +858,8 @@ _LEGACY_SCHEMAS = {
         "type": "object",
         "properties": {
             "code": {"type": "string", "description": "the Python source to run"},
-            "timeout_secs": {"type": "integer", "description": "optional timeout override"},
+            "timeout_secs": {"type": "integer", "minimum": 1, "maximum": 3600,
+                             "description": "optional timeout override (1-3600 seconds)"},
         },
         "required": ["code"],
         "subject": "code",
@@ -940,8 +945,9 @@ _LEGACY_SCHEMAS = {
             "name": {"type": "string", "description": "artifact name (tool namespace or <ns>.<subtool>); required for remove/verify/promote"},
             "install_deps": {"type": "array", "items": {"type": "string"},
                              "description": "pip packages to install in .Matrix/venv (action=test)"},
-            "timeout_secs": {"type": "integer", "default": 60,
-                             "description": "command timeout in seconds (default 60)"},
+            "timeout_secs": {"type": "integer", "minimum": 1, "maximum": 3600,
+                             "default": 60,
+                             "description": "command timeout in seconds (1-3600, default 60)"},
             "limit": {"type": "integer", "default": 20,
                       "description": "maximum commits to return (action=git_log)"},
             "keep_recent": {"type": "integer", "default": 0,
