@@ -39,6 +39,7 @@ Usage:
   python3 forge.py memory boundary|conflicts FILE.json | instructions audit FILE.json
   python3 forge.py memory ledger FILE.json | episodes audit FILE.json | contract check FILE.json
   python3 forge.py recovery adjudicate FILE.json | effects coverage|verify FILE.json | context cost FILE.json
+  python3 forge.py commit decide FILE.json | expectations verify FILE.json | governance decide FILE.json
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -707,6 +708,67 @@ def _context_cost(args):
         out = context_cost.run_cost(doc.get("run") or doc, prices)
     print(json.dumps(out, indent=2, ensure_ascii=False))
     sys.exit(0 if out.get("verdict") not in ("more-expensive", "no-baseline") else 1)
+
+
+def cmd_commit(args):
+    """Round 117 (arXiv:2611.19663): repair, replan or abandon, by damage depth."""
+    from longrun.plan import commitment
+    if not getattr(args, "file", None):
+        print("usage: commit decide|diagnose FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    out = commitment.worth_diagnosis(doc) if args.action == "diagnose" else commitment.decide(doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    if args.action == "diagnose":
+        sys.exit(0 if out["worth"] else 1)
+    sys.exit(0 if out["decision"] in ("repair", "replan", "abandon") else 1)
+
+
+def cmd_expectations(args):
+    """Round 117 (arXiv:2611.02438): does the batch still match its expectations?"""
+    from longrun.harness import expectations
+    if not getattr(args, "file", None):
+        print("usage: expectations verify|savings FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    steps = doc.get("steps") or []
+    if args.action == "savings":
+        out = expectations.savings(steps, doc.get("tokens_per_step"))
+    else:
+        out = expectations.verify(steps, doc.get("keys"))
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0 if out.get("action", "continue") == "continue" else 1)
+
+
+def cmd_governance(args):
+    """Round 117 (arXiv:2611.06682): ready, waiting or forbidden from an ontology."""
+    from longrun.harness import governance
+    if not getattr(args, "file", None):
+        print("usage: governance decide|check FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "check":
+        out = governance.check_ontology(doc.get("ontology") or {})
+        print(json.dumps(out, indent=2, ensure_ascii=False))
+        sys.exit(0 if out["verdict"] == "consistent" else 1)
+    out = governance.decide(doc.get("call") or {}, doc.get("ontology") or {}, doc.get("state") or {})
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0 if out["decision"] == "ready" else 1)
 
 
 def cmd_instructions(args):
@@ -2238,6 +2300,15 @@ def main():
     p = sub.add_parser("effects"); p.add_argument("action", choices=["coverage", "verify"]); \
         p.add_argument("file", nargs="?", help="JSON: {catalog, trace}"); \
         p.set_defaults(fn=cmd_effects)
+    p = sub.add_parser("commit"); p.add_argument("action", choices=["decide", "diagnose"]); \
+        p.add_argument("file", nargs="?", help="JSON: actions, edges, broken, costs/values, threshold, patch debt"); \
+        p.set_defaults(fn=cmd_commit)
+    p = sub.add_parser("expectations"); p.add_argument("action", choices=["verify", "savings"]); \
+        p.add_argument("file", nargs="?", help="JSON: {steps:[{expect,observation}], keys, tokens_per_step}"); \
+        p.set_defaults(fn=cmd_expectations)
+    p = sub.add_parser("governance"); p.add_argument("action", choices=["decide", "check"]); \
+        p.add_argument("file", nargs="?", help="JSON: {ontology, state, call}"); \
+        p.set_defaults(fn=cmd_governance)
     p = sub.add_parser("instructions"); p.add_argument("action", choices=["audit"]); \
         p.add_argument("file", nargs="?", help="JSON: {text, cards}"); \
         p.set_defaults(fn=cmd_instructions)
