@@ -145,13 +145,13 @@ check("H2 a `remove` naming a rule that is not live is refused",
       "not in the live" in registry.delta_error(_bogus), registry.delta_error(_bogus))
 
 _named = {"target": "shell.exec", "field": "deny",
-          "remove": ["grep[^\\n]*\\.env"], "reason": "one named removal"}
+          "remove": ["\\bmkfs(\\.[a-z0-9]+)?(\\s|$)"], "reason": "one named removal"}
 check("H3 a named removal validates", registry.delta_error(_named) == "", registry.delta_error(_named))
 _applied = registry.apply_delta(_named)
 _live_deny = (registry.load_config(reload=True).get("tools", {})
               .get("shell.exec", {}) or {}).get("deny") or []
 check("H4 it removes ONLY the named rule and keeps the token guards",
-      _applied.get("ok") is True and "grep[^\\n]*\\.env" not in _live_deny
+      _applied.get("ok") is True and "\\bmkfs(\\.[a-z0-9]+)?(\\s|$)" not in _live_deny
       and "LONGRUN_TOKEN" in _live_deny
       and any("environ" in p for p in _live_deny), _live_deny)
 

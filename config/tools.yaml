@@ -461,15 +461,23 @@ tools:
       - ">\\s*/dev/(sd|nvme|mmcblk)"
       - pattern: "LONGRUN_TOKEN"
         why: "the API bearer is the operator's credential — a tool call never needs to read it, and reading it would let a command act as the operator"
-      - pattern: "grep[^\\n]*\\.env"
-        why: "the env file holds the API bearer and every provider key — read what is configured with `self.info` or the providers list instead"
       # 2026-11-17 (operator: *"dont make permission to read .env is enougt?"*):
-      # the `grep` rule above left every OTHER reader open — `cat .env`,
-      # `head .env`, `base64 .env` — and the file is what the API bearer and every
-      # provider key live in. The fs tools deny it by path (below) and this covers
-      # the shell spelling. `.env.template` is tracked and stays readable.
-      - pattern: "\\b(cat|head|tail|less|more|strings|xxd|od|base64|cp|rsync|scp)\\b[^\\n]*\\.env(?:\\.(?!template\\b)[^\\s]*)?(?:\\s|$)"
-        why: "the env file holds the API bearer and every provider key — `self.info` and the providers list show the configured values, `.env.template` the shape"
+      # the file is what the API bearer and every provider key live in, so it is
+      # denied in the shell spelling too. The fs tools deny it by path (below).
+      # 2026-11-18 round 65 (arXiv:2611.15223 — a control is checked, bypassed or
+      # prevented): the first two attempts named the READERS (`grep`, then
+      # `cat|head|tail|less|more|strings|xxd|od|base64|cp|rsync|scp`) and four
+      # one-line spellings walked through under `approvals.mode=full` — measured
+      # live: `awk 'NR==1' .env`, `sort .env`, `python3 -c 'open(".env")…'` and
+      # `node -e 'readFileSync(".env")…'` all auto-approved. A rule that lists
+      # readers only ever checks the readers it was told about; this one matches
+      # the env file as a PATH TOKEN wherever it appears, so the program that
+      # opens it is irrelevant. `.env.template` (tracked, no secrets) and names
+      # that merely start with `.env` (`.envrc`, `.env_template`) stay readable.
+      # Deliberately a text match, not a sandbox: a path assembled at runtime
+      # (`f=.env awk … $f` in the assignment-prefix form) is not visible here.
+      - pattern: "(?:^|[\\s'\"=:(/])\\.env(?!\\.template\\b)(?:\\.[^\\s'\";|&<>()]*)?(?=$|[\\s'\";|&<>()])"
+        why: "the env file holds the API bearer and every provider key — read what is configured with `self.info` or the providers list, and `.env.template` shows the shape"
       # 2026-11-17: the same reason the orchestration endpoints were denied: a
       # shell-capable agent must not reach the CONTROL API around the tool gate.
       # With ONE token (no second operator key) this is the real barrier for a
