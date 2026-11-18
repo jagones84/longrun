@@ -32,6 +32,8 @@ Usage:
   python3 forge.py skills stale [--json] | skills value FILE.json | skills repair FILE.json --map old=new
   python3 forge.py reuse audit FILE.json [--allow t1,t2] | principals check FILE.json
   python3 forge.py residency plan FILE.json --capacity N [--current SID]
+  python3 forge.py procedure run FILE.json | intent check|audit FILE.json
+  python3 forge.py handoff audit FILE.json
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -1543,6 +1545,65 @@ def cmd_residency(args):
     print(json.dumps(out, indent=2, ensure_ascii=False))
 
 
+def cmd_procedure(args):
+    """Round 111 (arXiv:2611.10884): replay a procedure FSM over plain events."""
+    from longrun.plan import procedure
+    path = getattr(args, "file", None)
+    if not path:
+        print("usage: procedure run FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    out = procedure.replay(doc.get("procedure") or doc, doc.get("events") or [])
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+
+
+def cmd_intent(args):
+    """Round 111 (arXiv:2611.06563): declarations against observed effects."""
+    from longrun.harness import intent_journal
+    path = getattr(args, "file", None)
+    if not path:
+        print("usage: intent %s FILE.json" % args.action, file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "check":
+        out = intent_journal.check(doc.get("declaration") or {},
+                                   doc.get("effects") or {},
+                                   doc.get("declared_targets"))
+    else:
+        rows = doc.get("entries") if isinstance(doc, dict) else doc
+        out = intent_journal.audit(rows)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0 if out.get("verdict") in ("clean",) else 1)
+
+
+def cmd_handoff(args):
+    """Round 111 (arXiv:2611.06545): policy sentences vs the permission ledger."""
+    from longrun.harness import handoff_audit
+    path = getattr(args, "file", None)
+    if not path:
+        print("usage: handoff audit FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    out = handoff_audit.audit(doc.get("text") or "", doc.get("ledger") or [])
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0 if out.get("verdict") == "clean" else 1)
+
+
 def cmd_invariants(_):
     """Round 107 (arXiv:2611.19960): the corner cases written down as checks."""
     from longrun.harness import invariants
@@ -1941,6 +2002,15 @@ def main():
         p.add_argument("--capacity", type=int, default=0, help="cache pool size in tokens"); \
         p.add_argument("--current", help="the session that reached a turn boundary"); \
         p.set_defaults(fn=cmd_residency)
+    p = sub.add_parser("procedure"); p.add_argument("action", choices=["run"]); \
+        p.add_argument("file", nargs="?", help="JSON: {procedure, events} or a procedure spec"); \
+        p.set_defaults(fn=cmd_procedure)
+    p = sub.add_parser("intent"); p.add_argument("action", choices=["check", "audit"]); \
+        p.add_argument("file", nargs="?", help="check: {declaration, effects}; audit: {entries}"); \
+        p.set_defaults(fn=cmd_intent)
+    p = sub.add_parser("handoff"); p.add_argument("action", choices=["audit"]); \
+        p.add_argument("file", nargs="?", help="JSON: {text, ledger}"); \
+        p.set_defaults(fn=cmd_handoff)
     sub.add_parser("selfcheck").set_defaults(fn=cmd_selfcheck)
     p = sub.add_parser("providers"); p.add_argument("action", nargs="?", default="ls", choices=["ls", "add", "rm", "default", "rm-model"]); \
         p.add_argument("value", nargs="?"); p.set_defaults(fn=cmd_providers)
