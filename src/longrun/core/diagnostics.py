@@ -38,6 +38,15 @@ _RUNTIME_MESSAGES = {
         "The provider rejected this request because of a rate or usage limit. Check the provider account.",
         "models",
     ),
+    # v1166: a VALID key whose spending limit is reached answers 402 (or 403 with a
+    # "key limit exceeded" body). Reporting that as "the key was rejected" sent the
+    # operator to re-enter a key that was never wrong.
+    "provider.quota_exhausted": (
+        "error", "Provider credit or key limit exhausted",
+        "The provider accepted the key but this key has no credit left (or its spending limit is reached). "
+        "Top up the account or raise the key's limit in the provider dashboard, then retry.",
+        "keys",
+    ),
     "provider.unreachable": (
         "error", "Provider is unreachable",
         "Longrun could not reach the configured provider. Check its URL and network connection in Settings → Models.",
@@ -668,7 +677,13 @@ def classify_model_error(error: BaseException, model: str | None = None,
         match = re.search(r"\b(401|403|404|429|5\d{2})\b", str(error))
         status = int(match.group(1)) if match else None
     reason = getattr(error, "reason", None)
-    if status in (401, 403):
+    text = str(error).lower()
+    quota = any(word in text for word in (
+        "insufficient", "quota", "out of credits", "credit", "key limit",
+        "limit exceeded", "spending limit", "payment required", "billing"))
+    if status == 402 or (status in (401, 403) and quota):
+        code = "provider.quota_exhausted"
+    elif status in (401, 403):
         code = "provider.auth_rejected"
     elif status == 404:
         code = "provider.model_not_found"

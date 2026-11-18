@@ -76,25 +76,62 @@ atexit.register(_join_bg)
 
 # ------------------------------------------------------------------- env -----
 
-def load_env(reload=False):
-    """Populate os.environ from the configured .env files (never overwrite).
+# v1166: an operator edits `.env` (or Settings > Keys writes it) while the service
+# is running. The keys were populated ONCE at boot, so the WebUI kept using the old
+# value until a restart — the reported "the key is not picked up". The files are now
+# watched by (mtime, size); a change is applied on the next read, throttled so a
+# per-request read costs one stat at most.
+_ENV_STATE = {"sig": None, "applied": {}, "checked": 0.0}
+_ENV_CHECK_SECS = 1.0
 
-    Keys live in the repo's gitignored .env (Settings > Keys writes it); the
-    repository only ever references them by name. Missing files are skipped.
-    """
-    global _env_loaded
-    if _env_loaded and not reload:
-        return
-    cfg = load(reload=True)
+
+def _env_paths():
+    cfg = load()
     files = []
     extra = os.environ.get("LONGRUN_ENV_FILE")
-    if extra:  # JAG-492: the path documented in config/providers.yaml now works
+    if extra:
         files.append(extra)
     files.extend(cfg.get("env_files") or [])
+    files.append(".env")          # the file Settings > Keys writes
+    out = []
     for rel in files:
-        path = os.path.expanduser(rel)
+        path = os.path.expanduser(str(rel))
         if not os.path.isabs(path):
             path = os.path.join(REPO, path)
+        if path not in out:
+            out.append(path)
+    return out
+
+
+def _env_signature(paths):
+    sig = []
+    for path in paths:
+        try:
+            st = os.stat(path)
+            sig.append((path, st.st_mtime_ns, st.st_size))
+        except OSError:
+            sig.append((path, None, None))
+    return tuple(sig)
+
+
+def refresh_env(force=False):
+    """Apply .env edits WITHOUT a restart.
+
+    Only a value THIS process set from the file is replaced or removed: a key
+    injected by systemd (or by a test) is never overwritten by a file value.
+    Returns True when something was re-read.
+    """
+    now = time.time()
+    if not force and _ENV_STATE["sig"] is not None \
+            and now - _ENV_STATE["checked"] < _ENV_CHECK_SECS:
+        return False
+    paths = _env_paths()
+    sig = _env_signature(paths)
+    _ENV_STATE["checked"] = now
+    if not force and sig == _ENV_STATE["sig"]:
+        return False
+    values = {}
+    for path in paths:
         if not os.path.isfile(path):
             continue
         try:
@@ -103,13 +140,46 @@ def load_env(reload=False):
                     line = line.strip()
                     if not line or line.startswith("#") or "=" not in line:
                         continue
+                    if line.startswith("export "):
+                        line = line[7:].strip()
                     k, v = line.split("=", 1)
                     k, v = k.strip(), v.strip().strip("'\"")
-                    if k and k not in os.environ:
-                        os.environ[k] = v
+                    if k:
+                        values[k] = v
         except OSError:
             continue
-    _env_loaded = True
+    applied = _ENV_STATE["applied"]
+    for k, v in values.items():
+        current = os.environ.get(k)
+        if current is None or current == applied.get(k):
+            os.environ[k] = v
+            applied[k] = v
+        elif current == v:
+            # Settings > Keys wrote the file AND the env in the same action: adopt
+            # this value as the file's, so the NEXT edit is still applied.
+            applied[k] = v
+    for k in list(applied):
+        if k not in values and os.environ.get(k) == applied[k]:
+            os.environ.pop(k, None)
+            applied.pop(k, None)
+    _ENV_STATE["sig"] = sig
+    return True
+
+
+def load_env(reload=False):
+    """Populate os.environ from the configured .env files.
+
+    Keys live in the repo's gitignored .env (Settings > Keys writes it); the
+    repository only ever references them by name. Missing files are skipped.
+    An EDITED file is applied on the next read (see `refresh_env`): changing a key
+    must not require a service restart.
+    """
+    global _env_loaded
+    if reload or not _env_loaded:
+        refresh_env(force=True)
+        _env_loaded = True
+        return
+    refresh_env()
 
 
 # ----------------------------------------------------------------- config -----

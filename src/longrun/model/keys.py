@@ -104,6 +104,13 @@ def read_secret(name):
     name = (name or "").strip()
     if not name:
         return ""
+    # v1166: apply an EDITED .env before reading, or this process would keep the
+    # value it loaded at boot (an operator replacing a key saw no effect).
+    try:
+        from longrun.model import providers
+        providers.load_env()
+    except Exception:  # noqa: BLE001
+        pass
     val = os.environ.get(name)
     if val and val.strip():
         return val.strip()

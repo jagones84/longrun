@@ -3766,18 +3766,53 @@ class FeedView {
     if (!f.childElementCount) f.innerHTML = '<div class="empty">no events yet — harness activity appears here live</div>';
   }
   connect(){
+    if (window.parent !== window) {
+      const shared = new EventTarget();
+      let acknowledged = false, fallback = false;
+      this.es = shared;
+      this.bindFeed(shared);
+      const receive = (e) => {
+        if (e.origin !== location.origin || e.source !== window.parent || fallback || !e.data) return;
+        if (e.data.type === "longrun-feed-ack") {
+          acknowledged = true;
+          if (e.data.connected === false) {
+            if (shared.onerror) shared.onerror();
+          } else if (shared.onopen) shared.onopen();
+        } else if (acknowledged && e.data.type === "longrun-feed-event" &&
+                   typeof e.data.kind === "string" && typeof e.data.data === "string") {
+          shared.dispatchEvent(new MessageEvent(e.data.kind, {data: e.data.data}));
+        } else if (acknowledged && e.data.type === "longrun-feed-disconnected") {
+          if (shared.onerror) shared.onerror();
+        }
+      };
+      window.addEventListener("message", receive);
+      try { window.parent.postMessage({type: "longrun-feed-subscribe"}, location.origin); } catch (_) {}
+      setTimeout(() => {
+        if (acknowledged) return;
+        fallback = true;
+        window.removeEventListener("message", receive);
+        this.connectDirect();
+      }, 1000);
+      return;
+    }
+    this.connectDirect();
+  }
+  connectDirect(){
     try { this.es = this.api.es("/api/feed"); } catch(e){ return; }
-    this.es.addEventListener("backlog", (e) => {
+    this.bindFeed(this.es);
+  }
+  bindFeed(es){
+    es.addEventListener("backlog", (e) => {
       let arr = []; try { arr = JSON.parse(e.data); } catch(_){}
       this.paintBacklog(arr);
     });
-    ["chat.run","chat.user","tool.call","tool.result","graph.node.added","graph.node.updated","graph.plan_dropped","plan.update","chat.done","error"].forEach(k => this.es.addEventListener(k, (e) => {
+    ["chat.run","chat.user","tool.call","tool.result","graph.node.added","graph.node.updated","graph.plan_dropped","plan.update","chat.done","error"].forEach(k => es.addEventListener(k, (e) => {
       let d = {}; try { d = JSON.parse(e.data); } catch(_){}
       this.line(k, d); }));
     ["agent.updated","agent.released","teams.updated","roles.update","session.updated","session.renamed","session.created","session.deleted","architect.done"].forEach(k =>
-      this.es.addEventListener(k, () => { if (this.onSync) this.onSync(); }));
-    this.es.onopen = () => $("led").classList.add("on");
-    this.es.onerror = () => {
+      es.addEventListener(k, () => { if (this.onSync) this.onSync(); }));
+    es.onopen = () => $("led").classList.add("on");
+    es.onerror = () => {
       $("led").classList.remove("on");
       // the backlog replay only arrives on a working stream — when the SSE
       // channel itself fails, fall back to the JSON backlog so the panel is
@@ -4637,7 +4672,24 @@ class OrbitApp {
     this.agents.focusAgent(sid, true);
     if (this.org) this.org.selectNode(sid, true);
   }
-  async refresh(){
+  refresh(){
+    if (this._refreshInFlight) {
+      this._refreshAgain = true;
+      return this._refreshInFlight;
+    }
+    this._refreshInFlight = Promise.resolve().then(async () => {
+      try {
+        do {
+          this._refreshAgain = false;
+          await this._refreshOnce();
+        } while (this._refreshAgain);
+      } finally {
+        this._refreshInFlight = null;
+      }
+    });
+    return this._refreshInFlight;
+  }
+  async _refreshOnce(){
     const [tree, jobs, routines, models, sess, tms, wrote] = await Promise.all([
       this.api.get("/api/agents/tree").catch(() => null),
       this.api.get("/api/jobs").catch(() => null),

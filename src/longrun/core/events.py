@@ -77,6 +77,8 @@ def _connect_events():
         for idx_sql in _EVENTS_IDX_DDL:
             conn.execute(idx_sql)
         conn.execute(_RUNS_DDL)
+        conn.execute("CREATE TABLE IF NOT EXISTS event_replay_metadata "
+                     "(key TEXT PRIMARY KEY, value INTEGER NOT NULL)")
         conn.commit()
     except sqlite3.DatabaseError:
         conn.close()
@@ -126,14 +128,30 @@ def prune_events(keep=None):
             cut = mx - keep
             if cut <= 0:
                 return removed
+            last = db().execute(
+                "SELECT MAX(id) FROM (SELECT id FROM events WHERE id <= ? "
+                "ORDER BY id LIMIT ?)", (cut, PRUNE_BATCH)).fetchone()[0]
+            if last is None:
+                return removed
             cur = db().execute(
                 "DELETE FROM events WHERE id IN (SELECT id FROM events "
                 "WHERE id <= ? ORDER BY id LIMIT ?)", (cut, PRUNE_BATCH))
+            db().execute(
+                "INSERT INTO event_replay_metadata(key, value) VALUES('retention_floor', ?) "
+                "ON CONFLICT(key) DO UPDATE SET value=MAX(value, excluded.value)", (last,))
             db().commit()
             n = cur.rowcount
         removed += n
         if n < PRUNE_BATCH:
             return removed
+
+
+def retention_floor():
+    """Highest event ID removed by retention, not by session rewind."""
+    with _db_lock:
+        row = db().execute(
+            "SELECT value FROM event_replay_metadata WHERE key='retention_floor'").fetchone()
+    return int(row[0]) if row else 0
 
 
 def truncate(session=None, upto_id=None):
@@ -251,6 +269,11 @@ _DEDUPE_KINDS = frozenset((
     "tool.blocked", "approval.request", "approval.auto", "approval.resolved",
     "chat.run", "chat.done", "cost.usage", "model.failover", "model.fallback"))
 _last_pub = {"sig": None, "event": None}
+_turn_event_context = threading.local()
+
+
+def set_turn_event_context(session, turn_id):
+    _turn_event_context.value = (session, turn_id) if turn_id else None
 
 
 def publish(kind, **data):
@@ -261,6 +284,9 @@ def publish(kind, **data):
     (checkpoints, approvals, ...) are stored under `<kind>_id` instead.
     """
     global _feed_seq
+    context = getattr(_turn_event_context, "value", None)
+    if context and data.get("session") == context[0]:
+        data.setdefault("turn_id", context[1])
     with _feed_lock:
         # JAG-295-fix: rename the payload's own domain `id`/`ts` BEFORE persisting.
         # Otherwise the SQLite row stored a payload `id`, and on replay
@@ -289,12 +315,13 @@ def publish(kind, **data):
         payload = "id: {id}\nevent: {kind}\ndata: {data}\n\n".format(
             id=event["id"], kind=kind, data=json.dumps(event, ensure_ascii=False)
         )
-    with _sse_lock:
-        for q in list(_sse_queues):
-            try:
-                q.put_nowait(payload)
-            except Exception:
-                pass
+        # Keep fan-out in the same order as durable IDs across publishers.
+        with _sse_lock:
+            for q in list(_sse_queues):
+                try:
+                    q.put_nowait(payload)
+                except Exception:
+                    pass
     try:
         from longrun.core import matrix as _mtx
         _mtx.call_hook("core", "on_event", event, default=None)
@@ -426,6 +453,37 @@ def events_since(last_id, limit=None):
     return [{"id": r[0], "ts": r[1], "kind": r[2], **json.loads(r[3])} for r in rows]
 
 
+def events_page(last_id, limit, until):
+    """Return the next bounded page through a fixed durable high-water mark."""
+    limit = int(limit)
+    if limit <= 0:
+        raise ValueError("limit must be positive")
+    with _db_lock:
+        rows = db().execute(
+            "SELECT id, ts, kind, data FROM events "
+            "WHERE id > ? AND id <= ? ORDER BY id ASC LIMIT ?",
+            (int(last_id), int(until), limit)).fetchall()
+    return [{"id": r[0], "ts": r[1], "kind": r[2], **json.loads(r[3])} for r in rows]
+
+
+def replay_page(last_id, limit, until):
+    """Read a replay page and its retention boundary under the same lock."""
+    limit = int(limit)
+    if limit <= 0:
+        raise ValueError("limit must be positive")
+    with _db_lock:
+        conn = db()
+        floor = conn.execute(
+            "SELECT value FROM event_replay_metadata WHERE key='retention_floor'"
+        ).fetchone()
+        rows = conn.execute(
+            "SELECT id, ts, kind, data FROM events "
+            "WHERE id > ? AND id <= ? ORDER BY id ASC LIMIT ?",
+            (int(last_id), int(until), limit)).fetchall()
+    return (int(floor[0]) if floor else 0,
+            [{"id": r[0], "ts": r[1], "kind": r[2], **json.loads(r[3])} for r in rows])
+
+
 def query_events(session=None, kind=None, since=None, until=None, limit=200):
     """JAG-262: filtered history from the durable event log (post-mortem).
 
@@ -466,4 +524,3 @@ def query_events(session=None, kind=None, since=None, until=None, limit=200):
     with _db_lock:
         rows = db().execute(sql, args).fetchall()
     return [{"id": r[0], "ts": r[1], "kind": r[2], "data": json.loads(r[3])} for r in rows]
-

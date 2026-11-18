@@ -394,10 +394,17 @@ def _goal_end(sess, goal_mode):
         return None
 
 
-def chat_stream_gen(sess, message, model, mark=None, autonomous=False, jid=None,
-                    sender=None, subjob=None, plan_only=False, sender_session=None,
-                    goal_mode=False, goal_started=None, max_steps=None,
-                    headless=False):
+class _DiscardTurnFrames:
+    """A detached worker publishes to the durable feed, not a private queue."""
+
+    def put(self, item):
+        pass
+
+
+def _start_chat_worker(sess, message, model, mark=None, autonomous=False, jid=None,
+                       sender=None, subjob=None, plan_only=False, sender_session=None,
+                       goal_mode=False, goal_started=None, max_steps=None,
+                       headless=False, detached=False, turn_id=None, on_finish=None):
     """SSE producer for one chat request on `sess`.
 
     Contract (JAG-51): the caller has already appended the `user` message and
@@ -422,7 +429,7 @@ def chat_stream_gen(sess, message, model, mark=None, autonomous=False, jid=None,
     enters the keepgoing continuation loop, so the master cannot complete the
     whole job itself instead of delegating it to the team.
     """
-    q = queue.Queue()
+    q = _DiscardTurnFrames() if detached else queue.Queue()
     done = {"flag": False}
     since = mark if mark is not None else max(0, session_mark(sess) - 1)
     # JAG-181: register this turn as ACTIVE for its session, capturing the feed id
@@ -435,6 +442,8 @@ def chat_stream_gen(sess, message, model, mark=None, autonomous=False, jid=None,
     _turn_tok = object()
     with _ACTIVE_CHAT_LOCK:
         _ACTIVE_CHAT[sess["id"]] = {"ev0": feed_seq(), "ts": time.time(), "tok": _turn_tok}
+        if turn_id:
+            _ACTIVE_CHAT[sess["id"]]["turn_id"] = turn_id
     # 2026-11-10: the streaming path registers here directly (not via turn_begin),
     # so the durable inflight mirror is written here too (core/inflight.py).
     try:
@@ -454,7 +463,11 @@ def chat_stream_gen(sess, message, model, mark=None, autonomous=False, jid=None,
         # on the turn stream with `id:` — the client remembers the last delta id so
         # a recovery re-attach can resume from there instead of replaying (and
         # duplicating) the whole turn.
-        ev = publish("chat.delta", session=sess["id"], channel=channel, text=text)
+        if turn_id:
+            ev = publish("chat.delta", session=sess["id"], channel=channel, text=text,
+                         turn_id=turn_id)
+        else:
+            ev = publish("chat.delta", session=sess["id"], channel=channel, text=text)
         eid = (ev or {}).get("id")
         q.put(("id: %d\n" % eid if eid else "") + "event: chat.delta\ndata: %s\n\n" % json.dumps(
             {"session": sess["id"], "channel": channel, "text": text}, ensure_ascii=False))
@@ -466,6 +479,7 @@ def chat_stream_gen(sess, message, model, mark=None, autonomous=False, jid=None,
 
     def worker():
         nonlocal sess, since
+        _worker_failed = False
         # JAG-201: serialise turns on this session (see _turn_lock).
         # v952: BIND the lock object here. `delete_session` pops the per-session lock
         # out of the registry, so releasing through a fresh `_turn_lock(sid)` lookup
@@ -474,6 +488,8 @@ def chat_stream_gen(sess, message, model, mark=None, autonomous=False, jid=None,
         # that never ran on the object actually held.
         _lock = _turn_lock(sess["id"])
         _lock.acquire()
+        from longrun.core import events as event_log
+        event_log.set_turn_event_context(sess["id"], turn_id)
         target = model
 
         def _emit(kind, **d):
@@ -481,6 +497,9 @@ def chat_stream_gen(sess, message, model, mark=None, autonomous=False, jid=None,
             # the WebUI can render the task graph live either way.
             # 2026-11-01: publish first and carry its durable id on the frame, so a
             # client that lost the socket can re-attach from that exact point.
+            if turn_id:
+                d.setdefault("session", sess["id"])
+                d.setdefault("turn_id", turn_id)
             ev = publish(kind, **d)
             eid = (ev or {}).get("id")
             q.put(("id: %d\n" % eid if eid else "") + "event: %s\ndata: %s\n\n" % (
@@ -520,8 +539,11 @@ def chat_stream_gen(sess, message, model, mark=None, autonomous=False, jid=None,
             # session), so both chats can hyperlink to the exact point of the other
             # one — the teammate back to the dispatch card, the dispatcher forward
             # to this assignment.
-            publish("chat.user", session=sess["id"], text=message,
-                    sender=sender, subjob=subjob, sender_session=sender_session)
+            _user_fields = {"session": sess["id"], "text": message, "sender": sender,
+                            "subjob": subjob, "sender_session": sender_session}
+            if turn_id:
+                _user_fields["turn_id"] = turn_id
+            publish("chat.user", **_user_fields)
             # v0.5.1 warm-up: resolve the target alias and, if it is cold, emit
             # `model.loading` and load it *before* the first token instead of
             # letting the client stall silently on the router's autoload.
@@ -543,7 +565,10 @@ def chat_stream_gen(sess, message, model, mark=None, autonomous=False, jid=None,
             # is). Without it, a turn this browser did not begin — a headless job or
             # routine turn — never flipped the session's "running" marker, so the
             # session looked idle while the model burned GPU ("phantom run").
-            publish("chat.run", run_id=trace.id, session=sess["id"])
+            _run_fields = {"run_id": trace.id, "session": sess["id"]}
+            if turn_id:
+                _run_fields["turn_id"] = turn_id
+            publish("chat.run", **_run_fields)
             try:
                 # JAG-71: only a LOCAL model has a warm-up (/models/load); remote
                 # providers are called directly with no loading step.
@@ -608,6 +633,7 @@ def chat_stream_gen(sess, message, model, mark=None, autonomous=False, jid=None,
                 trace.finish("error")
                 raise
         except Exception as e:
+            _worker_failed = True
             # JAG-51: a failed stream must still leave a trace in the session —
             # persist the explicit assistant error turn, then tell the client.
             issue = _chat_failure_issue(e, sess["id"], target)
@@ -637,7 +663,17 @@ def chat_stream_gen(sess, message, model, mark=None, autonomous=False, jid=None,
             # `_emit` (core/sse.py), so the failure is reachable.
             try:
                 _coalesce.flush()  # JAG-265: emit any coalesced CoT tail before closing
+                if detached:
+                    missing = ensure_reply_persisted(
+                        sess, since, error="stream ended without a reply", model=target)
+                    if missing:
+                        _worker_failed = True
+                        publish("chat.error", session=sess["id"], turn_id=turn_id,
+                                error="stream ended without a reply", stored=True)
                 _goal_end(sess, goal_mode)   # G-1: complete only on real plan evidence
+            except Exception:
+                _worker_failed = True
+                raise
             finally:
                 done["flag"] = True
                 q.put(None)
@@ -656,9 +692,35 @@ def chat_stream_gen(sess, message, model, mark=None, autonomous=False, jid=None,
                     turn_end(sess["id"], _turn_tok, publish_done=False)
                 finally:
                     _lock.release()  # JAG-201: allow the next turn
+                    if turn_id:
+                        try:
+                            publish("chat.stream.end", session=sess["id"], turn_id=turn_id)
+                        finally:
+                            try:
+                                if on_finish:
+                                    on_finish("failed" if _worker_failed else "finished")
+                            finally:
+                                event_log.set_turn_event_context(None, None)
 
     t = threading.Thread(target=worker, daemon=True)
-    t.start()
+    try:
+        t.start()
+    except Exception:
+        turn_end(sess["id"], _turn_tok, publish_done=False)
+        raise
+    def finish_stream():
+        if not t.is_alive():
+            ensure_reply_persisted(sess, since, error="stream ended without a reply")
+    return t, q, finish_stream
+
+
+def chat_stream_gen(sess, message, model, mark=None, autonomous=False, jid=None,
+                    sender=None, subjob=None, plan_only=False, sender_session=None,
+                    goal_mode=False, goal_started=None, max_steps=None,
+                    headless=False):
+    t, q, finish_stream = _start_chat_worker(
+        sess, message, model, mark, autonomous, jid, sender, subjob, plan_only,
+        sender_session, goal_mode, goal_started, max_steps, headless)
     # v0.6.1 (JAG-48): no keep-alive here — one `done`, then the generator is
     # exhausted and sse_response closes the connection.
     try:
@@ -667,8 +729,7 @@ def chat_stream_gen(sess, message, model, mark=None, autonomous=False, jid=None,
         # JAG-51 safety net: if the producer is already gone without a reply
         # (e.g. the pump gave up on silence), still leave an assistant trace.
         # While the worker is alive it owns the persistence — never double-write.
-        if not t.is_alive():
-            ensure_reply_persisted(sess, since, error="stream ended without a reply")
+        finish_stream()
 
 
 # JAG-431r8: the re-attach stream must replay the SAME render events the live
@@ -760,6 +821,77 @@ def feed_gen(since=0):
     try:
         yield from sse_tail(q, events_since(since, limit=FEED_REPLAY_MAX), ": feed open\n\n",
                             heartbeat=True)
+    finally:
+        with _sse_lock:
+            _sse_queues.discard(q)
+
+
+class _BoundedFeedQueue(queue.Queue):
+    """Remember overflow without ever blocking event publishers."""
+
+    def __init__(self, maxsize=4096):
+        super().__init__(maxsize=maxsize)
+        self.overflow = threading.Event()
+
+    def put_nowait(self, item):
+        try:
+            super().put_nowait(item)
+        except queue.Full:
+            self.overflow.set()
+
+
+def feed_gen_v2(since=0, queue_size=4096):
+    from longrun.core import events as event_log
+    q = _BoundedFeedQueue(queue_size)
+    with _sse_lock:
+        _sse_queues.add(q)
+    try:
+        high = max(since, feed_seq())
+        last = since
+        yield ": feed open\n\n"
+        while last < high:
+            floor, page = event_log.replay_page(last, 200, high)
+            if last < floor:
+                yield "event: feed.gap\ndata: %s\n\n" % json.dumps({"after": last, "floor": floor})
+                last = floor
+            if q.overflow.is_set():
+                yield 'event: feed.overflow\ndata: {}\n\n'
+                return
+            if not page:
+                break
+            for ev in page:
+                if q.overflow.is_set():
+                    yield 'event: feed.overflow\ndata: {}\n\n'
+                    return
+                last = ev["id"]
+                yield "id: %d\nevent: %s\ndata: %s\n\n" % (
+                    last, ev["kind"], json.dumps(ev, ensure_ascii=False))
+        if q.overflow.is_set():
+            yield 'event: feed.overflow\ndata: {}\n\n'
+            return
+        yield "event: feed.ready\ndata: %s\n\n" % json.dumps({"until": high})
+        idle = 0
+        while True:
+            if q.overflow.is_set():
+                yield 'event: feed.overflow\ndata: {}\n\n'
+                return
+            try:
+                frame = q.get(timeout=1)
+            except queue.Empty:
+                idle += 1
+                if idle % 5 == 0:
+                    yield heartbeat_frame()
+                else:
+                    yield ": ping\n\n"
+                continue
+            idle = 0
+            try:
+                eid = int(frame.split("\n", 1)[0][4:].strip())
+            except (ValueError, IndexError):
+                continue
+            if eid > last:
+                last = eid
+                yield frame
     finally:
         with _sse_lock:
             _sse_queues.discard(q)
@@ -2498,7 +2630,25 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/feed":
             since = _int_arg(qs, "since", 0)
             # keep-alive is a /api/feed-only privilege (v0.6.1, JAG-48)
-            return sse_response(self, feed_gen(since), keepalive=True)
+            gen = feed_gen_v2(since) if qs.get("protocol") == "2" else feed_gen(since)
+            return sse_response(self, gen, keepalive=True)
+        if path == "/api/feed/replay":
+            from longrun.core import events as event_log
+            try:
+                after = int(qs.get("after") or 0)
+                limit = int(qs.get("limit") or 200)
+                until = int(qs["until"]) if qs.get("until") else max(after, feed_seq())
+            except (TypeError, ValueError):
+                return self._send(400, {"error": "invalid replay cursor or limit"})
+            if after < 0 or until < after or not 1 <= limit <= 500:
+                return self._send(400, {"error": "invalid replay cursor or limit"})
+            floor, page = event_log.replay_page(after, limit + 1, until)
+            has_more = len(page) > limit
+            page = page[:limit]
+            return self._send(200, {"events": page, "until": until,
+                                    "next": page[-1]["id"] if page else after,
+                                    "has_more": has_more,
+                                    "gap": after < floor})
         if path == "/api/plan":
             # JAG-129B/F3: read alias of the persistent task list, with
             # a backward-compatible shape {nodes,counts,goal,steps} (legacy consumers).
@@ -2698,8 +2848,14 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/chat/live":
             # JAG-181: which sessions currently have a chat turn running (for the
             # WebUI to re-attach after a refresh / session switch).
+            # v1165: `turns` carries the feed id the turn STARTED at, so a client
+            # can replay exactly that turn from the shared feed instead of opening
+            # a private `/api/chat/attach` socket. `active` keeps its old shape.
             with _ACTIVE_CHAT_LOCK:
-                return self._send(200, {"active": list(_ACTIVE_CHAT.keys())})
+                turns = {sid: {"ev0": info.get("ev0"), "turn_id": info.get("turn_id")}
+                         for sid, info in _ACTIVE_CHAT.items()}
+                return self._send(200, {"active": list(_ACTIVE_CHAT.keys()),
+                                        "turns": turns})
         if path == "/api/chat/attach":
             # JAG-181: resume following a still-running turn for `session`.
             sid = qs.get("session")
@@ -3103,6 +3259,62 @@ class Handler(BaseHTTPRequestHandler):
             publish("improve.review", reviewed=len(rep.get("items") or []),
                     counts=rep.get("counts"), model=rep.get("model"))
             return self._send(200 if rep.get("ok") else 500, rep)
+        if path == "/api/chat/start":
+            from longrun.core import chat_starts
+            message, key = body.get("message"), body.get("idempotency_key")
+            if not isinstance(message, str) or not message.strip():
+                return self._send(400, {"error": "message required"})
+            if not isinstance(key, str) or not key.strip() or len(key) > 256:
+                return self._send(400, {"error": "idempotency_key required"})
+            if body.get("mode") not in (None, "", "goal"):
+                return self._send(400, {"error": "invalid mode"})
+            if any(body.get(name) is not None and not isinstance(body[name], str)
+                   for name in ("session", "model")):
+                return self._send(400, {"error": "session and model must be strings"})
+            if body.get("headless") is not None and not isinstance(body["headless"], bool):
+                return self._send(400, {"error": "headless must be a boolean"})
+            steps = body.get("max_steps")
+            if steps is not None and (type(steps) is not int or steps < 1):
+                return self._send(400, {"error": "max_steps must be a positive integer"})
+            payload = {name: body.get(name) for name in
+                       ("session", "message", "model", "mode", "max_steps", "headless")}
+            digest = chat_starts.fingerprint(payload)
+            with chat_starts.lock:
+                previous = chat_starts.lookup(key)
+                if previous:
+                    if previous["fingerprint"] != digest:
+                        return self._send(409, {"error": "idempotency key reused with different payload"})
+                    if previous["status"] in ("launching", "running"):
+                        if not chat_starts.is_live(previous["turn_id"]):
+                            return self._send(503, {"error": "turn start outcome is indeterminate",
+                                                    "session": previous["session"],
+                                                    "turn_id": previous["turn_id"],
+                                                    "status": "indeterminate"})
+                    return self._send(200, {k: previous[k] for k in ("session", "turn_id", "status")})
+                sess = _open_session(body.get("session"))
+                if sess is None:
+                    return self._send(404, {"error": "session was deleted"})
+                requested = body.get("mode") == "goal"
+                goal_mode = _goal_mode_of(sess, requested)
+                ok, goal_payload = _goal_begin(sess, goal_mode, message, requested=requested)
+                if not ok:
+                    return self._send(409, goal_payload)
+                turn_id = uuid.uuid4().hex
+                chat_starts.reserve(key, digest, sess["id"], turn_id)
+                chat_starts.mark_live(turn_id)
+                try:
+                    _start_chat_worker(
+                        sess, message, body.get("model"), autonomous=requested,
+                        goal_mode=goal_mode, goal_started=time.time() if goal_mode else None,
+                        max_steps=body.get("max_steps"), headless=bool(body.get("headless")),
+                        detached=True, turn_id=turn_id,
+                        on_finish=lambda status: chat_starts.finish(key, turn_id, status))
+                except Exception:
+                    chat_starts.finish(key, turn_id, "failed")
+                    raise
+                chat_starts.set_status(key, "running")
+                return self._send(202, {"session": sess["id"], "turn_id": turn_id,
+                                        "status": "running"})
         if path == "/api/chat/stream":
             # a JSON body over query params). Same SSE contract.
             message = body.get("message") or qs.get("message", "")

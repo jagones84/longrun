@@ -8337,8 +8337,10 @@ function send(text, display, atts) {
   // if the user switches away; output is painted ONLY while that session is on
   // screen (`live()`), so nothing is mixed into another log and nothing is lost.
   let turnSession = sessionId;
+  // v1165: the legacy SSE URL is kept as the FALLBACK path only (a server without
+  // POST /api/chat/start). The turn itself is followed on the page's ONE feed.
   const url = "/api/chat/stream?message=" + encodeURIComponent(msg) + (turnSession ? "&session=" + turnSession : "") + mode + (currentModel() ? "&model=" + encodeURIComponent(currentModel()) : "") + (authQS() ? "&" + authQS() : "");
-  const es = new EventSource(url);
+  let es = _turnChannel(turnSession, "");
   if (turnSession) { es._lrSid = turnSession; turnSSE[turnSession] = es; setRunning(turnSession, true); }
   // 2026-11-08: the server auto-compacts at the START of a turn when the prompt is over
   // its threshold (`prepare_session_for_turn`), and `over_threshold` is the same fact
@@ -8349,11 +8351,15 @@ function send(text, display, atts) {
   const adopt = (s) => {  // very first message with no session: the server names it
     if (turnSession || !s) return;
     turnSession = s; es._lrSid = s; turnSSE[s] = es; setRunning(s, true);
+    _adoptTurnChannel(es, s);   // v1165: the shared feed can now address this turn
     sessionId = s; localStorage.setItem("sf_session", sessionId);
     _pendingUser.forEach(p => { if (!p.sid) p.sid = s; });   // 2026-11-11: it is THIS chat
     _kbSyncCurrent();   // JAG-526: a brand-new chat has its own (future) notebook
   };
+  let _ended = false;
   const end = (reload, flush) => {
+    if (_ended) return;          // v1165: `chat.stream.end` and `chat.done` both land here
+    _ended = true;
     try { es.close(); } catch (e) {}
     if (turnSession && turnSSE[turnSession] === es) { delete turnSSE[turnSession]; _streamedDone[turnSession] = true; }
     setRunning(turnSession, false);
@@ -8382,30 +8388,81 @@ function send(text, display, atts) {
   // JAG-431r8: the RENDER handlers (tools, harness injects, todo nodes, plan) are
   // shared with the re-attached stream via _bindRenderStream, so a turn started here
   // and one re-followed from a job render identically.
-  _bindRenderStream(es, live, adopt);
-  es.addEventListener("chat.steer", e => { if (!live()) return; const d = JSON.parse(e.data);
-    // JAG-431r4b: the local ⇢ / steer-mode paths already echoed this text, and the
-    // server ALSO publishes chat.steer when the turn drains it — every steer then
-    // rendered TWICE (the second copy showing the raw attachment block). Skip when
-    // the last user bubble already carries the same text; steers arriving from
-    // another tab/device still render.
-    const _t = d.text || "";
-    const _bubs = $("log").querySelectorAll(".msg.user .bubble");
-    const _last = _bubs[_bubs.length - 1];
-    if (_t && _last && _last.textContent.indexOf(_t) >= 0) return;
-    who("user", "🎯 steer: " + _t); });
-  es.addEventListener("done", () => end(true, true));
-  // JAG-431r4b: the terminal `event: error` frame (a turn that crashed server-side)
-  // carried the error text but the handler just closed the stream — the turn looked
-  // SILENT until a manual reload. Render the payload; a bare reconnect `error` has
-  // no data and must stay quiet.
-  es.addEventListener("error", e => { let d = null; try { d = JSON.parse(e.data); } catch (_) {}
-    if (live() && d && d.error) who("ai", "⚠ " + d.error);
-    if (d && d.error) { end(false, false); return; }
-    // A bare reconnect/close carries no payload: the turn may still be alive on
-    // the server (service restart, proxy) or already gone. Clearing blindly left
-    // the composer in Stop mode forever — the server answers this.
-    setTimeout(() => settleLostStream(turnSession, es), 700); });
+  const wire = (es) => {
+    _bindRenderStream(es, live, adopt);
+    es.addEventListener("chat.steer", e => { if (!live()) return; const d = JSON.parse(e.data);
+      // JAG-431r4b: the local ⇢ / steer-mode paths already echoed this text, and the
+      // server ALSO publishes chat.steer when the turn drains it — every steer then
+      // rendered TWICE (the second copy showing the raw attachment block). Skip when
+      // the last user bubble already carries the same text; steers arriving from
+      // another tab/device still render.
+      const _t = d.text || "";
+      const _bubs = $("log").querySelectorAll(".msg.user .bubble");
+      const _last = _bubs[_bubs.length - 1];
+      if (_t && _last && _last.textContent.indexOf(_t) >= 0) return;
+      who("user", "🎯 steer: " + _t); });
+    es.addEventListener("done", () => end(true, true));
+    // JAG-431r4b: the terminal `event: error` frame (a turn that crashed server-side)
+    // carried the error text but the handler just closed the stream — the turn looked
+    // SILENT until a manual reload. Render the payload; a bare reconnect `error` has
+    // no data and must stay quiet.
+    es.addEventListener("error", e => { let d = null; try { d = JSON.parse(e.data); } catch (_) {}
+      if (live() && d && d.error) who("ai", "⚠ " + d.error);
+      if (d && d.error) { end(false, false); return; }
+      // A bare reconnect/close carries no payload: the turn may still be alive on
+      // the server (service restart, proxy) or already gone. Clearing blindly left
+      // the composer in Stop mode forever — the server answers this.
+      setTimeout(() => settleLostStream(turnSession, es), 700); });
+  };
+  wire(es);
+  // v1165: START the turn with a SHORT authenticated request. The answer arrives on
+  // the shared feed, so the browser holds no socket per turn; `idempotency_key`
+  // makes one retry safe (the same turn, never a duplicate).
+  let _startTries = 0, _started = false;
+  const _startBody = { message: msg, idempotency_key: "ui-" + Date.now().toString(36)
+    + "-" + Math.random().toString(36).slice(2, 10) };
+  if (turnSession) _startBody.session = turnSession;
+  if (currentModel()) _startBody.model = currentModel();
+  if (mode === "&mode=goal") _startBody.mode = "goal";
+  const _fallbackStream = () => {
+    if (_started) return;
+    _started = true;
+    try { es.close(); } catch (e) {}
+    if (turnSession && turnSSE[turnSession] === es) delete turnSSE[turnSession];
+    es = new EventSource(url);          // the historical contract, unchanged
+    if (turnSession) { es._lrSid = turnSession; turnSSE[turnSession] = es; setRunning(turnSession, true); }
+    wire(es);
+  };
+  const _postStart = () => {
+    fetch("/api/chat/start", { method: "POST",
+      headers: { ...authHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify(_startBody) })
+      .then(async r => {
+        if (r.status === 404 || r.status === 405 || r.status === 501) {
+          const e = new Error("detached start unavailable"); e.code = "legacy"; throw e;
+        }
+        if (!r.ok) {
+          let detail = ""; try { const j = await r.json(); detail = (j && (j.error || j.reason)) || ""; } catch (_) {}
+          const e = new Error(detail || ("HTTP " + r.status));
+          e.code = "refused"; e.retry = r.status >= 500; throw e;
+        }
+        return r.json().catch(() => ({}));
+      })
+      .then(out => {
+        _started = true;
+        if (out && out.turn_id) es._lrTurn = out.turn_id;
+        if (out && out.session) adopt(out.session);
+      })
+      .catch(err => {
+        if (err && err.code === "legacy") return _fallbackStream();
+        if (_startTries++ === 0 && (!err || err.retry !== false)) return setTimeout(_postStart, 600);
+        if (live()) who("ai", "⚠ could not start the turn: " + ((err && err.message) || err));
+        try { es.close(); } catch (e) {}
+        if (turnSession && turnSSE[turnSession] === es) delete turnSSE[turnSession];
+        setRunning(turnSession, false); endStream();
+      });
+  };
+  _postStart();
 }
 
 /* JAG-431r8: ONE binder for the turn's RENDER events, shared by the live own-turn
@@ -9122,7 +9179,26 @@ function sessionErrorCard(error) {
   card.append(heading, detail, button);
   box.replaceChildren(card);
 }
-async function loadSessions() {
+let _sessionsRefreshInFlight = null;
+let _sessionsRefreshAgain = false;
+function loadSessions() {
+  if (_sessionsRefreshInFlight) {
+    _sessionsRefreshAgain = true;
+    return _sessionsRefreshInFlight;
+  }
+  _sessionsRefreshInFlight = Promise.resolve().then(async () => {
+    try {
+      do {
+        _sessionsRefreshAgain = false;
+        await _loadSessionsOnce();
+      } while (_sessionsRefreshAgain);
+    } finally {
+      _sessionsRefreshInFlight = null;
+    }
+  });
+  return _sessionsRefreshInFlight;
+}
+async function _loadSessionsOnce() {
   let out;
   // v878: naming IS backend state, so a render reconciles it. The epoch is
   // read BEFORE the request: a list that left the server before a just-arrived
@@ -13954,17 +14030,16 @@ function _resumeIdFor(sid) {
 }
 function attachTurn(sid, since) {
   if (!sid || turnSSE[sid]) return;
-  // 2026-11-01: `since` resumes a RECOVERED socket exactly where the dead one
-  // stopped (the frame ids the server now publishes). Without it the stream
-  // replays the whole turn — correct on a fresh log after F5, duplicate text and
-  // duplicate tool cards when the transcript is already on screen.
-  const es = new EventSource("/api/chat/attach?session=" + encodeURIComponent(sid) +
-    (since ? "&since=" + encodeURIComponent(since) : "") +
-    (authQS() ? "&" + authQS() : ""));
+  // v1165: a re-followed turn is a CHANNEL on the page's feed, not a socket. The
+  // turn's own past is replayed from the durable log (below), then followed live.
+  let es = _turnChannel(sid, "");
   es._lrSid = sid;   // RH-10: the frame-id memory is keyed by the session
   turnSSE[sid] = es; setRunning(sid, true);
   const live = () => sessionId === sid;
+  let _ended = false;
   const end = (reload) => {
+    if (_ended) return;
+    _ended = true;
     try { es.close(); } catch (e) {}
     if (turnSSE[sid] === es) { delete turnSSE[sid]; _streamedDone[sid] = true; }
     setRunning(sid, false);
@@ -13984,7 +14059,49 @@ function attachTurn(sid, since) {
   // live-rendered cards are replaced, never duplicated.
   _bindRenderStream(es, live);
   es.addEventListener("done", () => end(true));
-  es.addEventListener("error", () => { end(false); setTimeout(() => attachIfRunning(sid), 1500); });
+  _resumeTurnFromFeed(sid, since).catch(() => {
+    if (_ended) return;
+    try { es.close(); } catch (e) {}
+    if (turnSSE[sid] === es) delete turnSSE[sid];
+    // a server that predates the shared-feed resume: keep the historical endpoint
+    es = new EventSource("/api/chat/attach?session=" + encodeURIComponent(sid) +
+      (since ? "&since=" + encodeURIComponent(since) : "") +
+      (authQS() ? "&" + authQS() : ""));
+    es._lrSid = sid; turnSSE[sid] = es; setRunning(sid, true);
+    _bindRenderStream(es, live);
+    es.addEventListener("done", () => end(true));
+    es.addEventListener("error", () => { end(false); setTimeout(() => attachIfRunning(sid), 1500); });
+  });
+}
+/* v1165: paint the turn's ALREADY-PRODUCED events from `/api/feed/replay` (bounded
+   pages, filtered to this session), buffering anything that arrives live meanwhile
+   so the transcript stays in id order. Throws when the server cannot name the turn's
+   start — the caller then falls back to the historical attach endpoint. */
+async function _resumeTurnFromFeed(sid, since) {
+  const out = await api("GET", "/api/chat/live");
+  const info = ((out && out.turns) || {})[sid] || {};
+  const after = Number(since || 0) || Number(info.ev0 || 0) || 0;
+  if (!after) throw new Error("no resume point");
+  const ch = _turnChannels.get(sid);
+  if (!ch || ch._lrClosed) return;
+  ch._lrTurn = info.turn_id || ch._lrTurn || "";
+  ch._lrReplaying = true;
+  let cursor = after, guard = 0;
+  try {
+    while (!ch._lrClosed && guard++ < 50) {
+      const page = await api("GET", "/api/feed/replay?after=" + cursor + "&limit=200");
+      if (page && page.error) throw new Error(page.error);
+      if (!page || !Array.isArray(page.events)) break;
+      page.events.forEach(ev => {
+        if (!ev || ev.session !== sid) return;
+        _dispatchTurnEvent(ev.kind, ev, ev.id);
+      });
+      cursor = page.next || cursor;
+      if (!page.has_more) break;
+    }
+  } finally {
+    ch._flushReplay();
+  }
 }
 async function attachIfRunning(sid, since) {
   if (!sid || turnSSE[sid]) return;
@@ -14075,6 +14192,97 @@ function stopRun() {
 
 /* ---- feed ---- */
 let _feedN = 0;   // JAG-403g: feed events seen (drives the Feed tab summary)
+/* v1165: ONE EventSource per page. A turn is a CHANNEL on the shared feed, not a
+   connection: the browser keeps one SSE socket per origin, so N parallel agents can
+   no longer exhaust Chrome's six-per-origin HTTP/1 budget — which is what froze the
+   WebUI (status requests queued behind idle chat streams) with many sessions running.
+   The channel speaks the small slice of the EventSource API the renderers use
+   (`addEventListener` + `close`), so `_bindRenderStream` is untouched. */
+const _turnChannels = new Map();        // session id -> channel
+const _pendingTurnChannels = new Set(); // a turn whose session the server has not named yet
+function _turnChannel(sid, turnId) {
+  if (sid && _turnChannels.has(sid)) {
+    const old = _turnChannels.get(sid);
+    if (turnId) old._lrTurn = turnId;
+    return old;
+  }
+  const handlers = Object.create(null);
+  const chan = {
+    _lrSid: sid || "", _lrTurn: turnId || "", _lrSeen: Date.now(),
+    _lrClosed: false, _lrDone: false, _lrDoneT: 0, _lrReplaying: false, _lrBuf: [],
+    addEventListener(kind, fn) { (handlers[kind] = handlers[kind] || []).push(fn); },
+    close() {
+      chan._lrClosed = true;
+      if (chan._lrDoneT) { clearTimeout(chan._lrDoneT); chan._lrDoneT = 0; }
+      if (sid && _turnChannels.get(sid) === chan) _turnChannels.delete(sid);
+      _pendingTurnChannels.delete(chan);
+    },
+    _emit(kind, data, id) {
+      if (chan._lrClosed) return;
+      const ev = { data: JSON.stringify(data || {}), lastEventId: id ? String(id) : "" };
+      if (chan._lrReplaying) { chan._lrBuf.push({ kind, data, id: Number(id) || 0 }); return; }
+      chan._lrSeen = Date.now();
+      (handlers[kind] || []).forEach(fn => { try { fn(ev); } catch (e) {} });
+    },
+    /* a resume renders the turn's PAST from the durable log; events that arrived
+       while those pages were being read are replayed in id order, never twice. */
+    _flushReplay() {
+      chan._lrReplaying = false;
+      const buf = chan._lrBuf.slice().sort((a, b) => a.id - b.id);
+      chan._lrBuf = [];
+      buf.forEach(x => chan._emit(x.kind, x.data, x.id));
+    }
+  };
+  if (sid) _turnChannels.set(sid, chan); else _pendingTurnChannels.add(chan);
+  return chan;
+}
+function _adoptTurnChannel(chan, sid) {
+  if (!chan || !sid) return;
+  _pendingTurnChannels.delete(chan);
+  chan._lrSid = sid;
+  _turnChannels.set(sid, chan);
+  // frames that arrived BEFORE the start request named the session: deliver only
+  // the ones that belong to it, in arrival (= durable id) order.
+  const held = chan._lrPending || [];
+  chan._lrPending = [];
+  held.forEach(x => { if (x.data && x.data.session === sid) chan._emit(x.kind, x.data, x.id); });
+}
+function _dispatchTurnEvent(kind, d, id) {
+  const sid = d && d.session;
+  if (!sid) return;
+  const chan = _turnChannels.get(sid);
+  if (!chan || chan._lrClosed) {
+    // a brand-new chat has no id until POST /api/chat/start answers: HOLD its
+    // frames instead of guessing which pending turn they belong to.
+    if (_pendingTurnChannels.size === 1) {
+      const pending = _pendingTurnChannels.values().next().value;
+      (pending._lrPending = pending._lrPending || []).push({ kind, data: d, id });
+      if (pending._lrPending.length > 500) pending._lrPending.shift();
+    }
+    return;
+  }
+  // a second turn on the same session may be queued server-side: its frames must
+  // never paint into the transcript of the turn this tab is rendering.
+  if (chan._lrTurn && d.turn_id && d.turn_id !== chan._lrTurn) return;
+  chan._emit(kind, d, id);
+  if (kind === "chat.stream.end") {
+    // the explicit terminal: it is published AFTER the reply is persisted, so the
+    // rebuild on `done` always finds the final answer.
+    if (!chan._lrDone) { chan._lrDone = true; chan._emit("done", d, id); }
+  } else if (kind === "chat.done" && !chan._lrDone && !chan._lrDoneT) {
+    // `chat.done` can reach the feed before the reply is flushed to disk. Keep it
+    // as a safety net for turns with no `chat.stream.end`, never as the fast path.
+    chan._lrDoneT = setTimeout(() => {
+      chan._lrDoneT = 0;
+      if (!chan._lrDone && !chan._lrClosed) { chan._lrDone = true; chan._emit("done", d, id); }
+    }, 1200);
+  }
+}
+const _TURN_FEED_KINDS = ["chat.run", "chat.phase", "chat.delta", "chat.user", "chat.steer",
+  "chat.final", "chat.stream.end", "chat.done", "chat.error", "model.loading",
+  "tool.call", "tool.result", "tool.output", "tool.blocked", "harness.inject",
+  "harness.drop", "cost.usage", "plan.incomplete", "plan.continuing", "hitl.request",
+  "verify.run", "run.metrics", "bestofn.chosen", "graph.node.added", "graph.node.updated"];
 /* JAG-500: the feed's `chat.done` used to clear #log and re-render the whole
    transcript. loadHistory() blanks #log before it rebuilds, so on a turn THIS tab
    streamed the chat visibly "switched off" for a moment at the very end of the
@@ -14280,7 +14488,50 @@ async function loadRunning() {
 }
 
 let _feedWatch = 0;   // 2026-11-01: the feed liveness timer (one at a time)
-function connectFeed() {
+let _buildWatchStarted = false;
+const _orbitFeedSubscribers = new Set();
+let _orbitFeedConnected = false;
+function _isOrbitFrame(source) {
+  return ["controlFrame", "panelFrame"].some(id => {
+    const frame = document.getElementById(id);
+    return frame && frame.contentWindow === source;
+  });
+}
+function _orbitFeedBroadcast(message) {
+  for (const target of _orbitFeedSubscribers) {
+    if (!_isOrbitFrame(target)) { _orbitFeedSubscribers.delete(target); continue; }
+    try { target.postMessage(message, location.origin); } catch (_) {}
+  }
+}
+window.addEventListener("message", e => {
+  if (e.origin !== location.origin || !_isOrbitFrame(e.source) ||
+      !e.data || e.data.type !== "longrun-feed-subscribe") return;
+  _orbitFeedSubscribers.add(e.source);
+  e.source.postMessage({type: "longrun-feed-ack", connected: _orbitFeedConnected}, location.origin);
+});
+function _bridgeOrbitFeed(es) {
+  const kinds = ["backlog", "chat.run", "chat.user", "tool.call", "tool.result",
+    "graph.node.added", "graph.node.updated", "graph.plan_dropped", "plan.update",
+    "chat.done", "error", "agent.updated", "agent.released", "teams.updated",
+    "roles.update", "session.updated", "session.renamed", "session.created",
+    "session.deleted", "architect.done"];
+  kinds.forEach(kind => es.addEventListener(kind, e => {
+    if (typeof e.data !== "string") return;
+    _orbitFeedBroadcast({type: "longrun-feed-event", kind, data: e.data});
+  }));
+  es.addEventListener("open", () => {
+    _orbitFeedConnected = true;
+    _orbitFeedBroadcast({type: "longrun-feed-ack", connected: true});
+  });
+  es.addEventListener("error", e => {
+    if (typeof e.data !== "string") {
+      _orbitFeedConnected = false;
+      _orbitFeedBroadcast({type: "longrun-feed-disconnected"});
+    }
+  });
+}
+function _startBuildWatch() {
+  if (_buildWatchStarted) return;
   // v624: the /api/build fingerprint covers index.html AND orbit.html, but no
   // client polled it — a pinned tab or phone PWA silently ran yesterday's UI.
   // Poll it here too (the deck watches it itself); a chip beats an auto
@@ -14300,20 +14551,41 @@ function connectFeed() {
     };
     _check();
     setInterval(_check, 60000);
+    _buildWatchStarted = true;
   } catch (_) {}
+}
+function connectFeed() {
+  _startBuildWatch();
   const _qs = (authQS() ? "?" + authQS() + "&" : "?") + "since=" + feedSince;
   const es = new EventSource("/api/feed" + _qs);
+  _bridgeOrbitFeed(es);
   // 2026-11-01: the feed is the page's only source of "a turn ended / a session
   // changed". It used to react to `error` ONLY — a half-open socket never fires
   // one, so the rail, the plan panel and `chat.done` (which reconciles the
   // transcript) all went silent together until F5/↻. The server's named
   // `heartbeat` is the proof of life; when it stops, re-open the feed.
   es._lrSeen = Date.now();
-  es.addEventListener("heartbeat", () => { es._lrSeen = Date.now(); });
+  es.addEventListener("heartbeat", () => {
+    es._lrSeen = Date.now();
+    // a turn is silent while the model thinks: the feed's own heartbeat is the
+    // proof its channel is alive, so the stuck-turn watchdog cannot re-attach it.
+    _turnChannels.forEach(ch => { ch._lrSeen = Date.now(); });
+  });
+  // v1165: this ONE feed also carries every turn's frames. Each open turn channel
+  // receives its own session's events, and the resume cursor advances on them so a
+  // reconnect continues from the last frame actually seen.
+  _TURN_FEED_KINDS.forEach(kind => es.addEventListener(kind, e => {
+    const n = Number(e.lastEventId);
+    if (n > feedSince) feedSince = n;
+    let d = {}; try { d = JSON.parse(e.data) || {}; } catch (_) {}
+    _dispatchTurnEvent(kind, d, e.lastEventId);
+  }));
   if (_feedWatch) clearInterval(_feedWatch);
   _feedWatch = setInterval(() => {
     if (Date.now() - (es._lrSeen || 0) < 20000) return;
     clearInterval(_feedWatch); _feedWatch = 0;
+    _orbitFeedConnected = false;
+    _orbitFeedBroadcast({type: "longrun-feed-disconnected"});
     try { es.close(); } catch (e) {}
     connectFeed();
   }, 10000);
