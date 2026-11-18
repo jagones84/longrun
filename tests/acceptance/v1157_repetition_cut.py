@@ -48,6 +48,10 @@ def check(name, ok, detail=""):
 
 FINAL = "Done: the answer is complete and does not repeat."
 CUT = "A" * 60 + " and then the same sentence over and over and over"
+# A cut that the turn PERSISTS before the next reply: it is an announcement, so the
+# promise branch appends it — this is the earlier-cut case `turn_reply(longest=True)`
+# can pick over a shorter answer.
+CUTP = "I will now check the file and then report. " * 3
 
 
 def run_turn(sid, script):
@@ -108,14 +112,37 @@ check("C2 both cuts are persisted", len(cards2) >= 2, len(cards2))
 # F — the cut that IS handed back says so where the operator reads it.
 _sess2 = server.load_session("v1157-two") or {}
 _reply = _stores.turn_reply(_sess2.get("messages") or [])
+check("F0 ONE owner marks cut text, and text that is not a cut is untouched",
+      getattr(_agent, "_cut_mark", None) is not None
+      and _agent._cut_mark("plain answer", ["a cut"]) == "plain answer"
+      and "incomplete" in _agent._cut_mark("a cut", ["a cut"]))
 check("F1 the turn's reply is the cut text", CUT[:20] in _reply, _reply[:60])
 check("F2 that reply says it is incomplete",
-      "this reply was cut at %d characters" % len(CUT.strip()) in _reply, _reply[-120:])
+      "the transport cut this text at %d characters" % len(CUT.strip()) in _reply,
+      _reply[-140:])
 check("F3 the note is in the PERSISTED message (turn_reply reads it)",
-      "this reply was cut" in ((_sess2.get("messages") or [{}])[-1].get("content") or ""))
+      "the transport cut this text" in ((_sess2.get("messages") or [{}])[-1].get("content") or ""))
 _note = _agent._rejected_reply_note(CUT, "repetition")
 check("F4 a cut reply is named as a cut, not as bad JSON",
       "CUT on the transport" in _note and "JSON is not valid" not in _note, _note[:160])
+
+# F5/F6 — the two unmarked paths A54's r102 report measured (item 2).
+# The model may ECHO the cut text back with a normal stop; and the UI's
+# `turn_reply(longest=True)` may pick an EARLIER cut over a shorter answer.
+ev3 = run_turn("v1157-echo", lambda n: [(CUT, "repetition"), (CUT, "stop")][min(n, 1)])
+_sess3 = server.load_session("v1157-echo") or {}
+_reply3 = _stores.turn_reply(_sess3.get("messages") or [])
+check("F5 an echoed cut is marked", "the transport cut this text" in _reply3, _reply3[-120:])
+
+ev4 = run_turn("v1157-longest",
+               lambda n: [(CUTP, "repetition"), (CUTP, "repetition"),
+                          ("ok", "stop")][min(n, 2)])
+_sess4 = server.load_session("v1157-longest") or {}
+_long = _stores.turn_reply(_sess4.get("messages") or [], longest=True)
+check("F6 the EARLIER cut is marked too (longest=1)", "the transport cut this text" in _long,
+      _long[-120:])
+check("F7 the shorter normal answer is NOT marked",
+      "the transport cut this text" not in _stores.turn_reply(_sess4.get("messages") or []))
 
 # D — the transport records the reason (it is what makes A possible).
 _src = open(os.path.join(REPO, "src", "longrun", "model", "rllm.py"),

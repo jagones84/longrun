@@ -340,6 +340,28 @@ def _json_break(text):
     return None
 
 
+def _cut_mark(text, cuts):
+    """Append the incompleteness note to a text the transport CUT (round 102).
+
+    `cuts` holds every text this turn saw cut (`finish_reason="repetition"`). A54's
+    r102 report (item 2) measured two ways a truncated reply still reached the
+    operator unmarked: the model echoed the SAME text back with `stop` (so the
+    current reply is not itself a cut), and `turn_reply(longest=True)` picked an
+    EARLIER cut over a shorter answer. Equality against every recorded cut covers
+    both without guessing: a reply that merely starts with the cut text is a
+    different, possibly complete answer and is left alone.
+    """
+    text = str(text or "")
+    if not text or "the transport cut this text" in text:
+        return text
+    for cut in (cuts or []):
+        if cut and text.strip() == cut:
+            return text + ("\n\n[harness] the transport cut this text at %d "
+                           "characters: the same block appeared four times in a row, "
+                           "so it is incomplete." % len(cut))
+    return text
+
+
 def _rejected_reply_note(answer, finish_reason=None):
     """The retry for a reply that is neither valid JSON nor a known dialect.
 
@@ -5850,9 +5872,9 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     # answer, not a finished one. One continuation round names the cut; the
     # second trip is persisted and the turn keeps whatever the model wrote.
     _repeat_retry_used = False
-    # Round 102: the text of the LAST cut the turn could not retry. If it is what
-    # the turn hands back, the close path appends the incompleteness note to it.
-    _cut_text = ""
+    # Round 102b (A54 r102 item 2): EVERY cut text this turn saw — the model can echo
+    # one back with `stop`, and `turn_reply(longest=True)` can pick an earlier cut.
+    _cut_texts = []
     _empty_parks = 0          # bounded CONTINUE rounds when the model keeps going blank
     # 2026-11-16: a REASONING-ONLY reply (long chain-of-thought, no content, no tool
     # call) must not become a text-retry loop against the SAME model. Measured
@@ -6195,6 +6217,8 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                          output=str(answer or "")[-2000:], summary="repetition")
             except Exception:  # noqa: BLE001 — a record must never break the turn
                 pass
+            if str(answer or "").strip():
+                _cut_texts.append(str(answer or "").strip())
             if not _repeat_retry_used and not _is_aborted(sess["id"]):
                 _repeat_retry_used = True
                 # Round 102 (A54 r101 item 1): the guard is a PERIODICITY test, so it
@@ -6208,10 +6232,9 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                         "continue; otherwise continue from the last point that was "
                         "new." % len(str(answer or "")), "retry")
                 continue
-            # Round 102 (A54 r101 item 5): this cut IS what the turn will hand back
+            # Round 102b (A54 r102 item 2): this cut IS what the turn may hand back
             # (`turn_reply` returns the last assistant message), so it must say it is
             # incomplete in the SAME text the operator reads — see the close path.
-            _cut_text = str(answer or "")
         if not _think_action_used and _reasoning_only_action(answer, think):
             # The action exists but lives in the reasoning channel: the harness cannot
             # execute a thought. Ask for it once, as a message.
@@ -7410,16 +7433,6 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                     "an action (%s)." % (_visible or content)[:200].replace("\n", " "))
                    if (_visible or content) else
                    "The turn ended without producing an answer.")
-    # Round 102 (A54 r101 item 5): a reply the transport CUT as a repetition loop was
-    # persisted verbatim, and `stores.turn_reply` returns exactly this message — so
-    # the operator read a truncated paragraph as a finished answer. The text stays
-    # (it is real work) but it now SAYS it is incomplete, in the message the UI
-    # renders. Only when THIS text is the cut one: a later reply, or a finish
-    # envelope, is not marked.
-    if _cut_text and content == _cut_text.strip():
-        content = content + ("\n\n[harness] this reply was cut at %d characters: "
-                             "the same block appeared four times in a row, so the "
-                             "text above is incomplete." % len(_cut_text.strip()))
     if _hitl:
         # EV-39: the turn asked the operator (human.ask). The visible reply is the
         # QUESTION — the model's own prose was written before the human answered,
@@ -7466,6 +7479,19 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                     "or let me continue." % (_done, len(_nodes))) if _nodes else "Done.")
         meta = {"model": model, "synthesised": True,
                 "reason": "model emitted JSON instead of a prose reply"}
+    # Round 102 (A54 r101 item 5): a reply the transport CUT as a repetition loop was
+    # persisted verbatim, and `stores.turn_reply` returns exactly these messages — so
+    # the operator read a truncated paragraph as a finished answer. The text stays
+    # (it is real work) but every message whose text was cut now SAYS it is
+    # incomplete, in place, so both `turn_reply` modes and a reload agree. Matching is
+    # by EQUALITY against this turn's cut texts (round 102b, A54 r102 item 2): an
+    # echo of the same text and an EARLIER cut are covered; a reply that merely
+    # continues the cut's opening is a different answer and is left alone.
+    if _cut_texts:
+        content = _cut_mark(content, _cut_texts)
+        for _m in msgs[_turn_base:]:
+            if isinstance(_m, dict) and _m.get("role") == "assistant":
+                _m["content"] = _cut_mark(_m.get("content"), _cut_texts)
     # JAG-172: PERSIST the agentic history of this turn (tool calls, observations,
     # nudges) into the transcript. Before, only the final assistant reply was
     # stored, so every tool observation was discarded at the turn boundary: the
