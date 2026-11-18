@@ -43,6 +43,7 @@ Usage:
   python3 forge.py capsule compile|replay FILE.json | flow judge FILE.json | selfdirected audit FILE.json
   python3 forge.py harnessevo diagnose|admit FILE.json | contextpipeline deliver FILE.json | stepzero extract FILE.json
   python3 forge.py harnessrecord audit FILE.json | conduct score FILE.json | completion check FILE.json
+  python3 forge.py skillret calibrate FILE.json | ruleret closure FILE.json | skillquality profile FILE.json
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -989,6 +990,72 @@ def cmd_completion(args):
            else completion_gate.check(doc.get("run") or doc))
     print(json.dumps(out, indent=2, ensure_ascii=False))
     sys.exit(0 if out.get("complete") is not False else 1)
+
+
+def cmd_skillret(args):
+    """Round 123 (arXiv:2611.01115): retrieval calibrated by matched execution comparisons."""
+    from longrun.harness import skill_retrieval
+    if not getattr(args, "file", None):
+        print("usage: skillret calibrate|rank|apply FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "calibrate":
+        out = skill_retrieval.calibrate(doc.get("pairs") or doc)
+    elif args.action == "rank":
+        out = skill_retrieval.rank(doc.get("candidates") or doc,
+                                   doc.get("learned") or {})
+    else:
+        out = skill_retrieval.apply(doc.get("learned") or {}, doc.get("skill"))
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0 if out.get("write") is not False else 1)
+
+
+def cmd_ruleret(args):
+    """Round 123 (arXiv:2611.01042): closure-based rule retrieval under a context budget."""
+    from longrun.harness import rule_retrieval
+    if not getattr(args, "file", None):
+        print("usage: ruleret closure|audit FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "closure":
+        out = rule_retrieval.closure(doc.get("rules") or [], doc.get("seeds") or [],
+                                     doc.get("budget"))
+    else:
+        out = rule_retrieval.audit(doc.get("selection") or [], doc.get("rules") or [],
+                                   doc.get("seeds") or [], doc.get("budget"))
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0 if out.get("ok") is not False and out.get("decision") != "refuse" else 1)
+
+
+def cmd_skillquality(args):
+    """Round 123 (arXiv:2610.38147): nine-dimension skill profile, execution-free estimate."""
+    from longrun.harness import skill_quality
+    if not getattr(args, "file", None):
+        print("usage: skillquality profile|predict FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "profile":
+        out = skill_quality.profile(doc.get("skill") or doc)
+    else:
+        out = skill_quality.predict(doc.get("skill") or {}, doc.get("references") or [],
+                                    doc.get("k", 3))
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0 if out.get("verdict") in ("complete", "partial", None) else 1)
 
 
 def cmd_instructions(args):
@@ -2585,6 +2652,15 @@ def main():
     p = sub.add_parser("completion"); p.add_argument("action", choices=["check", "ladder"]); \
         p.add_argument("file", nargs="?", help="JSON: {run} or {rows}"); \
         p.set_defaults(fn=cmd_completion)
+    p = sub.add_parser("skillret"); p.add_argument("action", choices=["calibrate", "rank", "apply"]); \
+        p.add_argument("file", nargs="?", help="JSON: {pairs}, {candidates, learned}, or {learned, skill}"); \
+        p.set_defaults(fn=cmd_skillret)
+    p = sub.add_parser("ruleret"); p.add_argument("action", choices=["closure", "audit"]); \
+        p.add_argument("file", nargs="?", help="JSON: {rules, seeds, budget} (+ selection)"); \
+        p.set_defaults(fn=cmd_ruleret)
+    p = sub.add_parser("skillquality"); p.add_argument("action", choices=["profile", "predict"]); \
+        p.add_argument("file", nargs="?", help="JSON: {skill} or {skill, references, k}"); \
+        p.set_defaults(fn=cmd_skillquality)
     p = sub.add_parser("instructions"); p.add_argument("action", choices=["audit"]); \
         p.add_argument("file", nargs="?", help="JSON: {text, cards}"); \
         p.set_defaults(fn=cmd_instructions)
