@@ -453,7 +453,11 @@ def status():
     for role in (cfg.get("roles") or {}):
         roles[role] = {
             "model": (cfg.get("roles", {}).get(role) or {}).get("model"),
-            "selected": pick(role),
+            # 2026-11-18 (round 77): an exact `model:` pin is what the harness
+            # actually runs — every consumer uses `role_model(role) or pick(role)`
+            # — so reporting only the roster pick made every pinned role (optimizer,
+            # architect, reviewer…) read `selected: null` on /api/routing.
+            "selected": role_model(role) or pick(role),
             "chain": fallback_chain(role),
         }
     return {"config": cfg, "roster": roster, "roles": roles,

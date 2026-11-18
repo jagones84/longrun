@@ -42,6 +42,18 @@ roles:
     model: openrouter:deepseek/deepseek-v4-flash-0731
     fallbacks:
     - openrouter:meta/muse-spark-1.3-contributor
+  # Round 77 (2026-11-18): the post-session local optimizer (evolve/optimizer.py)
+  # is a BACKGROUND proposer, not a user-facing turn: it reads one session trace
+  # and writes at most one registry proposal, which the operator still approves.
+  # It had no role, so it fell through to `default_model()` — measured: that key
+  # answers HTTP 403 (limit exceeded) and 95 of 170 runs were logged as
+  # "unparseable model reply" with no reply at all. A dedicated role keeps the
+  # proposer's model and its cost out of the chat/agent routes; `_optimizer_model()`
+  # reads `roles.optimizer.model` first. The model MUST be a completing one:
+  # `deepseek-flash` spends its whole budget reasoning on this prompt (8192/8192
+  # tokens, 43.5 s, zero content) while `deepseek-chat` answers in 1.1 s.
+  optimizer:
+    model: deepseek:deepseek-chat
 default_fallbacks: []
 # I-2: remember a 429 (quota) per model for `retry_not_before_s` and put that
 # model LAST in the candidate chain until the window expires. Process-local, no

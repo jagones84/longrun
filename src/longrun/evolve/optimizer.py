@@ -168,10 +168,22 @@ def _read_feedback(sid):
 
 
 def _optimizer_model():
-    """The model the optimizer runs on: the `agent` role, else the harness default."""
+    """The model the optimizer runs on: `roles.optimizer`, then the `agent` role,
+    then the harness default.
+
+    2026-11-18 (round 77): `pick("agent")` alone ignores `roles.agent.model` — the
+    exact-model pin the operator sets in `config/routing.yaml` — because `pick()`
+    reads `pattern`/`fallbacks` only and returns None while the local roster is
+    empty. Every other role consumer uses the same idiom (`role_model(role) or
+    pick(role)`); the optimizer was the one that did not, so it fell through to
+    `default_model()` and every run called the dead key (measured: HTTP 403, 95 of
+    170 rows). A dedicated `optimizer` role keeps the proposer's model and cost out
+    of the user-facing chat/agent routes.
+    """
     try:
         from longrun.model import routing as _routing
-        m = _routing.pick("agent")
+        m = (_routing.role_model("optimizer") or _routing.role_model("agent")
+             or _routing.pick("agent"))
         if m:
             return m
     except Exception:  # noqa: BLE001
@@ -265,7 +277,16 @@ def _call_model(prompt, model=None):
         choices = data.get("choices") or []
         if not choices:
             return ""
-        return ((choices[0] or {}).get("message") or {}).get("content", "") or ""
+        ch = choices[0] or {}
+        text = ((ch.get("message") or {}).get("content")) or ""
+        if not str(text).strip() and ch.get("finish_reason") == "length":
+            # Measured 2026-11-18 (round 77) on a reasoning model with the REAL
+            # prompt: 1024/1024 then 8192/8192 tokens spent reasoning, zero
+            # content, `finish_reason=length`. "empty reply" would hide that.
+            _LAST_CALL_ERROR = ("the reply was cut at the token limit "
+                                "(finish_reason=length, no content)")
+            return None
+        return text
     except Exception as e:  # noqa: BLE001 — the model call is additive, never fails the session
         _LAST_CALL_ERROR = _error_line(exc=e)
         return None
@@ -454,12 +475,15 @@ def _submit(delta, evidence, sid):
     """
     try:
         from longrun.util import improve as _improve
+        # Round 77: a completing model (deepseek-chat) returned a valid delta with
+        # NO `reason` key, which would have shown the operator a dangling "— " in
+        # the inbox. The fallback says what is true instead of leaving a blank.
+        why = str(delta.get("reason") or "").strip() or "the optimizer gave no reason"
         content = "%s.%s = %s — %s" % (
             delta.get("target"), delta.get("field"),
-            json.dumps(delta.get("value")), delta.get("reason") or "")
+            json.dumps(delta.get("value")), why)
         rec = _improve.propose(
-            "registry", content,
-            reason=str(delta.get("reason") or "")[:500],
+            "registry", content, reason=why[:500],
             origin="optimizer", delta=delta,
             experiment={"session": sid, "evidence": evidence})
         return rec.get("id")
@@ -541,8 +565,12 @@ def run(sid, jid=None):
     except Exception:  # noqa: BLE001
         err = "registry validator unavailable"
     if err:
+        # Round 77: a model-reported skip is the model's own reasoning ("the fired
+        # rules are load-bearing…"), and the operator's only chance to read it.
+        # This branch used to drop the reply — the one skip whose text matters.
         result = {"skip": True, "reason": err, "session": sid,
-                  "delta": delta, "prompt": prompt, "evidence": evidence}
+                  "delta": delta, "prompt": prompt, "evidence": evidence,
+                  "reply": str(reply)[:1500]}
         _log_run(sid, result)
         return result
     # RRSI pruner ("no longer useful"): the same delta already decided or still

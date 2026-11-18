@@ -122,6 +122,14 @@ providers:
       # agent went hunting through the knowledge base.
       - {id: deepseek-flash, context_length: 1048576, vision: true}
       - {id: deepseek-v4-pro, context_length: 1048576}
+      # Round 77 (2026-11-18): the standard chat completion id, verified live on
+      # this key. `deepseek-flash` spends its WHOLE budget reasoning on the
+      # optimizer's analysis prompt — measured with the real prompt: 1024/1024,
+      # then 8192/8192 tokens of reasoning in 43.5 s and zero content
+      # (`finish_reason=length`), so a background proposer cannot use it.
+      # `deepseek-chat` answered the same prompt in 1.1 s / 61 tokens
+      # (`finish_reason=stop`).
+      - {id: deepseek-chat, context_length: 1048576}
 
   # ---- cloud DEFAULTS shipped with the repo (override in providers.local.yaml)
   # These are the best-known hosted providers. The repo lists them + their

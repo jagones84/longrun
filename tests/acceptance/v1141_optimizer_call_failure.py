@@ -117,11 +117,25 @@ try:
           (O._LAST_CALL_ERROR,))
 
     urllib.request.urlopen = lambda req, timeout=None: _Resp(
-        {"choices": [{"message": {"content": '{"skip": true}'}}]})
+        {"choices": [{"message": {"content": '{"skip": true}'}, "finish_reason": "stop"}]})
     _reply = O._call_model("p", model="m")
     check("B6 a completion is returned verbatim", _reply == '{"skip": true}', _reply)
     check("B7 a success CLEARS the previous failure",
           O._LAST_CALL_ERROR == "", O._LAST_CALL_ERROR)
+
+    # Round 77: a reasoning model spends the whole budget thinking and is cut
+    # before emitting any content (measured: 8192/8192 tokens, 43.5 s).
+    urllib.request.urlopen = lambda req, timeout=None: _Resp(
+        {"choices": [{"message": {"content": "", "reasoning_content": "…"}, "finish_reason": "length"}]})
+    check("B9 a reply cut at the limit is a named failure, not an empty reply",
+          O._call_model("p", model="m") is None
+          and "finish_reason=length" in O._LAST_CALL_ERROR, O._LAST_CALL_ERROR)
+
+    urllib.request.urlopen = lambda req, timeout=None: _Resp(
+        {"choices": [{"message": {"content": ""}, "finish_reason": "stop"}]})
+    check("B10 an empty answer the model chose to send is still 'empty'",
+          O._call_model("p", model="m") == "" and O._LAST_CALL_ERROR == "",
+          O._LAST_CALL_ERROR)
 finally:
     P.endpoint, urllib.request.urlopen = _orig_endpoint, _orig_urlopen
 
@@ -167,6 +181,16 @@ try:
           _r.get("reason") == "unparseable model reply", _r.get("reason"))
     check("C5 the prose is kept in the row", "no problem" in (_r.get("reply") or ""),
           _r.get("reply"))
+
+    # Round 77: a model-reported skip is the model's own reasoning — the one skip
+    # whose text the operator wants to read.
+    _r = _run_with_urlopen(lambda req, timeout=None: _Resp(
+        {"choices": [{"message": {"content":
+                                  '{"skip": true, "reason": "the rules are load-bearing"}'},
+                      "finish_reason": "stop"}]}))
+    check("C9 a model-reported skip keeps the model's reasoning",
+          _r.get("reason") == "model reported skip"
+          and "load-bearing" in (_r.get("reply") or ""), _r.get("reply"))
 finally:
     P.endpoint = _orig_endpoint
     urllib.request.urlopen = _orig_urlopen
