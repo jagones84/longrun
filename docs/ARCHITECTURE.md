@@ -634,7 +634,10 @@ ONE token (the API bearer): `POST /api/tools|settings` refuse a body that carrie
 `session`/`run_id` and publish every accepted change as `policy.changed`; the env file
 and the control API are hard-denied in the permission layer, which is what keeps a
 shell-capable agent away from both — the env rule matches the FILE as a path token, so
-the program that opens it is not part of the guard. The task graph (`/api/plan`, todos) is
+the program that opens it is not part of the guard. Every child the harness starts for an
+agent action (the session shell, host execution in a run, a background job) is spawned with
+those variables REMOVED (`osutil.scrubbed_env`); `shell.env_passthrough` is the operator's
+list of credentials a tool may keep. The task graph (`/api/plan`, todos) is
 a DIFFERENT object and is never touched: the document is the intent/decision truth, the
 graph is execution state.
 
