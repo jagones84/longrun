@@ -315,6 +315,47 @@ def _is_store(path):
     return False
 
 
+def _fold_path(node):
+    """Fold a CONSTANT path expression to a string, else None (round 58).
+
+    Measured live 2026-11-18: the literal-only rule let ONE rewrite through —
+    `open(os.path.expanduser("~/.longrun/data/events.db"), "a")` and
+    `open(os.path.join("~/.longrun/data", "events.db"), "a")` both reached the
+    record, while the same path written literally was refused. Those are not the
+    indirection `v1072` P7 protects: the value is a CONSTANT, so it is folded and
+    judged exactly like a literal. A NAME is deliberately NOT folded — a target
+    behind a variable stays the documented fail-open limit.
+    """
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left, right = _fold_path(node.left), _fold_path(node.right)
+        if left is not None and right is not None:
+            return left + right
+        return None
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+        attr = node.func.attr
+        if attr in ("expanduser", "expandvars", "normpath", "abspath") and node.args:
+            value = _fold_path(node.args[0])
+            if value is None:
+                return None
+            try:
+                return getattr(os.path, attr)(value)
+            except (TypeError, ValueError, OSError):
+                return None
+        if attr == "join":
+            vals = [_fold_path(a) for a in node.args]
+            if vals and all(v is not None for v in vals):
+                try:
+                    # `join("~/.longrun/data", "events.db")` keeps the `~`, and
+                    # `_resolve_literal` refuses a `~` target — expand it here so
+                    # the joined constant is judged like the same absolute path.
+                    return os.path.expanduser(os.path.join(*vals))
+                except (TypeError, ValueError):
+                    return None
+    return None
+
+
 def check_python_write(code, workspace=None, repo_root=None):
     """Refuse a Python snippet whose LITERAL write target is inside the Nucleous.
 
@@ -395,7 +436,7 @@ def check_python_write(code, workspace=None, repo_root=None):
         func = node.func
         # open(path, mode) / io.open / os.fdopen / pathlib.Path.open
         if isinstance(func, ast.Name) and func.id in ("open",):
-            if not node.args or not isinstance(node.args[0], ast.Constant):
+            if not node.args:
                 continue
             mode = ""
             if len(node.args) >= 2 and isinstance(node.args[1], ast.Constant):
@@ -405,8 +446,9 @@ def check_python_write(code, workspace=None, repo_root=None):
                     mode = str(kw.value.value or "")
             if not any(m in mode for m in _WRITE_MODES):
                 continue
-            if isinstance(node.args[0], ast.Constant):
-                resolved = _resolve_literal(node.args[0].value)
+            folded = _fold_path(node.args[0])
+            if folded is not None:
+                resolved = _resolve_literal(folded)
                 _v = _refuse(resolved, "writes")
                 if _v:
                     return _v
@@ -420,8 +462,9 @@ def check_python_write(code, workspace=None, repo_root=None):
                         "rename", "renames", "symlink", "makedirs", "mkdir",
                         "mknod", "mkfifo", "truncate"):
                 for arg in list(node.args or [])[:2]:
-                    if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
-                        resolved = _resolve_literal(arg.value)
+                    folded = _fold_path(arg)
+                    if folded is not None:
+                        resolved = _resolve_literal(folded)
                         _v = _refuse(resolved, "writes")
                         if _v:
                             return _v
@@ -430,11 +473,13 @@ def check_python_write(code, workspace=None, repo_root=None):
         if isinstance(func.value, ast.Name) and func.value.id == "shutil":
             idx = 1 if attr in ("copy", "copy2", "copytree", "move") else 0
             if attr in ("copy", "copy2", "copytree", "move", "rmtree"):
-                if len(node.args or []) > idx and isinstance(node.args[idx], ast.Constant):
-                    resolved = _resolve_literal(node.args[idx].value)
-                    _v = _refuse(resolved, "writes")
-                    if _v:
-                        return _v
+                if len(node.args or []) > idx:
+                    folded = _fold_path(node.args[idx])
+                    if folded is not None:
+                        resolved = _resolve_literal(folded)
+                        _v = _refuse(resolved, "writes")
+                        if _v:
+                            return _v
             continue
         # pathlib: Path("...").write_text/write_bytes/unlink/mkdir/touch/...,
         # or Path("...").open(mode) with a write mode.
@@ -451,8 +496,8 @@ def check_python_write(code, workspace=None, repo_root=None):
                     continue
             if (isinstance(recv, ast.Call) and isinstance(recv.func, ast.Name)
                     and recv.func.id == "Path"):
-                if recv.args and isinstance(recv.args[0], ast.Constant):
-                    lit = recv.args[0].value
+                if recv.args:
+                    lit = _fold_path(recv.args[0])
             if lit is not None:
                 resolved = _resolve_literal(lit)
                 _v = _refuse(resolved, "writes")
