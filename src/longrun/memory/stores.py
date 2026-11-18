@@ -4,6 +4,7 @@ Owns the on-disk session transcripts (data/sessions/*.json), the plan + task
 stores, the job / workspace bookkeeping and the append/persist helpers the chat
 loop calls. Extracted from ``server.py`` (JAG-376). Stdlib + sibling modules only.
 """
+import atexit
 import json
 import os
 import re
@@ -694,13 +695,19 @@ _CTX_BACKFILL = {}            # sid -> {"pct", "tokens_used", "budget_tokens"}
 _CTX_BACKFILL_TRIED = set()   # one attempt per session per process
 _CTX_BACKFILL_LOCK = threading.Lock()
 _CTX_BACKFILL_Q = None        # queue.Queue, created with the single worker
+_CTX_BACKFILL_WORKER = None   # the thread handle, joined at interpreter exit
+_CTX_BACKFILL_STOP = None     # threading.Event set by that hook
 
 
-def _ctx_backfill_loop():
+def _ctx_backfill_loop(stop):
     """ONE daemon worker: the queue keeps the cost off every request thread."""
     from longrun.core import httpapi   # lazy: memory must not import core at load
-    while True:
-        sid = _CTX_BACKFILL_Q.get()
+    import queue
+    while not stop.is_set():
+        try:
+            sid = _CTX_BACKFILL_Q.get(timeout=0.5)
+        except queue.Empty:
+            continue
         try:
             u = httpapi.context_usage(sid)
             if u.get("available"):
@@ -712,9 +719,32 @@ def _ctx_backfill_loop():
             pass
 
 
+def _ctx_backfill_shutdown():
+    """Stop and JOIN the worker before the interpreter finalises (2026-11-18).
+
+    A daemon thread still alive at finalisation takes the process down with
+    SIGSEGV (measured: v230/v321/v323/v325/v455/v595/v954, 7 of the 843 tests of
+    the 15:13 full run, each passing alone). This is the same failure class the
+    providers warm-up fixed for its own threads; the join runs BEFORE the .so
+    files are unloaded, and `daemon=True` keeps a hung worker from blocking exit.
+    """
+    with _CTX_BACKFILL_LOCK:
+        worker, stop = _CTX_BACKFILL_WORKER, _CTX_BACKFILL_STOP
+    if stop is not None:
+        stop.set()
+    if worker is not None:
+        try:
+            worker.join(timeout=5.0)
+        except Exception:  # noqa: BLE001 — shutdown must never raise
+            pass
+
+
+atexit.register(_ctx_backfill_shutdown)
+
+
 def _ctx_backfill_request(sid):
     """Ask for one session's saturation, at most once per process."""
-    global _CTX_BACKFILL_Q
+    global _CTX_BACKFILL_Q, _CTX_BACKFILL_WORKER, _CTX_BACKFILL_STOP
     with _CTX_BACKFILL_LOCK:
         if sid in _CTX_BACKFILL_TRIED:
             return
@@ -722,8 +752,11 @@ def _ctx_backfill_request(sid):
         if _CTX_BACKFILL_Q is None:
             import queue
             _CTX_BACKFILL_Q = queue.Queue()
-            threading.Thread(target=_ctx_backfill_loop, daemon=True,
-                             name="ctx-backfill").start()
+            _CTX_BACKFILL_STOP = threading.Event()
+            _CTX_BACKFILL_WORKER = threading.Thread(
+                target=_ctx_backfill_loop, args=(_CTX_BACKFILL_STOP,),
+                daemon=True, name="ctx-backfill")
+            _CTX_BACKFILL_WORKER.start()
         _CTX_BACKFILL_Q.put(sid)
 
 
