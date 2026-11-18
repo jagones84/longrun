@@ -58,8 +58,8 @@ r = optimizer.run("s-active")
 # No model reachable -> the run skips, but ONLY after building the evidence and the
 # prompt (both are carried on the skip result).
 check("B1 no-model run skips", r.get("skip") is True, r)
-check("B2 skip reason names the unparseable reply",
-      r.get("reason") == "unparseable model reply", r.get("reason"))
+check("B2 skip reason names the missing reply (round 76: no reply is not 'unparseable')",
+      r.get("reason") == "no reply from the model", r.get("reason"))
 check("B3 evidence records token count", (r.get("evidence") or {}).get("tokens") == 500, r.get("evidence"))
 check("B4 evidence records step count", (r.get("evidence") or {}).get("steps") == 3, r.get("evidence"))
 check("B5 evidence records outcome", (r.get("evidence") or {}).get("outcome") == "done", r.get("evidence"))
@@ -72,7 +72,7 @@ runmetrics.start("s-failed")
 runmetrics.finish("s-failed", tokens=300, steps=1, outcome="error", code=124, model="test-model")
 r = optimizer.run("s-failed")
 check("C1 failed session reaches the model gate",
-      r.get("skip") is True and r.get("reason") == "unparseable model reply", r)
+      r.get("skip") is True and r.get("reason") == "no reply from the model", r)
 check("C2 exit code recorded in evidence",
       (r.get("evidence") or {}).get("exit_code") == 124, r.get("evidence"))
 

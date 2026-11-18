@@ -16,6 +16,7 @@ breaking the session.
 """
 import json
 import os
+import re
 import time
 
 from longrun.util import paths
@@ -182,18 +183,70 @@ def _optimizer_model():
         return None
 
 
+# The last `_call_model` failure, as a sanitized one-liner ("" = the last call did
+# not fail). 2026-11-18 (round 76): `run()` reported "unparseable model reply" for
+# EVERY provider failure, so 95 of 170 logged runs blamed the model's formatting
+# for an infrastructure answer. Measured on the live key: HTTP 403, "Key limit
+# exceeded (total limit) … $133.06 of $133.00 used; does not reset". The slot is
+# transient — `run()` clears it before the call and reads it right after.
+_LAST_CALL_ERROR = ""
+
+_URL_RE = re.compile(r"https?://\S+")
+
+
+def _error_line(exc=None, payload=None):
+    """One sanitized line for a failed provider call: no URL, no token, ≤240 chars.
+
+    A provider error body is written by a third party and can carry a key
+    identifier in a link (the live 403 did), so URLs are stripped and the text is
+    whitespace-collapsed before it reaches a log row.
+    """
+    msg, code = "", None
+    if payload is not None:
+        if isinstance(payload, dict):
+            code = payload.get("code")
+            msg = str(payload.get("message") or "")
+        else:
+            msg = str(payload)
+    if exc is not None:
+        code = getattr(exc, "code", None) or code
+        if not msg:
+            try:
+                raw = exc.read().decode("utf-8", "replace")
+            except Exception:  # noqa: BLE001 — an unreadable body is just no body
+                raw = ""
+            if raw:
+                try:
+                    err = json.loads(raw).get("error")
+                    msg = (err.get("message") if isinstance(err, dict) else err) or raw
+                except Exception:  # noqa: BLE001
+                    msg = raw
+        if not msg:
+            msg = str(exc)
+    msg = _URL_RE.sub("<url>", " ".join(str(msg).split()))[:240]
+    head = ("HTTP %s" % code) if code else "call failed"
+    return head + ((": " + msg) if msg else "")
+
+
 def _call_model(prompt, model=None):
     """One synchronous completion. Returns the raw reply text, or None on any failure.
 
     Resolves the endpoint through `providers.endpoint` so a cloud model carries its
     own auth header — `ROUTER_BASE` alone is not the whole address (it points at the
     local llama.cpp router, which is not where a routed `openrouter:` model lives).
+
+    A failure sets `_LAST_CALL_ERROR` (round 76): an HTTP error, a 200 carrying an
+    `error` object and a missing model are three different states, and the caller
+    must be able to name the one that happened.
     """
+    global _LAST_CALL_ERROR
+    _LAST_CALL_ERROR = ""
     try:
         import urllib.request as _req
         from longrun.model import providers as _prov
         model = model or _optimizer_model()
         if not model:
+            _LAST_CALL_ERROR = "no model configured"
             return None
         url, headers, resolved = _prov.endpoint(model)
         body = json.dumps({
@@ -206,8 +259,15 @@ def _call_model(prompt, model=None):
         req = _req.Request(url, data=body, headers=headers)
         resp = _req.urlopen(req, timeout=30)
         data = json.loads(resp.read().decode("utf-8"))
-        return (data.get("choices") or [{}])[0].get("message", {}).get("content", "")
-    except Exception:  # noqa: BLE001 — the model call is additive, never fails the session
+        if data.get("error"):
+            _LAST_CALL_ERROR = _error_line(payload=data.get("error"))
+            return None
+        choices = data.get("choices") or []
+        if not choices:
+            return ""
+        return ((choices[0] or {}).get("message") or {}).get("content", "") or ""
+    except Exception as e:  # noqa: BLE001 — the model call is additive, never fails the session
+        _LAST_CALL_ERROR = _error_line(exc=e)
         return None
 
 
@@ -447,15 +507,29 @@ def run(sid, jid=None):
         "has_feedback": bool(feedback),
     }
 
+    global _LAST_CALL_ERROR
+    _LAST_CALL_ERROR = ""
     reply = _call_model(prompt)
+    call_error = _LAST_CALL_ERROR
+    if reply is None:
+        # 2026-11-18 (round 76): every provider failure used to be logged as
+        # "unparseable model reply" — the model was blamed for an infrastructure
+        # answer. The measured live case: HTTP 403, the key at its limit.
+        result = {"skip": True, "session": sid, "prompt": prompt,
+                  "evidence": evidence, "reply": "",
+                  "reason": ("model call failed: " + call_error) if call_error
+                            else "no reply from the model"}
+        _log_run(sid, result)
+        return result
     delta, parsed = _extract_json(reply)
     if not parsed:
         # 2026-11-18 (round 75): 95 of 170 logged runs ended here and the log kept
         # no reply, so a dead model (no endpoint) and a malformed reply were the
-        # same row — undiagnosable. The reply is kept (empty when the call failed).
-        result = {"skip": True, "reason": "unparseable model reply",
-                  "session": sid, "prompt": prompt, "evidence": evidence,
-                  "reply": str(reply or "")[:1500]}
+        # same row — undiagnosable. The reply is kept; an empty one is its own case.
+        result = {"skip": True, "session": sid, "prompt": prompt,
+                  "evidence": evidence, "reply": str(reply)[:1500],
+                  "reason": "unparseable model reply" if str(reply).strip()
+                            else "empty reply from the model"}
         _log_run(sid, result)
         return result
 
