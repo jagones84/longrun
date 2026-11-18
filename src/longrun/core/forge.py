@@ -44,6 +44,8 @@ Usage:
   python3 forge.py harnessevo diagnose|admit FILE.json | contextpipeline deliver FILE.json | stepzero extract FILE.json
   python3 forge.py harnessrecord audit FILE.json | conduct score FILE.json | completion check FILE.json
   python3 forge.py skillret calibrate FILE.json | ruleret closure FILE.json | skillquality profile FILE.json
+  python3 forge.py opspolicy realize FILE.json | execpolicy confirm FILE.json
+  python3 forge.py skilladapter bind FILE.json | intake admit FILE.json
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -1056,6 +1058,114 @@ def cmd_skillquality(args):
                                     doc.get("k", 3))
     print(json.dumps(out, indent=2, ensure_ascii=False))
     sys.exit(0 if out.get("verdict") in ("complete", "partial", None) else 1)
+
+
+def cmd_opspolicy(args):
+    """Round 124 (arXiv:2611.15006): harness as an operational policy, per-model affinity."""
+    from longrun.harness import operational_policy
+    if not getattr(args, "file", None):
+        print("usage: opspolicy realize|ground|affinity|route FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "realize":
+        out = operational_policy.realize(doc.get("output") or doc, doc.get("tools") or [],
+                                         doc.get("guidance"))
+    elif args.action == "ground":
+        out = operational_policy.ground(doc.get("claim") or {}, doc.get("observations") or [],
+                                        doc.get("required") or ())
+    elif args.action == "affinity":
+        out = operational_policy.affinity(doc.get("rows") or [], doc.get("baseline", "default"))
+    else:
+        out = operational_policy.route(doc.get("models") or [],
+                                       doc.get("learned") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    blocked = out.get("decision") == "diagnose" or out.get("supported") is False
+    sys.exit(1 if blocked else 0)
+
+
+def cmd_execpolicy(args):
+    """Round 124 (arXiv:2611.21688): reversal, frozen-panel replacement, amortization."""
+    from longrun.harness import execution_policy
+    if not getattr(args, "file", None):
+        print("usage: execpolicy reversal|confirm|efficiency|amortize FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "reversal":
+        out = execution_policy.reversal(doc.get("declared") or {}, doc.get("measured") or {})
+    elif args.action == "confirm":
+        out = execution_policy.confirm(doc.get("panel") or [], doc.get("candidate"),
+                                       doc.get("margin", 0.005))
+    elif args.action == "efficiency":
+        out = execution_policy.efficiency(doc.get("rows") or [])
+    else:
+        out = execution_policy.amortize(doc.get("acquisition_s"), doc.get("gain_per_task_s"),
+                                        doc.get("tasks"))
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(1 if out.get("decision") == "retain" else 0)
+
+
+def cmd_skilladapter(args):
+    """Round 124 (arXiv:2611.17007): adapter binding, preload re-check, evidence expiry."""
+    from longrun.harness import skill_adapter
+    if not getattr(args, "file", None):
+        print("usage: skilladapter bind|recheck|expire|maintain FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "bind":
+        out = skill_adapter.bind(doc.get("skill") or {}, doc.get("adapters") or [],
+                                 doc.get("context") or {})
+    elif args.action == "recheck":
+        out = skill_adapter.recheck(doc.get("preloaded") or [], doc.get("inputs") or {})
+    elif args.action == "expire":
+        out = skill_adapter.expire(doc.get("adapters") or [], doc.get("today"),
+                                   doc.get("ttl_days", 30))
+    else:
+        out = skill_adapter.maintain(doc.get("entries") or [], doc.get("events") or [])
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(1 if args.action == "bind" and not out.get("changes") else 0)
+
+
+def cmd_intake(args):
+    """Round 124 (transcript OrcsMi2-IcM): deterministic gate, mandate, shadow-first work."""
+    from longrun.harness import intake_gate
+    if not getattr(args, "file", None):
+        print("usage: intake admit|mandate|subscribe|preset|shadow FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "admit":
+        out = intake_gate.admit(doc.get("trigger") or {}, doc.get("policy") or {})
+    elif args.action == "mandate":
+        out = intake_gate.mandate(doc.get("ticket") or {}, doc.get("today"))
+    elif args.action == "subscribe":
+        out = intake_gate.subscribe(doc.get("events") or [], doc.get("owned") or {})
+    elif args.action == "preset":
+        out = intake_gate.preset(doc.get("base") or {}, doc.get("strip") or [],
+                                 doc.get("background_shell_s", 5))
+    else:
+        out = intake_gate.shadow(doc.get("actions") or [], doc.get("confirmed", False))
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(1 if out.get("decision") == "ignore" or out.get("valid") is False else 0)
 
 
 def cmd_instructions(args):
@@ -2661,6 +2771,22 @@ def main():
     p = sub.add_parser("skillquality"); p.add_argument("action", choices=["profile", "predict"]); \
         p.add_argument("file", nargs="?", help="JSON: {skill} or {skill, references, k}"); \
         p.set_defaults(fn=cmd_skillquality)
+    p = sub.add_parser("opspolicy"); \
+        p.add_argument("action", choices=["realize", "ground", "affinity", "route"]); \
+        p.add_argument("file", nargs="?", help="JSON: {output, tools, guidance}, {claim, observations}, {rows}, or {models, learned}"); \
+        p.set_defaults(fn=cmd_opspolicy)
+    p = sub.add_parser("execpolicy"); \
+        p.add_argument("action", choices=["reversal", "confirm", "efficiency", "amortize"]); \
+        p.add_argument("file", nargs="?", help="JSON: {declared, measured}, {panel, candidate}, {rows}, or {acquisition_s, gain_per_task_s, tasks}"); \
+        p.set_defaults(fn=cmd_execpolicy)
+    p = sub.add_parser("skilladapter"); \
+        p.add_argument("action", choices=["bind", "recheck", "expire", "maintain"]); \
+        p.add_argument("file", nargs="?", help="JSON: {skill, adapters, context}, {preloaded, inputs}, {adapters, today}, or {entries, events}"); \
+        p.set_defaults(fn=cmd_skilladapter)
+    p = sub.add_parser("intake"); \
+        p.add_argument("action", choices=["admit", "mandate", "subscribe", "preset", "shadow"]); \
+        p.add_argument("file", nargs="?", help="JSON: {trigger, policy}, {ticket}, {events, owned}, {base, strip}, or {actions, confirmed}"); \
+        p.set_defaults(fn=cmd_intake)
     p = sub.add_parser("instructions"); p.add_argument("action", choices=["audit"]); \
         p.add_argument("file", nargs="?", help="JSON: {text, cards}"); \
         p.set_defaults(fn=cmd_instructions)
