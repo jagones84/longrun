@@ -2829,6 +2829,102 @@ def _subject(tool, args):
     return json.dumps(args, sort_keys=True)
 
 
+_HEREDOC_OP = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
+_FILE_REDIRECT = re.compile(r"(?<![0-9&<>])>>?\s*[^\s<>&|;]")
+_HEREDOC_WRITER = re.compile(r"^\s*(?:cat|tee)\b")
+# `tee` names its file as an ARGUMENT, not a redirect — but only with an argv.
+_TEE_WRITER = re.compile(r"^\s*tee\b\s+(?:-\S+\s+)*[^\s|>&]")
+
+
+def _quote_open(text, idx):
+    """True when `idx` sits inside a single/double-quoted run of `text`."""
+    q = None
+    i = 0
+    while i < idx:
+        ch = text[i]
+        if q:
+            if ch == q:
+                q = None
+        elif ch in ("'", '"'):
+            q = ch
+        elif ch == "\\":
+            i += 1
+        i += 1
+    return q is not None
+
+
+def _pipe_unquoted(line):
+    """True when `line` carries a lone `|` (a pipe) outside quotes.
+
+    A body that fills a file is data — unless the SAME line pipes the command
+    into a program (`tee f <<'EOF' … EOF | bash`), where the body is executed.
+    """
+    for i, ch in enumerate(line):
+        if ch != "|" or _quote_open(line, i):
+            continue
+        if (i + 1 < len(line) and line[i + 1] == "|") or \
+                (i > 0 and line[i - 1] == "|"):
+            continue
+        return True
+    return False
+
+
+def _deny_text(text):
+    """The text the hard-deny patterns judge: heredoc DATA removed.
+
+    Round 94, measured live 2026-11-18 on session `b7329cccf94c` (the Head of
+    Longrun Testing): TWO refusals at 06:39:19 and 06:39:24 while writing a test
+    stub into /tmp —
+
+        mkdir -p /tmp/a54r85 && cat > /tmp/a54r85/a_stub.py <<'PY'
+        LIVE = ['cat .env', 'curl http://127.0.0.1:8790/api/jobs']
+        PY
+
+    The body is DATA: the same text through `fs.write` (subject = the PATH) is
+    never scanned, so the two doors disagreed about the same act. Only a heredoc
+    that FILLS A FILE is removed, and only when its statement is a pure writer
+    (`cat`/`tee`) with a stdout file redirect — a body that FEEDS A PROGRAM
+    (`python3 - <<'PY'`, `bash <<'EOF'`, or a writer with no redirect) is left
+    exactly as it was, so v1075 I2 keeps denying it. Closing eagerly
+    (`line.strip() == delim`) means a delimiter with trailing spaces ends the
+    body instead of swallowing the rest of the command.
+    """
+    if not isinstance(text, str) or "<<" not in text:
+        return text
+    out, pending = [], []
+    for line in text.split("\n"):
+        if pending:
+            delim, strip = pending[0]
+            if line.strip() == delim:
+                pending.pop(0)
+                out.append(line)
+            elif not strip:
+                out.append(line)
+            continue
+        out.append(line)
+        for m in _HEREDOC_OP.finditer(line):
+            if _quote_open(line, m.start()):
+                continue
+            # The statement that owns the heredoc: after the last unquoted
+            # `;`, `&&` or `||` on the opening line.
+            seg = re.split(r"\|\||&&|;", line[:m.start()])[-1]
+            strip = (not _pipe_unquoted(line)) and bool(_HEREDOC_WRITER.match(seg)) \
+                and (bool(_FILE_REDIRECT.search(seg)) or bool(_TEE_WRITER.match(seg)))
+            pending.append((m.group(2), strip))
+    return "\n".join(out)
+
+
+def deny_subject(tool, args):
+    """The ONE subject for the hard-deny match (classify + the heuristic door).
+
+    Round 94: the four consumers of `_subject` do different jobs — ask/auto and
+    the off-intent note want the WHOLE text, the deny wants the command with
+    heredoc data removed. Both doors that judge a denial call this one, so a
+    second opinion cannot drift (`test_acceptance/v1156`).
+    """
+    return _deny_text(_subject(tool, args))
+
+
 def _deny_parts(entries):
     """Split a configured deny list into (patterns, notes, proofs).
 
@@ -3103,9 +3199,12 @@ def classify(tool, args, workspace=None, hist=None, allow=None, scope_name=None,
     if not spec["enabled"]:
         return "disabled", "tool %r is not in the allowlist (config/tools.yaml)" % tool
     subject = _subject(tool, args)
-    hit = _match(spec["deny"], subject)
+    # Round 94: the hard-deny judges the command with heredoc DATA removed
+    # (`deny_subject`); every other rule (ask/auto) keeps the whole subject.
+    deny_text = deny_subject(tool, args)
+    hit = _match(spec["deny"], deny_text)
     if hit:
-        note_rule_hit(tool, "deny", hit, subject)
+        note_rule_hit(tool, "deny", hit, deny_text)
         why = (spec.get("deny_why") or {}).get(hit)
         # Round 63: the rule may carry its own explanation (what it protects and
         # what to use instead). The shape before the dash is unchanged — the pins
