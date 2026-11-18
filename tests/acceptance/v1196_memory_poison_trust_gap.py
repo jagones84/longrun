@@ -124,6 +124,40 @@ check("the same payload with a decode policy is allowed",
       == "allow")
 check("an unknown boundary is named",
       "unknown-boundary" in kinds(TB.evaluate({"boundary": "nowhere"})))
+
+# ---- 2b. the seam fails CLOSED ---------------------------------------------
+# A missing proof of authority is not a proof of authority: every check that
+# needs evidence must be given it, and the default decision is deny.
+check("an empty call is denied, not allowed by omission",
+      TB.evaluate({})["decision"] == "deny", TB.evaluate({}))
+check("a call with no authorised operation set is denied",
+      "authorization-missing" in kinds(TB.evaluate(
+          {"boundary": "model-tool", "operation": "fs.read"})))
+check("a call with no authorised operation set names the missing evidence",
+      TB.evaluate({"boundary": "model-tool", "operation": "fs.read"})["decision"] == "deny")
+check("a call with no principal asserted is denied",
+      "identity-unasserted" in kinds(TB.evaluate(
+          {"boundary": "model-tool", "operation": "fs.read",
+           "authorized_operations": ["fs.read"]})))
+check("a call with no capability requirement is denied",
+      "capability-unasserted" in kinds(TB.evaluate(
+          {"boundary": "model-tool", "operation": "fs.read",
+           "claimed_identity": "worker", "verified_identity": "worker",
+           "authorized_operations": ["fs.read"]})))
+check("a required capability with no grant list is not granted",
+      "capability-not-granted" in kinds(TB.evaluate(
+          {"boundary": "model-tool", "operation": "fs.read",
+           "claimed_identity": "worker", "verified_identity": "worker",
+           "authorized_operations": ["fs.read"], "required_capability": "read"})))
+check("a delegated call whose parent grants nothing is a widening",
+      "delegation-widens" in kinds(TB.evaluate(
+          {**GOOD, "delegated_from": {}})))
+check("only a call carrying every proof is allowed",
+      TB.evaluate(GOOD)["decision"] == "allow")
+check("the fail-closed default does not need an explicit deny flag",
+      all(TB.evaluate({**GOOD, key: None})["decision"] == "deny"
+          for key in ("authorized_operations", "required_capability",
+                      "claimed_identity")))
 check("an attempt alone is not an effect",
       TB.classify({"attempted": True})["outcome"] == "attempted-only")
 check("an effect without disclosure is its own row",
