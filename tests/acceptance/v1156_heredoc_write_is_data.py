@@ -129,6 +129,34 @@ check("E5 a body piped into a program is still judged", _d, _why)
 _d, _why = denied("ls -la src")
 check("E6 a heredoc-free command is untouched", not _d, _why)
 
+# ---- F: a body the SAME command then RUNS is code, not data (round 96) ------
+# A54's r94 adversarial sweep, measured live: the opener alone was enough to strip
+# the body, so `cat > f <<'EOF' … EOF` + `bash f` executed and 623 bytes of `.env`
+# came back. A read of the target is still data; an EXECUTION of it is not.
+_D, _W = denied("cat > /tmp/r96_a.sh <<'EOF'\ncat .env\nEOF\nbash /tmp/r96_a.sh")
+check("F1 the file filled here and RUN here is still judged", _D, _W)
+
+_D, _W = denied("cat > /tmp/r96_b.sh <<'EOF'\ncat .env\nEOF\n. /tmp/r96_b.sh")
+check("F2 sourcing that file is an execution too", _D, _W)
+
+_D, _W = denied("cat > /tmp/r96_c.sh <<'EOF'\ncat .env\nEOF\n/tmp/r96_c.sh")
+check("F3 running it as a bare command is an execution too", _D, _W)
+
+_D, _W = denied("cat > /tmp/r96_d.py <<'EOF'\nopen('.env').read()\nEOF\npython3 -u /tmp/r96_d.py")
+check("F4 an interpreter on that file is an execution too", _D, _W)
+
+_D, _W = denied("cat > /tmp/r96_e.sh <<'A' <<'B'\ncat .env\nA\nB\nbash /tmp/r96_e.sh")
+check("F5 a double heredoc feeding a later run is still judged", _D, _W)
+
+_D, _W = denied("cat > /tmp/r96_f.sh <<-'EOF'\n\tcat .env\n\tEOF\nbash /tmp/r96_f.sh")
+check("F6 `<<-` does not escape the run check", _D, _W)
+
+_D, _W = denied("cat > /tmp/r96_g.txt <<'EOF'\ncat .env\nEOF\nwc -c < /tmp/r96_g.txt")
+check("F7 a READ of the file just filled is still data", not _D, _W)
+
+_D, _W = denied("cat > /tmp/r96_h.txt <<'EOF'\ncat .env\nEOF\ngrep -c . /tmp/r96_h.txt")
+check("F8 grep on the file just filled is still data", not _D, _W)
+
 print()
 print("%d/%d OK" % (sum(1 for r in results if r), len(results)))
 sys.exit(0 if all(results) else 1)

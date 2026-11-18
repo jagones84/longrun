@@ -2831,6 +2831,8 @@ def _subject(tool, args):
 
 _HEREDOC_OP = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
 _FILE_REDIRECT = re.compile(r"(?<![0-9&<>])>>?\s*[^\s<>&|;]")
+# The WHOLE target token (the test above only proves a redirect exists).
+_FILE_TARGET = re.compile(r"(?<![0-9&<>])>>?\s*([^\s<>&|;]+)")
 _HEREDOC_WRITER = re.compile(r"^\s*(?:cat|tee)\b")
 # `tee` names its file as an ARGUMENT, not a redirect — but only with an argv.
 _TEE_WRITER = re.compile(r"^\s*tee\b\s+(?:-\S+\s+)*[^\s|>&]")
@@ -2869,6 +2871,41 @@ def _pipe_unquoted(line):
     return False
 
 
+def _redirect_target(seg):
+    """The file a stdout redirect in `seg` writes, or "" (a name is kept as is)."""
+    m = _FILE_TARGET.search(seg)
+    if not m:
+        return ""
+    return m.group(1).strip("'\"")
+
+
+def _tee_target(seg):
+    """The first non-option argument of `tee`, or ""."""
+    for tok in seg.split()[1:]:
+        if not tok.startswith("-"):
+            return tok.strip("'\"")
+    return ""
+
+
+_EXEC_VERBS = ("bash", "sh", "zsh", "dash", "ksh", "source", "exec", "eval",
+               "python", "python3", "node", "perl", "ruby", "php")
+
+
+def _executes(target, text):
+    """True when `text` runs `target` as code (an interpreter, `. f`, or `f`)."""
+    if not target:
+        return False
+    t = re.escape(target)
+    stop = r"(?=$|[\s;|&)])"
+    pats = (
+        r"(?:^|[;&|(\n])[ \t]*(?:%s)[ \t]+(?:-\S+[ \t]+)*%s%s"
+        % ("|".join(_EXEC_VERBS), t, stop),
+        r"(?:^|[;&|(\n])[ \t]*\.[ \t]+%s%s" % (t, stop),
+        r"(?:^|[;&|(\n])[ \t]*%s%s" % (t, stop),
+    )
+    return any(re.search(p, text) for p in pats)
+
+
 def _deny_text(text):
     """The text the hard-deny patterns judge: heredoc DATA removed.
 
@@ -2888,30 +2925,49 @@ def _deny_text(text):
     exactly as it was, so v1075 I2 keeps denying it. Closing eagerly
     (`line.strip() == delim`) means a delimiter with trailing spaces ends the
     body instead of swallowing the rest of the command.
+
+    Round 96 (A54's r94 adversarial FAIL, measured live): stripping on the opener
+    ALONE let one command write the body and then RUN the file —
+    `cat > f <<'EOF' … EOF\\nbash f` executed, and 623 bytes of `.env` came back.
+    A body is data only if the command never executes the file it filled: when
+    another line runs the target (an interpreter, `. f`, or a bare `f`), the body
+    is KEPT and the deny fires as it did before. A READ of the target
+    (`wc -c < f`) is still data.
     """
     if not isinstance(text, str) or "<<" not in text:
         return text
-    out, pending = [], []
+    chunks = []          # (kind, text, target) — kind: open|line|delim|drop
+    pending = []
     for line in text.split("\n"):
         if pending:
-            delim, strip = pending[0]
+            delim, strip, target = pending[0]
             if line.strip() == delim:
                 pending.pop(0)
-                out.append(line)
-            elif not strip:
-                out.append(line)
+                chunks.append(("delim", line, ""))
+            elif strip:
+                chunks.append(("drop", line, target))
+            else:
+                chunks.append(("line", line, ""))
             continue
-        out.append(line)
+        stripped_here = False
         for m in _HEREDOC_OP.finditer(line):
             if _quote_open(line, m.start()):
                 continue
             # The statement that owns the heredoc: after the last unquoted
             # `;`, `&&` or `||` on the opening line.
             seg = re.split(r"\|\||&&|;", line[:m.start()])[-1]
-            strip = (not _pipe_unquoted(line)) and bool(_HEREDOC_WRITER.match(seg)) \
-                and (bool(_FILE_REDIRECT.search(seg)) or bool(_TEE_WRITER.match(seg)))
-            pending.append((m.group(2), strip))
-    return "\n".join(out)
+            target = ""
+            if not _pipe_unquoted(line) and _HEREDOC_WRITER.match(seg):
+                target = _redirect_target(seg) or _tee_target(seg)
+            pending.append((m.group(2), bool(target), target))
+            stripped_here = stripped_here or bool(target)
+        chunks.append(("open" if stripped_here else "line", line, ""))
+    refs = "\n".join(t for k, t, _ in chunks if k != "open")
+    restore = {tgt for k, _, tgt in chunks if k == "drop" and _executes(tgt, refs)}
+    if restore:
+        chunks = [("line", t, tg) if (k == "drop" and tg in restore) else (k, t, tg)
+                  for k, t, tg in chunks]
+    return "\n".join(t for k, t, _ in chunks if k != "drop")
 
 
 def deny_subject(tool, args):
