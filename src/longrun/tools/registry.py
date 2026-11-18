@@ -310,6 +310,13 @@ _LEGACY_SCHEMAS = {
                     "description": "action=sj: one Session Job id (e.g. 'SJ1'); omit for every job of the session"},
             "limit": {"type": "integer", "description": "max rows for action=logs (default 100) or action=diagnostics (default 50)"},
             "kind": {"type": "string", "description": "event kind filter for action=logs"},
+            # Round 60: `self.failures` reads `since` (the register's window); the
+            # namespace did not declare it, so the canonical `self.failures` schema
+            # advertised `limit` alone and every windowed read was answered with
+            # "unknown argument 'since' — self.failures accepts: limit".
+            "since": {"description": ("action=failures: only count failures at or "
+                                      "after this window — an ISO date/time or an "
+                                      "epoch; omit for all time")},
             "model": {"type": "string",
                       "description": "action=diagnostics: model ref to validate"},
             "code": {"type": "string",
@@ -731,6 +738,23 @@ _LEGACY_SCHEMAS = {
                                           "promote that collides is refused")},
             "limit": {"type": "integer",
                       "description": "review: how many artifacts to audit (max 60)"},
+            # Round 60: `repairs` and `failures` READ these two, and
+            # `_SUBTOOL_FIELDS` already listed them — but the namespace declared
+            # neither, so the canonical schema (`improve.repairs`,
+            # `self.failures`) advertised `limit` alone and the shape checker
+            # answered a REAL argument with "unknown argument 'min_severity' —
+            # improve.repairs accepts: limit" (measured: 5 + 2 + 3 firings in the
+            # unknown-argument ledger). A subtool may only carry a field the
+            # namespace declares, so the declaration is what was missing.
+            "min_severity": {"type": "string",
+                             "enum": ["info", "warning", "error"],
+                             "description": ("repairs: the lowest severity to draft "
+                                             "for (default warning; info drafts "
+                                             "everything)")},
+            "since": {"description": ("repairs / failures: only count events at or "
+                                      "after this window — an ISO date/time "
+                                      "(2026-11-18, 2026-11-18T09:30) or an epoch; "
+                                      "omit for all time")},
             "model": {"type": "string",
                       "description": "review: model ref (default: routing role "
                                      "'reviewer', then the general default)"},
