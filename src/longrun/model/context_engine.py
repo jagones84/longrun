@@ -265,7 +265,13 @@ def _trim_boundary(old, recent, limit=BOUNDARY_MAX):
     it, so the invariant survives a budget squeeze too.
     """
     moved = 0
-    while old and recent and moved < limit and _is_harness_msg(recent[0]):
+    # A carried SUMMARY block is never pulled into the verbatim window: it is the
+    # summary itself, not a request, and moving it forward left the harness result
+    # first anyway with nothing summarized (A54's r87 case: summary-first session,
+    # boundary_shift 1, window still on the result). The drop below handles that
+    # case instead.
+    while (old and recent and moved < limit and _is_harness_msg(recent[0])
+           and not _is_summary_block(old[-1])):
         recent.insert(0, old.pop())
         moved += 1
     return moved

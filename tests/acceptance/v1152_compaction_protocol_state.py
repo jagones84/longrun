@@ -151,6 +151,20 @@ check("I1 a live-shaped transcript never opens on [harness]",
 check("I2 the kept window is still the tail",
       bool(_body4) and _body4[-1] is _live[-1])
 
+# ---- S) a carried summary is never pulled forward (A54's r87 case) --------------
+_sum_first = ([{"role": "system", "content": "Earlier conversation (summary):\nold work"}]
+              + [u(HARNESS_OBS + " RESULT of a summarized call")]
+              + [u("turn %d" % i) for i in range(13)])
+out_s, st_s = ce.compact(_sum_first, 10**9, keep_recent=14, force=True)
+_body_s = [m for m in out_s if m.get("role") != "system" or
+           not str(m.get("content") or "").startswith("Earlier conversation")]
+check("S1 a summary-first window still never opens on [harness]",
+      bool(_body_s) and not str(_body_s[0].get("content") or "").lstrip().startswith("[harness]"),
+      _body_s[0] if _body_s else None)
+check("S2 the summary was not pulled into the window", st_s.get("boundary_shift") == 0, st_s)
+check("S3 the orphaned result was dropped, not exposed", st_s.get("dropped") == 1, st_s)
+
+
 print("---")
 _passed = sum(RESULTS)
 print("%d/%d PASS" % (_passed, len(RESULTS)))
