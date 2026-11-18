@@ -14,10 +14,12 @@ Triggered by a post-session hook in `agent/agent.py` and the v2 API worker
 (`core/api_v02.py`). Every hook is fail-safe: a failure here logs and continues, never
 breaking the session.
 """
+import ast
 import json
 import os
 import re
 import time
+import warnings
 
 from longrun.util import paths
 
@@ -168,6 +170,84 @@ def _read_feedback(sid):
         return _jc.feedback_for(None, sid) or {}
     except Exception:  # noqa: BLE001 — feedback is additive, never a read failure
         return {}
+
+
+_BLOCK_MARK = "[harness] BLOCKED by harness policy"
+_PAT_MARK = "matches hard-deny pattern '"
+_PAT_END = "' — denied because"
+_ACTION_RE = re.compile(r"Action '([^']+)' BLOCKED")
+_TOOL_ACTION_RE = re.compile(r'"action"\s*:\s*"(?:tool|batch)"')
+REFUSAL_SCAN_MAX = 400      # messages read from the tail of the transcript
+
+
+def _read_refusals(sid):
+    """What the agent did AFTER each hard-deny block (round 86).
+
+    A count alone cannot say whether a guard cost the turn: the ledger knows the
+    rule fired, not whether the work continued. The transcript carries both — the
+    `[harness] BLOCKED by harness policy` message names the tool and the exact
+    pattern, and the next assistant message is the next attempt. Returns
+    `{"<tool>:deny:<pattern>": {"n", "continued", "repeated", "gave_up"}}`:
+    `continued` = a tool/batch call ran next, `repeated` = the next message is
+    another block, `gave_up` = the agent answered (or the turn ended) with no
+    further call. Read-only; {} on any failure.
+    """
+    try:
+        from longrun.memory import stores as _stores
+        sess = _stores.load_session(str(sid or "")) or {}
+    except Exception:  # noqa: BLE001 — no transcript is no evidence
+        return {}
+    msgs = [m for m in (sess.get("messages") or []) if isinstance(m, dict)]
+    if not msgs:
+        return {}
+    start = max(0, len(msgs) - REFUSAL_SCAN_MAX)
+    out = {}
+    for i in range(start, len(msgs)):
+        content = str(msgs[i].get("content") or "")
+        if _BLOCK_MARK not in content:
+            continue
+        _a = _ACTION_RE.search(content)
+        _p0 = content.find(_PAT_MARK)
+        if not _a or _p0 < 0:
+            continue
+        _p1 = content.find(_PAT_END, _p0 + len(_PAT_MARK))
+        if _p1 < 0:
+            continue
+        # The block renders the pattern with `%r` (registry.classify), so the text
+        # between the quotes is a Python repr: `\\s`, `\\.`, `\\'`. The ledger key
+        # is the RAW pattern; decoding the repr makes the two comparable. Measured
+        # on the live transcript: without this every refusal key carried doubled
+        # backslashes and matched no live-firing row.
+        _body = content[_p0 + len(_PAT_MARK):_p1]
+        try:
+            with warnings.catch_warnings():
+                # An unescaped body (`[\s…`) parses with a SyntaxWarning; the
+                # value is still the text, and a service log is not the place.
+                warnings.simplefilter("ignore")
+                _pattern = ast.literal_eval("'" + _body + "'")
+        except (ValueError, SyntaxError):
+            _pattern = _body
+        key = "%s:deny:%s" % (_a.group(1), _pattern)
+        rec = out.setdefault(key, {"n": 0, "continued": 0, "repeated": 0,
+                                   "gave_up": 0})
+        rec["n"] += 1
+        _j = None
+        for j in range(i + 1, len(msgs)):
+            if msgs[j].get("role") == "assistant":
+                _j = j
+                break
+        if _j is None:
+            rec["gave_up"] += 1
+            continue
+        if not _TOOL_ACTION_RE.search(str(msgs[_j].get("content") or "")):
+            rec["gave_up"] += 1          # an answer, or a question to the operator
+            continue
+        after = msgs[_j + 1] if _j + 1 < len(msgs) else None
+        if after is not None and _BLOCK_MARK in str(after.get("content") or ""):
+            rec["repeated"] += 1
+        else:
+            rec["continued"] += 1
+    return out
 
 
 def _optimizer_model():
@@ -577,7 +657,8 @@ def _policy_snapshot(policy_hits):
     return "\n".join(rows)[:9000]
 
 
-def _build_analysis_prompt(trace, policy_hits, job_cost, feedback, history=None):
+def _build_analysis_prompt(trace, policy_hits, job_cost, feedback, history=None,
+                           refusals=None):
     """Build the optimizer's analysis prompt from session evidence.
 
     The prompt asks for ONE JSON object: either {"skip": true, ...} or a registry-row
@@ -602,13 +683,26 @@ def _build_analysis_prompt(trace, policy_hits, job_cost, feedback, history=None)
         never = [str(k) for k in ((policy_hits or {}).get("never_fired") or [])]
         unknown = policy_hits.get("unknown_args", {})
         if live:
+            _lines = []
+            for r in live[:12]:
+                _ln = "  %s %s x%d: %s" % (r["tool"], r["kind"], r["n"], r["pattern"])
+                if r.get("sample"):
+                    _ln += "\n      blocked: " + r["sample"]
+                # Round 86: the count says the rule fired; the transcript says what
+                # the agent did next. A rule whose refusals were all followed by
+                # another call did not stop the work.
+                _ref = (refusals or {}).get(
+                    "%s:%s:%s" % (r["tool"], r["kind"], r["pattern"])) or {}
+                if _ref.get("n"):
+                    _ln += ("\n      after %d refusal(s): %d continued with another "
+                            "call, %d repeated the same call, %d gave up"
+                            % (_ref["n"], _ref.get("continued", 0),
+                               _ref.get("repeated", 0), _ref.get("gave_up", 0)))
+                _lines.append(_ln)
             parts.append(
                 "Rules that FIRED and are STILL in the live policy (load-bearing — each "
                 "one blocked a real call, so removing one needs evidence from the "
-                "trace):\n" + "\n".join(
-                    "  %s %s x%d: %s" % (r["tool"], r["kind"], r["n"], r["pattern"])
-                    + (("\n      blocked: " + r["sample"]) if r.get("sample") else "")
-                    for r in live[:12]))
+                "trace):\n" + "\n".join(_lines))
         if gone:
             parts.append(
                 "Ledger history of rules the live policy NO LONGER has (they are absent "
@@ -668,7 +762,9 @@ def _build_analysis_prompt(trace, policy_hits, job_cost, feedback, history=None)
         "`why` must say what still protects that case. A `fired … — blocked:` line "
         "is the call that rule actually refused: to claim friction, quote that input "
         "and say why it was legitimate; a count is not evidence, and a removal that "
-        "leaves the recorded input blocked by another live rule does not fix it:\n"
+        "leaves the recorded input blocked by another live rule does not fix it. An "
+        "`after N refusal(s)` line is what the agent did next: `gave up` is friction, "
+        "`continued with another call` means the guard did not stop the work:\n"
         + (snap or "(not available)") + "\n\n"
         + ((_hist + "\n\n") if _hist else "")
         + "Reply with ONE JSON object and NOTHING else. Either:\n"
@@ -750,9 +846,10 @@ def run(sid, jid=None):
     policy_hits = _read_policy_hits()
     job_cost = _read_job_cost(jid) if jid else {}
     feedback = _read_feedback(sid)
+    refusal_rows = _read_refusals(sid)
     history = _evolution_history()
     prompt = _build_analysis_prompt(trace, policy_hits, job_cost, feedback,
-                                    history=history)
+                                    history=history, refusals=refusal_rows)
 
     _live, _gone = _hit_rows(policy_hits)
     evidence = {
@@ -766,6 +863,9 @@ def run(sid, jid=None):
         "unknown_args": len(policy_hits.get("unknown_args", {})),
         "job_tokens": job_cost.get("tokens", 0),
         "has_feedback": bool(feedback),
+        "refusals": sum(int(r.get("n") or 0) for r in refusal_rows.values()),
+        "refusals_gave_up": sum(int(r.get("gave_up") or 0)
+                                for r in refusal_rows.values()),
     }
 
     global _LAST_CALL_ERROR
