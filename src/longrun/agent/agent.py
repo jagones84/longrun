@@ -4414,8 +4414,30 @@ def _deliverable_review_text(sess, request, since, state):
                                                              ", ".join(_claims[:8])))
     except Exception:  # noqa: BLE001 — the delegated block must still be shown
         text = ""
+    # Round 84 (R-1 / AdaPRA, arXiv 2610.33245): the read-back DESCRIBED the files a
+    # turn wrote and never RAN anything, so "the tests pass" was the model's word.
+    # When this turn wrote something and the workspace carries its own check
+    # (`check.py`, or `tests/test_*.py`), the check runs ONCE per turn — through
+    # `registry.classify`, so an approval/hard-deny lane is never bypassed — and its
+    # exit status plus output tail are injected here. No model call.
+    _chk_text = ""
+    if had_files:
+        if not state.get("ws_check_done"):
+            _chk = _chk_text = None
+            try:
+                from longrun.harness import workspace_check as _wc
+                _chk = _wc.run(_chat_workspace(sess), session=sess.get("id"))
+                _chk_text = _wc.text(_chk)
+            except Exception:  # noqa: BLE001 — a check may slow a turn, never break it
+                _chk, _chk_text = None, ""
+            state["ws_check_done"] = True
+            state["ws_check"] = _chk
+            state["ws_check_text"] = _chk_text
+        _chk_text = state.get("ws_check_text") or ""
+        if _chk_text:
+            text = (text + "\n\n" + _chk_text) if text else _chk_text
     delegated = _delegated_review_text(state)
-    if state.get("own_verified") and not delegated:
+    if state.get("own_verified") and not delegated and not _chk_text:
         # 2026-11-07: the model already re-opened the artifact it wrote, in this
         # turn, AFTER writing it — the gate's premise is met, and asking again
         # bought four round-trips on a one-file task (ladder r1: read-back →
