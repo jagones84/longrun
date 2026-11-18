@@ -50,6 +50,7 @@ Usage:
   python3 forge.py optmemory continuity FILE.json | detour classify FILE.json | patchprobe compare FILE.json
   python3 forge.py poison trace FILE.json | boundary evaluate FILE.json | gapleak verify FILE.json
   python3 forge.py binding alignment FILE.json | gateway utility FILE.json | scoring advise FILE.json
+                          | reversibility classify FILE.json | gain decide FILE.json | history advise FILE.json
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -1491,6 +1492,104 @@ def cmd_scoring(args):
                                              doc.get("predicted_yes"))
     else:
         out = scoring_mode.learnability(doc.get("mode"), doc.get("relational_share"))
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_reversibility(args):
+    """Round 129 (arXiv:2611.22075): reversibility classes and recovery claims."""
+    from longrun.harness import reversibility
+    if not getattr(args, "file", None):
+        print("usage: reversibility classify|restoration|capture|classes|recovery|replay FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "classify":
+        out = reversibility.classify(doc.get("call") or doc, doc.get("record"))
+    elif args.action == "restoration":
+        out = reversibility.restoration_requirements(doc.get("state") or doc)
+    elif args.action == "capture":
+        out = reversibility.capture_override(doc.get("base_class"), doc.get("override") or doc)
+    elif args.action == "classes":
+        out = reversibility.policy_for(doc.get("class"))
+    elif args.action == "recovery":
+        out = reversibility.recovery(doc.get("observations") or [])
+    else:
+        out = reversibility.replay(doc.get("rows") or [], doc.get("baseline_policy"))
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_gain(args):
+    """Round 129 (arXiv:2611.20736): gain-based stopping under a quality allowance."""
+    from longrun.harness import gain_control
+    if not getattr(args, "file", None):
+        print("usage: gain vector|interpolate|reference|decide|calibrate|frontier|matched|verdict|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "vector":
+        out = gain_control.gain_vector(doc.get("score"))
+    elif args.action == "interpolate":
+        out = gain_control.interpolate(doc.get("gains") or [], doc.get("reference"))
+    elif args.action == "reference":
+        out = gain_control.reference(doc.get("mode"), doc.get("current"),
+                                     doc.get("best_previous"))
+    elif args.action == "decide":
+        out = gain_control.decide(doc.get("gains") or [], doc.get("mode"),
+                                  doc.get("current"), doc.get("best_previous"),
+                                  doc.get("threshold"))
+    elif args.action == "calibrate":
+        out = gain_control.calibrate(doc.get("candidates") or [], doc.get("full") or {},
+                                     doc.get("allowance"))
+    elif args.action == "frontier":
+        out = gain_control.frontier(doc.get("points") or [])
+    elif args.action == "matched":
+        out = gain_control.matched_quality(doc.get("points") or [], doc.get("target"))
+    elif args.action == "verdict":
+        out = gain_control.verdict(doc.get("estimate"), doc.get("bounds") or [],
+                                   doc.get("level") or 0.975)
+    else:
+        out = gain_control.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_history(args):
+    """Round 129 (arXiv:2611.14654): a record edited against a live world."""
+    from longrun.harness import history_truth
+    if not getattr(args, "file", None):
+        print("usage: history agree|disclose|effect|interaction|recheck|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "agree":
+        out = history_truth.agreement(doc.get("record") or {}, doc.get("world") or {})
+    elif args.action == "disclose":
+        out = history_truth.disclosure_vs_assertion(doc.get("record") or doc)
+    elif args.action == "effect":
+        out = history_truth.effect(doc.get("arms") or doc)
+    elif args.action == "interaction":
+        out = history_truth.interaction(doc.get("cells") or doc)
+    elif args.action == "recheck":
+        out = history_truth.recheck(doc.get("runs") or [])
+    else:
+        out = history_truth.advise(doc.get("policy") or doc)
     print(json.dumps(out, indent=2, ensure_ascii=False))
     sys.exit(0)
 
@@ -3163,6 +3262,22 @@ def main():
                                           "advise", "binary", "learn"]); \
         p.add_argument("file", nargs="?", help="JSON: {mode}, {pair}, {mode, scores}, {instances}, {task, candidates}, {gold_yes_rate, predicted_yes}, or {mode, relational_share}"); \
         p.set_defaults(fn=cmd_scoring)
+    p = sub.add_parser("reversibility"); \
+        p.add_argument("action", choices=["classify", "restoration", "capture",
+                                          "classes", "recovery", "replay"]); \
+        p.add_argument("file", nargs="?", help="JSON: {call, record}, {state}, {base_class, override}, {class}, {observations}, or {rows, baseline_policy}"); \
+        p.set_defaults(fn=cmd_reversibility)
+    p = sub.add_parser("gain"); \
+        p.add_argument("action", choices=["vector", "interpolate", "reference",
+                                          "decide", "calibrate", "frontier",
+                                          "matched", "verdict", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {score}, {gains, reference}, {mode, current, best_previous}, {candidates, full, allowance}, {points, target}, {estimate, bounds}, or {profile}"); \
+        p.set_defaults(fn=cmd_gain)
+    p = sub.add_parser("history"); \
+        p.add_argument("action", choices=["agree", "disclose", "effect",
+                                          "interaction", "recheck", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {record, world}, {arms}, {cells}, {runs}, or {policy}"); \
+        p.set_defaults(fn=cmd_history)
     p = sub.add_parser("instructions"); p.add_argument("action", choices=["audit"]); \
         p.add_argument("file", nargs="?", help="JSON: {text, cards}"); \
         p.set_defaults(fn=cmd_instructions)
