@@ -2926,6 +2926,48 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(404, {"error": "session not found"})
             from longrun.agent import session_jobs as _sj
             return self._send(200, _sj.describe(sid, (qs or {}).get("job")))
+        if path.startswith("/api/sessions/") and path.endswith("/backtrace"):
+            # Round 107 (arXiv:2611.19448): from the failing card to the earlier
+            # action that explains it. Read-only over the stored tool cards.
+            sid = path[len("/api/sessions/"):-len("/backtrace")].strip("/")
+            if not sid or "/" in sid or ".." in sid:
+                return self._send(404, {"error": "session not found"})
+            sess = load_session(sid)
+            if not sess:
+                return self._send(404, {"error": "session not found"})
+            from longrun.harness import backtrace
+            cards = sess.get("tool_cards") or []
+            handle = qs.get("card")
+            if handle:
+                card = card_by_handle(sess, handle)
+                if card is None:
+                    return self._send(404, {"error": "no card with that handle"})
+                anchor = next((i for i, c in enumerate(cards) if c is card), None)
+            else:
+                # No handle: the LAST failing card is the anchor, which is what
+                # "why did this turn break" means after the fact.
+                anchor = None
+                for i in range(len(cards) - 1, -1, -1):
+                    c = cards[i] or {}
+                    if c.get("ok") is False or (isinstance(c.get("exit_code"), int)
+                                                and c.get("exit_code") != 0):
+                        anchor = i
+                        break
+                if anchor is None:
+                    return self._send(200, {"format": backtrace.FORMAT,
+                                            "anchor": None, "causes": [],
+                                            "verdict": "no-failed-call"})
+            return self._send(200, backtrace.explain(cards, anchor))
+        if path == "/api/invariants":
+            # Round 107 (arXiv:2611.19960): the corner cases written down as
+            # checks over the config and the catalog. Read-only.
+            from longrun.harness import invariants
+            return self._send(200, invariants.check())
+        if path == "/api/harness/manifest":
+            # Round 107 (arXiv:2611.22299): what this harness currently decides,
+            # for self-inspection before a self-evolution delta. Read-only.
+            from longrun.harness import manifest
+            return self._send(200, manifest.build())
         if path.startswith("/api/sessions/") and path.endswith("/export"):
             # Round 106 (arXiv:2611.20389): the evidence bundle someone else can
             # read. `profile=share` pseudonymises identifiers and buckets every

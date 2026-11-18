@@ -18,6 +18,7 @@ Usage:
                          | sessions counterfactual HANDLE --arg k=v (re-run one read-only call)
                          | sessions tree [ID] | sessions graph [ID]
                          | sessions export [ID] [--profile share|audit] [--out FILE]
+                          | sessions backtrace [ID] [--card HANDLE]
                           | sessions reset ID | sessions clear ID | sessions model "SID MODEL"
   python3 forge.py docs status|plan "request"|spec "request"|approve|reject|unlock [--session ID]
   python3 forge.py context show [--session ID] | context compact [--session ID]
@@ -26,6 +27,7 @@ Usage:
                          | checkpoints show CP_ID | checkpoints rollback CP_ID
                          | checkpoints rm CP_ID | checkpoints prune
   python3 forge.py setup run PLAN.json [--workspace DIR] [--reuse] [--state DIR]
+  python3 forge.py invariants | manifest
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -1168,6 +1170,27 @@ def cmd_sessions(args):
                           "recorded_action": out.get("recorded_action"),
                           "replayed_action": out.get("replayed_action")},
                          indent=2, ensure_ascii=False))
+    elif args.action == "backtrace":
+        # Round 107 (arXiv:2611.19448): the failing card is usually the reporter,
+        # not the cause. Walk backward over the stored cards.
+        ref = _chat_ref(args.value)
+        q = "/api/sessions/%s/backtrace" % ref
+        card = getattr(args, "card", None)
+        if card:
+            q += "?card=" + _q(card)
+        out = req("GET", q)
+        if out.get("error"):
+            print("error:", out["error"], file=sys.stderr)
+            sys.exit(1)
+        a = out.get("anchor") or {}
+        print("verdict: %s" % out.get("verdict"))
+        if a:
+            print("anchor:  #%s %s exit=%s %s" % (a.get("seq"), a.get("tool"),
+                                                 a.get("exit_code"), a.get("error_class") or ""))
+        for c in out.get("causes") or []:
+            print("  <- #%s %s %s%s" % (c.get("seq"), c.get("tool"), c.get("reason"),
+                                        (" shared=" + ",".join(c.get("shared") or []))
+                                        if c.get("shared") else ""))
     elif args.action == "export":
         # Round 106 (arXiv:2611.20389): the evidence bundle for someone who is
         # not you. `share` is the default because an accidental paste of `audit`
@@ -1381,6 +1404,27 @@ def cmd_setup(args):
         sys.exit(0 if out.get("ok") else 1)
     print(json.dumps({"state": args.state or os.path.join(paths.DATA_DIR, "setup")},
                      indent=2))
+
+
+def cmd_invariants(_):
+    """Round 107 (arXiv:2611.19960): the corner cases written down as checks."""
+    from longrun.harness import invariants
+    out = invariants.check()
+    for r in out.get("rows") or []:
+        print("%-6s %-9s %-8s %s" % (r.get("id"), r.get("status"), r.get("tag"),
+                                     r.get("statement")))
+        if r.get("status") == "violated" and r.get("detail"):
+            print("        %s" % r["detail"])
+    c = out.get("counts") or {}
+    print("holds=%s violated=%s open=%s of %s"
+          % (c.get("holds"), c.get("violated"), c.get("open"), c.get("total")))
+    sys.exit(0 if not c.get("violated") else 1)
+
+
+def cmd_manifest(_):
+    """Round 107 (arXiv:2611.22299): what this harness currently decides."""
+    from longrun.harness import manifest
+    print(json.dumps(manifest.build(), indent=2, ensure_ascii=False))
 
 
 def cmd_checkpoints(args):
@@ -1686,10 +1730,11 @@ def main():
     p = sub.add_parser("swarm"); p.add_argument("goal"); p.add_argument("--n-workers", type=int, default=3); \
         p.add_argument("--max-steps", type=int, default=None); p.set_defaults(fn=cmd_swarm)
     sub.add_parser("paperclip-bot").set_defaults(fn=cmd_paperclip_bot)
-    p = sub.add_parser("sessions"); p.add_argument("action", choices=["ls", "new", "fork", "rm", "use", "current", "history", "card", "counterfactual", "model-counterfactual", "graph", "tree", "reset", "clear", "model", "export"]); \
+    p = sub.add_parser("sessions"); p.add_argument("action", choices=["ls", "new", "fork", "rm", "use", "current", "history", "card", "counterfactual", "model-counterfactual", "graph", "tree", "reset", "clear", "model", "export", "backtrace"]); \
         p.add_argument("value", nargs="?"); p.add_argument("--workspace"); \
         p.add_argument("--at"); p.add_argument("--title"); p.add_argument("--model"); \
         p.add_argument("--arg", action="append"); p.add_argument("--content"); \
+        p.add_argument("--card", help="backtrace: the tool card handle (default: last failure)"); \
         p.add_argument("--profile", choices=["audit", "share"], default="share",
                        help="export: share = pseudonyms + bucketed counters; "
                             "audit = the operator's own copy"); \
@@ -1716,6 +1761,8 @@ def main():
                        help="skip a block whose digest and pre-state match its checkpoint"); \
         p.set_defaults(fn=cmd_setup)
     sub.add_parser("self").set_defaults(fn=cmd_self)
+    sub.add_parser("invariants").set_defaults(fn=cmd_invariants)
+    sub.add_parser("manifest").set_defaults(fn=cmd_manifest)
     sub.add_parser("selfcheck").set_defaults(fn=cmd_selfcheck)
     p = sub.add_parser("providers"); p.add_argument("action", nargs="?", default="ls", choices=["ls", "add", "rm", "default", "rm-model"]); \
         p.add_argument("value", nargs="?"); p.set_defaults(fn=cmd_providers)
