@@ -2988,7 +2988,8 @@ def _apply_chat_batch(sess, act, on_event, av02, node=None, after=None, hist=Non
             res = av02.gated_call(tool, args, run_id=sess["id"],
                                   timeout=CHAT_APPROVAL_WAIT,
                                   workspace=_chat_workspace(sess),
-                                  obs_max=CHAT_OBS_FULL, hist=hist)
+                                  obs_max=CHAT_OBS_FULL, hist=hist,
+                                  announce=False)   # the tool.result below is this call's one event
         except Exception as e:  # noqa: BLE001
             return {"tool": tool, "ok": False,
                     "obs": "tool %s raised: %s" % (tool, str(e)[:200])}
@@ -6553,7 +6554,8 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 res = api_v02.gated_call(tool, args, run_id=sess["id"],
                                          timeout=CHAT_APPROVAL_WAIT,
                                          workspace=_chat_workspace(sess),
-                                         obs_max=CHAT_OBS_FULL, hist=msgs)
+                                         obs_max=CHAT_OBS_FULL, hist=msgs,
+                                         announce=False)   # `_tool_event` below is the one event
                 status = res.get("status")
                 obs = (res.get("observation") or res.get("error") or res.get("reason")
                        or res.get("status") or "")

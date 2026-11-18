@@ -512,8 +512,18 @@ def batch_action(st, items, on_event, srv, workspace=None, hist=None):
 
 
 def gated_call(tool, args, run_id=None, wait=True, by="api", timeout=None, workspace=None,
-               obs_max=1600, hist=None, allow=None, scope_name=None):
+               obs_max=1600, hist=None, allow=None, scope_name=None, announce=True):
     """One-shot gated tool call used by POST /api/tools/call and the chat loop.
+
+    `announce` (round 88): whether this call publishes the `tool.result` event.
+    The chat loop publishes its OWN, richer result (the exact observation the
+    model saw, its args, the card node), so passing `announce=False` there keeps
+    one event per call instead of two — measured 2026-11-18: 1,836 recent
+    `tool.result` rows for ~950 calls, and the duplicate half carried only
+    `stdout`, so a failure whose reason lived in `result["error"]` was stored as
+    `ok: false` with no text at all (54 rows). The external doors
+    (`POST /api/tools/call`, the plan runner, ACP) keep the default: they have no
+    second publisher.
 
     `timeout` (JAG-80) caps how long a `required` tool waits for a human decision.
     The chat loop passes a short cap so a turn can never freeze for the full
@@ -599,9 +609,17 @@ def gated_call(tool, args, run_id=None, wait=True, by="api", timeout=None, works
         _publish("approval.auto", id=rec["id"], run=run_id, tool=tool,
                  summary=rec["summary"], reason=reason)
     res = toolmod.execute(tool, args, run_id=run_id)
-    _publish("tool.result", run=run_id, tool=tool, approval=rec["id"], ok=res.get("ok"),
-             exit_code=res.get("exit_code"), backend=res.get("backend"),
-             sandboxed=res.get("sandboxed"), stdout=(res.get("stdout") or "")[:2000])
+    if announce:
+        # JAG-347's fallback chain, extended (round 88): a failing tool puts its
+        # reason in `error` (a missing argument, a refused path) or builds the
+        # observation itself, and both used to be dropped here — the stored row
+        # said `ok: false` and nothing else.
+        _payload = (res.get("stdout") or res.get("content") or res.get("observation")
+                    or res.get("error") or "")
+        _publish("tool.result", run=run_id, tool=tool, approval=rec["id"],
+                 ok=res.get("ok"), exit_code=res.get("exit_code"),
+                 backend=res.get("backend"), sandboxed=res.get("sandboxed"),
+                 stdout=str(_payload)[:2000], stderr=str(res.get("stderr") or "")[:1000])
     return {"status": "executed", "approval": rec, "result": res,
             "observation": toolmod.observation(res, max_chars=obs_max)}
 
