@@ -36,6 +36,7 @@ Usage:
   python3 forge.py handoff audit FILE.json
   python3 forge.py approvals audit FILE.json | autonomy check FILE.json | skills prune FILE.json
   python3 forge.py memory surface FILE.json | teams audit FILE.json | toolgraph build|feedback FILE.json
+  python3 forge.py memory boundary|conflicts FILE.json | instructions audit FILE.json
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -516,6 +517,29 @@ def cmd_control(args):
 
 
 def cmd_memory(args):
+    if args.action in ("boundary", "conflicts"):
+        if not args.value:
+            print("usage: memory %s FILE.json" % args.action, file=sys.stderr)
+            sys.exit(2)
+        try:
+            with open(args.value, encoding="utf-8") as fh:
+                doc = json.load(fh)
+        except (OSError, ValueError) as e:
+            print("bad file:", e, file=sys.stderr)
+            sys.exit(2)
+        if args.action == "boundary":
+            # Round 114 (arXiv:2611.19264): coherent evidence or a refusal.
+            from longrun.memory import read_boundary
+            out = read_boundary.validate(doc.get("reads") or [], doc.get("expected_epoch"))
+        else:
+            # Round 114 (arXiv:2611.22461): keep contradictions, rank the values.
+            from longrun.memory import conflict_surface
+            out = conflict_surface.render(doc.get("claims") or [],
+                                          cap=doc.get("cap") if isinstance(doc, dict) else None)
+        print(json.dumps(out, indent=2, ensure_ascii=False))
+        if args.action == "boundary":
+            sys.exit(0 if out.get("consistent") else 1)
+        return
     if args.action == "surface":
         # Round 113 (arXiv:2611.22179): rules first, patterns second, facts last.
         from longrun.memory import rule_surface
@@ -552,6 +576,23 @@ def cmd_memory(args):
         out = req("GET", "/api/memory" + params)
         for r in out.get("results", []):
             print(" [%.3f] %s" % (r.get("score", 0), r.get("content", "")[:120]))
+
+
+def cmd_instructions(args):
+    """Round 114 (arXiv:2611.13709): explicit context-file directives vs the cards."""
+    from longrun.harness import instruction_audit
+    if not getattr(args, "file", None):
+        print("usage: instructions audit FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    out = instruction_audit.audit(doc.get("text") or "", doc.get("cards") or [])
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0 if out["verdict"] == "clean" else 1)
 
 
 def cmd_teams(args):
@@ -2045,12 +2086,15 @@ def main():
     p = sub.add_parser("embedding"); p.add_argument("action", nargs="?", default="active", choices=["models", "active", "set", "add", "remove", "costs", "cost-test"]); \
         p.add_argument("value", nargs="?"); p.set_defaults(fn=cmd_embedding)
     sub.add_parser("feed").set_defaults(fn=cmd_feed)
-    p = sub.add_parser("memory"); p.add_argument("action", choices=["store", "search", "forget", "purge", "surface"]); \
+    p = sub.add_parser("memory"); p.add_argument("action", choices=["store", "search", "forget", "purge", "surface", "boundary", "conflicts"]); \
         p.add_argument("value", nargs="?"); p.add_argument("value2", nargs="?"); \
         p.add_argument("--kind"); p.add_argument("--semantic", action="store_true"); \
         p.add_argument("--budget", type=int, default=None,
                        help="surface: token budget (rules are never dropped)"); \
         p.add_argument("--limit", type=int, default=10); p.set_defaults(fn=cmd_memory)
+    p = sub.add_parser("instructions"); p.add_argument("action", choices=["audit"]); \
+        p.add_argument("file", nargs="?", help="JSON: {text, cards}"); \
+        p.set_defaults(fn=cmd_instructions)
     p = sub.add_parser("teams"); p.add_argument("action", choices=["audit"]); \
         p.add_argument("file", nargs="?", help="JSON: coordinator, members, safety_lead, safety_doc, jobs"); \
         p.set_defaults(fn=cmd_teams)
