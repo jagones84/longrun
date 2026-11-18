@@ -19,6 +19,7 @@ Usage:
                          | sessions tree [ID] | sessions graph [ID]
                          | sessions export [ID] [--profile share|audit] [--out FILE]
                           | sessions backtrace [ID] [--card HANDLE]
+                          | sessions transport [ID] [--budget N] | sessions stopping [ID]
                           | sessions reset ID | sessions clear ID | sessions model "SID MODEL"
   python3 forge.py docs status|plan "request"|spec "request"|approve|reject|unlock [--session ID]
   python3 forge.py context show [--session ID] | context compact [--session ID]
@@ -28,6 +29,7 @@ Usage:
                          | checkpoints rm CP_ID | checkpoints prune
   python3 forge.py setup run PLAN.json [--workspace DIR] [--reuse] [--state DIR]
   python3 forge.py invariants | manifest
+  python3 forge.py skills stale [--json] | skills value FILE.json | skills repair FILE.json --map old=new
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -1170,6 +1172,20 @@ def cmd_sessions(args):
                           "recorded_action": out.get("recorded_action"),
                           "replayed_action": out.get("replayed_action")},
                          indent=2, ensure_ascii=False))
+    elif args.action == "stopping":
+        # Round 109 (arXiv:2611.22901): done-but-working, measured from the cards.
+        ref = _chat_ref(args.value)
+        out = req("GET", "/api/sessions/%s/stopping" % ref)
+        if out.get("error"):
+            print("error:", out["error"], file=sys.stderr)
+            sys.exit(1)
+        print("verdict: %s" % out.get("verdict"))
+        print("first pass: %s  last pass: %s  post-pass steps: %s  writes after: %s"
+              % (out.get("first_pass"), out.get("last_pass"),
+                 out.get("post_pass_steps"), out.get("writes_after_pass")))
+        if out.get("saving_steps"):
+            print("stoppable now: %s step(s)" % out["saving_steps"])
+        print("rule: %s" % out.get("rule"))
     elif args.action == "transport":
         # Round 108 (arXiv:2611.18471): what compaction kept of the evidence.
         ref = _chat_ref(args.value)
@@ -1418,6 +1434,52 @@ def cmd_setup(args):
         sys.exit(0 if out.get("ok") else 1)
     print(json.dumps({"state": args.state or os.path.join(paths.DATA_DIR, "setup")},
                      indent=2))
+
+
+def cmd_skills(args):
+    """Round 109: skill staleness, paired value, explicit repair (arXiv:2611.22525, -22017)."""
+    from longrun.harness import skills_maintenance, skill_value
+    if args.action == "stale":
+        import longrun.tools.registry as _reg
+        out = skills_maintenance.maintain(os.path.join(_reg.REPO, "skills"),
+                                          repo=_reg.REPO)
+        for row in out.get("stale") or []:
+            print("%s  %s" % (row.get("skill"), row.get("path")))
+            for f in row.get("findings") or []:
+                print("   L%-4s %-6s %s — %s" % (f.get("line"), f.get("kind"),
+                                                  f.get("value"), f.get("reason")))
+        c = out.get("counts") or {}
+        print("skills=%s stale=%s" % (c.get("skills"), c.get("stale")))
+        sys.exit(0 if not c.get("stale") else 1)
+    path = getattr(args, "value", None)
+    if not path:
+        print("usage: skills %s FILE" % args.action, file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "value":
+        recs = doc.get("records") if isinstance(doc, dict) else doc
+        print(json.dumps(skill_value.paired(recs), indent=2, ensure_ascii=False))
+        return
+    mapping = {}
+    for pair in getattr(args, "map", None) or []:
+        old, _, new = str(pair).partition("=")
+        if old:
+            mapping[old] = new
+    if not mapping:
+        print("repair needs --map old=new (exact, caller-supplied)", file=sys.stderr)
+        sys.exit(2)
+    text = doc.get("text") if isinstance(doc, dict) else doc
+    res = skills_maintenance.repair(text, mapping)
+    if getattr(args, "write", False):
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(res["text"])
+    print(json.dumps({"changes": res["changes"], "written": bool(getattr(args, "write", False))},
+                     indent=2, ensure_ascii=False))
 
 
 def cmd_invariants(_):
@@ -1764,7 +1826,7 @@ def main():
     p = sub.add_parser("swarm"); p.add_argument("goal"); p.add_argument("--n-workers", type=int, default=3); \
         p.add_argument("--max-steps", type=int, default=None); p.set_defaults(fn=cmd_swarm)
     sub.add_parser("paperclip-bot").set_defaults(fn=cmd_paperclip_bot)
-    p = sub.add_parser("sessions"); p.add_argument("action", choices=["ls", "new", "fork", "rm", "use", "current", "history", "card", "counterfactual", "model-counterfactual", "graph", "tree", "reset", "clear", "model", "export", "backtrace", "transport"]); \
+    p = sub.add_parser("sessions"); p.add_argument("action", choices=["ls", "new", "fork", "rm", "use", "current", "history", "card", "counterfactual", "model-counterfactual", "graph", "tree", "reset", "clear", "model", "export", "backtrace", "transport", "stopping"]); \
         p.add_argument("value", nargs="?"); p.add_argument("--workspace"); \
         p.add_argument("--at"); p.add_argument("--title"); p.add_argument("--model"); \
         p.add_argument("--arg", action="append"); p.add_argument("--content"); \
@@ -1799,6 +1861,13 @@ def main():
     sub.add_parser("self").set_defaults(fn=cmd_self)
     sub.add_parser("invariants").set_defaults(fn=cmd_invariants)
     sub.add_parser("manifest").set_defaults(fn=cmd_manifest)
+    p = sub.add_parser("skills"); p.add_argument("action", choices=["stale", "value", "repair"]); \
+        p.add_argument("value", nargs="?", help="value/repair: the JSON file"); \
+        p.add_argument("--map", action="append",
+                       help="repair: exact rename, old=new (repeatable)"); \
+        p.add_argument("--write", action="store_true",
+                       help="repair: write the result back to the file"); \
+        p.set_defaults(fn=cmd_skills)
     sub.add_parser("selfcheck").set_defaults(fn=cmd_selfcheck)
     p = sub.add_parser("providers"); p.add_argument("action", nargs="?", default="ls", choices=["ls", "add", "rm", "default", "rm-model"]); \
         p.add_argument("value", nargs="?"); p.set_defaults(fn=cmd_providers)

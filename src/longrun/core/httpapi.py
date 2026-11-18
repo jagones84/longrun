@@ -2926,6 +2926,24 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(404, {"error": "session not found"})
             from longrun.agent import session_jobs as _sj
             return self._send(200, _sj.describe(sid, (qs or {}).get("job")))
+        if path.startswith("/api/sessions/") and path.endswith("/stopping"):
+            # Round 109 (arXiv:2611.22901): did the patch already pass, and what
+            # did the work after that pass buy? Read-only over the stored cards.
+            sid = path[len("/api/sessions/"):-len("/stopping")].strip("/")
+            if not sid or "/" in sid or ".." in sid:
+                return self._send(404, {"error": "session not found"})
+            sess = load_session(sid)
+            if not sess:
+                return self._send(404, {"error": "session not found"})
+            from longrun.plan import stopping
+            return self._send(200, stopping.analyze(sess.get("tool_cards") or []))
+        if path == "/api/skills/maintenance":
+            # Round 109 (arXiv:2611.22525): which skills still name tools/paths the
+            # harness has. Read-only; `repair` is a CLI action on an explicit map.
+            from longrun.harness import skills_maintenance
+            import longrun.tools.registry as _reg
+            return self._send(200, skills_maintenance.maintain(
+                os.path.join(_reg.REPO, "skills"), repo=_reg.REPO))
         if path.startswith("/api/sessions/") and path.endswith("/transport"):
             # Round 108 (arXiv:2611.18471): what compaction kept of the evidence a
             # verifier would cite, and the provenance block that restores it.
