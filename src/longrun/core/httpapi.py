@@ -2965,7 +2965,9 @@ class Handler(BaseHTTPRequestHandler):
             cap = _int_arg(qs, "capacity", 0)
             if cap <= 0:
                 return self._send(400, {"error": "capacity (tokens) required"})
-            from longrun.memory.stores import list_sessions
+            # NOTE: `list_sessions` is imported at module scope. A local import
+            # here bound the name for the WHOLE `do_GET` frame and made every
+            # `/api/sessions` request raise UnboundLocalError ("Failed to fetch").
             from longrun.util import residency
             rows = [{"id": r.get("id"), "ctx_tokens": r.get("ctx_tokens") or 0,
                      "admitted": bool(r.get("running"))}
