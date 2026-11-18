@@ -51,7 +51,8 @@ def _evolution_history(limit=HISTORY_LIMIT):
         if not isinstance(d, dict) or not d:
             continue
         out.append({"id": p.get("id"), "status": str(p.get("status") or "pending"),
-                    "delta": d, "reason": str(p.get("reason") or "")[:160]})
+                    "delta": d, "reason": str(p.get("reason") or "")[:160],
+                    "stale": str(p.get("stale") or "")})
         if len(out) >= limit:
             break
     return out
@@ -83,7 +84,8 @@ def _history_block(history):
         return ""
     lines = ["Already proposed for this registry (newest first) — do NOT propose "
              "an identical delta again (approved = already applied, denied = "
-             "refused); choose a DIFFERENT row, or skip:"]
+             "refused, 'cannot apply' = the registry no longer accepts it); choose "
+             "a DIFFERENT row, or skip:"]
     for h in history:
         d = h.get("delta") or {}
         bits = ["%s.%s" % (d.get("target"), d.get("field"))]
@@ -92,7 +94,10 @@ def _history_block(history):
         for k in ("add", "remove"):
             if d.get(k):
                 bits.append("%s=%s" % (k, json.dumps(d.get(k))))
-        lines.append("- [%s] %s — %s" % (h.get("status"), " ".join(bits),
+        status = str(h.get("status"))
+        if h.get("stale"):
+            status += " · cannot apply"
+        lines.append("- [%s] %s — %s" % (status, " ".join(bits),
                                          h.get("reason") or "(no reason)"))
     return "\n".join(lines)[:3000]
 
@@ -113,6 +118,32 @@ def _read_policy_hits():
         return _reg.policy_report() or {}
     except Exception:  # noqa: BLE001
         return {}
+
+
+def _hit_rows(policy_hits):
+    """Split the firing ledger into the rules that are LIVE and the ones RETIRED.
+
+    The ledger is HISTORY: a rule deleted from the policy keeps its counters for
+    ever, and the keys are `<tool>:<kind>:<pattern>`. 2026-11-18 (round 75) the
+    prompt printed the first five ledger keys as "Policy firings" — three of them
+    rules the policy no longer has (measured: `shell:deny:grep[^\\n]*\\.env`) — and
+    the model proposed removing one. The registry already decides which configured
+    rules fired and which ledger keys it no longer owns (`retired_rules`), so this
+    function only SPLITS that classification; it never re-derives it.
+    """
+    hits = (policy_hits or {}).get("firings") or {}
+    retired = {str(k) for k in ((policy_hits or {}).get("retired_rules") or [])}
+    live, gone = [], []
+    for key, rec in hits.items():
+        parts = str(key).split(":", 2)
+        if len(parts) != 3:
+            continue
+        row = {"tool": parts[0], "kind": parts[1], "pattern": parts[2],
+               "n": int((rec or {}).get("n") or 0)}
+        (gone if str(key) in retired else live).append(row)
+    live.sort(key=lambda r: (-r["n"], r["tool"], r["pattern"]))
+    gone.sort(key=lambda r: (-r["n"], r["tool"], r["pattern"]))
+    return live, gone
 
 
 def _read_job_cost(jid):
@@ -217,8 +248,23 @@ def _policy_snapshot(policy_hits):
     proposed a one-entry list — a click away from deleting seven hard-deny rules.
     A model may only `add`/`remove` entries it was shown (the validator refuses
     a `remove` that is not in the live list, and refuses a whole-list `value`).
+
+    2026-11-18 (round 75): the fix above passed `firings` KEYS (`shell.exec:deny:
+    …`) to `tool_spec`, which knows no such tool, so on real data the section read
+    "(not available)" — measured on the live ledger. The tool name is the first
+    segment of the key.
     """
-    names = sorted((policy_hits or {}).get("firings") or {}) or ["shell.exec"]
+    live, _gone = _hit_rows(policy_hits)
+    names = []
+    for row in live:
+        if row["tool"] not in names:
+            names.append(row["tool"])
+    for key in (policy_hits or {}).get("never_fired") or []:
+        tool = str(key).split(":", 1)[0]
+        if tool and tool not in names:
+            names.append(tool)
+    if not names:
+        names = ["shell.exec"]
     try:
         from longrun.tools import registry as _reg
     except Exception:  # noqa: BLE001 — no snapshot is better than no prompt
@@ -260,10 +306,28 @@ def _build_analysis_prompt(trace, policy_hits, job_cost, feedback, history=None)
         parts.append(f"Exit code: {code} ({code_map.get(code, 'unknown')})")
 
     if policy_hits:
-        firings = policy_hits.get("firings", {})
+        live, gone = _hit_rows(policy_hits)
+        never = [str(k) for k in ((policy_hits or {}).get("never_fired") or [])]
         unknown = policy_hits.get("unknown_args", {})
-        if firings:
-            parts.append(f"Policy firings: {json.dumps(dict(list(firings.items())[:5]))}")
+        if live:
+            parts.append(
+                "Rules that FIRED and are STILL in the live policy (load-bearing — each "
+                "one blocked a real call, so removing one needs evidence from the "
+                "trace):\n" + "\n".join(
+                    "  %s %s x%d: %s" % (r["tool"], r["kind"], r["n"], r["pattern"])
+                    for r in live[:12]))
+        if gone:
+            parts.append(
+                "Ledger history of rules the live policy NO LONGER has (they are absent "
+                "from the live list below, so they cannot be removed — never propose "
+                "one of these in `remove`):\n" + "\n".join(
+                    "  %s %s x%d: %s" % (r["tool"], r["kind"], r["n"], r["pattern"])
+                    for r in gone[:6]))
+        if never:
+            parts.append(
+                "Configured rules that NEVER fired (context only — a guard that never "
+                "fired may be doing its job; do not propose removing one without "
+                "friction evidence):\n" + "\n".join("  " + k for k in never[:8]))
         if unknown:
             parts.append(f"Unknown args: {json.dumps(dict(list(unknown.items())[:5]))}")
 
@@ -369,12 +433,15 @@ def run(sid, jid=None):
     prompt = _build_analysis_prompt(trace, policy_hits, job_cost, feedback,
                                     history=history)
 
+    _live, _gone = _hit_rows(policy_hits)
     evidence = {
         "tokens": trace.get("tokens", 0),
         "steps": steps,
         "outcome": trace.get("outcome", "unknown"),
         "exit_code": trace.get("code"),
-        "policy_firings": len(policy_hits.get("firings", {})),
+        "live_firings": len(_live),
+        "retired_firings": len(_gone),
+        "never_fired": len(policy_hits.get("never_fired") or []),
         "unknown_args": len(policy_hits.get("unknown_args", {})),
         "job_tokens": job_cost.get("tokens", 0),
         "has_feedback": bool(feedback),
@@ -383,8 +450,12 @@ def run(sid, jid=None):
     reply = _call_model(prompt)
     delta, parsed = _extract_json(reply)
     if not parsed:
+        # 2026-11-18 (round 75): 95 of 170 logged runs ended here and the log kept
+        # no reply, so a dead model (no endpoint) and a malformed reply were the
+        # same row — undiagnosable. The reply is kept (empty when the call failed).
         result = {"skip": True, "reason": "unparseable model reply",
-                  "session": sid, "prompt": prompt, "evidence": evidence}
+                  "session": sid, "prompt": prompt, "evidence": evidence,
+                  "reply": str(reply or "")[:1500]}
         _log_run(sid, result)
         return result
 
