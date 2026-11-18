@@ -46,6 +46,7 @@ Usage:
   python3 forge.py skillret calibrate FILE.json | ruleret closure FILE.json | skillquality profile FILE.json
   python3 forge.py opspolicy realize FILE.json | execpolicy confirm FILE.json
   python3 forge.py skilladapter bind FILE.json | intake admit FILE.json
+  python3 forge.py memcredit arbitrate FILE.json | lessongate probe FILE.json | seclattice admit FILE.json
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -1166,6 +1167,83 @@ def cmd_intake(args):
         out = intake_gate.shadow(doc.get("actions") or [], doc.get("confirmed", False))
     print(json.dumps(out, indent=2, ensure_ascii=False))
     sys.exit(1 if out.get("decision") == "ignore" or out.get("valid") is False else 0)
+
+
+def cmd_memcredit(args):
+    """Round 125 (arXiv:2611.15600): memory arbitrated by decision utility, not relevance."""
+    from longrun.harness import memory_credit
+    if not getattr(args, "file", None):
+        print("usage: memcredit credit|arbitrate|sparsity FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "credit":
+        out = memory_credit.credit(doc.get("candidate") or {}, doc.get("reference") or [])
+    elif args.action == "arbitrate":
+        out = memory_credit.arbitrate(doc.get("candidates") or [], doc.get("budget"),
+                                      doc.get("min_credit", 0.0))
+    else:
+        out = memory_credit.sparsity(doc.get("rows") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(1 if out.get("findings") and args.action == "arbitrate"
+             and not out.get("selected") else 0)
+
+
+def cmd_lessongate(args):
+    """Round 125 (arXiv:2611.14326): a lesson is committed only after its probes pass."""
+    from longrun.harness import lesson_gate
+    if not getattr(args, "file", None):
+        print("usage: lessongate hypothesis|trial|probe FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "hypothesis":
+        out = lesson_gate.hypothesis(doc.get("lesson") or doc)
+    elif args.action == "trial":
+        out = lesson_gate.trial(doc.get("lesson") or {}, doc.get("state"),
+                                doc.get("persist", False))
+    else:
+        out = lesson_gate.probe(doc.get("lesson") or {}, doc.get("results") or {})
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0 if out.get("decision") in ("commit", None) and out.get("applied") is not False
+             and out.get("valid") is not False else 1)
+
+
+def cmd_seclattice(args):
+    """Round 125 (arXiv:2611.13960): product taint lattice, attenuation, provenance ledger."""
+    from longrun.harness import security_lattice
+    if not getattr(args, "file", None):
+        print("usage: seclattice admit|attenuate|write|read|effect FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "admit":
+        out = security_lattice.admit(doc.get("label") or {}, doc.get("action"))
+    elif args.action == "attenuate":
+        out = security_lattice.attenuate(doc.get("parent") or {}, doc.get("child") or {})
+    elif args.action == "write":
+        out = security_lattice.ledger_write(doc.get("ledger") or {}, doc.get("path"),
+                                            doc.get("actor") or {})
+    elif args.action == "read":
+        out = security_lattice.ledger_read(doc.get("ledger") or {}, doc.get("path"),
+                                           doc.get("actor") or {})
+    else:
+        out = security_lattice.admit_effect(doc.get("actor") or {}, doc.get("effect"))
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(1 if out.get("allowed") is False or out.get("valid") is False
+             or out.get("found") is False else 0)
 
 
 def cmd_instructions(args):
@@ -2787,6 +2865,18 @@ def main():
         p.add_argument("action", choices=["admit", "mandate", "subscribe", "preset", "shadow"]); \
         p.add_argument("file", nargs="?", help="JSON: {trigger, policy}, {ticket}, {events, owned}, {base, strip}, or {actions, confirmed}"); \
         p.set_defaults(fn=cmd_intake)
+    p = sub.add_parser("memcredit"); \
+        p.add_argument("action", choices=["credit", "arbitrate", "sparsity"]); \
+        p.add_argument("file", nargs="?", help="JSON: {candidate, reference}, {candidates, budget}, or {rows}"); \
+        p.set_defaults(fn=cmd_memcredit)
+    p = sub.add_parser("lessongate"); \
+        p.add_argument("action", choices=["hypothesis", "trial", "probe"]); \
+        p.add_argument("file", nargs="?", help="JSON: {lesson} or {lesson, results}"); \
+        p.set_defaults(fn=cmd_lessongate)
+    p = sub.add_parser("seclattice"); \
+        p.add_argument("action", choices=["admit", "attenuate", "write", "read", "effect"]); \
+        p.add_argument("file", nargs="?", help="JSON: {label, action}, {parent, child}, {ledger, path, actor}, or {actor, effect}"); \
+        p.set_defaults(fn=cmd_seclattice)
     p = sub.add_parser("instructions"); p.add_argument("action", choices=["audit"]); \
         p.add_argument("file", nargs="?", help="JSON: {text, cards}"); \
         p.set_defaults(fn=cmd_instructions)
