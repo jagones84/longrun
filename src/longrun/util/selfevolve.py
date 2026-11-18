@@ -601,6 +601,61 @@ def error_class(text):
     return s[:80] or "(no error text)"
 
 
+#: Lines that NAME a failure even when the program printed other things first.
+#: Round 53 measured the cost of not looking: 12 of the 18 `shell.exec ·
+#: tool-error` classes were singleton heads of ordinary output (`dill 0.4.1`, a
+#: key list, `aria=…`), because the class was the first 140 chars of the result.
+_ERROR_MARKERS = ("fatal:", "no such file", "not found", "permission denied",
+                  "illegal option", "syntaxerror", "command not found",
+                  "cannot find module")
+
+#: `error:` / `exception:` only as a STANDALONE word: `except ImportError:` is a
+#: source line, not an error line, and a letter before it means an identifier.
+_ERROR_WORD = re.compile(r"(?<![A-Za-z])(error|exception)\s*:", re.I)
+
+
+def failure_text(card):
+    """The text that NAMES a failed call's failure (round 53).
+
+    Precedence: `error`, then `stderr`, then the line carrying a failure marker
+    (a Traceback contributes its EXCEPTION line — stack frames are indented and
+    the exception is the first unindented line after them), then
+    `exit=<n> (no error text)` when a non-zero code exists, then the first output
+    line, then "". Machine text is returned unchanged; `error_class` still
+    normalizes it.
+
+    ONE helper for both corpora and for the recorder (`harness/record.py`), so a
+    session card and its run-record step always land in the same class — which is
+    also what the round-52 dedupe needs.
+    """
+    card = card if isinstance(card, dict) else {}
+    for field in ("error", "stderr"):
+        text = str(card.get(field) or "").strip()
+        if text:
+            return text
+    body = str(card.get("result") or "")
+    raw = body.splitlines()
+    for i, line in enumerate(raw):
+        low = line.strip().lower()
+        if not low:
+            continue
+        if "traceback (most recent call last)" in low:
+            for nxt in raw[i + 1:]:
+                s = nxt.strip()
+                if s and not nxt[:1].isspace():
+                    return s
+            return line.strip()
+        if any(m in low for m in _ERROR_MARKERS) or _ERROR_WORD.search(line):
+            return line.strip()
+    ec = card.get("exit_code")
+    if isinstance(ec, int) and ec:
+        return "exit=%d (no error text)" % ec
+    for line in raw:
+        if line.strip():
+            return line.strip()
+    return ""
+
+
 #: Deterministic LABELS over the class `error_class` already computes. They group
 #: classes into an engineering issue (Signals, arXiv:2611.04507) without a second
 #: grouping key: the class stays the identity of a row, the family names the fix.
@@ -895,13 +950,9 @@ def session_failures(sessions_dir=None, limit=200, max_sessions=400, since=None)
                 seq.append(None)
                 continue
             tool = str(c.get("tool") or "?")
-            head = error_class(c.get("error") or c.get("result"))
-            if head == "(no error text)":
-                # A card can fail on its EXIT CODE alone; absence of text is not
-                # the class, the non-zero status is.
-                ec = c.get("exit_code")
-                if isinstance(ec, int) and ec:
-                    head = "exit=<n> (no error text)"
+            # Round 53: the class is the text that NAMES the failure, not the
+            # first line the program printed (`failure_text`).
+            head = error_class(failure_text(c))
             seq.append((tool, head))
         # Round 31 (AgentDebugX, arXiv:2607.18754 — Detect/Attribute/RECOVER/Rerun):
         # "the step where an error surfaces is often not the one that caused it".
@@ -1023,7 +1074,10 @@ def failure_candidates(path=None, limit=10, min_count=1, include_sessions=False,
             if not isinstance(step, dict) or step.get("ok") is not False:
                 continue
             tool = str(step.get("tool") or "?")
-            head = error_class(step.get("error"))
+            # Round 53: the same helper as the session corpus. A record written
+            # before this round can still hold the raw `result` in `error`
+            # (round 49's fallback), so the marker search applies here too.
+            head = error_class(failure_text(step))
             row = buckets.setdefault((tool, head), {"count": 0, "repeats": 0,
                                                     "recovered": 0, "runs": set(),
                                                     "sessions": 0, "sids": set(),

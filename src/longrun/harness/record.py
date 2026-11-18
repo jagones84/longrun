@@ -29,6 +29,7 @@ from longrun.memory import skills as skills_mod
 from longrun.tools import hooks as hooks_mod
 from longrun.util import fswrite
 from longrun.util import paths
+from longrun.util import selfevolve
 from longrun.util import tracing
 
 SCHEMA = 1
@@ -190,11 +191,14 @@ def _steps(cards):
             "ok": card.get("ok") if isinstance(card.get("ok"), bool) else None,
             "exit_code": card.get("exit_code"),
             # Round 49: a failed card's text can sit in `result` (partial stdout /
-            # shell stderr) while `error` is empty. The register's class rule is
-            # exactly `error or result` for session cards (selfevolve.
-            # session_failures); without the same fallback here those steps reached
-            # it as `(no error text)` — measured 2026-11-18 on the 4 live records.
-            "error": str(card.get("error") or card.get("result") or "")[:ERROR_MAX],
+            # shell stderr) while `error` is empty; without the fallback those
+            # steps reached the register as `(no error text)`.
+            # Round 53: the fallback is the SHARED `failure_text`, not the raw
+            # `result` — the first line a program prints is usually output
+            # (`dill 0.4.1`), not the failure, and the recorder must class a call
+            # exactly as its session card does (12 of 18 `shell.exec · tool-error`
+            # classes were such singleton output heads).
+            "error": str(selfevolve.failure_text(card))[:ERROR_MAX],
             "backend": card.get("backend") or "",
             "args_keys": sorted(args.keys()),
             "args_len": len(_canonical(args)),
