@@ -633,7 +633,8 @@ decides the content and `POST /api/docs/implement` (the bar's ▶) opens the gat
 ONE token (the API bearer): `POST /api/tools|settings` refuse a body that carries a
 `session`/`run_id` and publish every accepted change as `policy.changed`; the env file
 and the control API are hard-denied in the permission layer, which is what keeps a
-shell-capable agent away from both. The task graph (`/api/plan`, todos) is
+shell-capable agent away from both — the env rule matches the FILE as a path token, so
+the program that opens it is not part of the guard. The task graph (`/api/plan`, todos) is
 a DIFFERENT object and is never touched: the document is the intent/decision truth, the
 graph is execution state.
 
