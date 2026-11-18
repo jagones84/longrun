@@ -57,7 +57,10 @@ res = SH({"command": HEREDOC, "_ok": True}, "v747")
 check("B1 a WORKING heredoc gets no hint", "hint" not in res)
 
 res = SH({"command": "python3 -c 'exit(1)'"}, "v747")
-check("C1 a failing one-liner (no heredoc) gets no hint", "hint" not in res)
+# Round 54: this shape (output, no stderr, non-zero exit) now carries the STATUS
+# hint; what this test owns is that the HEREDOC hint does not fire on it.
+check("C1 a failing one-liner (no heredoc) gets no heredoc hint",
+      "fs.write" not in str(res.get("hint") or ""), res.get("hint"))
 
 obs = tools.observation(dict(FAIL, tool="shell.exec", hint="write the script to a file"))
 check("D1 the observation carries the hint to the model",

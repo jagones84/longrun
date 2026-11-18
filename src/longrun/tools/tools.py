@@ -206,6 +206,40 @@ _DIALECT_HINTS = (
 )
 
 
+def _status_hint(res):
+    """Explain a non-zero exit that carries NO error text (round 54).
+
+    Measured 2026-11-18: the register's `shell.exec · nonzero-exit` row is ONE
+    class, `exit=<n> (no error text)`, 15 events in 11 sessions — and reading the
+    commands behind it showed compound lookups (`grep … | head`, `which pylint`,
+    `ls -la notes 2>/dev/null`) whose LAST verb exits non-zero to say "not
+    there". The model had its answer; the observation said only `exit=1`, so the
+    call read as an unexplained failure.
+
+    The harness cannot know intent, so it names the convention where the model
+    reads it. Returns "" when the case does not apply (a success, a real error,
+    stderr, a zero exit or an existing hint are all left alone).
+    """
+    if not isinstance(res, dict) or res.get("ok") or res.get("hint"):
+        return ""
+    try:
+        code = int(res.get("exit_code") or 0)
+    except (TypeError, ValueError):
+        return ""
+    if not code or res.get("error") or str(res.get("stderr") or "").strip():
+        return ""
+    if str(res.get("stdout") or "").strip():
+        return ("exit %d with output and no error text: for a lookup that found "
+                "nothing (`grep` with no match, `which`/`ls` on a missing path, "
+                "`diff` on different files, `test` false) a non-zero status is "
+                "the ANSWER, not a fault — read the output above. Correct the "
+                "command only if the output is wrong." % code)
+    return ("the command printed nothing and exited %d. That can be a lookup "
+            "that found nothing (`grep`/`which`/`ls`/`test` exit non-zero on "
+            "purpose) or a silent crash; re-run it with `2>&1` when you need "
+            "the reason." % code)
+
+
 def _shell_hinted(args, run_id):
     """Dispatch entry for `shell`: a failed call explains the likely cause.
 
@@ -224,6 +258,11 @@ def _shell_hinted(args, run_id):
     Round 25 puts the ROOT CAUSE first: a call killed at `timeout_secs` carries
     the `background: true` + `action=status` escape hatch (10 such failures in 6
     sessions), and a timed-out heredoc is a timeout, not a quoting problem.
+
+    Round 54 answers the last measured residue: a failed call with output, no
+    error text and a non-zero exit — the register's whole `nonzero-exit` row —
+    gets `_status_hint`, which names the lookups whose non-zero status IS the
+    answer (`grep` no match, `which`/`ls` missing, `diff` different).
 
     The rule lives here, not inside `_shell`, because `_shell` is pinned by v595
     as the function that resolves the session trust and skips the host terminal
@@ -257,6 +296,10 @@ def _shell_hinted(args, run_id):
                 if any(n in said for n in needles):
                     res["hint"] = hint
                     break
+        if failed and not res.get("hint"):
+            hint = _status_hint(res)
+            if hint:
+                res["hint"] = hint
     except Exception:  # noqa: BLE001 — a hint must never break the call
         pass
     return res
