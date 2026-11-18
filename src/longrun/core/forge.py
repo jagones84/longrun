@@ -1758,6 +1758,32 @@ def cmd_setup(args):
 def cmd_skills(args):
     """Round 109: skill staleness, paired value, explicit repair (arXiv:2611.22525, -22017)."""
     from longrun.harness import skills_maintenance, skill_value
+    if args.action in ("compile", "optimize", "conflict"):
+        # Round 118: verified-trace compilation (2611.01386), SkIR repair (2611.20856),
+        # cross-skill conflict (2610.35082).
+        from longrun.harness import skill_compiler, skill_repair, skill_conflict
+        path = getattr(args, "value", None)
+        if not path:
+            print("usage: skills %s FILE.json" % args.action, file=sys.stderr)
+            sys.exit(2)
+        try:
+            with open(path, encoding="utf-8") as fh:
+                doc = json.load(fh)
+        except (OSError, ValueError) as e:
+            print("bad file:", e, file=sys.stderr)
+            sys.exit(2)
+        if args.action == "compile":
+            out = skill_compiler.compile_skill(doc.get("trace") or doc,
+                                               doc.get("min_strength") or "independent")
+            print(json.dumps(out, indent=2, ensure_ascii=False))
+            sys.exit(0 if out["admitted"] else 1)
+        if args.action == "optimize":
+            out = skill_repair.repair(doc)
+            print(json.dumps(out, indent=2, ensure_ascii=False))
+            sys.exit(0 if out["accepted"] else 1)
+        out = skill_conflict.conflicts(doc.get("pool") or doc)
+        print(json.dumps(out, indent=2, ensure_ascii=False))
+        sys.exit(0 if out["verdict"] == "clean" else 1)
     if args.action == "prune":
         # Round 112 (arXiv:2611.19823): compact a skill without touching contract lines.
         from longrun.harness import skill_prune
@@ -2369,7 +2395,7 @@ def main():
     sub.add_parser("self").set_defaults(fn=cmd_self)
     sub.add_parser("invariants").set_defaults(fn=cmd_invariants)
     sub.add_parser("manifest").set_defaults(fn=cmd_manifest)
-    p = sub.add_parser("skills"); p.add_argument("action", choices=["stale", "value", "repair", "prune"]); \
+    p = sub.add_parser("skills"); p.add_argument("action", choices=["stale", "value", "repair", "prune", "compile", "optimize", "conflict"]); \
         p.add_argument("value", nargs="?", help="value/repair/prune: the JSON file"); \
         p.add_argument("--map", action="append",
                        help="repair: exact rename, old=new (repeatable)"); \
