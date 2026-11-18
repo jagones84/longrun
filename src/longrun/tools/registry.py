@@ -467,18 +467,21 @@ _LEGACY_SCHEMAS = {
                         "action=counterfactual -> change ONE fact of that recorded "
                         "call, re-run it (both sides must be a pure read) and report "
                         "whether the observation moved: the causal answer to 'why did "
-                       "this step fail', instead of a correlation. "
-                       "action=model_counterfactual -> replace ONE message of the "
-                       "STORED transcript (an observation or a nudge), re-ask the "
-                       "model with the same transcript+system prompt and report "
-                       "whether its NEXT action changed. Nothing executes — usable "
-                       "even when the step under test was a write. "
-                       "Your OWN session is always allowed. ANOTHER session must be "
-                        "BELOW you in the reporting line (any level, same team); "
+                        "this step fail', instead of a correlation. "
+                        "action=model_counterfactual -> replace ONE message of the "
+                        "STORED transcript (an observation or a nudge), re-ask the "
+                        "model with the same transcript+system prompt and report "
+                        "whether its NEXT action changed. Nothing executes — usable "
+                        "even when the step under test was a write. "
+                        "Your OWN session is always readable (and compactable / "
+                        "resettable); you cannot message yourself. ANY OTHER session "
+                        "must be in your team or on your reporting line in either "
+                        "direction (down to your subtree, up to your manager chain); "
+                        "the Architect is reachable only by a team's top leader. "
+                        "Never sideways across teams. "
                         "compact shrinks the transcript (force=true bypasses the "
                         "threshold when the operator asked), reset wipes messages, "
-                        "tool cards and injects and aborts a running turn. Never "
-                        "upward or sideways."),
+                        "tool cards and injects and aborts a running turn."),
         "type": "object",
         "properties": {
             "action": {"type": "string",
@@ -489,8 +492,8 @@ _LEGACY_SCHEMAS = {
                         "description": ("the target agent's NAME exactly as "
                                         "action=list writes it (e.g. 'coder 1'), its "
                                         "A-id (e.g. 'A48'), or the raw session id — all "
-                                        "three work, for ANY session in your reporting "
-                                        "line (action=read|send|compact|reset)")},
+                                        "three work, for any session the description's "
+                                        "rule allows")},
             "to": {"type": "string",
                    "description": "alias for session (action=send|compact|reset)"},
             "message": {"type": "string",

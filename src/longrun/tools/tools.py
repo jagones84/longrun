@@ -3004,8 +3004,16 @@ def _session_id(ref):
     return ref
 
 
-def _may_message(caller, target):
+def _may_message(caller, target, verb="message"):
     """(ok, why): may `caller` message or READ `target`'s session?
+
+    Round 56: a READ is not a message. A session always reads its OWN transcript
+    (the harness's own rules say "read the stored history before re-briefing"),
+    and a refusal names the act it refused. Measured 2026-11-18: the register's
+    `sessions.read · permission` row held `a session cannot message itself` (an
+    agent reading its own history) and `… are in different teams — message inside
+    your team` (a read told to message). The relationships below are the SAME for
+    both acts; only the self case and the wording differ.
 
     The session rule (operator, 2026-11-10), in plain words:
       · the same TEAM may always talk (siblings included) — a message is not a
@@ -3034,7 +3042,9 @@ def _may_message(caller, target):
             return True, ""   # a plain chat: the operator is the one typing in it
         tgt = _agents.REGISTRY.resolve(target)
         if tgt and tgt["id"] == me["id"]:
-            return False, "a session cannot message itself through this tool"
+            if verb == "read":
+                return True, ""   # your own transcript is yours
+            return False, "a session cannot %s itself through this tool" % verb
         # The Architect is the ROOT: only a team's top leader may address it.
         _arch_target = (_arch.is_architect_session(target)
                         or bool(tgt and _arch.is_architect_session(
@@ -3070,6 +3080,11 @@ def _may_message(caller, target):
             return True, ""
         if me["id"] in _agents.REGISTRY.subtree(tgt["id"]):
             return True, ""
+        if verb == "read":
+            return False, ("%s and %s are in different teams — read your own "
+                           "transcript, your team's, up your reporting line, or "
+                           "the Architect's (top leaders only)"
+                           % (me.get("id"), tgt.get("id")))
         return False, ("%s and %s are in different teams — message inside your "
                        "team, up to its top leader, or to the Architect"
                        % (me.get("id"), tgt.get("id")))
@@ -3415,7 +3430,7 @@ def _sessions(args, run_id):
                     "error": "session and handle are required for action=card "
                              "(the handle is the #id printed in the manifest)",
                     "backend": "host", "sandboxed": False}
-        _ok, _why = _may_message(run_id, sid)
+        _ok, _why = _may_message(run_id, sid, "read")
         if not _ok:
             return {"ok": False, "exit_code": 126, "permission_denied": True,
                     "session": sid, "stdout": "", "stderr": "",
@@ -3465,7 +3480,7 @@ def _sessions(args, run_id):
                     "error": "change is required: the ONE argument to change, e.g. "
                              "{\"path\": \"other.py\"} or {\"command\": \"ls src\"}",
                     "backend": "host", "sandboxed": False}
-        _ok, _why = _may_message(run_id, sid)
+        _ok, _why = _may_message(run_id, sid, "read")
         if not _ok:
             return {"ok": False, "exit_code": 126, "permission_denied": True,
                     "session": sid, "stdout": "", "stderr": "",
@@ -3515,7 +3530,7 @@ def _sessions(args, run_id):
                              "position of a USER message in the stored transcript "
                              "(-1 = the last); change is {\"content\": \"…\"}.",
                     "backend": "host", "sandboxed": False}
-        _ok, _why = _may_message(run_id, sid)
+        _ok, _why = _may_message(run_id, sid, "read")
         if not _ok:
             return {"ok": False, "exit_code": 126, "permission_denied": True,
                     "session": sid, "stdout": "", "stderr": "",
@@ -3557,7 +3572,7 @@ def _sessions(args, run_id):
                              "to find it)",
                     "backend": "host", "sandboxed": False}
         # v954: the same relationship as `send` — down your subtree, up your line.
-        _ok, _why = _may_message(run_id, sid)
+        _ok, _why = _may_message(run_id, sid, "read")
         if not _ok:
             return {"ok": False, "exit_code": 126, "permission_denied": True,
                     "session": sid, "stdout": "", "stderr": "",
