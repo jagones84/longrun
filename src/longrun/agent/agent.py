@@ -318,7 +318,29 @@ def _repair_misplaced_tool_name(text):
         return text
 
 
-def _rejected_reply_note(answer):
+def _json_break(text):
+    """Name the JSON malformation the MODEL can fix, or None when it is not JSON.
+
+    Round 73 — measured on the live store: 9 of the 63 bounced replies were an
+    action-shaped JSON object the parser could not read, and the generic note told
+    the model nothing it could act on. Two shapes recur and are provable from the
+    text alone: a trailing comma before a closing brace/bracket, and a payload cut
+    off with an unclosed block or list.
+    """
+    t = str(text or "").strip()
+    if not t.startswith(("{", "[")):
+        return None
+    if re.search(r",\s*[}\]]", t):
+        return "a trailing comma before a closing brace or bracket (JSON forbids it)"
+    blocks = t.count("{") - t.count("}")
+    if blocks > 0:
+        return "it stops before the JSON is closed (%d block(s) still open)" % blocks
+    if t.count("[") > t.count("]"):
+        return "it stops before the JSON is closed (a list is still open)"
+    return None
+
+
+def _rejected_reply_note(answer, finish_reason=None):
     """The retry for a reply that is neither valid JSON nor a known dialect.
 
     It ALWAYS quotes the reply back. The old note ("That JSON was invalid or
@@ -326,9 +348,22 @@ def _rejected_reply_note(answer):
     repeated the SAME broken shape until the breaker stopped the goal (measured
     2026-11-02, session 777378644e9c). A retry that does not show the offending
     reply cannot fix it.
+
+    Round 73: the reply is now also NAMED — a cut at the model's output limit says
+    so and asks for a smaller call, and a JSON break says which one it is. Measured
+    on the live store: 63 bounced replies, 62 still rejected, and the generic note
+    left the model repeating the shape (54 nudges in one session).
     """
     snip = str(answer or "").strip().replace("\n", " ")
     out = ["Your reply could not be executed. It was: " + (snip[:300] or "(empty)")]
+    if str(finish_reason or "") == "length":
+        out.append('It was CUT at the model\'s output limit — the reply ends before it '
+                   'is finished. Send a SMALLER call: split the content and write it in '
+                   'parts (one file or one section per call) instead of one huge object.')
+    else:
+        _break = _json_break(snip)
+        if _break:
+            out.append("That JSON is not valid: " + _break + ". Emit one complete object.")
     if _repair_misplaced_tool_name(snip) != snip:
         out.append('You wrote the tool NAME where a KEY belongs: the envelope is '
                    '{"action":"tool","tool":"<name>","args":{...}} — a colon and the '
@@ -6954,7 +6989,8 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 _inject(_prose_recovery_note(answer,
                                              _invalid_streak - _invalid_cap + 1), "retry")
                 continue
-            _inject(_rejected_reply_note(answer), "retry")
+            _inject(_rejected_reply_note(
+                answer, (chat_usage or {}).get("finish_reason")), "retry")
             continue
         if _looks_like_promise(answer) and not announce_nudged:
             # JAG-74: the model promised an action ("I'll load another skill…") but

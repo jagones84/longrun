@@ -141,8 +141,8 @@ check("C8 the strategy switch shows the count and the rejected reply, and names 
 # ============================================================================
 # D — the operator can read WHY it stopped, and WHAT was rejected
 # ============================================================================
-check("D1 the unparseable retry is the quoting note",
-      "_inject(_rejected_reply_note(answer), \"retry\")" in SRC)
+check("D1 the unparseable retry is the quoting note (round 73: it also carries the finish reason)",
+      "_inject(_rejected_reply_note(\n                answer, (chat_usage or {}).get(\"finish_reason\")), \"retry\")" in SRC)
 check("D2 the DSML retry quotes the reply too", '"named no tool the harness can run. It was: "' in SRC)
 check("D3 a stop that does happen still names the cause and quotes the reply",
       "not an executable action" in SRC and "Last rejected reply: " in SRC)
