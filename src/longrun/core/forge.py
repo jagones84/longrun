@@ -35,6 +35,7 @@ Usage:
   python3 forge.py procedure run FILE.json | intent check|audit FILE.json
   python3 forge.py handoff audit FILE.json
   python3 forge.py approvals audit FILE.json | autonomy check FILE.json | skills prune FILE.json
+  python3 forge.py memory surface FILE.json | teams audit FILE.json | toolgraph build|feedback FILE.json
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -515,6 +516,23 @@ def cmd_control(args):
 
 
 def cmd_memory(args):
+    if args.action == "surface":
+        # Round 113 (arXiv:2611.22179): rules first, patterns second, facts last.
+        from longrun.memory import rule_surface
+        if not args.value:
+            print("usage: memory surface FILE.json [--budget N]", file=sys.stderr)
+            sys.exit(2)
+        try:
+            with open(args.value, encoding="utf-8") as fh:
+                doc = json.load(fh)
+        except (OSError, ValueError) as e:
+            print("bad file:", e, file=sys.stderr)
+            sys.exit(2)
+        hits = doc.get("hits") if isinstance(doc, dict) else doc
+        out = rule_surface.render(hits or [], budget_tokens=getattr(args, "budget", None))
+        print(out["text"])
+        print("\ncounts:", json.dumps(out["counts"]))
+        return
     if args.action == "store":
         out = req("POST", "/api/memory", {"kind": args.value, "content": args.value2})
         print(json.dumps(out, indent=2, ensure_ascii=False))
@@ -534,6 +552,48 @@ def cmd_memory(args):
         out = req("GET", "/api/memory" + params)
         for r in out.get("results", []):
             print(" [%.3f] %s" % (r.get("score", 0), r.get("content", "")[:120]))
+
+
+def cmd_teams(args):
+    """Round 113 (arXiv:2611.17820): the safety lead + published safety specs audit."""
+    from longrun.harness import team_safety
+    if not getattr(args, "file", None):
+        print("usage: teams audit FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    out = team_safety.audit(doc)
+    out["brief"] = team_safety.brief(doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0 if out["verdict"] == "covered" else 1)
+
+
+def cmd_toolgraph(args):
+    """Round 113 (arXiv:2611.20569): compile the tool dependency graph, or ask it."""
+    from longrun.harness import tool_graph
+    if not getattr(args, "file", None):
+        print("usage: toolgraph %s FILE.json" % args.action, file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    graph = tool_graph.build(doc.get("catalog") or [], doc.get("transitions") or [],
+                             doc.get("probes") or [])
+    if args.action == "build":
+        print(json.dumps({k: v for k, v in graph.items() if k != "nodes"}, indent=2,
+                         ensure_ascii=False))
+        return
+    print(json.dumps(tool_graph.feedback(graph, doc.get("goal") or "",
+                                         doc.get("candidate") or "",
+                                         doc.get("state_types") or []),
+                     indent=2, ensure_ascii=False))
 
 
 def cmd_subagent(args):
@@ -1985,10 +2045,18 @@ def main():
     p = sub.add_parser("embedding"); p.add_argument("action", nargs="?", default="active", choices=["models", "active", "set", "add", "remove", "costs", "cost-test"]); \
         p.add_argument("value", nargs="?"); p.set_defaults(fn=cmd_embedding)
     sub.add_parser("feed").set_defaults(fn=cmd_feed)
-    p = sub.add_parser("memory"); p.add_argument("action", choices=["store", "search", "forget", "purge"]); \
+    p = sub.add_parser("memory"); p.add_argument("action", choices=["store", "search", "forget", "purge", "surface"]); \
         p.add_argument("value", nargs="?"); p.add_argument("value2", nargs="?"); \
         p.add_argument("--kind"); p.add_argument("--semantic", action="store_true"); \
+        p.add_argument("--budget", type=int, default=None,
+                       help="surface: token budget (rules are never dropped)"); \
         p.add_argument("--limit", type=int, default=10); p.set_defaults(fn=cmd_memory)
+    p = sub.add_parser("teams"); p.add_argument("action", choices=["audit"]); \
+        p.add_argument("file", nargs="?", help="JSON: coordinator, members, safety_lead, safety_doc, jobs"); \
+        p.set_defaults(fn=cmd_teams)
+    p = sub.add_parser("toolgraph"); p.add_argument("action", choices=["build", "feedback"]); \
+        p.add_argument("file", nargs="?", help="JSON: catalog + transitions + probes (+ goal/candidate)"); \
+        p.set_defaults(fn=cmd_toolgraph)
     p = sub.add_parser("subagent"); p.add_argument("action", choices=["spawn", "collect", "status"]); \
         p.add_argument("value", nargs="?"); p.add_argument("--max-steps", type=int, default=None); \
         p.set_defaults(fn=cmd_subagent)
