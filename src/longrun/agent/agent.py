@@ -1199,6 +1199,23 @@ def _looks_like_tool_markup(text):
     return is_tool_markup(text)
 
 
+def _known_tool_name(name):
+    """True when `name` is a built-in tool in the live catalogue.
+
+    The bare-name dialect below reads the tool name from markup that sits next to
+    the model's prose, so it is accepted ONLY when the catalogue knows it: a stray
+    word must never be executed as a tool. The check is the static schema table on
+    purpose — resolving a name through `tool_spec` would build the external (MCP)
+    catalogue and spawn servers from the parse path. Limit: a name that exists only
+    as an MCP / promoted tool keeps the old bounce.
+    """
+    try:
+        from longrun.tools import registry as _reg
+        return str(name or "").strip() in _reg.TOOL_SCHEMAS
+    except Exception:  # noqa: BLE001 — a name check must never break the answer path
+        return False
+
+
 def _argkv_action(text):
     """Parse the `<arg_key>K</arg_key><arg_value>V</arg_value>` template dialect.
 
@@ -1241,6 +1258,25 @@ def _argkv_action(text):
                 "args": args if isinstance(args, dict) else {}}
     if isinstance(data.get("action"), str) and data["action"].strip():
         return data
+    # 2026-11-18 round 72 (session b7329cccf94c — 52 of the 63 bounced replies in
+    # the live store): the native template with the tool NAME bare after
+    # `<tool_call>` and the arguments as the only surviving pair —
+    #   <tool_call>shell.exec<arg_key>args</arg_key><arg_value>{…}</arg_value></tool_call>
+    # The `tool` pair lost its opening tag, so `data` holds `args` and nothing else,
+    # every call was rejected, and one session burned 54 nudges on the same shape.
+    # The name is exact; it is accepted only when the live catalogue knows it.
+    if "action" not in data and not isinstance(data.get("tool"), str):
+        m = re.search(r"<tool_call>\s*([A-Za-z_][\w.\-]*)\s*(?:</arg_value>|</arg_key>)?", t)
+        # ONE call only: the pairs of a two-call reply would merge into one arg
+        # object, and guessing which call they belong to is worse than a bounce.
+        if m and t.count("<tool_call>") == 1 \
+                and (_known_tool_name(m.group(1)) or m.group(1) in _HARNESS_ACTION_NAMES):
+            raw = data.get("args")
+            if isinstance(raw, str):
+                raw = _json_prefix(raw)
+            args = raw if isinstance(raw, dict) else \
+                {k: v for k, v in data.items() if k != "args"}
+            return {"action": "tool", "tool": m.group(1).strip(), "args": args or {}}
     return None
 
 
