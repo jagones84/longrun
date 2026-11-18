@@ -15,7 +15,8 @@ Contract:
   D the copy states the call RAN (staged, not refused) and that an entry naming a
     field the tool accepts today is history
   E an absent/empty ledger renders nothing — no empty reserved block
-  F at most ten rows are printed and the rest are named by their source
+  F at most ten rows are printed, the rows that name a call survive the cap, and
+    the remainder counts what is actually hidden
   G the block sits between the always-ask card and "Add a rule"
   H `/api/tools` really carries the half
 
@@ -76,10 +77,14 @@ check("D3 it says a learned field is history, not a defect",
 check("E1 an empty ledger renders no block",
       'const unArgBlock = !unArg.length ? "" :' in _render)
 
-# ---- F) the page cannot grow without bound ---------------------------------
-check("F1 at most ten rows are printed", "unArg.slice(0, 10)" in _render)
-check("F2 the remainder names where the full list lives",
-      "unArg.length - 10" in _render and "rule_firings.unknown_args" in _render)
+# ---- F) the page cannot grow without bound, and the cap keeps the evidence ---
+check("F1 at most ten rows are printed",
+      "unArg.filter(u => u.sample)" in _render and ".slice(0, 10)" in _render)
+check("F2 a row that names a call is selected first, not sliced away",
+      "unArg.filter(u => u.sample)\n    .concat(unArg.filter(u => !u.sample)).slice(0, 10)" in _render)
+check("F3 the remainder counts what is actually hidden",
+      "unArg.length - unShown.length" in _render and "unShown.length" in _render)
+check("F4 the rows are rendered from the selection", "${unShown.map(u =>" in _render)
 
 # ---- G) placement ----------------------------------------------------------
 _i_ask = _render.index("Always ask · reaches you even in FULL")

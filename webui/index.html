@@ -15521,18 +15521,25 @@ function renderPermissions(el, d) {
              sample: ((v && v.samples) || []).slice(-1)[0] || "",
              n: Number((v && v.n) || 0) };
   }).sort((a, b) => b.n - a.n || a.tool.localeCompare(b.tool));
+  // Round 82 (A54 reproduction, 2026-11-18: 16 entries, the two with a call at n=1,
+  // both cut by the cap): a row that names a call is the evidence the block exists
+  // for, so it is selected FIRST; the remaining slots go to the busiest count-only
+  // rows. Selection, not sort order: the earlier fix put the evidence last and then
+  // sliced it away again.
+  const unShown = unArg.filter(u => u.sample)
+    .concat(unArg.filter(u => !u.sample)).slice(0, 10);
   const unArgBlock = !unArg.length ? "" : `<details class="card perm-card">
        <summary class="remaining">${unArg.length} undeclared-argument event(s) recorded — staged, not refused</summary>
        <div class="remaining perm-legend">Each row is a call that <b>ran</b> with an argument its tool does not
          declare: the argument is dropped, the call goes on. These counters decide whether the
          unknown-argument refusal may ship; a row naming a field the tool accepts today is history.</div>
-       ${unArg.slice(0, 10).map(u => `<div class="perm-row">
+       ${unShown.map(u => `<div class="perm-row">
          <span class="perm-name" title="${esc(u.tool)}">${esc(u.tool)}</span>
          <span class="perm-ev" title="recorded ${u.n} time(s) — the call ran"
            aria-label="recorded ${u.n} times">×${u.n}</span>
          <code class="perm-rule" title="${esc(u.what)}${u.sample ? esc(" — e.g. call: " + u.sample) : ""}">${esc(u.what)}</code>
        </div>`).join("")}
-       ${unArg.length > 10 ? `<div class="remaining">… and ${unArg.length - 10} more — the full list is
+       ${unArg.length > unShown.length ? `<div class="remaining">… and ${unArg.length - unShown.length} more — the full list is
          <code>GET /api/tools</code> → <code>rule_firings.unknown_args</code></div>` : ""}
      </details>`;
   // The same ledger, summed: what the page is about to show rule by rule. Absent
