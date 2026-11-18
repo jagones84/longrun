@@ -37,6 +37,7 @@ Usage:
   python3 forge.py approvals audit FILE.json | autonomy check FILE.json | skills prune FILE.json
   python3 forge.py memory surface FILE.json | teams audit FILE.json | toolgraph build|feedback FILE.json
   python3 forge.py memory boundary|conflicts FILE.json | instructions audit FILE.json
+  python3 forge.py memory ledger FILE.json | episodes audit FILE.json | contract check FILE.json
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -517,6 +518,33 @@ def cmd_control(args):
 
 
 def cmd_memory(args):
+    if args.action == "ledger":
+        # Round 115 (arXiv:2611.20927): apply claims/forgets, then answer queries.
+        from longrun.memory import fact_ledger
+        if not args.value:
+            print("usage: memory ledger FILE.json", file=sys.stderr)
+            sys.exit(2)
+        try:
+            with open(args.value, encoding="utf-8") as fh:
+                doc = json.load(fh)
+        except (OSError, ValueError) as e:
+            print("bad file:", e, file=sys.stderr)
+            sys.exit(2)
+        led = fact_ledger.Ledger()
+        for claim in doc.get("claims") or []:
+            led.apply(claim)
+        for item in doc.get("forgets") or []:
+            if isinstance(item, dict):
+                led.forget(item.get("key"), item.get("ts"))
+            else:
+                led.forget(item)
+        out = {"applied": led.applied, "verify": led.verify(), "evidence": {}}
+        for q in doc.get("queries") or []:
+            key = q.get("key") if isinstance(q, dict) else q
+            at = q.get("as_of") if isinstance(q, dict) else None
+            out["evidence"][key] = led.resolve(key, at)
+        print(json.dumps(out, indent=2, ensure_ascii=False))
+        sys.exit(0 if out["verify"]["verdict"] == "holds" else 1)
     if args.action in ("boundary", "conflicts"):
         if not args.value:
             print("usage: memory %s FILE.json" % args.action, file=sys.stderr)
@@ -576,6 +604,41 @@ def cmd_memory(args):
         out = req("GET", "/api/memory" + params)
         for r in out.get("results", []):
             print(" [%.3f] %s" % (r.get("score", 0), r.get("content", "")[:120]))
+
+
+def cmd_episodes(args):
+    """Round 115 (arXiv:2611.13254): validate a fault episode record and name controls."""
+    from longrun.harness import fault_episode
+    if not getattr(args, "file", None):
+        print("usage: episodes audit FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    out = fault_episode.audit(doc)
+    out["controls"] = fault_episode.controls(doc)["controls"]
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0 if out["verdict"] == "complete" else 1)
+
+
+def cmd_contract(args):
+    """Round 115 (arXiv:2611.15207): a declared call-order contract vs a sequence."""
+    from longrun.harness import api_contract
+    if not getattr(args, "file", None):
+        print("usage: contract check FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    out = api_contract.check(doc.get("contract") or {}, doc.get("sequence") or [])
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0 if out["verdict"] == "pass" else 1)
 
 
 def cmd_instructions(args):
@@ -2086,12 +2149,18 @@ def main():
     p = sub.add_parser("embedding"); p.add_argument("action", nargs="?", default="active", choices=["models", "active", "set", "add", "remove", "costs", "cost-test"]); \
         p.add_argument("value", nargs="?"); p.set_defaults(fn=cmd_embedding)
     sub.add_parser("feed").set_defaults(fn=cmd_feed)
-    p = sub.add_parser("memory"); p.add_argument("action", choices=["store", "search", "forget", "purge", "surface", "boundary", "conflicts"]); \
+    p = sub.add_parser("memory"); p.add_argument("action", choices=["store", "search", "forget", "purge", "surface", "boundary", "conflicts", "ledger"]); \
         p.add_argument("value", nargs="?"); p.add_argument("value2", nargs="?"); \
         p.add_argument("--kind"); p.add_argument("--semantic", action="store_true"); \
         p.add_argument("--budget", type=int, default=None,
                        help="surface: token budget (rules are never dropped)"); \
         p.add_argument("--limit", type=int, default=10); p.set_defaults(fn=cmd_memory)
+    p = sub.add_parser("episodes"); p.add_argument("action", choices=["audit"]); \
+        p.add_argument("file", nargs="?", help="JSON: origin, symptom, propagation, detection, response, consequence"); \
+        p.set_defaults(fn=cmd_episodes)
+    p = sub.add_parser("contract"); p.add_argument("action", choices=["check"]); \
+        p.add_argument("file", nargs="?", help="JSON: {contract, sequence}"); \
+        p.set_defaults(fn=cmd_contract)
     p = sub.add_parser("instructions"); p.add_argument("action", choices=["audit"]); \
         p.add_argument("file", nargs="?", help="JSON: {text, cards}"); \
         p.set_defaults(fn=cmd_instructions)
