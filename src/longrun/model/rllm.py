@@ -1209,6 +1209,11 @@ def _router_stream(messages, model, on_delta, timeout=300, usage=None, guard=Non
                 c = delta.get("content")
                 piece = (rc or "") + (c or "")
                 if rg is not None and piece and rg.feed(piece):
+                    # Round 101: the caller must be able to TELL that this reply was
+                    # cut — a truncated answer returned as a normal one is a lie
+                    # about completeness (13 events in 24 h, 2026-11-18).
+                    if usage is not None:
+                        usage["finish_reason"] = "repetition"
                     publish("model.runaway", model=model_id, chars=len(rg.text))
                     break
                 if rc:

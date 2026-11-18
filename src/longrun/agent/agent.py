@@ -5838,6 +5838,10 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     # one. `_empty_total` also names the real count in the closing error.
     _empty_total = 0
     _empty_work_mark = _total_work_steps
+    # Round 101: a reply the transport CUT as a repetition loop is a truncated
+    # answer, not a finished one. One continuation round names the cut; the
+    # second trip is persisted and the turn keeps whatever the model wrote.
+    _repeat_retry_used = False
     _empty_parks = 0          # bounded CONTINUE rounds when the model keeps going blank
     # 2026-11-16: a REASONING-ONLY reply (long chain-of-thought, no content, no tool
     # call) must not become a text-retry loop against the SAME model. Measured
@@ -6165,6 +6169,28 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
         # counted as one streak, so the resumed turn was force-closed with four
         # open steps and asked the operator to reply.
         _empty_streak = 0
+        # Round 101: the transport CUT this reply as a repetition loop
+        # (`model.runaway`, 13 events in 24 h on 2026-11-18). A truncated answer
+        # presented as a finished one is a lie about completeness: persist the cut
+        # and give the model ONE round that continues instead of repeating.
+        if str((chat_usage or {}).get("finish_reason") or "") == "repetition":
+            try:
+                persist_tool_card(sess, "model.attempt", True,
+                                  args={"model": model, "mode": "repetition"},
+                                  result=str(answer or "")[-2000:],
+                                  node=_cur_node(), after=_after())
+                on_event("tool.result", session=sess["id"], tool="model.attempt",
+                         ok=True, args={"model": model, "mode": "repetition"},
+                         output=str(answer or "")[-2000:], summary="repetition")
+            except Exception:  # noqa: BLE001 — a record must never break the turn
+                pass
+            if not _repeat_retry_used and not _is_aborted(sess["id"]):
+                _repeat_retry_used = True
+                _inject("Your last message started REPEATING itself and was CUT at %d "
+                        "characters. Do not repeat it: continue from the last point "
+                        "that was new, or state the answer in a few sentences."
+                        % len(str(answer or "")), "retry")
+                continue
         if not _think_action_used and _reasoning_only_action(answer, think):
             # The action exists but lives in the reasoning channel: the harness cannot
             # execute a thought. Ask for it once, as a message.
