@@ -84,9 +84,13 @@ check("C1 _turnFoot writes ONE .turnfoot line under the message",
 check("C2 the reloaded transcript paints it from the message meta",
       "_turnFoot(d, m);" in _body(UI, "d = who(\"ai\", reply, m.ts", "const cot ="))
 apply = _body(UI, "function _applyFinalReply(d)", "function _resetChatTree")
+# Round 93: C3 pinned the helper's exact one-line body, which later grew the
+# sources and the turn-end clock (`const _foot = el => { _attachSources(el, t);
+# _turnFoot(el, d); _turnEnd(d.duration_s); };`) — the behaviour is the same and
+# the pin went red on formatting. Pin the PROPERTY: the helper paints the footer
+# and the function applies it on both exits (no second bubble).
 check("C3 the live reply paints it too (same shape, no second bubble)",
-      "const _foot = el => _turnFoot(el, d);" in apply
-      and apply.count("_foot(") >= 2)
+      "_turnFoot(el, d)" in apply and apply.count("_foot(") >= 2)
 check("C4 the transient run-footer bubble is GONE; metrics only fills the footer",
       "function runFooter" not in UI
       and '_turnFoot(last, m); });' in UI)
