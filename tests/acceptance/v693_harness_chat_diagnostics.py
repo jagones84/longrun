@@ -121,5 +121,45 @@ class ChatDiagnostics(unittest.TestCase):
                 self.assertEqual(evidence["steps"][0]["ok"], ok)
 
 
+class OfflineHermeticity(unittest.TestCase):
+    """A54 round 105 (2026-11-18): the battery's offline promise must be total.
+
+    `LONGRUN_OFFLINE=1` was honoured only by `model/rllm.local_models`; the MCP
+    client still opened sockets (2 of 10 runs reached the github server, HTTP 429)
+    and the tests stayed green only because that client fails OPEN.
+    """
+
+    def test_offline_skips_a_network_client(self):
+        from unittest import mock
+        from longrun.interop import mcp_client as MC
+
+        def boom(*a, **k):
+            raise AssertionError("offline must not open a network transport")
+
+        cfg = {"net": {"url": "http://127.0.0.1:1/mcp", "enabled": True}}
+        with mock.patch.object(MC, "_load_config", return_value=cfg), \
+             mock.patch.object(MC.MCPClientManager, "_ensure_config", lambda self: None), \
+             mock.patch.object(MC.MCPSession, "_connect_http", boom):
+            mgr = MC.MCPClientManager()
+            mgr.start_all()
+        self.assertNotIn("net", mgr.sessions)
+        self.assertIn("offline", mgr._errors.get("net", ""), mgr._errors)
+
+    def test_offline_still_allows_a_stdio_client(self):
+        """A stdio client is a local subprocess (the plugin tests start a fake one)."""
+        from unittest import mock
+        from longrun.interop import mcp_client as MC
+
+        cfg = {"local": {"command": "true", "args": [], "enabled": True}}
+        seen = mock.Mock(return_value=False)
+        with mock.patch.object(MC, "_load_config", return_value=cfg), \
+             mock.patch.object(MC.MCPClientManager, "_ensure_config", lambda self: None), \
+             mock.patch.object(MC.MCPSession, "_connect_stdio", seen):
+            mgr = MC.MCPClientManager()
+            mgr.start_all()
+        self.assertEqual(seen.call_count, 1)
+        self.assertNotIn("offline", (mgr._errors.get("local") or ""), mgr._errors)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

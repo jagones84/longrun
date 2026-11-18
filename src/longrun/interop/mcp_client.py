@@ -721,6 +721,16 @@ class MCPClientManager:
 
     def start_all(self):
         """Start all enabled MCP client sessions."""
+        # 2026-11-18 (A54 round 105): `LONGRUN_OFFLINE=1` is the promise the battery
+        # makes ("no live model, network, or server"), and it was only honoured by
+        # `model/rllm.local_models`. Measured: with the battery's own env, 2 of 10
+        # runs still opened a socket to the github MCP server (HTTP 429) and the test
+        # stayed green only because this client fails OPEN.
+        # Only the NETWORK transports are skipped: a stdio client is a local
+        # subprocess (the plugin tests start their own fake server), so blocking it
+        # would break the hermetic cases it is meant to protect.
+        offline = str(os.environ.get("LONGRUN_OFFLINE") or "").strip().lower() \
+            in ("1", "true", "yes", "on")
         with self._lock:
             if self._started:
                 return
@@ -730,6 +740,10 @@ class MCPClientManager:
             for name, cfg in configs.items():
                 if not cfg.get("enabled", True):
                     log("%s: disabled, skipping", name)
+                    continue
+                if offline and cfg.get("url"):
+                    self._errors[name] = "offline (LONGRUN_OFFLINE=1): network client not started"
+                    log("%s: %s", name, self._errors[name])
                     continue
                 session = MCPSession(name, cfg)
                 try:
