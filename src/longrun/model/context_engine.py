@@ -239,6 +239,52 @@ def manifest_block(cards, until=None, exclude=""):
     return (MANIFEST_PREFIX + "\n" + "\n".join(out))[:MANIFEST_CHARS]
 
 
+# Protocol-preserving split (round 87; source S-2026-11-18-008 "Protocol-Preserving
+# Context Trimming"): a kept window that BEGINS with a harness message — an
+# observation, a batch report, a plan acknowledgement — shows the model the RESULT
+# of a call whose request was summarized away. Measured on the live store: 43 of 52
+# sessions over `keep_recent` would split exactly there. Moving the window's start
+# back by up to `BOUNDARY_MAX` messages keeps the request that produced the result;
+# the tokens it costs are bounded and the alternative is a broken call/result pair.
+BOUNDARY_MAX = 3
+
+
+def _is_harness_msg(msg):
+    c = msg.get("content") if isinstance(msg, dict) else ""
+    return isinstance(c, str) and c.lstrip().startswith("[harness]")
+
+
+def _trim_boundary(old, recent, limit=BOUNDARY_MAX):
+    """Move the split BACK so the kept window never starts with a `[harness]` msg.
+
+    Mutates `old`/`recent`; returns how many messages moved (0 = already safe).
+    The message before a harness result is the assistant turn that REQUESTED it, so
+    the window grows by pulling the last summarized message forward — one step
+    usually restores the call/result pair. Bounded by `limit` and by `old` running
+    out; the over-budget guard later drops a leading harness run rather than expose
+    it, so the invariant survives a budget squeeze too.
+    """
+    moved = 0
+    while old and recent and moved < limit and _is_harness_msg(recent[0]):
+        recent.insert(0, old.pop())
+        moved += 1
+    return moved
+
+
+def _drop_leading_harness(recent):
+    """Drop a leading run of `[harness]` messages (result with no request).
+
+    The complement of `_trim_boundary`: when the bound is reached and the window
+    still opens on a result, that result has no visible cause — it is worse than
+    tokens saved. Keeps at least one message. Returns how many were dropped.
+    """
+    n = 0
+    while len(recent) > 1 and _is_harness_msg(recent[0]):
+        recent.pop(0)
+        n += 1
+    return n
+
+
 def compact(messages, budget_tokens, keep_recent=DEFAULT_KEEP_RECENT, summarizer=None,
             force=False, manifest=None):
     """Compact a transcript under a token budget.
@@ -266,7 +312,8 @@ def compact(messages, budget_tokens, keep_recent=DEFAULT_KEEP_RECENT, summarizer
     """
     stats = {"input_messages": len(messages),
              "input_tokens": _msgs_tokens(messages),
-             "compacted": 0, "kept": 0, "dropped": 0, "truncated": 0, "summary": None}
+             "compacted": 0, "kept": 0, "dropped": 0, "truncated": 0, "summary": None,
+             "boundary_shift": 0}
     if not messages:
         return [], stats
     if not force and stats["input_tokens"] <= budget_tokens:
@@ -284,6 +331,12 @@ def compact(messages, budget_tokens, keep_recent=DEFAULT_KEEP_RECENT, summarizer
     # drop it): move the oldest "recent" turns into the summarized set.
     while len(recent) > 1 and _msgs_tokens(recent) > budget_tokens:
         old.append(recent.pop(0))
+    # Round 87: the verbatim window must not begin with a RESULT whose request is
+    # summarized away. Done BEFORE the summary is built, so the call it pulls
+    # forward is KEPT (not summarized); the over-budget guard below drops a leading
+    # harness run rather than expose it.
+    stats["boundary_shift"] = _trim_boundary(old, recent)
+    stats["dropped"] += _drop_leading_harness(recent)
     if old:
         # M7: split the window — a previous summary block is carried forward
         # untouched, ONLY the fresh turns go to the summarizer. No fresh turns
@@ -404,6 +457,13 @@ def compact(messages, budget_tokens, keep_recent=DEFAULT_KEEP_RECENT, summarizer
             recent.pop(0)          # nothing sensible to keep of it
             stats["dropped"] += 1
             stats["kept"] -= 1
+            # Round 87: a harness message whose request was just dropped is a
+            # result with no call — drop the leading run too, or the window would
+            # begin with an answer to a question the model cannot see.
+            while len(recent) > 1 and _is_harness_msg(recent[0]):
+                recent.pop(0)
+                stats["dropped"] += 1
+                stats["kept"] -= 1
         msgs = ([{"role": "system", "content": msgs[0]["content"]}] if old else []) + recent
         out_tokens = _msgs_tokens(msgs)
     stats["output_tokens"] = out_tokens
