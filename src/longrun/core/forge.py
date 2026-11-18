@@ -47,6 +47,7 @@ Usage:
   python3 forge.py opspolicy realize FILE.json | execpolicy confirm FILE.json
   python3 forge.py skilladapter bind FILE.json | intake admit FILE.json
   python3 forge.py memcredit arbitrate FILE.json | lessongate probe FILE.json | seclattice admit FILE.json
+  python3 forge.py optmemory continuity FILE.json | detour classify FILE.json | patchprobe compare FILE.json
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -1244,6 +1245,87 @@ def cmd_seclattice(args):
     print(json.dumps(out, indent=2, ensure_ascii=False))
     sys.exit(1 if out.get("allowed") is False or out.get("valid") is False
              or out.get("found") is False else 0)
+
+
+def cmd_optmemory(args):
+    """Round 126 (arXiv:2611.18856): the optimizer's memory of why a harness was edited."""
+    from longrun.harness import optimizer_memory
+    if not getattr(args, "file", None):
+        print("usage: optmemory record|continuity|advantage FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "record":
+        out = optimizer_memory.record(doc.get("memory") or {}, doc.get("edit") or {})
+    elif args.action == "continuity":
+        out = optimizer_memory.continuity(doc.get("memory") or {},
+                                          doc.get("target") or {})
+    else:
+        out = optimizer_memory.advantage(doc.get("pairs") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    blocked = any(f["kind"] in ("no-root-cause", "not-significant", "no-pairs")
+                  for f in (out.get("findings") or []))
+    sys.exit(1 if blocked else 0)
+
+
+def cmd_detour(args):
+    """Round 126 (arXiv:2611.20844): success, attainment, residual work, detour."""
+    from longrun.harness import detour
+    if not getattr(args, "file", None):
+        print("usage: detour attainment|residual|progress|classify|rank FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "attainment":
+        out = detour.attainment(doc.get("success"), doc.get("charged"), doc.get("optimum"))
+    elif args.action == "residual":
+        out = detour.residual(doc.get("success"), doc.get("wrong"), doc.get("remaining"))
+    elif args.action == "progress":
+        out = detour.progress(doc.get("success"), doc.get("residual"),
+                              doc.get("optimum"), doc.get("charged"))
+    elif args.action == "classify":
+        out = detour.classify(doc.get("episodes") or doc)
+    else:
+        out = detour.rank_models(doc.get("episodes") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(1 if any(f["kind"] in ("below-optimum", "no-optimum")
+                      for f in (out.get("findings") or [])) else 0)
+
+
+def cmd_patchprobe(args):
+    """Round 126 (arXiv:2611.20514): control-gated verdicts, sibling paths, provenance."""
+    from longrun.harness import patch_probe
+    if not getattr(args, "file", None):
+        print("usage: patchprobe verdict|compare|provenance|validate FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "verdict":
+        out = patch_probe.verdict(doc.get("control_ok"), doc.get("effect_seen"),
+                                  doc.get("token_ok", True))
+    elif args.action == "compare":
+        out = patch_probe.compare(doc.get("b0") or {}, doc.get("sibling") or {})
+    elif args.action == "provenance":
+        out = patch_probe.provenance(doc.get("runs") or [], doc.get("advisory") or {})
+    else:
+        out = patch_probe.validate(doc.get("runs") or [])
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0 if out.get("valid") is not False and out.get("verdict") != "INCONCLUSIVE"
+             else 1)
 
 
 def cmd_instructions(args):
@@ -2877,6 +2959,18 @@ def main():
         p.add_argument("action", choices=["admit", "attenuate", "write", "read", "effect"]); \
         p.add_argument("file", nargs="?", help="JSON: {label, action}, {parent, child}, {ledger, path, actor}, or {actor, effect}"); \
         p.set_defaults(fn=cmd_seclattice)
+    p = sub.add_parser("optmemory"); \
+        p.add_argument("action", choices=["record", "continuity", "advantage"]); \
+        p.add_argument("file", nargs="?", help="JSON: {memory, edit}, {memory, target}, or {pairs}"); \
+        p.set_defaults(fn=cmd_optmemory)
+    p = sub.add_parser("detour"); \
+        p.add_argument("action", choices=["attainment", "residual", "progress", "classify", "rank"]); \
+        p.add_argument("file", nargs="?", help="JSON: {success, charged, optimum}, {success, wrong, remaining}, or {episodes}"); \
+        p.set_defaults(fn=cmd_detour)
+    p = sub.add_parser("patchprobe"); \
+        p.add_argument("action", choices=["verdict", "compare", "provenance", "validate"]); \
+        p.add_argument("file", nargs="?", help="JSON: {control_ok, effect_seen, token_ok}, {b0, sibling}, {runs, advisory}, or {runs}"); \
+        p.set_defaults(fn=cmd_patchprobe)
     p = sub.add_parser("instructions"); p.add_argument("action", choices=["audit"]); \
         p.add_argument("file", nargs="?", help="JSON: {text, cards}"); \
         p.set_defaults(fn=cmd_instructions)

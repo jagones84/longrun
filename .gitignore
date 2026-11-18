@@ -90,6 +90,30 @@ tests/battery.ps1
 .nightly_stop
 nohup.out
 
+# The targeted battery launcher is rewritten per fix (README: "overwritten per
+# fix") and carries this machine's absolute checkout path. Per-machine scratch,
+# never shipped — same reason as tests/battery.ps1 above.
+tests/battery_tmp.sh
+
+# Legacy root-level data dirs: session transcripts and plan/task graphs now live
+# under data/ (paths.SESSIONS_DIR / GRAPH_DIR). Empty leftovers on old checkouts
+# must not start tracking whatever an old code path drops there.
+graphs/
+sessions/
+
+# Device/UI screenshots captured by the Android/browser QA tooling at the repo
+# root. Generated evidence, one run only.
+.screenshots/
+
+# Packaging/build output (no pyproject today, but pip build/install would drop
+# these here and they are never source).
+*.egg-info/
+dist/
+build/
+.coverage
+.coverage.*
+htmlcov/
+
 # archify: transient preview dirs left by the architecture-diagram generator.
 .archify-preview-*/
 

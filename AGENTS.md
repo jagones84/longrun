@@ -52,4 +52,10 @@ bash tests/battery.sh     # FAST deterministic gate; trust its reported count
   (`git reset --hard`, `git checkout --`, `git clean`) over a dirty worktree.
 - **Temporary agent scripts go to `.agent/trash/`**; do not put them in `scripts/`
   or the repo-root `trash/` data directory.
-- **Maintainers: update the local (gitignored) `.agent/docs/handoff/HANDOFF.md` + the matching `docs/runbooks/*.md` in the same session. Section update rules: `.agent/docs/reference/MAINTENANCE.md`; the single spec index is `.agent/docs/tech-spec/SPEC-INDEX.md`.
+- **Maintainers: update the local (gitignored) `.agent/docs/handoff/HANDOFF.md` + the matching
+  `docs/runbooks/*.md` in the same session. Section update rules: `.agent/docs/reference/MAINTENANCE.md`; the single spec index is `.agent/docs/tech-spec/SPEC-INDEX.md`.
+- **Never kill an agent turn.** Restart only after
+  `curl -s -H "Authorization: Bearer <token>" http://127.0.0.1:8790/api/chat/live` answers
+  `{"active": []}` — never chained with `&&`, then announce the restart and read the
+  `service.resume` event afterwards. Full runbook: `docs/OPERATIONS.md`.
+- **Reports to the operator** (proposals, rankings, diagrams) follow `docs/REPORTING.md`.

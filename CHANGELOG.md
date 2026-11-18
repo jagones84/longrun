@@ -270,7 +270,7 @@ All notable changes to Longrun are documented here. The format follows
   never the status of work that survived (measured: 21 `[Harness restart]` continuation runs
   already finished on this host). The interrupted-turn notice no longer reads as "the work is
   lost": it names the automatic resume and only then "send a new message". Project rule
-  `.trae/rules/agent-turns.md`: proof of idleness before a restart (`/api/chat/live` must be
+  `docs/OPERATIONS.md`: proof of idleness before a restart (`/api/chat/live` must be
   empty), read `service.resume` afterwards, and never declare an agent dead without quoting the
   session id, the message index and the resume marker. (Locked by `v1065` 13/13.)
 - **Installing a plugin now ACTIVATES it, and `/plugin:<name>` reports what is really running.**
