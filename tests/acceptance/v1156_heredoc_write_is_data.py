@@ -176,6 +176,30 @@ for name, cmd in (
 _D, _W = denied("cat > /tmp/r97_g.txt <<'EOF'\ncat .env\nEOF\nwc -c < /tmp/r97_g.txt")
 check("G7 a read stays data beside a wrapper-free command", not _D, _W)
 
+# ---- H: A54's r95-97 sweep — 7 routes that ran the body (round 98) ----------
+for name, cmd in (
+        ("H1 a wrapper held in a variable",
+         "W=bash; cat > /tmp/r98_a.sh <<'EOF'\ncat .env\nEOF\n$W /tmp/r98_a.sh"),
+        ("H2 make with the file as a makefile",
+         "cat > /tmp/r98_b.mk <<'EOF'\ncat .env\nEOF\nmake -f /tmp/r98_b.mk"),
+        ("H3 a git alias that runs it",
+         "cat > /tmp/r98_c.sh <<'EOF'\ncat .env\nEOF\ngit -c alias.x='!/tmp/r98_c.sh' x"),
+        ("H4 awk -f loads it as a program",
+         "cat > /tmp/r98_d.awk <<'EOF'\ncat .env\nEOF\nawk -f /tmp/r98_d.awk"),
+        ("H5 symlink then run the link",
+         "cat > /tmp/r98_e.sh <<'EOF'\ncat .env\nEOF\nln -s /tmp/r98_e.sh /tmp/r98_e_link; /tmp/r98_e_link"),
+        ("H6 the target reached through `..`",
+         "cat > /tmp/r98_f.sh <<'EOF'\ncat .env\nEOF\nbash /tmp/x/../r98_f.sh"),
+        ("H7 the run on the OPENER line",
+         "cat > /tmp/r98_g.sh <<'EOF'; bash /tmp/r98_g.sh\ncat .env\nEOF"),
+):
+    _D, _W = denied(cmd)
+    check("%s still counts as running the file" % name, _D, _W)
+
+_D, _W = denied("mkdir -p /tmp/r98_h && cat > /tmp/r98_h/a_stub.py <<'PY'\n"
+                "LIVE = ['cat .env']\nPY\necho ok")
+check("H8 the measured shape with a harmless trailing command stays data", not _D, _W)
+
 print()
 print("%d/%d OK" % (sum(1 for r in results if r), len(results)))
 sys.exit(0 if all(results) else 1)

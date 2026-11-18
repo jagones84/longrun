@@ -2896,24 +2896,68 @@ _EXEC_VERBS = ("bash", "sh", "zsh", "dash", "ksh", "source", "exec", "eval",
 _EXEC_WRAPPERS = ("xargs", "nohup", "sudo", "env", "command", "time", "nice")
 _EXEC_TOKEN = re.compile(r"(?:^|[;&|(\n\s])(?:%s)(?=$|[\s;|&)])"
                          % "|".join(_EXEC_VERBS + _EXEC_WRAPPERS))
+# The ONLY statements allowed to name a file we just filled (round 98, measured
+# against A54's 14-shape sweep: make/git/perl/awk -f/$W/symlink/dotdot all ran it).
+_READERS = ("cat", "head", "tail", "less", "more", "wc", "grep", "egrep", "fgrep",
+            "rg", "sort", "uniq", "cut", "tr", "nl", "od", "xxd", "cmp", "diff",
+            "file", "stat", "ls", "du", "basename", "dirname", "realpath",
+            "readlink", "sed", "awk", "tee")
+_PATH_TOKEN = re.compile(r"[^\s;|&<>()'\"`]+")
+
+
+def _same_path(a, b):
+    """Do two shell tokens name the same path? Deals with `alias.x=!/tmp/f`.
+
+    A token may glue a prefix to the path (an assignment, a `!` in a git alias,
+    a `-f`-less option); every prefix form of the token is compared after
+    `posixpath.normpath`, which also collapses `d/../f`.
+    """
+    try:
+        import posixpath
+        target = posixpath.normpath(b)
+        forms = {a, a.split("=")[-1], a.split("!")[-1], a.lstrip("=!")}
+        return any(posixpath.normpath(f) == target for f in forms if f)
+    except Exception:  # noqa: BLE001 — a comparison must never deny by accident
+        return a == b
+
+
+def _statement_is_read(stmt, target):
+    """True when `stmt` only READS `target`; None when it does not name it.
+
+    Anything that is not a read keeps the heredoc body (fail-closed): A54's r98
+    sweep found seven routes the naive test allowed (`$W f`, `make -f f`,
+    `git -c alias`, `awk -f f`, `ln -s f link; link`, `bash d/../f`, `<<'EOF'; f`).
+    """
+    words = _PATH_TOKEN.findall(stmt)
+    if not any(_same_path(w, target) for w in words):
+        return None
+    if _EXEC_TOKEN.search(stmt):
+        return False
+    head = [w for w in words if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", w)]
+    if not head or head[0] not in _READERS:
+        return False
+    if head[0] == "awk" and any(w == "-f" for w in head):
+        return False
+    # `< target` is an input redirect: a read whatever the command is.
+    if re.search(r"(?<![0-9])<[ \t]+\S*%s" % re.escape(target), stmt):
+        return True
+    return True
 
 
 def _executes(target, text):
-    """True when `text` can run `target` as code (interpreter, `. f`, `f`, or a
-    wrapper around any of those)."""
+    """True when `text` may run `target` as code — the conservative reading.
+
+    Every statement that NAMES the file must be a pure read (`wc -c < f`,
+    `grep f`); a statement that names it any other way, or names it beside an
+    execution token, counts as a run.
+    """
     if not target:
         return False
-    t = re.escape(target)
-    stop = r"(?=$|[\s;|&)])"
-    pats = (
-        r"(?:^|[;&|(\n])[ \t]*(?:%s)[ \t]+(?:-\S+[ \t]+)*%s%s"
-        % ("|".join(_EXEC_VERBS), t, stop),
-        r"(?:^|[;&|(\n])[ \t]*\.[ \t]+%s%s" % (t, stop),
-        r"(?:^|[;&|(\n])[ \t]*%s%s" % (t, stop),
-    )
-    if any(re.search(p, text) for p in pats):
-        return True
-    return target in text and bool(_EXEC_TOKEN.search(text))
+    for stmt in re.split(r"\|\||&&|[;|\n]", text):
+        verdict = _statement_is_read(stmt, target)
+        if verdict is False:
+            return True
+    return False
 
 
 def _deny_text(text):
@@ -2972,7 +3016,8 @@ def _deny_text(text):
             pending.append((m.group(2), bool(target), target))
             stripped_here = stripped_here or bool(target)
         chunks.append(("open" if stripped_here else "line", line, ""))
-    refs = "\n".join(t for k, t, _ in chunks if k != "open")
+    # The opener line is judged too: `<<'EOF'; bash f` runs on that line.
+    refs = "\n".join(t for _k, t, _ in chunks)
     restore = {tgt for k, _, tgt in chunks if k == "drop" and _executes(tgt, refs)}
     if restore:
         chunks = [("line", t, tg) if (k == "drop" and tg in restore) else (k, t, tg)
