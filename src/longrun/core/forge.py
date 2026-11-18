@@ -51,6 +51,7 @@ Usage:
   python3 forge.py poison trace FILE.json | boundary evaluate FILE.json | gapleak verify FILE.json
   python3 forge.py binding alignment FILE.json | gateway utility FILE.json | scoring advise FILE.json
                           | reversibility classify FILE.json | gain decide FILE.json | history advise FILE.json
+                          | composed compose FILE.json | measure specs FILE.json | trap position FILE.json
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -1590,6 +1591,103 @@ def cmd_history(args):
         out = history_truth.recheck(doc.get("runs") or [])
     else:
         out = history_truth.advise(doc.get("policy") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_composed(args):
+    """Round 130 (arXiv:2611.22971): a safe screen is not a safe task."""
+    from longrun.harness import composed_harm
+    if not getattr(args, "file", None):
+        print("usage: composed compose|screens|recognition|channel|gate|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "compose":
+        out = composed_harm.compose(doc.get("facts") or [],
+                                    doc.get("binding") or {})
+    elif args.action == "screens":
+        out = composed_harm.screen_check(doc.get("screens") or [])
+    elif args.action == "recognition":
+        out = composed_harm.recognition_vs_action(doc.get("rows") or [])
+    elif args.action == "channel":
+        out = composed_harm.channel_effect(doc.get("rows") or [])
+    elif args.action == "gate":
+        out = composed_harm.commit_gate(doc.get("state") or doc)
+    else:
+        out = composed_harm.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_measure(args):
+    """Round 130 (arXiv:2611.21784): measurement choices decide the verdict."""
+    from longrun.harness import measurement_spec
+    if args.action == "checklist":
+        out = measurement_spec.checklist()
+        print(json.dumps(out, indent=2, ensure_ascii=False))
+        sys.exit(0)
+    if not getattr(args, "file", None):
+        print("usage: measure specify|specs|decides|power|classifiers|checklist FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "specify":
+        out = measurement_spec.specify(doc.get("choice"), doc.get("level"),
+                                       **(doc.get("params") or {}))
+    elif args.action == "specs":
+        out = measurement_spec.specifications(doc.get("rows") or [])
+    elif args.action == "decides":
+        out = measurement_spec.decides(doc.get("rows") or [])
+    elif args.action == "power":
+        out = measurement_spec.power(doc.get("clusters"),
+                                     doc.get("detectable_below", 0.32),
+                                     doc.get("detectable_above", 3.13))
+    else:
+        out = measurement_spec.classifier_family(doc.get("rows") or [])
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_trap(args):
+    """Round 130 (arXiv:2611.19295): traps on the path, alerts that can be trusted."""
+    from longrun.harness import trap_path
+    if not getattr(args, "file", None):
+        print("usage: trap position|ablation|alert|scope|falsepositive FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "position":
+        out = trap_path.path_position(doc.get("bait") or {},
+                                      doc.get("weakness") or {})
+    elif args.action == "ablation":
+        out = trap_path.ablation(doc.get("baseline") or {},
+                                 doc.get("hardened") or {},
+                                 doc.get("defended") or {})
+    elif args.action == "alert":
+        out = trap_path.alert_gate(doc.get("event") or {},
+                                   doc.get("rules") or {})
+    elif args.action == "scope":
+        out = trap_path.scope(doc.get("revocation") or {},
+                              doc.get("clients") or [])
+    else:
+        out = trap_path.false_positive(doc.get("bait_use") or {},
+                                       doc.get("legitimate") or [])
     print(json.dumps(out, indent=2, ensure_ascii=False))
     sys.exit(0)
 
@@ -3278,6 +3376,21 @@ def main():
                                           "interaction", "recheck", "advise"]); \
         p.add_argument("file", nargs="?", help="JSON: {record, world}, {arms}, {cells}, {runs}, or {policy}"); \
         p.set_defaults(fn=cmd_history)
+    p = sub.add_parser("composed"); \
+        p.add_argument("action", choices=["compose", "screens", "recognition",
+                                          "channel", "gate", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {facts, binding}, {screens}, {rows}, {state}, or {profile}"); \
+        p.set_defaults(fn=cmd_composed)
+    p = sub.add_parser("measure"); \
+        p.add_argument("action", choices=["specify", "specs", "decides",
+                                          "power", "classifiers", "checklist"]); \
+        p.add_argument("file", nargs="?", help="JSON: {choice, level}, {rows}, {clusters, detectable_below, detectable_above}, or {rows}"); \
+        p.set_defaults(fn=cmd_measure)
+    p = sub.add_parser("trap"); \
+        p.add_argument("action", choices=["position", "ablation", "alert",
+                                          "scope", "falsepositive"]); \
+        p.add_argument("file", nargs="?", help="JSON: {bait, weakness}, {baseline, hardened, defended}, {event, rules}, {revocation, clients}, or {bait_use, legitimate}"); \
+        p.set_defaults(fn=cmd_trap)
     p = sub.add_parser("instructions"); p.add_argument("action", choices=["audit"]); \
         p.add_argument("file", nargs="?", help="JSON: {text, cards}"); \
         p.set_defaults(fn=cmd_instructions)
