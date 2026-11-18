@@ -2092,6 +2092,26 @@ def _self(args, run_id):
         ident["trust"] = None
     info["identity"] = ident
     if full:
+        # Round 67 (arXiv:2611.15223 — a control is checked, bypassed or prevented):
+        # the guardrail ledger existed at `/api/tools` and nowhere the AGENT could
+        # read it. Four counters, no rule text (that lives in the endpoint), so a
+        # model told "read what is configured with self.info" can also see how much
+        # of the policy has ever been exercised.
+        try:
+            from longrun.tools import registry as _reg
+            _rep = _reg.policy_report() or {}
+            info["policy"] = {
+                "configured": _rep.get("configured_rules"),
+                "fired": _rep.get("fired_rules"),
+                "never_fired": len(_rep.get("never_fired") or []),
+                "retired": len(_rep.get("retired_rules") or []),
+                "unknown_args": len(_rep.get("unknown_args") or {}),
+                "note": ("a guardrail that never fired is untested, not proof of safety; "
+                         "`/api/tools` carries the rule names"),
+            }
+        except Exception:  # noqa: BLE001 — the self report must never fail on policy
+            pass
+    if full:
         # 2026-11-15: "which model am I?" had no answer in any self surface
         # (`self.diagnose` reports the GLOBAL chat default). ONE derivation
         # (`routing.runtime_facts`), same facts the prompt's runtime line uses.

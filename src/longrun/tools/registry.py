@@ -2482,9 +2482,21 @@ def policy_report():
                         configured.append(key)
     except Exception:  # noqa: BLE001
         pass
+    # Round 67 (arXiv:2611.15223 guardscope — a control is checked, bypassed or
+    # prevented): `fired_rules` used to count EVERY key the ledger holds, so the
+    # report said 38 rules had fired while the policy had 23 — two numbers a
+    # reader cannot reconcile. `fired_rules` now counts the CONFIGURED rules that
+    # fired, so `fired + len(never_fired) == configured` holds, and the keys the
+    # ledger still holds for a rule the policy no longer has are NAMED as retired
+    # instead of inflating the count. Measured 2026-11-18: configured 23, fired 38,
+    # never 2 — after the two `.env` reader rules were removed in round 65 their
+    # history kept the count above the policy.
+    fired = [r for r in configured if r in rules]
+    retired = sorted(r for r in rules if r not in configured)
     return {"firings": rules, "unknown_args": unknown,
             "never_fired": sorted(r for r in configured if r not in rules),
-            "configured_rules": len(configured), "fired_rules": len(rules)}
+            "retired_rules": retired,
+            "configured_rules": len(configured), "fired_rules": len(fired)}
 
 
 def footprint(days=30, now=None):
