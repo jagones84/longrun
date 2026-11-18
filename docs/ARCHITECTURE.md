@@ -273,8 +273,12 @@ and guessing. `util/runtree.py` is the read model over those stores, and
 
 - **STAGE → STEP.** One stage per plan node that actually executed a tool call; its steps in
   execution order (`ts`, then `after` — the same keys the transcript sorts by, so the two
-  readers never disagree). A plan node with no tool call is NOT an empty stage: it goes to
-  `open`, because "claimed done with zero calls" is a finding, not a tree node.
+  readers never disagree). A plan node with no tool call is NOT an empty stage, and the two
+  facts it can be are kept apart (round 64, from arXiv:2611.21407's artifact check — "a scorer
+  that reads exit status credits work that was never written"): a node whose status is
+  `done`/`completed` is a **claim** (`claimed`, with one `claim_note` line — measured 2026-11-18,
+  528 of 912 live planned nodes), while a node with no call and no done status is simply
+  **open**. Neither is judged; a claim may legitimately have been answered by the final reply.
 - **A deleted todo does not delete evidence.** A card naming a node the graph no longer has (a
   replan replaced it) keeps its own `orphan` stage.
 - **The onset verdict.** `onset` is the FIRST failed step — a bad `ok` OR a non-zero
