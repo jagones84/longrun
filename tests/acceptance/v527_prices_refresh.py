@@ -98,10 +98,14 @@ with open(os.path.join(REPO, "config", "providers.yaml"), encoding="utf-8") as _
     _providers_yaml = _f.read()
 _deepseek_cfg = _providers_yaml.split("  - id: deepseek\n", 1)[1].split(
     "\n  - id: openai", 1)[0]
+# Round 77 (2026-11-18) added `deepseek-chat` DELIBERATELY: it is the standard
+# chat-completion id, verified live on this key, and `deepseek-flash` spends its
+# whole budget reasoning (measured). The retired id is `deepseek-reasoner`; the
+# subject is "no RETIRED id", not "no second current id".
 check("A5b shipped DeepSeek provider offers current models, not retired IDs",
       "{id: deepseek-flash" in _deepseek_cfg
       and "{id: deepseek-v4-pro" in _deepseek_cfg
-      and "deepseek-chat" not in _deepseek_cfg
+      and "{id: deepseek-chat" in _deepseek_cfg
       and "deepseek-reasoner" not in _deepseek_cfg, "")
 with open(os.path.join(REPO, "config", "routing.yaml"), encoding="utf-8") as _f:
     _routing_yaml = _f.read()

@@ -142,8 +142,13 @@ check("E5 the header teaches the accepted spellings",
 # --- F: the schema teaches the model the same word ---------------------------
 _sch = REG.TOOL_SCHEMAS.get("sessions") or {}
 _sdesc = str(((_sch.get("properties") or {}).get("session") or {}).get("description") or "")
-check("F1 the `session` field says the NAME works, for ANY session",
-      "NAME" in _sdesc and "for ANY session" in _sdesc, _sdesc[:160])
+# 2026-11-18 (aac3d14, "reading your own transcript is not messaging yourself"): the
+# description now scopes the promise to the PERMISSION rule ("for any session the
+# description's rule allows") — the absolute "ANY" wording was true before that
+# round and is false after it. The subject here is that the three SPELLINGS work and
+# the field is not narrowed to one agent (F3); the scope is the permission layer's.
+check("F1 the `session` field says the three spellings work (NAME first)",
+      "NAME" in _sdesc and "all three work" in _sdesc, _sdesc[:160])
 check("F2 ... and still lists the A-id and the raw id", "A-id" in _sdesc and "session id" in _sdesc)
 check("F3 ... and never narrows the tool to one agent",
       "Architect" not in _sdesc and LRA._LEGACY_SESSION_ID not in _sdesc, _sdesc[:160])

@@ -3475,6 +3475,19 @@ def _apply_tool_fields(entry, body, name=None):
             vals = body[key]
             if not isinstance(vals, list):
                 return "%s must be a list" % key
+            if key in ("deny", "always_ask"):
+                # Round 102d (A54 r102c item 2b): the SHIPPED shape of these lists is
+                # a mapping `{pattern, why[, proof]}`. `str(mapping)` stored a Python
+                # repr, which COMPILES as a regex and blocks nothing — measured live:
+                # a deny of `{'pattern': '^zzz$', …}` became the live rule and
+                # `classify('zzz')` answered `required`. Normalise through the ONE
+                # owner the reader uses (`_deny_parts`), so a mapping written by an
+                # operator means the same thing as one shipped in the YAML.
+                entry[key] = [p[:500] for p in registry._deny_parts(vals)[0]]
+                continue
+            _bad = [x for x in vals if isinstance(x, (dict, list))]
+            if _bad:
+                return "%s must be a list of strings (got a mapping)" % key
             entry[key] = [str(x)[:500] for x in vals if str(x).strip()]
     # D-12: restore ONE field to its shipped value (`reset`) — see the docstring.
     reset = body.get("reset")
@@ -3489,7 +3502,13 @@ def _apply_tool_fields(entry, body, name=None):
                          "approval", "enabled"):
                 return "reset: unknown field %r" % k
             if direct is not None and k in direct:
-                entry[k] = copy.deepcopy(direct[k])
+                # Round 102d: the shipped value may be the mapping shape; the live
+                # list is always patterns (see above) — restore what the LIVE field
+                # means, not the file's internal shape.
+                if k in ("deny", "always_ask"):
+                    entry[k] = [p[:500] for p in registry._deny_parts(direct[k])[0]]
+                else:
+                    entry[k] = copy.deepcopy(direct[k])
             else:
                 # The shipped file keys the NAMESPACE (`shell`, not `shell.exec`), so
                 # dropping the override is the restore: `tool_spec` reads the

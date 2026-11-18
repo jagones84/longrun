@@ -93,9 +93,15 @@ check("B3 README names the physical ignored key file",
       'os.path.join(REPO, ".env")' in KEYS and ".env" in read(".gitignore")
       and "<repository>/.env" in guide)
 
-check("C1 README shows a selectable OpenRouter model without claiming a default",
-      "openrouter:openrouter/auto" in PROVIDERS
-      and "openrouter:openai/gpt-4o-mini" in guide
+# 2026-11-18 (round 102c): 420fdd24 removed `openrouter/auto` (and the gpt-4o-mini
+# line made the README name a model the shipped provider LIST does not offer). The
+# subject is "the model the README names is selectable from the shipped list, and no
+# default is claimed" — so the id is DERIVED from providers.yaml, never hardcoded.
+import re as _re
+_or_ids = _re.findall(r'\{id: "?([A-Za-z0-9_.\-/:~]+)"?', PROVIDERS.split("id: openrouter", 1)[1])
+_named = [i for i in _or_ids if ("openrouter:" + i) in guide]
+check("C1 README names a model the shipped OpenRouter LIST offers, no default claimed",
+      bool(_named)
       and "openrouter:openrouter/auto" not in README
       # The shipped routing names EXPLICIT cloud refs and no local alias pattern
       # (JAG-455: a `pattern: qwen` default put every role on the local GPU, which

@@ -227,8 +227,10 @@ Next: [Secrets and local settings](#secrets-and-local-settings),
 Create an account at [OpenRouter](https://openrouter.ai/) and an API key at
 [OpenRouter API Keys](https://openrouter.ai/settings/keys). Enter it in
 **Settings → Keys** as `OPENROUTER_API_KEY`, then choose
-`openrouter:openai/gpt-4o-mini` in the model picker. See the
-[model page](https://openrouter.ai/openai/gpt-4o-mini) for current availability
+`openrouter:deepseek/deepseek-v4.1-flash` in the model picker — the shipped list is in
+`config/providers.yaml` (`models:`), and any OpenRouter id you have access to can
+be added there. See the
+[model page](https://openrouter.ai/deepseek/deepseek-v4.1-flash) for current availability
 and pricing.
 
 ### Local models

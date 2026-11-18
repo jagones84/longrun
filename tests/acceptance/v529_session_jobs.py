@@ -50,6 +50,7 @@ from longrun.core import server as _server  # noqa: E402,F401
 from longrun.agent import session_jobs as SJ  # noqa: E402
 from longrun.agent import subagent as SUB  # noqa: E402
 from longrun.util import dag  # noqa: E402
+from longrun.tools import registry as REG  # noqa: E402
 
 SID = "s_v529"
 
@@ -277,7 +278,12 @@ check("F2 `self.sj` (alias `self {action:'sj'}`) is implemented, documented and 
       and '"sj", "session-jobs", "sessionjobs", "subjobs"' in tools_src
       and '"sj": ["session", "job"]' in reg_src
       and '"info", "diagnose", "logs", "context", "tools",' in reg_src
-      and '"diagnostics", "sj"' in reg_src)
+      # 2026-11-18 (round 102c): the `self` action list is wrapped differently now, so
+      # the two adjacent literals are no longer a stable subject — ask the SCHEMA.
+      and "sj" in (((REG.TOOL_SCHEMAS.get("self") or {}).get("properties") or {})
+                   .get("action") or {}).get("enum", [])
+      and "diagnostics" in (((REG.TOOL_SCHEMAS.get("self") or {}).get("properties") or {})
+                            .get("action") or {}).get("enum", []))
 check("F3 the WebUI/REST surface exists: GET /api/sessions/<sid>/sj",
       'path.endswith("/sj")' in http_src and "session_jobs as _sj" in http_src)
 check("F4 deleting a session drops its SJ ledger and its subagent records",

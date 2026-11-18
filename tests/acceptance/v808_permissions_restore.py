@@ -146,6 +146,40 @@ check("D4 restoring goes through POST /api/tools (no second endpoint)",
 check("D5 an empty recover block renders nothing",
       "!items.length ? \"\" :" in UI)
 
+# ---- W: the WRITE path normalises the mapping shape too (round 102d) ---------
+# A54's r102c report (item 2b) measured the read side fixed and the write side open:
+# `update_policy({"deny": [{"pattern": "^zzz$", "why": "…"}]})` stored `str(dict)`,
+# which compiles as a regex and blocks nothing. The operator writes the SAME shape
+# the YAML ships, and `_deny_parts` is the one normaliser on both sides.
+_rw = api_v02.update_policy({"tool": "shell.exec",
+                             "deny": [{"pattern": "^zzz$", "why": "probe"}]})
+registry.load_config(reload=True)
+_live_deny = row("shell.exec").get("deny") or []
+check("W1 a mapping written by the operator lands as its PATTERN, not a repr",
+      _rw.get("ok") is True and "^zzz$" in _live_deny
+      and not any(str(x).startswith("{") for x in _live_deny), _live_deny)
+_dec, _why = registry.classify("shell.exec", {"command": "zzz"})
+check("W2 ... and the rule actually blocks", _dec == "denied", (_dec, _why))
+_rw2 = api_v02.update_policy({"tool": "shell.exec", "reset": ["deny"]})
+registry.load_config(reload=True)
+_back = row("shell.exec").get("deny") or []
+check("W3 reset restores PATTERNS (the shipped mapping never becomes a rule)",
+      _rw2.get("ok") is True and _back == _ship_pats
+      and "zzz" not in " ".join(_back), _back)
+_rw3 = api_v02.update_policy({"tool": "shell.exec",
+                              "auto_approve": [{"pattern": "^x$"}]})
+check("W4 a mapping in a STRING list is refused, not stringified",
+      _rw3.get("ok") is False and "list of strings" in (_rw3.get("error") or ""), _rw3)
+_rw4 = api_v02.update_policy({"tool": "shell.exec",
+                              "always_ask": [{"pattern": "^push(\\s|$)", "why": "p"}]})
+registry.load_config(reload=True)
+_ask = row("shell.exec").get("always_ask") or []
+check("W5 always_ask accepts the mapping shape and stores the pattern",
+      _rw4.get("ok") is True and "^push(\\s|$)" in _ask
+      and not any(str(x).startswith("{") for x in _ask), _ask)
+api_v02.update_policy({"tool": "shell.exec", "reset": ["always_ask"]})
+registry.load_config(reload=True)
+
 print("\n---")
 print("v808: %d/%d PASS" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

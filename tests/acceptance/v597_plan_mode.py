@@ -70,10 +70,21 @@ if all(callable(getattr(stores, n, None)) for n in
         check("A7 empty steps rejected", True)
     stores.approve_plan(sid)
     s2 = stores.load_session(sid)
-    check("A8 approval flips to act, plan kept approved",
-          s2.get("plan_mode") is False
-          and (s2.get("plan") or {}).get("status") == "approved",
+    # 2026-11-17 (operator): a document carries TWO decisions — `approve` decides the
+    # CONTENT and keeps the lock; `implement` authorises the writes. Approving a plan
+    # therefore no longer flips to act; `grant_implement` does. Pinned here in that
+    # order so the two decisions cannot silently collapse back into one.
+    check("A8 approval keeps the lock (content decided, implementation NOT authorised)",
+          s2.get("plan_mode") is True
+          and (s2.get("plan") or {}).get("status") == "approved"
+          and (s2.get("plan") or {}).get("implement") is False,
           repr({k: s2.get(k) for k in ("plan_mode", "plan")}))
+    stores.grant_implement(sid)
+    s2b = stores.load_session(sid)
+    check("A8b implement flips to act, plan kept approved",
+          s2b.get("plan_mode") is False
+          and (s2b.get("plan") or {}).get("status") == "approved",
+          repr({k: s2b.get(k) for k in ("plan_mode", "plan")}))
     try:
         stores.approve_plan(sid)
         check("A9 second approval rejected", False, "no raise")
@@ -87,7 +98,7 @@ if all(callable(getattr(stores, n, None)) for n in
           s3.get("plan_mode") is True
           and (s3.get("plan") or {}).get("status") == "rejected")
 else:
-    for n in ("A5", "A6", "A7", "A8", "A9", "A10"):
+    for n in ("A5", "A6", "A7", "A8", "A8b", "A9", "A10"):
         check(n, False, "plan API missing")
 
 # ---- B: the gate in classify ------------------------------------------------------
@@ -106,7 +117,11 @@ if hasattr(registry, "PLAN_GATED_TOOLS"):
           repr((dec, why)))
     stores.approve_plan(sid)
     dec, why = registry.classify("shell", {"_session": sid})
-    check("B4 approval unblocks mutating tools", "plan mode" not in why,
+    check("B4 approval alone does NOT unblock mutating tools",
+          dec == "denied" and "implement" in why, repr((dec, why)))
+    stores.grant_implement(sid)
+    dec, why = registry.classify("shell", {"_session": sid})
+    check("B4b implement unblocks mutating tools", "plan mode" not in why,
           repr((dec, why)))
     stores.set_plan_mode(sid, True)
     stores.propose_plan(sid, ["step two"])
@@ -136,7 +151,7 @@ if hasattr(registry, "PLAN_GATED_TOOLS"):
     check("B6 unknown sessions unaffected", "plan mode" not in why,
           repr((dec, why)))
 else:
-    for n in ("B2", "B3", "B4", "B5", "B6"):
+    for n in ("B2", "B3", "B4", "B4b", "B5", "B6"):
         check(n, False, "PLAN_GATED_TOOLS missing")
 
 print("\n%d/%d" % (sum(results), len(results)))
