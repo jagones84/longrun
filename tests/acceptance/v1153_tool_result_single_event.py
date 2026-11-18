@@ -150,6 +150,49 @@ api_src = open(os.path.join(REPO, "src", "longrun", "core", "api_v02.py"),
 check("G1 gated_call defaults to announce=True",
       "announce=True" in api_src.split("def gated_call")[1].split(")")[0], "signature")
 
+# M — the one surviving event still links to the approval that authorised it
+# (round 89, A54's r88 O1: removing the duplicate dropped the only row that
+# carried the approval id).
+from longrun.core import server                            # noqa: E402,F401  (breaker: agent imports it)
+from longrun.agent import agent as A                       # noqa: E402
+
+
+class _FakeGate:
+    class registry:
+        @staticmethod
+        def tool_names():
+            return ["fs.read", "shell.exec"]
+
+    @staticmethod
+    def normalize_tool_args(tool, args):
+        return dict(args or {})
+
+    def gated_call(self, tool, args, **kw):
+        return {"status": "executed", "approval": {"id": "abc123"},
+                "result": {"ok": True, "stdout": "hi"}, "observation": "obs:hi"}
+
+
+_orig_persist = A.persist_tool_card
+_orig_ws = A._chat_workspace
+A.persist_tool_card = lambda *a, **k: None
+A._chat_workspace = lambda sess: None
+ev_m = []
+A._apply_chat_batch({"id": "v1153m"},
+                    {"action": "batch", "calls": [{"tool": "fs.read",
+                                                   "args": {"path": "a"}}]},
+                    lambda k, **d: ev_m.append((k, d)), _FakeGate())
+A.persist_tool_card = _orig_persist
+A._chat_workspace = _orig_ws
+res_m = [d for k, d in ev_m if k == "tool.result"]
+check("M1 the batch lane keeps the approval id on its one result",
+      len(res_m) == 1 and res_m[0].get("approval") == "abc123", res_m)
+
+agent_src = open(os.path.join(REPO, "src", "longrun", "agent", "agent.py"),
+                 encoding="utf-8").read()
+check("M2 both chat sites forward the approval id",
+      agent_src.count('approval=(res.get("approval") or {}).get("id")') == 2,
+      agent_src.count('approval=(res.get("approval") or {}).get("id")'))
+
 print("---")
 print("%d/%d PASS" % (sum(RESULTS), len(RESULTS)))
 sys.exit(0 if all(RESULTS) else 1)

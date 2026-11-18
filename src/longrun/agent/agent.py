@@ -3011,6 +3011,10 @@ def _apply_chat_batch(sess, act, on_event, av02, node=None, after=None, hist=Non
         obs = str(obs)[:CHAT_OBS_FULL]
         on_event("tool.result", session=sess["id"], tool=tool, ok=ok, args=args,
                  output=obs, data=sub.get("data"),
+                 # Round 89 (A54 r88 O1): the gate's approval id is the ONLY link
+                 # from this result to the decision that authorised it — the
+                 # duplicate event that used to carry it is gone (round 88).
+                 approval=(res.get("approval") or {}).get("id"),
                  summary="%s: %s" % (tool, "ok" if ok else (status or "error")))
         try:
             persist_tool_card(sess, tool, ok, args=args, result=obs,
@@ -6623,6 +6627,9 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                     tool, ok, args=args, output=(sub.get("stdout") or obs or ""),
                     exit_code=sub.get("exit_code"),
                     backend=sub.get("backend") or "harness", data=sub.get("data"),
+                    # Round 89 (A54 r88 O1): keep the approval id on the one event
+                    # this call publishes — it is the link to `approval.auto`.
+                    approval=(res.get("approval") or {}).get("id"),
                     inline=True, summary=("error" if not ok else "")))
             except Exception as e:  # noqa: BLE001 — a tool failure must not kill chat
                 obs, ok = "tool error: %s" % e, False
