@@ -4,7 +4,9 @@
 The harness was written for POSIX (the DGX). Only a handful of operations are
 actually platform-dependent; they live here so the rest of the code stays clean:
 
-  * shell_argv     — ['/bin/sh','-c',cmd] on POSIX, ['cmd','/c',cmd] on Windows
+  * shell_path     — the ONE shell this host runs commands with (override, $SHELL,
+                     bash, sh); `term` reads it too, so the harness has one dialect
+  * shell_argv     — ['<shell_path>','-c',cmd] on POSIX, ['cmd','/c',cmd] on Windows
   * popen_kwargs   — put the child in its own process group, so it can be killed
                      as a tree (start_new_session on POSIX, CREATE_NEW_PROCESS_GROUP
                      on Windows)
@@ -18,6 +20,7 @@ Windows branch is unit-testable from Linux.
 """
 
 import os
+import shlex
 import shutil
 import signal
 import subprocess
@@ -35,12 +38,41 @@ def _win(on_windows=None):
     return IS_WINDOWS if on_windows is None else bool(on_windows)
 
 
-def shell_argv(command, on_windows=None):
-    """An argv that runs ``command`` through the system shell."""
+def shell_path(on_windows=None):
+    """The ONE shell executable this host runs commands with.
+
+    Round 51 (measured 2026-11-18): the answer used to be split. The session
+    terminal (`tools/term.py`) preferred `$SHELL` / `/bin/bash`, while host
+    execution inside a harness run and the hooks spawned `/bin/sh` — dash on
+    this host. The same agent therefore got bash in its terminal and dash in a
+    run, and commands that had already worked died as
+    `/bin/sh: 1: set: Illegal option -o pipefail` (3 cards in the failure
+    register, 2 more steps in run record `caef726a6faa`). A hint can only
+    explain that AFTER the model has written the command; the harness absorbs it
+    instead by picking one shell for every caller.
+
+    The precedence is the terminal's, because it was the richer one:
+    `LONGRUN_TERM_SHELL` (the existing override, still one key), then `$SHELL`,
+    then `/bin/bash`, then `/bin/sh`. Windows keeps `COMSPEC` for one-shot calls.
+    """
     if _win(on_windows):
-        comspec = os.environ.get("COMSPEC") or "cmd.exe"
-        return [comspec, "/c", command]
-    return ["/bin/sh", "-c", command]
+        return os.environ.get("COMSPEC") or "cmd.exe"
+    override = (os.environ.get("LONGRUN_TERM_SHELL") or "").strip()
+    if override:
+        parts = shlex.split(override)
+        if parts:
+            return parts[0]
+    for cand in (os.environ.get("SHELL"), "/bin/bash", "/bin/sh"):
+        if cand and os.path.isfile(cand) and os.access(cand, os.X_OK):
+            return cand
+    return "/bin/sh"
+
+
+def shell_argv(command, on_windows=None):
+    """An argv that runs ``command`` through the host shell (see `shell_path`)."""
+    if _win(on_windows):
+        return [shell_path(True), "/c", command]
+    return [shell_path(False), "-c", command]
 
 
 def popen_kwargs(on_windows=None):

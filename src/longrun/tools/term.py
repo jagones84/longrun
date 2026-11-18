@@ -41,6 +41,7 @@ import threading
 import time
 
 from longrun.model import context_limits as ctx_limits
+from longrun.util import osutil
 
 # 2026-11-05: the pool's own limits are config too (`config/tools.yaml` -> `shell:`).
 MAX_SHELLS = ctx_limits.shell("max_shells")
@@ -56,7 +57,16 @@ WINDOWS = os.name == "nt"
 
 
 def _shell_argv():
-    """The persistent shell for THIS host. `LONGRUN_TERM_SHELL` wins."""
+    """The persistent shell for THIS host. `LONGRUN_TERM_SHELL` wins.
+
+    Round 51: the POSIX executable is not chosen here any more — `osutil.
+    shell_path()` is the ONE answer, shared with host execution inside a harness
+    run and with the hooks. Two lists had drifted (this one preferred bash, the
+    other always spawned `/bin/sh`), so the same agent got a different dialect
+    depending on which path ran its command. Windows keeps its own argv shape
+    (PowerShell `-Command -`, or `COMSPEC /Q`) because the interactive flags are
+    not the one-shot ones.
+    """
     override = os.environ.get("LONGRUN_TERM_SHELL")
     if override:
         return shlex.split(override, posix=not WINDOWS)
@@ -65,10 +75,7 @@ def _shell_argv():
             if shutil.which(exe):
                 return [exe, "-NoProfile", "-NoLogo", "-NonInteractive", "-Command", "-"]
         return [os.environ.get("COMSPEC") or "cmd.exe", "/Q"]
-    for cand in (os.environ.get("SHELL"), "/bin/bash", "/bin/sh"):
-        if cand and os.path.isfile(cand) and os.access(cand, os.X_OK):
-            return [cand]
-    return ["/bin/sh"]
+    return [osutil.shell_path()]
 
 
 def _kind(argv):
