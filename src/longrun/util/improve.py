@@ -874,7 +874,15 @@ def get_proposal(pid):
 
 
 def list_proposals(status=None):
-    """All proposals, newest first. `status` filters ('pending', 'approved'…)."""
+    """All proposals, newest first. `status` filters ('pending', 'approved'…).
+
+    Round 74: a PENDING registry proposal whose `delta` the registry refuses can
+    never be approved (the inbox blocks it), yet the panel counted it as pending
+    work. Measured 2026-11-18: one pending proposal removes `grep[^\\n]*\\.env`, a
+    rule deleted in round 65, so `apply_delta` would be a no-op. Such a record
+    carries `stale` (the reason) and is excluded from the pending count; the stored
+    status stays the historical fact.
+    """
     out = []
     try:
         for fn in sorted(os.listdir(PROPOSAL_DIR)):
@@ -885,7 +893,27 @@ def list_proposals(status=None):
     except OSError:
         pass
     out.sort(key=lambda r: r.get("ts", 0), reverse=True)
+    for rec in out:
+        why = _stale_reason(rec)
+        if why:
+            rec["stale"] = why
     return out
+
+
+def _stale_reason(rec):
+    """Why a PENDING registry proposal can no longer change anything (None = live)."""
+    if not isinstance(rec, dict) or rec.get("status") != "pending" \
+            or rec.get("scope") != "registry":
+        return None
+    delta = rec.get("delta")
+    if not isinstance(delta, dict):
+        return None
+    try:
+        from longrun.tools import registry
+        why = registry.delta_error(delta)
+    except Exception:  # noqa: BLE001 — a listing must never fail on one record
+        return None
+    return ("cannot be applied: " + why) if why else None
 
 
 def clear_decided():
