@@ -417,6 +417,51 @@ def _uncovered_removal(delta):
     return None
 
 
+def _redundant_add(delta):
+    """An `add` that writes nothing (None = the add changes something).
+
+    Round 85: `_uncovered_removal` proves a LOSS and `_unchanged_friction` proves a
+    friction that survives — both about `remove`. Nothing measured the other
+    direction: an `add` whose entry is ALREADY in the live list. `apply_delta`
+    computes `live - remove + add` and skips an entry already present
+    (`registry.py`: `if x not in new`), so approving such a delta writes no new
+    guard while the inbox claims one. Three provable no-ops, all inside the delta:
+    a pattern copied from the live list, the same pattern listed twice, and a
+    pattern both removed and re-added. Exact strings only — the applier compares
+    exact strings, and a broader or narrower rule is a real change.
+    """
+    if not isinstance(delta, dict):
+        return None
+    target = str(delta.get("target") or "")
+    field = str(delta.get("field") or "")
+    added = [str(x) for x in (delta.get("add") or []) if str(x).strip()]
+    if not target or not added:
+        return None
+    try:
+        from longrun.tools import registry as _reg
+        if field not in _reg.REGISTRY_LIST_FIELDS:
+            return None
+        spec = _reg.tool_spec(target) or {}
+        live = _reg._effective_list(target, field)
+    except Exception:  # noqa: BLE001 — no live list is no check, never a refusal
+        return None
+    if not spec:
+        # An unknown row is the VALIDATOR's refusal, not this check's.
+        return None
+    removed = [str(x) for x in (delta.get("remove") or []) if str(x).strip()]
+    remaining = [p for p in live if p not in removed]
+    seen = []
+    for pat in added:
+        if pat in removed:
+            return {"pattern": pat, "why": "is removed and re-added by the same delta"}
+        if pat in remaining:
+            return {"pattern": pat, "why": "is already live on %s.%s" % (target, field)}
+        if pat in seen:
+            return {"pattern": pat, "why": "is listed twice in this delta"}
+        seen.append(pat)
+    return None
+
+
 def _safe_search(pattern, text):
     try:
         return re.search(pattern, text) is not None
@@ -637,7 +682,9 @@ def _build_analysis_prompt(trace, policy_hits, job_cost, feedback, history=None)
         '   "remove": ["<exact EXISTING entries to delete, copied verbatim>"],\n'
         '   "reason": "...", "confidence": "low"|"medium"|"high"}\n'
         "For a list field use add/remove only; an entry you do not copy into `add` "
-        "is kept, so adding a rule can never delete another one.\n\n"
+        "is kept, so adding a rule can never delete another one. An `add` whose "
+        "entry is already in the live list writes nothing — the applier drops it — "
+        "so it cannot fix the deficiency you describe.\n\n"
         "Only propose changes to the tool registry. Never propose changes to the "
         "agent loop, session management, or job dispatch."
     )
@@ -783,6 +830,15 @@ def run(sid, jid=None):
                   "evidence": evidence, "reply": str(reply)[:1500],
                   "reason": "the removal is not covered: %r matches the removed rule "
                             "and NO other live deny rule" % _unc["witness"]}
+        _log_run(sid, result)
+        return result
+    # Round 85: the other direction of round 78's witness — an `add` that is already
+    # live is dropped by `apply_delta`, so approving it writes no new guard.
+    _dup = _redundant_add(delta)
+    if _dup:
+        result = {"skip": True, "session": sid, "delta": delta, "prompt": prompt,
+                  "evidence": evidence, "reply": str(reply)[:1500],
+                  "reason": "the add writes nothing: %r %s" % (_dup["pattern"], _dup["why"])}
         _log_run(sid, result)
         return result
     # RRSI pruner ("no longer useful"): the same delta already decided or still
