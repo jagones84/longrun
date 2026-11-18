@@ -921,9 +921,20 @@ def session_failures(sessions_dir=None, limit=200, max_sessions=400, since=None)
             row = buckets.setdefault((tool, head),
                                      {"count": 0, "repeats": 0, "recovered": 0,
                                       "sessions": set(), "samples": [], "probe": "",
-                                      "agents": {}})
+                                      "agents": {}, "keys": set()})
             row["count"] += 1
             row["sessions"].add(ent.name[:-5])
+            # Round 52: the event's identity, so the run-record corpus can tell
+            # that its copy of this call is the SAME failure. Measured 2026-11-18:
+            # run `caef726a6faa` has 25 failed steps and 25 failed cards, all 25
+            # matching on (session, ts, tool). A card without a clock adds no
+            # key — a guess is worse than a count.
+            if card.get("ts"):
+                try:
+                    row["keys"].add("%s@%.3f" % (ent.name[:-5],
+                                                 float(card["ts"])))
+                except (TypeError, ValueError):
+                    pass
             # Round 37: the WHO axis. A card whose session has no agent row adds
             # nothing — an unknown session is not attributed to a guess.
             if who and who.get("id"):
@@ -948,6 +959,9 @@ def session_failures(sessions_dir=None, limit=200, max_sessions=400, since=None)
              # stay in this row for the merge; `_issues_from` pops them so no
              # emitted row carries the list back out.
              "session_ids": sorted(v["sessions"]),
+             # Round 52: the event keys stay internal (the merge pops them); the
+             # run-record corpus uses them to avoid counting a call twice.
+             "event_keys": sorted(v["keys"]),
              "probe": v.get("probe") or "",
              "agents": _top_agents(v["agents"])}
             for (t, e), v in buckets.items()]
@@ -1015,10 +1029,21 @@ def failure_candidates(path=None, limit=10, min_count=1, include_sessions=False,
                                                     "sessions": 0, "sids": set(),
                                                     "from_sessions": 0, "from_runs": 0,
                                                     "samples": [], "probe": "",
-                                                    "agents": {}})
+                                                    "agents": {}, "run_keys": set(),
+                                                    "overlap": 0})
             row["count"] += 1
             row["from_runs"] += 1
             row["runs"].add(fn[:-5])
+            # Round 52: a record is built FROM a session, so a call it holds can
+            # also be a session card. The key is (session, ts, tool) under the
+            # same class; the session corpus carries the same key.
+            if step.get("ts"):
+                try:
+                    row["run_keys"].add("%s@%.3f" % (
+                        str(rec.get("session_id") or fn[:-5]),
+                        float(step["ts"])))
+                except (TypeError, ValueError):
+                    pass
             if not row["probe"]:
                 row["probe"] = str(step.get("error") or "")[:400]
     scanned = 0
@@ -1033,9 +1058,20 @@ def failure_candidates(path=None, limit=10, min_count=1, include_sessions=False,
                                            "sessions": 0, "sids": set(),
                                            "from_sessions": 0, "from_runs": 0,
                                            "samples": [], "probe": "",
-                                           "agents": {}})
-            row["count"] += int(cls.get("count") or 0)
-            row["from_sessions"] += int(cls.get("count") or 0)
+                                           "agents": {}, "run_keys": set(),
+                                           "overlap": 0})
+            # Round 52: the same call seen by both corpora is ONE failure. The
+            # run count is already in `count`; the session's copy of a matching
+            # event is subtracted, and the event is attributed to the SESSION
+            # (the live observation), so `from_sessions + from_runs == count`
+            # still holds. Measured 2026-11-18: `shell · tool-error` read 32
+            # failures / 16 unresolved, all 16 calls recorded twice.
+            seen_session = int(cls.get("count") or 0)
+            matched = len(set(cls.get("event_keys") or []) & row["run_keys"])
+            row["count"] += seen_session - matched
+            row["from_sessions"] += seen_session
+            row["from_runs"] -= matched
+            row["overlap"] += matched
             row["repeats"] += int(cls.get("repeats") or 0)
             row["recovered"] += int(cls.get("recovered") or 0)
             row["sids"].update(cls.get("session_ids") or [])
@@ -1066,6 +1102,10 @@ def failure_candidates(path=None, limit=10, min_count=1, include_sessions=False,
                      # the total instead of hiding behind one number.
                      "from_sessions": int(v.get("from_sessions") or 0),
                      "from_runs": int(v.get("from_runs") or 0),
+                     # Round 52: how many of the counted events BOTH corpora saw.
+                     # `from_sessions + from_runs == count`, and this number says
+                     # how much the run record duplicated.
+                     "overlap": int(v.get("overlap") or 0),
                      "repeats": v.get("repeats", 0),
                      "retry_rate": retry_signal(v.get("repeats", 0), v["count"]),
                      "recovered": v.get("recovered", 0),
@@ -1140,6 +1180,9 @@ def _issues_from(rows):
         g["classes"].append({"error": r["error"], "count": r["count"],
                              "from_sessions": int(r.get("from_sessions") or 0),
                              "from_runs": int(r.get("from_runs") or 0),
+                             # Round 52: the class-level evidence that a record
+                             # duplicated a live call survives into the issue.
+                             "overlap": int(r.get("overlap") or 0),
                              "repeats": int(r.get("repeats") or 0),
                              "recovered": int(r.get("recovered") or 0),
                              # Round 43: the measure the class order uses, one
