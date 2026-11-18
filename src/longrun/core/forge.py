@@ -667,6 +667,19 @@ def cmd_recovery(args):
 def cmd_effects(args):
     """Round 116 (arXiv:2610.35981): effect-typed tools — coverage or trace safety."""
     from longrun.harness import effect_types
+    if args.action == "coverage" and getattr(args, "live", False):
+        # Round 119: the live catalog itself, declarations from registry.TOOL_EFFECTS.
+        import longrun.tools.registry as _reg
+        catalog = {}
+        for row in _reg.catalog():
+            catalog[row["name"]] = {"effect": row.get("effect"),
+                                    "idempotent": row.get("idempotent"),
+                                    "reads": row.get("reads") or [],
+                                    "writes": row.get("writes") or []}
+        out = effect_types.coverage(catalog)
+        out["source"] = "live-catalog"
+        print(json.dumps(out, indent=2, ensure_ascii=False))
+        sys.exit(0 if out["verdict"] in ("typed", "partial") else 1)
     if not getattr(args, "file", None):
         print("usage: effects coverage|verify FILE.json", file=sys.stderr)
         sys.exit(2)
@@ -2325,6 +2338,7 @@ def main():
         p.set_defaults(fn=cmd_recovery)
     p = sub.add_parser("effects"); p.add_argument("action", choices=["coverage", "verify"]); \
         p.add_argument("file", nargs="?", help="JSON: {catalog, trace}"); \
+        p.add_argument("--live", action="store_true", help="coverage: read the live tool catalog"); \
         p.set_defaults(fn=cmd_effects)
     p = sub.add_parser("commit"); p.add_argument("action", choices=["decide", "diagnose"]); \
         p.add_argument("file", nargs="?", help="JSON: actions, edges, broken, costs/values, threshold, patch debt"); \

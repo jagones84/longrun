@@ -1620,6 +1620,45 @@ _CANONICAL_SCHEMAS = _build_canonical_schemas()
 TOOL_SCHEMAS = _NamespacedSchemasDict(_CANONICAL_SCHEMAS, _LEGACY_SCHEMAS)
 KNOWN_NAMESPACES = frozenset(k.split(".", 1)[0] for k in TOOL_SCHEMAS.keys()) | frozenset(_LEGACY_SCHEMAS.keys())
 
+# Effect declarations (round 119, arXiv:2610.35981). A tool that declares what a
+# call DOES — its effect, whether it is idempotent, and the resources it reads and
+# writes — lets `harness.effect_types` judge a trace for effect safety without
+# labels. Only tools whose behaviour is unambiguous here are declared; an
+# undeclared tool stays untyped and `effects coverage` reports it. This dict is
+# the ONE owner of the declaration: it is published on the catalogue row and never
+# copied into a second table.
+TOOL_EFFECTS = {
+    "fs.read": {"effect": "read", "reads": ["file"]},
+    "fs.write": {"effect": "write", "idempotent": False, "writes": ["file"]},
+    "fs.edit": {"effect": "write", "idempotent": False,
+                "reads": ["file"], "writes": ["file"]},
+    "shell.exec": {"effect": "external", "idempotent": False, "writes": ["host"]},
+    "python.run": {"effect": "external", "idempotent": False, "writes": ["host"]},
+    "git.run": {"effect": "external", "idempotent": False, "writes": ["repo"]},
+    "web.search": {"effect": "read", "reads": ["network"]},
+    "web.fetch": {"effect": "read", "reads": ["network"]},
+    "http.fetch": {"effect": "read", "reads": ["network"]},
+    "memory.recall": {"effect": "read", "reads": ["memory"]},
+    "memory.store": {"effect": "append", "idempotent": False, "writes": ["memory"]},
+    "sessions.send": {"effect": "external", "idempotent": False, "writes": ["session"]},
+    "agent.delete": {"effect": "delete", "idempotent": False,
+                     "reads": ["agent"], "writes": ["agent"]},
+    "skills.read": {"effect": "read", "reads": ["skill"]},
+    "skills.search": {"effect": "read", "reads": ["skill"]},
+    "docs.plan": {"effect": "write", "idempotent": False, "writes": ["document"]},
+}
+
+
+def effect_row(name):
+    """The declared effect of one tool, or None when it stays untyped."""
+    row = TOOL_EFFECTS.get(name)
+    if not row:
+        return None
+    out = dict(row)
+    for key in ("reads", "writes"):
+        out[key] = list(row.get(key) or [])
+    return out
+
 
 # Action spellings the HANDLERS accept but the schema enum does not advertise.
 # They used to fall through to the plain namespace, whose policy row is
@@ -2794,6 +2833,14 @@ def catalog():
             "inputSchema": {k: v for k, v in (spec["schema"] or {}).items()
                             if k in ("type", "properties", "required", "anyOf")},
         }
+        # Round 119: publish the effect declaration. The model-facing inputSchema
+        # above stays untouched — the declaration is harness metadata, not schema.
+        _eff = effect_row(name)
+        if _eff:
+            row["effect"] = _eff.get("effect")
+            row["idempotent"] = bool(_eff.get("idempotent"))
+            row["reads"] = list(_eff.get("reads") or [])
+            row["writes"] = list(_eff.get("writes") or [])
         # D-12: the shipped policy lists, so the Permissions page can show a rule
         # the operator removed and put it back. Only non-empty ones are sent.
         # Round 102c: a deny entry may be a mapping `{pattern, why[, proof]}` since

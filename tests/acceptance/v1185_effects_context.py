@@ -132,8 +132,9 @@ CATALOG = {
 cov = ET.coverage(CATALOG)
 check("a fully declared catalog is typed", cov["verdict"] == "typed" and cov["untyped"] == 0, cov)
 cov_bad = ET.coverage({"x": {"effect": "sideways"}, "y": {}})
-check("a missing or invalid effect is reported, not guessed",
-      cov_bad["verdict"] == "untyped" and len(cov_bad["invalid"]) == 2, cov_bad)
+check("an invalid effect is reported; an absent one is untyped, not an error",
+      cov_bad["verdict"] == "untyped" and len(cov_bad["invalid"]) == 1
+      and cov_bad["untyped"] == 2, cov_bad)
 
 safe = ET.verify_trace([{"tool": "fs.read"}, {"tool": "fs.write"}], CATALOG)
 check("read then write is effect-safe", safe["verdict"] == "safe", safe)

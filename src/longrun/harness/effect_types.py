@@ -46,8 +46,11 @@ def coverage(catalog):
             invalid.append({"tool": tool, "why": "declaration is not an object"})
             continue
         effect = row.get("effect")
+        if effect is None or effect == "":
+            # Untyped is the normal state of an undeclared tool, not an error.
+            continue
         if effect not in EFFECTS:
-            invalid.append({"tool": tool, "why": "missing or invalid effect", "value": effect})
+            invalid.append({"tool": tool, "why": "invalid effect", "value": effect})
             continue
         typed += 1
         histogram[effect] += 1
@@ -71,8 +74,9 @@ def verify_trace(trace, catalog):
             continue
         tool = call["tool"]
         decl = _decl(catalog, tool)
-        if decl is None:
-            findings.append({"kind": "undeclared-tool", "index": i, "tool": tool})
+        if decl is None or decl.get("effect") not in EFFECTS:
+            findings.append({"kind": "undeclared-tool", "index": i, "tool": tool,
+                             "why": "untyped call: effect safety cannot be decided"})
             prev_writes = set()
             continue
         effect = decl.get("effect")
