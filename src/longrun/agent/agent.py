@@ -360,6 +360,14 @@ def _rejected_reply_note(answer, finish_reason=None):
         out.append('It was CUT at the model\'s output limit — the reply ends before it '
                    'is finished. Send a SMALLER call: split the content and write it in '
                    'parts (one file or one section per call) instead of one huge object.')
+    elif str(finish_reason or "") == "repetition":
+        # Round 102 (A54 r101 item 2): a cut reply that ALSO failed the action
+        # parse fell into the JSON-break branch, whose advice ("emit one complete
+        # object") never mentions that the text was truncated — the model retried
+        # the same shape. Name the cut.
+        out.append('It was CUT on the transport because the same block repeated — the '
+                   'reply ends before it is finished. Emit the action again in a few '
+                   'lines, without repeating any block.')
     else:
         _break = _json_break(snip)
         if _break:
@@ -5842,6 +5850,9 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     # answer, not a finished one. One continuation round names the cut; the
     # second trip is persisted and the turn keeps whatever the model wrote.
     _repeat_retry_used = False
+    # Round 102: the text of the LAST cut the turn could not retry. If it is what
+    # the turn hands back, the close path appends the incompleteness note to it.
+    _cut_text = ""
     _empty_parks = 0          # bounded CONTINUE rounds when the model keeps going blank
     # 2026-11-16: a REASONING-ONLY reply (long chain-of-thought, no content, no tool
     # call) must not become a text-retry loop against the SAME model. Measured
@@ -6186,11 +6197,21 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 pass
             if not _repeat_retry_used and not _is_aborted(sess["id"]):
                 _repeat_retry_used = True
-                _inject("Your last message started REPEATING itself and was CUT at %d "
-                        "characters. Do not repeat it: continue from the last point "
-                        "that was new, or state the answer in a few sentences."
-                        % len(str(answer or "")), "retry")
+                # Round 102 (A54 r101 item 1): the guard is a PERIODICITY test, so it
+                # also cuts content that repeats a block on purpose (a table, a log
+                # excerpt, a generated list — measured: 7 of 12 realistic shapes).
+                # Saying "you started repeating yourself" asserted a defect the
+                # transport cannot know; name what was measured instead.
+                _inject("The transport CUT your last message at %d characters: the "
+                        "same block appeared four times in a row. If that repetition "
+                        "was intentional (a table, a log, a list), keep it shorter and "
+                        "continue; otherwise continue from the last point that was "
+                        "new." % len(str(answer or "")), "retry")
                 continue
+            # Round 102 (A54 r101 item 5): this cut IS what the turn will hand back
+            # (`turn_reply` returns the last assistant message), so it must say it is
+            # incomplete in the SAME text the operator reads — see the close path.
+            _cut_text = str(answer or "")
         if not _think_action_used and _reasoning_only_action(answer, think):
             # The action exists but lives in the reasoning channel: the harness cannot
             # execute a thought. Ask for it once, as a message.
@@ -7389,6 +7410,16 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                     "an action (%s)." % (_visible or content)[:200].replace("\n", " "))
                    if (_visible or content) else
                    "The turn ended without producing an answer.")
+    # Round 102 (A54 r101 item 5): a reply the transport CUT as a repetition loop was
+    # persisted verbatim, and `stores.turn_reply` returns exactly this message — so
+    # the operator read a truncated paragraph as a finished answer. The text stays
+    # (it is real work) but it now SAYS it is incomplete, in the message the UI
+    # renders. Only when THIS text is the cut one: a later reply, or a finish
+    # envelope, is not marked.
+    if _cut_text and content == _cut_text.strip():
+        content = content + ("\n\n[harness] this reply was cut at %d characters: "
+                             "the same block appeared four times in a row, so the "
+                             "text above is incomplete." % len(_cut_text.strip()))
     if _hitl:
         # EV-39: the turn asked the operator (human.ask). The visible reply is the
         # QUESTION — the model's own prose was written before the human answered,
