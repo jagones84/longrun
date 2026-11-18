@@ -321,6 +321,92 @@ def _extract_json(text):
     return None, False
 
 
+_LITERAL_RE = re.compile(r"[A-Za-z0-9_./:@-]{3,}")
+
+
+def _removal_witness(pattern, remaining):
+    """A string the removed rule matches and NO remaining rule matches (None = none).
+
+    Round 78: the proposer called `localhost` and `127.0.0.1` "duplicates" — twice,
+    with the two rules' own `why` in the prompt — because resemblance is not
+    coverage. This does not read the model's claim: it builds candidate inputs from
+    the removed pattern's own literals (each one, the first two, all of them joined)
+    and asks the COMPILED regexes. A witness proves the removal stops guarding an
+    input; `None` means only that no witness was found, so the check can refute a
+    removal and never approve one.
+    """
+    try:
+        rx = re.compile(pattern)
+        others = [re.compile(p) for p in remaining if p]
+    except re.error:  # noqa: SIM105 — an uncompilable pattern is left to the validator
+        return None
+    lits = []
+    for m in _LITERAL_RE.finditer(pattern):
+        # `(?:curl|wget)` yields `:curl` — the `?:` prefix is regex syntax, not
+        # part of any input (measured: the joined candidate started with `:curl`
+        # and matched nothing, so a real non-duplicate found no witness).
+        s = m.group(0).strip(":-")
+        if len(s) >= 3 and s not in lits:
+            lits.append(s)
+    cands = list(lits)
+    if len(lits) > 1:
+        # A readable join first: a space between words, but none where the pattern
+        # itself has no gap (`localhost` then `/api/jobs`), so the witness reads
+        # like a command instead of a concatenation.
+        smart = lits[0]
+        for part in lits[1:]:
+            smart += part if (part.startswith("/") or smart.endswith("/")) \
+                else (" " + part)
+        cands.append(smart)
+        # Then the mechanical joins: `localhost` and `/api/` must be ADJACENT for
+        # the measured rule, so the no-separator form is tried as well.
+        cands.append("".join(lits))
+        cands.append("".join(lits[:2]))
+        cands.append(" ".join(lits[:2]))
+        cands.append(" ".join(lits))
+    for cand in cands:
+        try:
+            if not rx.search(cand):
+                continue
+            if not any(o.search(cand) for o in others):
+                return cand
+        except re.error:  # noqa: SIM105 — a candidate that cannot be tested is skipped
+            continue
+    return None
+
+
+def _uncovered_removal(delta):
+    """The first `deny` rule the delta removes with an unguarded input (None = ok).
+
+    The remaining list is computed exactly as `apply_delta` would (`live - remove +
+    add`), so a delta that replaces a rule with a broader one is allowed: only a
+    removal that leaves an input to no rule is refused.
+    """
+    if str((delta or {}).get("field") or "") != "deny":
+        return None
+    removed = [str(x) for x in ((delta or {}).get("remove") or []) if str(x).strip()]
+    if not removed:
+        return None
+    target = str((delta or {}).get("target") or "")
+    try:
+        from longrun.tools import registry as _reg
+        spec = _reg.tool_spec(target) or {}
+    except Exception:  # noqa: BLE001 — no live list is no check, never a refusal
+        return None
+    if not spec:
+        # An unknown row is the VALIDATOR's refusal (`target is not a known tool
+        # row`), not this check's: an empty list here would invent a witness.
+        return None
+    live = [str(x) for x in (spec.get("deny") or [])]
+    add = [str(x) for x in ((delta or {}).get("add") or []) if str(x).strip()]
+    remaining = [p for p in live if p not in removed] + add
+    for pat in removed:
+        witness = _removal_witness(pat, remaining)
+        if witness:
+            return {"pattern": pat, "witness": witness}
+    return None
+
+
 def _policy_snapshot(policy_hits):
     """The LIVE values of the rows the evidence names, for the model to copy.
 
@@ -334,6 +420,12 @@ def _policy_snapshot(policy_hits):
     …`) to `tool_spec`, which knows no such tool, so on real data the section read
     "(not available)" — measured on the live ledger. The tool name is the first
     segment of the key.
+
+    2026-11-18 (round 78): the list showed each rule's regex and nothing about what
+    it protects, so the proposer called two different guards "duplicates" and moved
+    to delete the `localhost` one — which the config explains in a `why` it never
+    saw. The registry already carries `deny_why` and `deny_proof` beside the
+    pattern; they are printed here, one line each, after the exact list.
     """
     live, _gone = _hit_rows(policy_hits)
     names = []
@@ -363,7 +455,14 @@ def _policy_snapshot(policy_hits):
             json.dumps(spec.get("deny") or []),
             json.dumps(spec.get("always_ask") or []),
             json.dumps(spec.get("auto_approve") or [])))
-    return "\n".join(rows)[:5000]
+        why = spec.get("deny_why") or {}
+        proof = spec.get("deny_proof") or {}
+        for pat in (spec.get("deny") or []):
+            if pat in why:
+                rows.append("  deny why: %s — %s" % (pat, str(why[pat])[:200]))
+            if pat in proof:
+                rows.append("  deny proof: %s — %s" % (pat, proof[pat]))
+    return "\n".join(rows)[:9000]
 
 
 def _build_analysis_prompt(trace, policy_hits, job_cost, feedback, history=None):
@@ -405,10 +504,13 @@ def _build_analysis_prompt(trace, policy_hits, job_cost, feedback, history=None)
                     "  %s %s x%d: %s" % (r["tool"], r["kind"], r["n"], r["pattern"])
                     for r in gone[:6]))
         if never:
+            _proof = (policy_hits or {}).get("never_fired_proof") or {}
             parts.append(
                 "Configured rules that NEVER fired (context only — a guard that never "
                 "fired may be doing its job; do not propose removing one without "
-                "friction evidence):\n" + "\n".join("  " + k for k in never[:8]))
+                "friction evidence):\n" + "\n".join(
+                    "  " + k + ((" — proved by " + _proof[k]) if k in _proof else "")
+                    for k in never[:8]))
         if unknown:
             parts.append(f"Unknown args: {json.dumps(dict(list(unknown.items())[:5]))}")
 
@@ -433,7 +535,11 @@ def _build_analysis_prompt(trace, policy_hits, job_cost, feedback, history=None)
         "blocked a legitimate call, or a policy that created friction.\n\n"
         "Evidence:\n" + "\n".join(f"- {p}" for p in parts) + "\n\n"
         "Current live policy of the row(s) the evidence names (the exact values; a "
-        "list is changed ONLY through add/remove, never rewritten from memory):\n"
+        "list is changed ONLY through add/remove, never rewritten from memory). Each "
+        "`deny why` line says what that rule protects: a rule is NOT redundant "
+        "because its text resembles another rule — two patterns on different "
+        "literals cover different calls — so a `remove` of a rule that carries a "
+        "`why` must say what still protects that case:\n"
         + (snap or "(not available)") + "\n\n"
         + ((_hist + "\n\n") if _hist else "")
         + "Reply with ONE JSON object and NOTHING else. Either:\n"
@@ -571,6 +677,18 @@ def run(sid, jid=None):
         result = {"skip": True, "reason": err, "session": sid,
                   "delta": delta, "prompt": prompt, "evidence": evidence,
                   "reply": str(reply)[:1500]}
+        _log_run(sid, result)
+        return result
+    # Round 78: a removal the harness can REFUTE is not a proposal. The model twice
+    # called `localhost` and `127.0.0.1` duplicates; a witness string guards that
+    # input with the removed rule and no remaining one. This gate runs before the
+    # pruner: the defect is in the delta, not in its history.
+    _unc = _uncovered_removal(delta)
+    if _unc:
+        result = {"skip": True, "session": sid, "delta": delta, "prompt": prompt,
+                  "evidence": evidence, "reply": str(reply)[:1500],
+                  "reason": "the removal is not covered: %r matches the removed rule "
+                            "and NO other live deny rule" % _unc["witness"]}
         _log_run(sid, result)
         return result
     # RRSI pruner ("no longer useful"): the same delta already decided or still

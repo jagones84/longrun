@@ -137,7 +137,8 @@ _many = {"firings": {"%s:deny:x" % t: {"n": 10 - i}
                                             "fs.edit", "git.run"))},
          "retired_rules": []}
 check("C7 the snapshot is capped at four tool rows",
-      len([ln for ln in O._policy_snapshot(_many).split("\n") if ln]) == 4,
+      len([ln for ln in O._policy_snapshot(_many).split("\n")
+           if ln and not ln.startswith("  ")]) == 4,
       O._policy_snapshot(_many))
 
 # ---- D) a pending proposal that cannot apply is marked -----------------------
