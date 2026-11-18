@@ -2926,6 +2926,19 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(404, {"error": "session not found"})
             from longrun.agent import session_jobs as _sj
             return self._send(200, _sj.describe(sid, (qs or {}).get("job")))
+        if path.startswith("/api/sessions/") and path.endswith("/export"):
+            # Round 106 (arXiv:2611.20389): the evidence bundle someone else can
+            # read. `profile=share` pseudonymises identifiers and buckets every
+            # counter; `audit` is the operator's own copy. Read-only.
+            sid = path[len("/api/sessions/"):-len("/export")].strip("/")
+            if not sid or "/" in sid or ".." in sid:
+                return self._send(404, {"error": "session not found"})
+            from longrun.core import trace_export
+            profile = str(qs.get("profile") or "share")
+            doc = trace_export.export(sid, profile)
+            if doc.get("error"):
+                return self._send(404, doc)
+            return self._send(200, doc)
         if path.startswith("/api/sessions/") and path.endswith("/trace-tree"):
             # HD-2 (2026-11-14): the turn's stage→step tree and the FIRST step
             # that went wrong. A read model over the tool cards and the plan —

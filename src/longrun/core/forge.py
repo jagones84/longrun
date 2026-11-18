@@ -17,6 +17,7 @@ Usage:
                          | sessions card HANDLE (one tool card of the current session)
                          | sessions counterfactual HANDLE --arg k=v (re-run one read-only call)
                          | sessions tree [ID] | sessions graph [ID]
+                         | sessions export [ID] [--profile share|audit] [--out FILE]
                           | sessions reset ID | sessions clear ID | sessions model "SID MODEL"
   python3 forge.py docs status|plan "request"|spec "request"|approve|reject|unlock [--session ID]
   python3 forge.py context show [--session ID] | context compact [--session ID]
@@ -24,6 +25,7 @@ Usage:
   python3 forge.py checkpoints ls | checkpoints create "label" [--session ID]
                          | checkpoints show CP_ID | checkpoints rollback CP_ID
                          | checkpoints rm CP_ID | checkpoints prune
+  python3 forge.py setup run PLAN.json [--workspace DIR] [--reuse] [--state DIR]
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -1166,6 +1168,27 @@ def cmd_sessions(args):
                           "recorded_action": out.get("recorded_action"),
                           "replayed_action": out.get("replayed_action")},
                          indent=2, ensure_ascii=False))
+    elif args.action == "export":
+        # Round 106 (arXiv:2611.20389): the evidence bundle for someone who is
+        # not you. `share` is the default because an accidental paste of `audit`
+        # is the failure this feature exists to prevent.
+        ref = _chat_ref(args.value)
+        profile = getattr(args, "profile", None) or "share"
+        out = req("GET", "/api/sessions/%s/export?profile=%s" % (ref, _q(profile)))
+        if out.get("error"):
+            print("error:", out["error"], file=sys.stderr)
+            sys.exit(1)
+        blob = json.dumps(out, indent=2, ensure_ascii=False)
+        dest = getattr(args, "out", None)
+        if dest:
+            with open(dest, "w", encoding="utf-8") as fh:
+                fh.write(blob + "\n")
+            d = out.get("diagnosability") or {}
+            print("wrote %s (profile=%s, %d bytes) failures=%s redactions=%s"
+                  % (dest, out.get("profile"), len(blob),
+                     d.get("failure_signals"), d.get("redactions")))
+        else:
+            print(blob)
     elif args.action in ("history", "graph", "tree"):
         ref = _chat_ref(args.value)
         if args.action == "history":
@@ -1328,6 +1351,36 @@ def cmd_routing(args):
             print("bad json:", e, file=sys.stderr)
             sys.exit(2)
         print(json.dumps(req("POST", "/api/routing", body), indent=2, ensure_ascii=False))
+
+
+def cmd_setup(args):
+    """Semantic setup blocks (round 106, arXiv:2611.18443). Runs LOCALLY: the
+    workspace being set up is the caller's, not necessarily the server's."""
+    from longrun.harness import setup_blocks
+    from longrun.util import paths
+    if args.action == "run":
+        if not args.plan:
+            print("usage: setup run PLAN.json [--workspace DIR] [--reuse]",
+                  file=sys.stderr)
+            sys.exit(2)
+        try:
+            blocks = setup_blocks.load_plan(args.plan)
+        except (OSError, ValueError) as e:
+            print("bad plan:", e, file=sys.stderr)
+            sys.exit(2)
+        workdir = args.workspace or os.getcwd()
+        state = args.state or os.path.join(paths.DATA_DIR, "setup")
+        out = setup_blocks.run(blocks, workdir, state, reuse=bool(args.reuse))
+        for b in out.get("blocks") or []:
+            print("%-8s %s%s" % (b.get("status"), b.get("name"),
+                                 (" -> rollback " + b["rollback"]
+                                  if b.get("rollback") else "")))
+        c = out.get("cost") or {}
+        print("ok=%s commands_run=%s commands_skipped=%s"
+              % (out.get("ok"), c.get("commands_run"), c.get("commands_skipped")))
+        sys.exit(0 if out.get("ok") else 1)
+    print(json.dumps({"state": args.state or os.path.join(paths.DATA_DIR, "setup")},
+                     indent=2))
 
 
 def cmd_checkpoints(args):
@@ -1633,10 +1686,14 @@ def main():
     p = sub.add_parser("swarm"); p.add_argument("goal"); p.add_argument("--n-workers", type=int, default=3); \
         p.add_argument("--max-steps", type=int, default=None); p.set_defaults(fn=cmd_swarm)
     sub.add_parser("paperclip-bot").set_defaults(fn=cmd_paperclip_bot)
-    p = sub.add_parser("sessions"); p.add_argument("action", choices=["ls", "new", "fork", "rm", "use", "current", "history", "card", "counterfactual", "model-counterfactual", "graph", "tree", "reset", "clear", "model"]); \
+    p = sub.add_parser("sessions"); p.add_argument("action", choices=["ls", "new", "fork", "rm", "use", "current", "history", "card", "counterfactual", "model-counterfactual", "graph", "tree", "reset", "clear", "model", "export"]); \
         p.add_argument("value", nargs="?"); p.add_argument("--workspace"); \
         p.add_argument("--at"); p.add_argument("--title"); p.add_argument("--model"); \
         p.add_argument("--arg", action="append"); p.add_argument("--content"); \
+        p.add_argument("--profile", choices=["audit", "share"], default="share",
+                       help="export: share = pseudonyms + bucketed counters; "
+                            "audit = the operator's own copy"); \
+        p.add_argument("--out", help="export: write the JSON bundle to this file"); \
         p.add_argument("--full", action="store_true",
                        help="history: the transcript and tool cards untruncated"); \
         p.set_defaults(fn=cmd_sessions)
@@ -1652,6 +1709,12 @@ def main():
         p.add_argument("value", nargs="?"); p.set_defaults(fn=cmd_routing)
     p = sub.add_parser("checkpoints"); p.add_argument("action", choices=["ls", "create", "show", "rollback", "rm", "prune"]); \
         p.add_argument("value", nargs="?"); p.add_argument("--session"); p.set_defaults(fn=cmd_checkpoints)
+    p = sub.add_parser("setup"); p.add_argument("action", choices=["run", "status"]); \
+        p.add_argument("plan", nargs="?"); p.add_argument("--workspace"); \
+        p.add_argument("--state", help="where block checkpoints live (default: data/setup)"); \
+        p.add_argument("--reuse", action="store_true",
+                       help="skip a block whose digest and pre-state match its checkpoint"); \
+        p.set_defaults(fn=cmd_setup)
     sub.add_parser("self").set_defaults(fn=cmd_self)
     sub.add_parser("selfcheck").set_defaults(fn=cmd_selfcheck)
     p = sub.add_parser("providers"); p.add_argument("action", nargs="?", default="ls", choices=["ls", "add", "rm", "default", "rm-model"]); \

@@ -148,6 +148,81 @@ def role_tools(role):
     return out or None
 
 
+def _expand_allow(allow, names=None):
+    """Expand a role `tools` list into the concrete tool names it admits.
+
+    A pattern is either an exact name ("fs.read") or a whole namespace ("fs",
+    which admits every "fs.*"). An unknown pattern is kept literally: an
+    external/plugin tool may not be in this registry yet, and dropping it would
+    silently narrow a parent's authority (round 106, after arXiv:2611.18999).
+    """
+    if allow is None:
+        return None
+    if names is None:
+        try:
+            names = list(registry.tool_names())
+        except Exception:  # noqa: BLE001 — the catalog is optional here
+            names = []
+    name_set = set(names)
+    out = []
+    for raw in allow:
+        pat = str(raw or "").strip()
+        if not pat:
+            continue
+        if pat in name_set:
+            out.append(pat)
+            continue
+        prefix = pat + "."
+        kids = [n for n in names if n.startswith(prefix)]
+        if kids:
+            out.extend(kids)
+        else:
+            out.append(pat)
+    # Stable order, no duplicates: the child's tool_allow is compared by tests.
+    seen = set()
+    uniq = []
+    for n in out:
+        if n not in seen:
+            seen.add(n)
+            uniq.append(n)
+    return uniq
+
+
+def bind_authority(parent_allow, role_allow, names=None):
+    """The child's effective tool scope, bound along the delegation chain.
+
+    Agent-ZTA (arXiv:2611.18999): an agent's *path-specific delegated authority*
+    is the intersection of what the chain grants and what the trusted policy
+    permits — never the role's static grant alone. `None` means "no list"
+    (unrestricted); an empty list means "no tools".
+
+    Returns `(effective, evidence)` where `evidence` names the decision, the
+    parent's grant and the tools the role asked for but the parent did not have.
+    """
+    parent = _expand_allow(parent_allow, names)
+    role = _expand_allow(role_allow, names)
+    evidence = {"decision": "unrestricted-parent",
+                "parent": parent, "role": role, "clamped": []}
+    if parent is None:
+        # The parent is a top-level, unscoped run: the role definition is the
+        # only bound. Nothing to intersect with.
+        return role, evidence
+    if role is None:
+        # A role with no `tools` key is unrestricted by definition. Under a
+        # restricted parent it is bound to the PARENT's grant, not the catalog:
+        # otherwise a read-only agent could delegate writing to a child.
+        evidence["decision"] = "bound-to-parent"
+        return parent, evidence
+    allowed = set(parent)
+    effective = [t for t in role if t in allowed]
+    clamped = [t for t in role if t not in allowed]
+    evidence["clamped"] = clamped
+    evidence["decision"] = "intersection"
+    if clamped:
+        evidence["decision"] = "intersection-clamped"
+    return effective, evidence
+
+
 def merge_roles(current, incoming):
     """Assign the roles map WITHOUT destroying a role's tool scope (I-1).
 
@@ -181,6 +256,11 @@ _DEPTH = {}       # run_id -> depth of nesting (matrioska); 0 = top level
 # `_running`; cleared by `purge_parent`. A `None` parent is never counted.
 _SPAWN_COUNT = {}  # parent_run_id -> int
 _SPAWN_COUNT_MAX_PARENTS = 4096
+# Round 106 (Agent-ZTA, arXiv:2611.18999): the tool grant each run was given, so
+# a grandchild's authority can be bound to its parent's without re-reading the
+# config. In-memory (the live process owns it); `purge_parent` clears it.
+_AUTH = {}        # run_id -> list[str] | None (None = unrestricted)
+_AUTH_MAX_RUNS = 4096
 
 # JAG-533/SJ: a finished subagent used to live ONLY in the in-memory `_running`
 # dict, so a harness restart lost every result — the parent's `collect()` then
@@ -272,6 +352,12 @@ def purge_parent(parent_run_id):
     # M8: the per-run spawn budget dies with the parent run.
     with _lock:
         _SPAWN_COUNT.pop(parent_run_id, None)
+        # Round 106: so does the authority entry of every child this parent owned.
+        for key in [k for k, v in list(_AUTH.items())
+                    if k == parent_run_id
+                    or (isinstance(v, dict) and v.get("parent") == parent_run_id)]:
+            _AUTH.pop(key, None)
+        _DEPTH.pop(parent_run_id, None)
     return removed
 
 
@@ -306,7 +392,8 @@ def depth_allowed(depth, max_depth=None):
 
 
 def spawn(goal, parent_run_id=None, max_steps=None, model=None, on_event=None, depth=0,
-          role=None, output_schema=None, acceptance_criteria=None, session=None):
+          role=None, output_schema=None, acceptance_criteria=None, session=None,
+          parent_allow=None, chain=None):
     """Spawn a subagent run and return its id.
 
     The subagent runs asynchronously in a background thread. Call
@@ -389,13 +476,49 @@ def spawn(goal, parent_run_id=None, max_steps=None, model=None, on_event=None, d
             if _SPAWN_COUNT.get(parent_run_id, 0) >= _run_cap:
                 return {"subagent_id": None, "run_id": None, "goal": goal,
                         "error": "max subagents per run reached (%d)" % _run_cap}
+    # Round 106 (Agent-ZTA, arXiv:2611.18999): bind the child's authority to the
+    # CHAIN, not to the role's static grant. A read-only parent could otherwise
+    # delegate to a `coder` role and regain write tools two levels down.
+    # Fail-safe: a parent that is itself a subagent and whose grant is unknown
+    # refuses to spawn, instead of silently inheriting the full catalog.
+    _parent_depth = _DEPTH.get(parent_run_id) if parent_run_id else None
+    if parent_allow is None and parent_run_id:
+        # The live parent run is the authoritative source of its grant.
+        try:
+            _pst = api_v02.run_get(parent_run_id)
+        except Exception:  # noqa: BLE001
+            _pst = None
+        if _pst is not None and hasattr(_pst, "tool_allow"):
+            parent_allow = getattr(_pst, "tool_allow", None)
+    if parent_allow is None and parent_run_id:
+        _auth = _AUTH.get(parent_run_id)
+        parent_allow = _auth.get("allow") if isinstance(_auth, dict) else _auth
+    if parent_allow is None and _parent_depth is not None and int(_parent_depth) > 0:
+        return {"subagent_id": None, "run_id": None, "goal": goal,
+                "error": "delegation authority unavailable (fail-closed)"}
+    effective, authority = bind_authority(parent_allow, role_tools(role))
+    _path = list(chain or [])
+    if parent_run_id and parent_run_id not in _path:
+        _path.append(parent_run_id)
     sid = "sub_%s" % uuid.uuid4().hex[:10]
     st = api_v02.new_run("%s (subagent %s)" % (goal[:80], sid), model, max_steps)
     st.parent_run_id = parent_run_id
     # I-1: the role's tool scope rides on the RUN, so every call path (single,
     # batch, retry, subjob) reads the same value instead of re-reading config.
     st.role = role
-    st.tool_allow = role_tools(role)
+    st.tool_allow = effective
+    st.delegation = dict(authority, chain=_path + [sid])
+    with _lock:
+        _AUTH[st.id] = {"allow": effective, "parent": parent_run_id}
+        if len(_AUTH) > _AUTH_MAX_RUNS:
+            _AUTH.clear()
+            _AUTH[st.id] = {"allow": effective, "parent": parent_run_id}
+    _publish_event(parent_run_id, "delegation.authority",
+                   subagent_id=sid, decision=authority["decision"],
+                   parent_tools=authority.get("parent"),
+                   role_tools=authority.get("role"),
+                   clamped=authority.get("clamped") or [],
+                   chain=_path + [sid])
     _DEPTH[st.id] = int(depth)
     taskgraph.ensure(st.id, session_id=st.id, goal=goal)
 
@@ -431,6 +554,7 @@ def spawn(goal, parent_run_id=None, max_steps=None, model=None, on_event=None, d
         "output_schema": schema,
         "acceptance_criteria": criteria,
         "status": "running", "created": round(entry["created"], 3),
+        "authority": authority["decision"], "chain": st.delegation["chain"],
     })
 
     def _run():
@@ -475,6 +599,7 @@ def spawn(goal, parent_run_id=None, max_steps=None, model=None, on_event=None, d
             "model": model, "role": role, "parent": parent_run_id,
             "status": status_txt or "error", "created": round(entry["created"], 3),
             "ended": round(time.time(), 3), **_shrink(entry.get("result")),
+            "authority": authority["decision"], "chain": st.delegation["chain"],
         })
         try:
             from longrun.core.server import publish as _publish
