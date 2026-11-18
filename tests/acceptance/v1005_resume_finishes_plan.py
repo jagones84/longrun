@@ -189,8 +189,13 @@ check("C1 three empty replies spread over real work do NOT close the turn",
       not errs, errs[:2])
 check("C2 every real step still ran (3 tool calls)",
       kinds.count("tool.call") >= 3, kinds.count("tool.call"))
+# 2026-11-18 (round 95): the harness gives each failure MODE its own sentence
+# (2026-11-16, operator request) — a reasoning-only reply says EMPTY, a completely
+# blank one says BLANK, and this fake stream drives the BLANK mode. The filter
+# names both harness sentences instead of pinning one wording.
+_EMPTY_MODES = ("EMPTY", "BLANK")
 retries = [d for k, d in ev if k == "harness.inject" and d.get("inject_kind") == "retry"
-           and "EMPTY" in (d.get("text") or "")]
+           and any(w in (d.get("text") or "") for w in _EMPTY_MODES)]
 check("C3 every empty reply earned a retry", len(retries) == 3,
       [d.get("text", "")[:40] for d in retries])
 check("C4 no retry was dropped as a byte-identical repeat",
@@ -232,6 +237,21 @@ check("C8 the turn then works and answers",
       [k for k, _d in ev2].count("tool.call") >= 1
       and (FINAL[:20] in (_last2.get("content") or "")),
       (_last2.get("content") or "")[:80])
+
+# 2026-11-18 (round 95): the per-turn ceiling still holds where it was measured —
+# a STORM of empties with NO tool between them (the 2026-11-15 shape, six retries
+# plus a CONTINUE in 24 s) closes after 2 retries. Work between two empties is what
+# resets the ceiling, never a blank reply of its own.
+_SID3 = "v1005-storm"
+ev3 = run_turn(_SID3, lambda n: "" if n < 6 else FINAL)
+_retries3 = [d for k, d in ev3
+             if k == "harness.inject" and d.get("inject_kind") == "retry"
+             and any(w in (d.get("text") or "") for w in _EMPTY_MODES)]
+_errs3 = [d for k, d in ev3 if k == "chat.error"]
+check("C9 an empty storm with no work between closes after 2 retries",
+      len(_retries3) == 2 and len(_errs3) == 1
+      and "3 time(s)" in (_errs3[0].get("error") or ""),
+      (len(_retries3), (_errs3[0].get("error") if _errs3 else None)))
 
 print("---")
 passed = sum(results)

@@ -5827,10 +5827,17 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     # 2026-11-16: the streak alone was NOT a bound. A CONTINUE park resets it, and
     # any non-empty-but-useless reply resets it too, so one turn produced SEVEN
     # harness nudges (measured session b7329cccf94c, 22:21:29–22:21:53: six
-    # "last message was EMPTY" retries + one CONTINUE, then chat.error). `_empty_total`
-    # is the per-TURN ceiling: at most 2 empty retries, then at most ONE continue
-    # park, then the turn closes honestly.
+    # "last message was EMPTY" retries + one CONTINUE, then chat.error).
+    #
+    # 2026-11-18 (round 95): the cumulative cap was also closing a turn whose
+    # empties were separated by REAL WORK (tool, empty, tool, empty, tool, empty
+    # — `v1005` C1/C3, red since at least 2026-11-17). The ceiling counts empties
+    # NOT separated by work: a tool call between two empties is progress and resets
+    # the count, a run of empties with no tool at all is the provider storm this
+    # bound exists for. The streak cap is unchanged and the park stays bounded to
+    # one. `_empty_total` also names the real count in the closing error.
     _empty_total = 0
+    _empty_work_mark = _total_work_steps
     _empty_parks = 0          # bounded CONTINUE rounds when the model keeps going blank
     # 2026-11-16: a REASONING-ONLY reply (long chain-of-thought, no content, no tool
     # call) must not become a text-retry loop against the SAME model. Measured
@@ -6117,6 +6124,10 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                             "continues on the next configured model instead of asking "
                             "the same one again." % _why, "retry")
                     continue
+            # Round 95: work between two empties resets the per-turn ceiling.
+            if _total_work_steps != _empty_work_mark:
+                _empty_total = 0
+            _empty_work_mark = _total_work_steps
             _empty_streak += 1
             _empty_total += 1
             if _empty_streak <= 2 and _empty_total <= 2:
