@@ -15507,6 +15507,32 @@ function renderPermissions(el, d) {
        </div>
      </details>`;
   const off = tools.map((t, i) => ({ i, t })).filter(x => x.t.enabled === false);
+  // 2026-11-18 round 80: the SAME ledger also stages undeclared arguments (R4): a
+  // call carrying one still RUNS today, with the argument dropped, and the counter
+  // is the evidence that decides whether the refusal may ship. The page showed the
+  // rules and never this half, so 14 recorded events were invisible (live payload,
+  // 2026-11-18). It is history as much as evidence: an entry naming a field the tool
+  // accepts today is what the staging caught before the schema learned it.
+  const unArg = Object.entries(cov.unknown_args || {}).map(([k, v]) => {
+    const at = k.indexOf(":unknown_arg:");
+    return { tool: at < 0 ? k : k.slice(0, at),
+             what: at < 0 ? "" : k.slice(at + ":unknown_arg:".length),
+             n: Number((v && v.n) || 0) };
+  }).sort((a, b) => b.n - a.n || a.tool.localeCompare(b.tool));
+  const unArgBlock = !unArg.length ? "" : `<details class="card perm-card">
+       <summary class="remaining">${unArg.length} undeclared-argument event(s) recorded — staged, not refused</summary>
+       <div class="remaining perm-legend">Each row is a call that <b>ran</b> with an argument its tool does not
+         declare: the argument is dropped, the call goes on. These counters decide whether the
+         unknown-argument refusal may ship; a row naming a field the tool accepts today is history.</div>
+       ${unArg.slice(0, 10).map(u => `<div class="perm-row">
+         <span class="perm-name" title="${esc(u.tool)}">${esc(u.tool)}</span>
+         <span class="perm-ev" title="recorded ${u.n} time(s) — the call ran"
+           aria-label="recorded ${u.n} times">×${u.n}</span>
+         <code class="perm-rule" title="${esc(u.what)}">${esc(u.what)}</code>
+       </div>`).join("")}
+       ${unArg.length > 10 ? `<div class="remaining">… and ${unArg.length - 10} more — the full list is
+         <code>GET /api/tools</code> → <code>rule_firings.unknown_args</code></div>` : ""}
+     </details>`;
   // The same ledger, summed: what the page is about to show rule by rule. Absent
   // on a build without the ledger — say so instead of printing zeros.
   const nConf = Number(cov.configured_rules);
@@ -15533,6 +15559,7 @@ function renderPermissions(el, d) {
      <div class="card perm-card">${list(collect("deny"), "deny", "no hard blocks")}${recover(missing("deny"), "deny")}</div>
      <h2>Always ask · reaches you even in FULL</h2>
      <div class="card perm-card">${list(collect("always_ask"), "always_ask", "no always-ask rule")}${recover(missing("always_ask"), "always_ask")}</div>
+     ${unArgBlock}
      <h2>Add a rule</h2>
      <div class="card perm-card">
        <div class="perm-add">
