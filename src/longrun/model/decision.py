@@ -126,8 +126,8 @@ class HeuristicDecision:
             if not tool:
                 return Verdict()
             spec = registry.tool_spec(tool) or {}
-            # Round 94: one subject for the hard-deny, shared with `classify`.
-            subject = registry.deny_subject(tool, args)
+            # Round 100: the deny judges the raw subject, like `classify`.
+            subject = registry._subject(tool, args)
             hit = registry._match(spec.get("deny") or [], subject)
             if hit:
                 return Verdict(ok=False, reason="%s matches the hard-deny pattern %r" % (tool, hit))

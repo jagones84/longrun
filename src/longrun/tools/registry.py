@@ -2830,12 +2830,6 @@ def _subject(tool, args):
 
 
 _HEREDOC_OP = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
-_FILE_REDIRECT = re.compile(r"(?<![0-9&<>])>>?\s*[^\s<>&|;]")
-# The WHOLE target token (the test above only proves a redirect exists).
-_FILE_TARGET = re.compile(r"(?<![0-9&<>])>>?\s*([^\s<>&|;]+)")
-_HEREDOC_WRITER = re.compile(r"^\s*(?:cat|tee)\b")
-# `tee` names its file as an ARGUMENT, not a redirect — but only with an argv.
-_TEE_WRITER = re.compile(r"^\s*tee\b\s+(?:-\S+\s+)*[^\s|>&]")
 
 
 def _quote_open(text, idx):
@@ -2855,181 +2849,33 @@ def _quote_open(text, idx):
     return q is not None
 
 
-def _pipe_unquoted(line):
-    """True when `line` carries a lone `|` (a pipe) outside quotes.
-
-    A body that fills a file is data — unless the SAME line pipes the command
-    into a program (`tee f <<'EOF' … EOF | bash`), where the body is executed.
-    """
-    for i, ch in enumerate(line):
-        if ch != "|" or _quote_open(line, i):
-            continue
-        if (i + 1 < len(line) and line[i + 1] == "|") or \
-                (i > 0 and line[i - 1] == "|"):
-            continue
-        return True
-    return False
-
-
-def _redirect_target(seg):
-    """The file a stdout redirect in `seg` writes, or "" (a name is kept as is)."""
-    m = _FILE_TARGET.search(seg)
-    if not m:
-        return ""
-    return m.group(1).strip("'\"")
-
-
-def _tee_target(seg):
-    """The first non-option argument of `tee`, or ""."""
-    for tok in seg.split()[1:]:
-        if not tok.startswith("-"):
-            return tok.strip("'\"")
-    return ""
-
-
-_EXEC_VERBS = ("bash", "sh", "zsh", "dash", "ksh", "source", "exec", "eval",
-               "python", "python3", "node", "perl", "ruby", "php")
-# A wrapper that carries a program it does not name itself (`xargs`, `sudo`, …)
-# still means "this command runs code". Measured 2026-11-18 (round 97): six
-# shapes — xargs, `sh -c`, `eval`, `<(cat f)`, nohup, sudo — were auto on a body
-# that had just been written and then executed.
-_EXEC_WRAPPERS = ("xargs", "nohup", "sudo", "env", "command", "time", "nice")
-_EXEC_TOKEN = re.compile(r"(?:^|[;&|(\n\s])(?:%s)(?=$|[\s;|&)])"
-                         % "|".join(_EXEC_VERBS + _EXEC_WRAPPERS))
-# The ONLY statements allowed to name a file we just filled (round 98, measured
-# against A54's 14-shape sweep: make/git/perl/awk -f/$W/symlink/dotdot all ran it).
-_READERS = ("cat", "head", "tail", "less", "more", "wc", "grep", "egrep", "fgrep",
-            "rg", "sort", "uniq", "cut", "tr", "nl", "od", "xxd", "cmp", "diff",
-            "file", "stat", "ls", "du", "basename", "dirname", "realpath",
-            "readlink", "sed", "awk", "tee")
-_PATH_TOKEN = re.compile(r"[^\s;|&<>()'\"`]+")
-
-
-def _same_path(a, b):
-    """Do two shell tokens name the same path? Deals with `alias.x=!/tmp/f`.
-
-    A token may glue a prefix to the path (an assignment, a `!` in a git alias,
-    a `-f`-less option); every prefix form of the token is compared after
-    `posixpath.normpath`, which also collapses `d/../f`.
-    """
-    try:
-        import posixpath
-        target = posixpath.normpath(b)
-        forms = {a, a.split("=")[-1], a.split("!")[-1], a.lstrip("=!")}
-        return any(posixpath.normpath(f) == target for f in forms if f)
-    except Exception:  # noqa: BLE001 — a comparison must never deny by accident
-        return a == b
-
-
-def _names_target(seg, target):
-    return any(_same_path(w, target) for w in _PATH_TOKEN.findall(seg))
-
-
-def _seg_is_read(seg, target):
-    """True when ONE pipeline segment only reads (no consumer, no self-exec)."""
-    words = _PATH_TOKEN.findall(seg)
-    head = [w for w in words if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", w)]
-    if not head or head[0] not in _READERS:
-        return False
-    if head[0] == "awk" and (any(w == "-f" for w in head)
-                             or re.search(r"\bsystem\b|\|\s*[\"']", seg)):
-        return False
-    if head[0] == "sort" and "--compress-program" in seg:
-        return False
-    if head[0] == "sed":
-        # `sed 'e …'` and `s/x/y/e` EXECUTE their argument (A54 r98, live).
-        if any(w in ("-i", "--in-place") for w in head):
-            return False
-        if re.search(r"(?:^|[\s'\"])e(?:[\s'\"]|$)|/e(?:[\s'\"]|$)", seg):
-            return False
-    if _EXEC_TOKEN.search(seg):
-        return False
-    return True
-
-
-def _executes(target, text):
-    """True when `text` may run `target` as code — the conservative reading.
-
-    A PIPELINE that names the file must be pure end to end: `cat f | bash` is a
-    run even though its head is `cat` (A54 r98, executed live), and so are
-    `sed 'e …' f`, `sort f | bash` and `sort --compress-program=f f`. A pipeline
-    that never names the file is irrelevant (`echo ok`).
-    """
-    if not target:
-        return False
-    for pipeline in re.split(r"\|\||&&|[;\n]", text):
-        segs = pipeline.split("|")
-        if not any(_names_target(s, target) for s in segs):
-            continue
-        for seg in segs:
-            if seg.strip() and not _seg_is_read(seg, target):
-                return True
-    return False
-
-
 def _deny_text(text):
-    """The text the hard-deny patterns judge: heredoc DATA removed.
+    """The command with EVERY heredoc body removed — used only to WORD a refusal.
 
-    Round 94, measured live 2026-11-18 on session `b7329cccf94c` (the Head of
-    Longrun Testing): TWO refusals at 06:39:19 and 06:39:24 while writing a test
-    stub into /tmp —
-
-        mkdir -p /tmp/a54r85 && cat > /tmp/a54r85/a_stub.py <<'PY'
-        LIVE = ['cat .env', 'curl http://127.0.0.1:8790/api/jobs']
-        PY
-
-    The body is DATA: the same text through `fs.write` (subject = the PATH) is
-    never scanned, so the two doors disagreed about the same act. Only a heredoc
-    that FILLS A FILE is removed, and only when its statement is a pure writer
-    (`cat`/`tee`) with a stdout file redirect — a body that FEEDS A PROGRAM
-    (`python3 - <<'PY'`, `bash <<'EOF'`, or a writer with no redirect) is left
-    exactly as it was, so v1075 I2 keeps denying it. Closing eagerly
-    (`line.strip() == delim`) means a delimiter with trailing spaces ends the
-    body instead of swallowing the rest of the command.
-
-    Round 96 (A54's r94 adversarial FAIL, measured live): stripping on the opener
-    ALONE let one command write the body and then RUN the file —
-    `cat > f <<'EOF' … EOF\\nbash f` executed, and 623 bytes of `.env` came back.
-    A body is data only if the command never executes the file it filled: when
-    another line runs the target (an interpreter, `. f`, or a bare `f`), the body
-    is KEPT and the deny fires as it did before. A READ of the target
-    (`wc -c < f`) is still data.
+    Round 100: the deny judges the raw command. This helper answers one question:
+    is the matching text only inside a body the command writes? If so the reason
+    names `fs.write`, which writes the same bytes without scanning them. It never
+    decides a verdict (round 94–99 taught that any stripping rule opens a
+    one-command execution route: twelve measured shapes, three executed live).
     """
     if not isinstance(text, str) or "<<" not in text:
         return text
-    chunks = []          # (kind, text, target) — kind: open|line|delim|drop
-    pending = []
+    out, pending = [], []
     for line in text.split("\n"):
         if pending:
-            delim, strip, target = pending[0]
+            delim, strip = pending[0]
             if line.strip() == delim:
                 pending.pop(0)
-                chunks.append(("delim", line, ""))
-            elif strip:
-                chunks.append(("drop", line, target))
-            else:
-                chunks.append(("line", line, ""))
+                out.append(line)
+            elif not strip:
+                out.append(line)
             continue
-        stripped_here = False
+        out.append(line)
         for m in _HEREDOC_OP.finditer(line):
             if _quote_open(line, m.start()):
                 continue
-            # The statement that owns the heredoc: after the last unquoted
-            # `;`, `&&` or `||` on the opening line.
-            seg = re.split(r"\|\||&&|;", line[:m.start()])[-1]
-            target = ""
-            if not _pipe_unquoted(line) and _HEREDOC_WRITER.match(seg):
-                target = _redirect_target(seg) or _tee_target(seg)
-            pending.append((m.group(2), bool(target), target))
-            stripped_here = stripped_here or bool(target)
-        chunks.append(("open" if stripped_here else "line", line, ""))
-    # The opener line is judged too: `<<'EOF'; bash f` runs on that line.
-    refs = "\n".join(t for _k, t, _ in chunks)
-    restore = {tgt for k, _, tgt in chunks if k == "drop" and _executes(tgt, refs)}
-    if restore:
-        chunks = [("line", t, tg) if (k == "drop" and tg in restore) else (k, t, tg)
-                  for k, t, tg in chunks]
-    return "\n".join(t for k, t, _ in chunks if k != "drop")
+            pending.append((m.group(2), True))
+    return "\n".join(out)
 
 
 def deny_subject(tool, args):
@@ -3317,19 +3163,31 @@ def classify(tool, args, workspace=None, hist=None, allow=None, scope_name=None,
     if not spec["enabled"]:
         return "disabled", "tool %r is not in the allowlist (config/tools.yaml)" % tool
     subject = _subject(tool, args)
-    # Round 94: the hard-deny judges the command with heredoc DATA removed
-    # (`deny_subject`); every other rule (ask/auto) keeps the whole subject.
-    deny_text = deny_subject(tool, args)
-    hit = _match(spec["deny"], deny_text)
+    # Round 100: the deny judges the RAW subject again — three adversarial sweeps
+    # (A54 r94/r95-97/r98) found a new one-command execution route each time the
+    # heredoc body was stripped. The friction it removed was one refusal; the
+    # hole it opened was execution of the body with the secret in the result. A
+    # body-borne match is still REFUSED, and the alternative is named: the body
+    # only reaches a file, and `fs.write` writes it with no content scan.
+    hit = _match(spec["deny"], subject)
     if hit:
-        note_rule_hit(tool, "deny", hit, deny_text)
+        note_rule_hit(tool, "deny", hit, subject)
         why = (spec.get("deny_why") or {}).get(hit)
         # Round 63: the rule may carry its own explanation (what it protects and
         # what to use instead). The shape before the dash is unchanged — the pins
         # and `failure_family` read it — and a rule without a note answers exactly
         # as it did before.
-        return "denied", ("matches hard-deny pattern %r — denied because %s" % (hit, why)
-                          if why else "matches hard-deny pattern %r" % hit)
+        reason = ("matches hard-deny pattern %r — denied because %s" % (hit, why)
+                  if why else "matches hard-deny pattern %r" % hit)
+        if tool in ("shell", "shell.exec") and \
+                not _match(spec["deny"], _deny_text(subject)):
+            # Round 100: the only match is inside a heredoc BODY this command
+            # writes to a file. Still refused (one-command execution routes kept
+            # appearing), but the caller is told the act that IS allowed.
+            reason += (" — the match is inside a heredoc BODY this command only writes "
+                       "to a file; write that file with `fs.write` (its content is not "
+                       "scanned) or leave the line out")
+        return "denied", reason
     if spec["approval"] == "denied":
         return "denied", "tool policy is 'denied'"
     # JAG-535/538: exclusive tools enforce a dual-permission model — the tool must
