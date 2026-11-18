@@ -1170,6 +1170,20 @@ def cmd_sessions(args):
                           "recorded_action": out.get("recorded_action"),
                           "replayed_action": out.get("replayed_action")},
                          indent=2, ensure_ascii=False))
+    elif args.action == "transport":
+        # Round 108 (arXiv:2611.18471): what compaction kept of the evidence.
+        ref = _chat_ref(args.value)
+        out = req("GET", "/api/sessions/%s/transport?budget=%d"
+                  % (ref, int(getattr(args, "budget", 4000) or 4000)))
+        if out.get("error"):
+            print("error:", out["error"], file=sys.stderr)
+            sys.exit(1)
+        print("fidelity: %s%% of %s decisive item(s) survived compaction"
+              % (round(100.0 * float(out.get("fidelity") or 0), 1), out.get("total")))
+        for item in out.get("missing") or []:
+            print("  lost %s: %s" % (item.get("kind"), item.get("value")))
+        if out.get("restore"):
+            print(out["restore"])
     elif args.action == "backtrace":
         # Round 107 (arXiv:2611.19448): the failing card is usually the reporter,
         # not the cause. Walk backward over the stored cards.
@@ -1481,6 +1495,26 @@ def cmd_providers(args):
 
 
 def cmd_eval(args):
+    if args.action == "select":
+        # Round 108 (arXiv:2611.21515): leaderboard rank is not a selection.
+        # The file is `[{"name","cost","passes","n"}]` (or {"candidates": [...]}).
+        from longrun.util import selection
+        path = getattr(args, "value", None)
+        if not path:
+            print("usage: eval select FILE.json [--budget N] [--cost-cap N]",
+                  file=sys.stderr)
+            sys.exit(2)
+        try:
+            with open(path, encoding="utf-8") as fh:
+                doc = json.load(fh)
+        except (OSError, ValueError) as e:
+            print("bad candidates file:", e, file=sys.stderr)
+            sys.exit(2)
+        cands = doc.get("candidates") if isinstance(doc, dict) else doc
+        out = selection.select(cands, eval_budget=args.budget,
+                               cost_cap=args.cost_cap)
+        print(json.dumps(out, indent=2, ensure_ascii=False))
+        return
     if args.action == "tasks":
         out = req("GET", "/api/eval/tasks")
         rows = out.get("tasks", []) if isinstance(out, dict) else (out if isinstance(out, list) else [])
@@ -1730,11 +1764,13 @@ def main():
     p = sub.add_parser("swarm"); p.add_argument("goal"); p.add_argument("--n-workers", type=int, default=3); \
         p.add_argument("--max-steps", type=int, default=None); p.set_defaults(fn=cmd_swarm)
     sub.add_parser("paperclip-bot").set_defaults(fn=cmd_paperclip_bot)
-    p = sub.add_parser("sessions"); p.add_argument("action", choices=["ls", "new", "fork", "rm", "use", "current", "history", "card", "counterfactual", "model-counterfactual", "graph", "tree", "reset", "clear", "model", "export", "backtrace"]); \
+    p = sub.add_parser("sessions"); p.add_argument("action", choices=["ls", "new", "fork", "rm", "use", "current", "history", "card", "counterfactual", "model-counterfactual", "graph", "tree", "reset", "clear", "model", "export", "backtrace", "transport"]); \
         p.add_argument("value", nargs="?"); p.add_argument("--workspace"); \
         p.add_argument("--at"); p.add_argument("--title"); p.add_argument("--model"); \
         p.add_argument("--arg", action="append"); p.add_argument("--content"); \
         p.add_argument("--card", help="backtrace: the tool card handle (default: last failure)"); \
+        p.add_argument("--budget", type=float, default=4000,
+                       help="transport: the compaction token budget to audit"); \
         p.add_argument("--profile", choices=["audit", "share"], default="share",
                        help="export: share = pseudonyms + bucketed counters; "
                             "audit = the operator's own copy"); \
@@ -1766,8 +1802,13 @@ def main():
     sub.add_parser("selfcheck").set_defaults(fn=cmd_selfcheck)
     p = sub.add_parser("providers"); p.add_argument("action", nargs="?", default="ls", choices=["ls", "add", "rm", "default", "rm-model"]); \
         p.add_argument("value", nargs="?"); p.set_defaults(fn=cmd_providers)
-    p = sub.add_parser("eval"); p.add_argument("action", choices=["tasks", "run"]); \
+    p = sub.add_parser("eval"); p.add_argument("action", choices=["tasks", "run", "select"]); \
         p.add_argument("--task"); p.add_argument("--model"); p.add_argument("--max-steps", type=int, default=6); \
+        p.add_argument("value", nargs="?", help="select: the candidates JSON file"); \
+        p.add_argument("--budget", type=float, default=100.0,
+                       help="select: evaluation budget (same unit as each candidate's cost)"); \
+        p.add_argument("--cost-cap", type=float, default=None,
+                       help="select: maximum per-run deployment cost"); \
         p.add_argument("--no-save", action="store_true"); p.set_defaults(fn=cmd_eval)
     p = sub.add_parser("voice"); p.add_argument("action", choices=["status", "stt", "tts"]); \
         p.add_argument("value", nargs="?"); p.set_defaults(fn=cmd_voice)

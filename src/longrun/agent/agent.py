@@ -1793,6 +1793,10 @@ def _offload_observation(sess, tool, text, tail=None):
         pass
     lines = clean.count("\n") + 1
     head = clean[:_OFFLOAD_HEAD]
+    # Round 108 (arXiv:2611.19056): a head+tail preview can hide the only
+    # decisive line — an `ERROR:`/`exit=1` in the middle of a build log — and the
+    # model then reports success it never observed. The old preview shape is
+    # kept (tests pin it) and the decisive lines are appended explicitly.
     ref = (
         "Observation for tool %s: output is LARGE (%d chars, %d lines) and was "
         "saved to a file so it does not flood your context.\n"
@@ -1805,7 +1809,12 @@ def _offload_observation(sess, tool, text, tail=None):
         "Preview — first %d chars:\n%s\n"
         % (tool, n, lines, path, path, min(_OFFLOAD_HEAD, n), head))
     if n > _OFFLOAD_HEAD + _OFFLOAD_TAIL:
-        ref += "...\nPreview — last %d chars:\n%s\n" % (_OFFLOAD_TAIL, clean[-_OFFLOAD_TAIL:])
+        ref += "...\nPreview — last %d chars:\n%s\n" % (_OFFLOAD_TAIL,
+                                                       clean[-_OFFLOAD_TAIL:])
+    from longrun.harness import observation as _obs
+    dec = _obs.decisive_block(clean)
+    if dec:
+        ref += "Decisive lines (kept in full):\n%s\n" % dec
     return ref + tail
 
 

@@ -2926,6 +2926,18 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(404, {"error": "session not found"})
             from longrun.agent import session_jobs as _sj
             return self._send(200, _sj.describe(sid, (qs or {}).get("job")))
+        if path.startswith("/api/sessions/") and path.endswith("/transport"):
+            # Round 108 (arXiv:2611.18471): what compaction kept of the evidence a
+            # verifier would cite, and the provenance block that restores it.
+            sid = path[len("/api/sessions/"):-len("/transport")].strip("/")
+            if not sid or "/" in sid or ".." in sid:
+                return self._send(404, {"error": "session not found"})
+            sess = load_session(sid)
+            if not sess:
+                return self._send(404, {"error": "session not found"})
+            from longrun.harness import verification_transport
+            return self._send(200, verification_transport.audit_messages(
+                sess.get("messages") or [], _int_arg(qs, "budget", 4000)))
         if path.startswith("/api/sessions/") and path.endswith("/backtrace"):
             # Round 107 (arXiv:2611.19448): from the failing card to the earlier
             # action that explains it. Read-only over the stored tool cards.
