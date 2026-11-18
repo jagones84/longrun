@@ -2269,7 +2269,9 @@
       border-bottom: 1px solid var(--line); padding: 6px 8px; }
     #settingsWin .sw-nav button { display: none; }
     #settingsWin .sw-nav-sel { display: block; width: 100%; }
-    #settingsWin .sw-main { padding: 12px; overflow-x: hidden; }
+    /* round 71: padding is the one unconditional v639 rhythm (10px 12px, ~2329) — a second
+       phone value here was beaten by source order anyway, so it is not declared twice. */
+    #settingsWin .sw-main { overflow-x: hidden; }
     .tools-head { gap: 6px; }
     .tools-head-note { flex-basis: 100%; }
   }
@@ -3105,11 +3107,16 @@
   #settingsWin { background: var(--menubg); border-color: var(--line-2);
     border-radius: 14px; box-shadow: var(--shadow-2); }
   #settingsWin .sw-head { padding: 12px 14px; border-bottom: 1px solid var(--line); }
-  #settingsWin .sw-nav { padding: 10px 8px; border-right: 1px solid var(--line); }
+  /* 2026-11-18 round 71 — DESKTOP geometry only. Declared unconditionally this rule came
+     after the 640px block (~2268) and silently beat its `border-right: 0; padding: 6px 8px`,
+     so a phone kept a 1px vertical line at the right edge of the nav strip. */
+  @media (min-width: 641px) {
+    #settingsWin .sw-nav { padding: 10px 8px; border-right: 1px solid var(--line); }
+  }
   #settingsWin .sw-nav button { padding: 8px 10px; border-radius: var(--r-sm); font-size: 12px; }
   #settingsWin .sw-nav button.active { background: var(--hover); border-color: transparent;
     box-shadow: inset 2px 0 0 var(--acc); color: var(--txt); }
-  #settingsWin .sw-main { padding: 14px 16px; }
+  @media (min-width: 641px) { #settingsWin .sw-main { padding: 14px 16px; } }
   #settingsWin .sw-main .sw-cat h2 { font-size: 11.5px; letter-spacing: .06em; margin: 18px 0 8px; }
   /* 2026-11-01: no second `.kb-row` / `.kb-row:hover` here — the whole rule lives at
      its first definition. A polish block that re-declares a selector is exactly how
@@ -3309,11 +3316,17 @@
   #settingsWin .sw-head .sw-title { font-size: 13px; letter-spacing: .01em; }
   #settingsWin .set-chip { font-size: 9px; letter-spacing: .1em; padding: 2px 8px;
     border-radius: 999px; }
-  #settingsWin .sw-nav { flex-basis: 204px; padding: 10px; }
+  /* 2026-11-18 round 71 — this layer's GEOMETRY is desktop-only. Declared unconditionally
+     it came after the 640px block and silently beat it: measured at 390px the nav kept
+     `flex-basis: 204px` (its buttons are display:none there) and `#swMain` started 204px
+     below the head with ~150px of empty surface. Typography and surfaces stay unconditional. */
+  @media (min-width: 641px) {
+    #settingsWin .sw-nav { flex-basis: 204px; padding: 10px; }
+    #settingsWin .sw-main { padding: 16px 18px 24px; overflow-x: hidden; }
+  }
   #settingsWin .sw-nav button { padding: 7px 10px; margin-bottom: 1px; font-size: 12px;
     border-radius: 7px; border-left: 2px solid transparent; }
   #settingsWin .sw-nav button.active { border-left-color: var(--acc); }
-  #settingsWin .sw-main { padding: 16px 18px 24px; overflow-x: hidden; }
   #settingsWin .sw-main .sw-cat h2 {
     margin: 20px 0 8px; padding-bottom: 6px; border-bottom: 1px solid var(--line);
     font-size: 10.5px; font-weight: 600; letter-spacing: .14em; color: var(--dim);
