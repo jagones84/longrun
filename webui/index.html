@@ -15448,8 +15448,12 @@ function renderPermissions(el, d) {
   const ev = (name, key, rule) => {
     const k = name + ":" + key + ":" + rule;
     const hit = firedOf[k];
-    if (hit && hit.n) return `<span class="perm-ev" title="fired ${hit.n} time(s) — measured"
-      aria-label="fired ${hit.n} times">✓${hit.n > 1 ? hit.n : ""}</span>`;
+    // 2026-11-18 round 79: the ledger keeps the refused input, so the evidence
+    // tooltip names the call the rule actually blocked instead of only a count.
+    const blk = hit && (hit.samples || []).length
+      ? " — e.g. blocked: " + String(hit.samples[hit.samples.length - 1]) : "";
+    if (hit && hit.n) return `<span class="perm-ev" title="fired ${hit.n} time(s) — measured${esc(blk)}"
+      aria-label="fired ${hit.n} times${esc(blk)}">✓${hit.n > 1 ? hit.n : ""}</span>`;
     if (proofsOf[k]) return `<span class="perm-ev never" title="never fired — proven by ${esc(proofsOf[k])}"
       aria-label="never fired, proven by ${esc(proofsOf[k])}">◌</span>`;
     if (unprovenSet.has(k)) return `<span class="perm-ev unproven" title="never fired and no test proves it — audit or retire it"

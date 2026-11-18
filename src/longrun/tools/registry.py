@@ -2420,6 +2420,30 @@ _HIT_PATH = os.environ.get("LONGRUN_POLICY_HITS",
                            os.path.join(APP_DATA_DIR, "policy_hits.json"))
 _HITS = None
 
+# Round 79 (2026-11-18): the ledger counted firings and kept nothing about WHICH
+# call was blocked, so every post-session proposal could only say "x35" — a count
+# is not evidence that a rule blocks legitimate work. Measured: 52 keys, 0 samples.
+# The blocked subject is kept (bounded, redacted) so a friction claim can be judged
+# against the real command. A secret must never reach the ledger or a prompt: an
+# agent that ran `curl -H "Authorization: Bearer …"` would otherwise write its own
+# token into `policy_hits.json`.
+_SAMPLE_MAX = 160      # chars kept per blocked input
+_SAMPLES_KEEP = 3      # distinct inputs remembered per rule
+_BEARER_RE = re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{8,}")
+_SECRET_RE = re.compile(r"\bsk-[A-Za-z0-9_-]{8,}\b")
+_HEX_RE = re.compile(r"\b[0-9a-fA-F]{32,}\b")
+
+
+def _sample_of(subject):
+    """The blocked input, clipped and with credentials removed (round 79)."""
+    s = " ".join(str(subject or "").split())
+    if not s:
+        return ""
+    s = _BEARER_RE.sub("Bearer <redacted>", s)
+    s = _SECRET_RE.sub("<key>", s)
+    s = _HEX_RE.sub("<hex>", s)
+    return s[:_SAMPLE_MAX]
+
 
 def _hits():
     global _HITS
@@ -2432,8 +2456,14 @@ def _hits():
     return _HITS
 
 
-def note_rule_hit(tool, kind, pattern):
-    """Count ONE firing of a configured `deny` / `always_ask` rule (V-2/v820)."""
+def note_rule_hit(tool, kind, pattern, sample=None):
+    """Count ONE firing of a configured `deny` / `always_ask` rule (V-2/v820).
+
+    `sample` (round 79) is the subject that was blocked. The last `_SAMPLES_KEEP`
+    distinct inputs are kept beside the counter, redacted: the proposal that follows
+    a session can then judge "this guard blocks legitimate work" against the command
+    that was actually refused instead of against a count.
+    """
     key = "%s:%s:%s" % (tool, kind, pattern)
     with _HIT_LOCK:
         rec = _hits().get(key) or {"n": 0}
@@ -2441,6 +2471,13 @@ def note_rule_hit(tool, kind, pattern):
         rec["n"] = int(rec.get("n") or 0) + 1
         rec["first_ts"] = rec.get("first_ts") or ts
         rec["last_ts"] = ts
+        s = _sample_of(sample) if sample is not None else ""
+        if s:
+            keep = [x for x in (rec.get("samples") or []) if isinstance(x, str)]
+            if s in keep:
+                keep.remove(s)
+            keep.append(s)
+            rec["samples"] = keep[-_SAMPLES_KEEP:]
         _hits()[key] = rec
         snapshot = dict(_hits())
     try:
@@ -3068,7 +3105,7 @@ def classify(tool, args, workspace=None, hist=None, allow=None, scope_name=None,
     subject = _subject(tool, args)
     hit = _match(spec["deny"], subject)
     if hit:
-        note_rule_hit(tool, "deny", hit)
+        note_rule_hit(tool, "deny", hit, subject)
         why = (spec.get("deny_why") or {}).get(hit)
         # Round 63: the rule may carry its own explanation (what it protects and
         # what to use instead). The shape before the dash is unchanged — the pins
@@ -3163,7 +3200,7 @@ def classify(tool, args, workspace=None, hist=None, allow=None, scope_name=None,
     # other 180 tools. It is NOT a hard deny: approving the card still runs it.
     hit_ask = _match(spec["always_ask"], subject)
     if hit_ask:
-        note_rule_hit(tool, "always_ask", hit_ask)
+        note_rule_hit(tool, "always_ask", hit_ask, subject)
         return "required", "matches always-ask pattern %r (FULL does not skip it)" % hit_ask
     # JAG-127c/388: global approval switch, set from the Config panel (persisted
     # in the overlay). `full` = never ask for anything (hard-deny/disabled still

@@ -141,6 +141,9 @@ def _hit_rows(policy_hits):
             continue
         row = {"tool": parts[0], "kind": parts[1], "pattern": parts[2],
                "n": int((rec or {}).get("n") or 0)}
+        _samples = [s for s in ((rec or {}).get("samples") or []) if str(s).strip()]
+        if _samples:
+            row["sample"] = str(_samples[-1])
         (gone if str(key) in retired else live).append(row)
     live.sort(key=lambda r: (-r["n"], r["tool"], r["pattern"]))
     gone.sort(key=lambda r: (-r["n"], r["tool"], r["pattern"]))
@@ -407,6 +410,59 @@ def _uncovered_removal(delta):
     return None
 
 
+def _safe_search(pattern, text):
+    try:
+        return re.search(pattern, text) is not None
+    except re.error:
+        return False
+
+
+def _unchanged_friction(delta, policy_hits):
+    """A removal that leaves every recorded blocked input blocked is not a fix.
+
+    Round 79 (2026-11-18): the loop could refute a removal by building a witness
+    from the rule's own regex; it could not touch the model's other premise — "this
+    guard blocked a legitimate call 35 times". The ledger now keeps the refused
+    inputs (redacted), so when EVERY one of them still matches another live deny
+    rule, deleting this rule changes nothing for the calls it actually blocked: the
+    stated friction survives the removal. Returns the refuting record, or None when
+    the removal does unblock something (or there is no recorded input to judge).
+    """
+    if str((delta or {}).get("field") or "") != "deny":
+        return None
+    removed = [str(x) for x in ((delta or {}).get("remove") or []) if str(x).strip()]
+    if not removed:
+        return None
+    target = str((delta or {}).get("target") or "")
+    try:
+        from longrun.tools import registry as _reg
+        spec = _reg.tool_spec(target) or {}
+    except Exception:  # noqa: BLE001
+        return None
+    if not spec:
+        return None
+    live = [str(x) for x in (spec.get("deny") or [])]
+    add = [str(x) for x in ((delta or {}).get("add") or []) if str(x).strip()]
+    remaining = [p for p in live if p not in removed] + add
+    firings = (policy_hits or {}).get("firings") or {}
+    for pat in removed:
+        rec = firings.get("%s:deny:%s" % (target, pat)) or {}
+        samples = [str(s) for s in (rec.get("samples") or []) if str(s).strip()]
+        if not samples:
+            continue
+        judged, last_still = 0, []
+        for s in samples:
+            if not _safe_search(pat, s):
+                continue
+            judged += 1
+            last_still = [p for p in remaining if p and _safe_search(p, s)]
+            if not last_still:
+                return None        # the recorded call would become allowed: a real change
+        if judged:
+            return {"pattern": pat, "sample": samples[-1], "also": last_still}
+    return None
+
+
 def _policy_snapshot(policy_hits):
     """The LIVE values of the rows the evidence names, for the model to copy.
 
@@ -457,6 +513,10 @@ def _policy_snapshot(policy_hits):
             json.dumps(spec.get("auto_approve") or [])))
         why = spec.get("deny_why") or {}
         proof = spec.get("deny_proof") or {}
+        for r in live:
+            if r["tool"] != name or not r.get("sample"):
+                continue
+            rows.append("  fired %s x%d — blocked: %s" % (r["kind"], r["n"], r["sample"]))
         for pat in (spec.get("deny") or []):
             if pat in why:
                 rows.append("  deny why: %s — %s" % (pat, str(why[pat])[:200]))
@@ -495,6 +555,7 @@ def _build_analysis_prompt(trace, policy_hits, job_cost, feedback, history=None)
                 "one blocked a real call, so removing one needs evidence from the "
                 "trace):\n" + "\n".join(
                     "  %s %s x%d: %s" % (r["tool"], r["kind"], r["n"], r["pattern"])
+                    + (("\n      blocked: " + r["sample"]) if r.get("sample") else "")
                     for r in live[:12]))
         if gone:
             parts.append(
@@ -539,7 +600,10 @@ def _build_analysis_prompt(trace, policy_hits, job_cost, feedback, history=None)
         "`deny why` line says what that rule protects: a rule is NOT redundant "
         "because its text resembles another rule — two patterns on different "
         "literals cover different calls — so a `remove` of a rule that carries a "
-        "`why` must say what still protects that case:\n"
+        "`why` must say what still protects that case. A `fired … — blocked:` line "
+        "is the call that rule actually refused: to claim friction, quote that input "
+        "and say why it was legitimate; a count is not evidence, and a removal that "
+        "leaves the recorded input blocked by another live rule does not fix it:\n"
         + (snap or "(not available)") + "\n\n"
         + ((_hist + "\n\n") if _hist else "")
         + "Reply with ONE JSON object and NOTHING else. Either:\n"
@@ -677,6 +741,16 @@ def run(sid, jid=None):
         result = {"skip": True, "reason": err, "session": sid,
                   "delta": delta, "prompt": prompt, "evidence": evidence,
                   "reply": str(reply)[:1500]}
+        _log_run(sid, result)
+        return result
+    # Round 79: a removal offered as a friction fix that leaves every recorded
+    # blocked input still blocked changes nothing the operator can feel.
+    _fric = _unchanged_friction(delta, policy_hits)
+    if _fric:
+        result = {"skip": True, "session": sid, "delta": delta, "prompt": prompt,
+                  "evidence": evidence, "reply": str(reply)[:1500],
+                  "reason": "the removal does not unblock the recorded call: %r still "
+                            "matches %r" % (_fric["sample"], _fric["also"][0])}
         _log_run(sid, result)
         return result
     # Round 78: a removal the harness can REFUTE is not a proposal. The model twice
