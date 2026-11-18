@@ -40,6 +40,7 @@ Usage:
   python3 forge.py memory ledger FILE.json | episodes audit FILE.json | contract check FILE.json
   python3 forge.py recovery adjudicate FILE.json | effects coverage|verify FILE.json | context cost FILE.json
   python3 forge.py commit decide FILE.json | expectations verify FILE.json | governance decide FILE.json
+  python3 forge.py capsule compile|replay FILE.json | flow judge FILE.json | selfdirected audit FILE.json
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -782,6 +783,73 @@ def cmd_governance(args):
     out = governance.decide(doc.get("call") or {}, doc.get("ontology") or {}, doc.get("state") or {})
     print(json.dumps(out, indent=2, ensure_ascii=False))
     sys.exit(0 if out["decision"] == "ready" else 1)
+
+
+def cmd_capsule(args):
+    """Round 120 (arXiv:2611.10022): compile one invocation into a replayable capsule."""
+    from longrun.harness import skill_cache
+    if not getattr(args, "file", None):
+        print("usage: capsule compile|replay|savings FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "compile":
+        out = skill_cache.compile_capsule(doc.get("invocation") or doc, doc.get("skill"))
+        print(json.dumps(out, indent=2, ensure_ascii=False))
+        sys.exit(0 if out["ok"] else 1)
+    cap = doc.get("capsule") or {}
+    if args.action == "savings":
+        out = skill_cache.savings(cap, doc.get("tokens_per_step"), doc.get("model_tokens"))
+    else:
+        out = skill_cache.replay(cap, doc.get("state") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0 if out.get("decision") in ("reuse", None) else 1)
+
+
+def cmd_flow(args):
+    """Round 120 (arXiv:2611.21520): judge a relay by behaviour and policy."""
+    from longrun.harness import flow_guard
+    if not getattr(args, "file", None):
+        print("usage: flow judge|calibrate|evaluate FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "judge":
+        out = flow_guard.judge(doc.get("relay") or doc)
+    elif args.action == "calibrate":
+        out = flow_guard.calibrate(doc.get("scores") or [], doc.get("labels") or [],
+                                   doc.get("target_fpr", 0.05))
+    else:
+        out = flow_guard.evaluate(doc.get("scores") or [], doc.get("labels") or [],
+                                  doc.get("threshold"))
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0 if out.get("decision") in ("allow", None) else 1)
+
+
+def cmd_selfdirected(args):
+    """Round 120 (arXiv:2611.23219): was the improvement loop the agent's own?"""
+    from longrun.harness import self_directed
+    if not getattr(args, "file", None):
+        print("usage: selfdirected audit|transfer FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    out = (self_directed.transfer(doc) if args.action == "transfer"
+           else self_directed.audit(doc))
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0 if out.get("verdict") in ("self-directed", "improved", None) else 1)
 
 
 def cmd_instructions(args):
@@ -2349,6 +2417,15 @@ def main():
     p = sub.add_parser("governance"); p.add_argument("action", choices=["decide", "check"]); \
         p.add_argument("file", nargs="?", help="JSON: {ontology, state, call}"); \
         p.set_defaults(fn=cmd_governance)
+    p = sub.add_parser("capsule"); p.add_argument("action", choices=["compile", "replay", "savings"]); \
+        p.add_argument("file", nargs="?", help="JSON: {invocation|skill} or {capsule, state}"); \
+        p.set_defaults(fn=cmd_capsule)
+    p = sub.add_parser("flow"); p.add_argument("action", choices=["judge", "calibrate", "evaluate"]); \
+        p.add_argument("file", nargs="?", help="JSON: {relay} or {scores, labels, threshold}"); \
+        p.set_defaults(fn=cmd_flow)
+    p = sub.add_parser("selfdirected"); p.add_argument("action", choices=["audit", "transfer"]); \
+        p.add_argument("file", nargs="?", help="JSON: a self-improvement run record"); \
+        p.set_defaults(fn=cmd_selfdirected)
     p = sub.add_parser("instructions"); p.add_argument("action", choices=["audit"]); \
         p.add_argument("file", nargs="?", help="JSON: {text, cards}"); \
         p.set_defaults(fn=cmd_instructions)

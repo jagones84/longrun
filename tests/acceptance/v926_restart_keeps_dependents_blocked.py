@@ -79,10 +79,14 @@ check("A2 the dependent of an interrupted job stays `blocked` (not 'dependency f
       _j25.get("status") == "blocked"
       and "dependency failed" not in str(_j25.get("error") or ""), str(_j25))
 
-# B: once the re-armed blocker completes, the sweep releases the dependent
-_write_store({"J24": {"id": "J24", "status": "done", "error": "", "goal": "g J24",
-                      "blocked_by": [], "agents": ["A1"], "runs": {}, "subjobs": {}},
-              "J25": _blocked_job("J25", ["J24"])})
+# B: once the re-armed blocker completes, the sweep releases the dependent.
+# 2026-11-19: the released job carries no agents here, so `dispatch` starts no
+# worker that could still persist an older snapshot over the next section's
+# store (the C1 flake: 1 red in 1 parallel battery run, 0 in 20 standalone runs).
+set_b = {"J24": {"id": "J24", "status": "done", "error": "", "goal": "g J24",
+                 "blocked_by": [], "agents": ["A1"], "runs": {}, "subjobs": {}},
+         "J25": {**_blocked_job("J25", ["J24"]), "agents": []}}
+_write_store(set_b)
 _rel = JOBS_MOD.JOBS.wake()
 _j25b = _job("J25")
 check("B1 a completed blocker releases the dependent (wake on job end)",
