@@ -573,7 +573,20 @@ def _build_analysis_prompt(trace, policy_hits, job_cost, feedback, history=None)
                     "  " + k + ((" — proved by " + _proof[k]) if k in _proof else "")
                     for k in never[:8]))
         if unknown:
-            parts.append(f"Unknown args: {json.dumps(dict(list(unknown.items())[:5]))}")
+            # Round 81: this line dumped `first_ts`/`last_ts` — timestamps the model
+            # cannot use — and never the call. The record now keeps the call, so the
+            # line names it; an entry without one (recorded before the field existed)
+            # prints exactly as before.
+            _rows = []
+            for _k, _rec in list(unknown.items())[:5]:
+                _at = str(_k).split(":", 2)
+                _s = [x for x in ((_rec or {}).get("samples") or []) if str(x).strip()]
+                _rows.append("%s %r x%d%s" % (
+                    _at[0], _at[2] if len(_at) > 2 else _k,
+                    int((_rec or {}).get("n") or 0),
+                    (" — e.g. call: " + str(_s[-1])) if _s else ""))
+            parts.append("Unknown args (the call RAN; the argument was dropped):\n"
+                         + "\n".join("  " + r for r in _rows))
 
     if job_cost:
         parts.append(f"Job cost: {job_cost.get('tokens', 0)} tokens, "

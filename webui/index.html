@@ -15517,6 +15517,8 @@ function renderPermissions(el, d) {
     const at = k.indexOf(":unknown_arg:");
     return { tool: at < 0 ? k : k.slice(0, at),
              what: at < 0 ? "" : k.slice(at + ":unknown_arg:".length),
+             // Round 81: the record keeps the call that carried the argument.
+             sample: ((v && v.samples) || []).slice(-1)[0] || "",
              n: Number((v && v.n) || 0) };
   }).sort((a, b) => b.n - a.n || a.tool.localeCompare(b.tool));
   const unArgBlock = !unArg.length ? "" : `<details class="card perm-card">
@@ -15528,7 +15530,7 @@ function renderPermissions(el, d) {
          <span class="perm-name" title="${esc(u.tool)}">${esc(u.tool)}</span>
          <span class="perm-ev" title="recorded ${u.n} time(s) — the call ran"
            aria-label="recorded ${u.n} times">×${u.n}</span>
-         <code class="perm-rule" title="${esc(u.what)}">${esc(u.what)}</code>
+         <code class="perm-rule" title="${esc(u.what)}${u.sample ? esc(" — e.g. call: " + u.sample) : ""}">${esc(u.what)}</code>
        </div>`).join("")}
        ${unArg.length > 10 ? `<div class="remaining">… and ${unArg.length - 10} more — the full list is
          <code>GET /api/tools</code> → <code>rule_firings.unknown_args</code></div>` : ""}

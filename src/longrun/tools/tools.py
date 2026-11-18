@@ -4846,8 +4846,11 @@ def _dispatch_execute_raw(tool, args, run_id=None):
         # BOTH branches — so a week of evidence decides whether the refusal may ship.
         try:
             from longrun.tools import registry as _reg
+            # Round 81: the record keeps the call that carried the undeclared
+            # argument — the argument name alone names no call.
+            _subj = _reg._subject(tool, args)
             for _text in _ignored:
-                _reg.note_rule_hit(tool, "unknown_arg", _text)
+                _reg.note_rule_hit(tool, "unknown_arg", _text, _subj)
         except Exception:  # noqa: BLE001 — counting must never fail a call
             pass
         if res.get("ok") and _result_is_empty(res):
