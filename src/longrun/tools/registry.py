@@ -2921,42 +2921,49 @@ def _same_path(a, b):
         return a == b
 
 
-def _statement_is_read(stmt, target):
-    """True when `stmt` only READS `target`; None when it does not name it.
+def _names_target(seg, target):
+    return any(_same_path(w, target) for w in _PATH_TOKEN.findall(seg))
 
-    Anything that is not a read keeps the heredoc body (fail-closed): A54's r98
-    sweep found seven routes the naive test allowed (`$W f`, `make -f f`,
-    `git -c alias`, `awk -f f`, `ln -s f link; link`, `bash d/../f`, `<<'EOF'; f`).
-    """
-    words = _PATH_TOKEN.findall(stmt)
-    if not any(_same_path(w, target) for w in words):
-        return None
-    if _EXEC_TOKEN.search(stmt):
-        return False
+
+def _seg_is_read(seg, target):
+    """True when ONE pipeline segment only reads (no consumer, no self-exec)."""
+    words = _PATH_TOKEN.findall(seg)
     head = [w for w in words if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", w)]
     if not head or head[0] not in _READERS:
         return False
-    if head[0] == "awk" and any(w == "-f" for w in head):
+    if head[0] == "awk" and (any(w == "-f" for w in head)
+                             or re.search(r"\bsystem\b|\|\s*[\"']", seg)):
         return False
-    # `< target` is an input redirect: a read whatever the command is.
-    if re.search(r"(?<![0-9])<[ \t]+\S*%s" % re.escape(target), stmt):
-        return True
+    if head[0] == "sort" and "--compress-program" in seg:
+        return False
+    if head[0] == "sed":
+        # `sed 'e …'` and `s/x/y/e` EXECUTE their argument (A54 r98, live).
+        if any(w in ("-i", "--in-place") for w in head):
+            return False
+        if re.search(r"(?:^|[\s'\"])e(?:[\s'\"]|$)|/e(?:[\s'\"]|$)", seg):
+            return False
+    if _EXEC_TOKEN.search(seg):
+        return False
     return True
 
 
 def _executes(target, text):
     """True when `text` may run `target` as code — the conservative reading.
 
-    Every statement that NAMES the file must be a pure read (`wc -c < f`,
-    `grep f`); a statement that names it any other way, or names it beside an
-    execution token, counts as a run.
+    A PIPELINE that names the file must be pure end to end: `cat f | bash` is a
+    run even though its head is `cat` (A54 r98, executed live), and so are
+    `sed 'e …' f`, `sort f | bash` and `sort --compress-program=f f`. A pipeline
+    that never names the file is irrelevant (`echo ok`).
     """
     if not target:
         return False
-    for stmt in re.split(r"\|\||&&|[;|\n]", text):
-        verdict = _statement_is_read(stmt, target)
-        if verdict is False:
-            return True
+    for pipeline in re.split(r"\|\||&&|[;\n]", text):
+        segs = pipeline.split("|")
+        if not any(_names_target(s, target) for s in segs):
+            continue
+        for seg in segs:
+            if seg.strip() and not _seg_is_read(seg, target):
+                return True
     return False
 
 

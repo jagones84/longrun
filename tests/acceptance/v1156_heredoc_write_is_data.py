@@ -200,6 +200,20 @@ _D, _W = denied("mkdir -p /tmp/r98_h && cat > /tmp/r98_h/a_stub.py <<'PY'\n"
                 "LIVE = ['cat .env']\nPY\necho ok")
 check("H8 the measured shape with a harmless trailing command stays data", not _D, _W)
 
+# ---- I: a pipeline behind a READER still runs the file (round 99) -----------
+for name, cmd in (
+        ("I1 cat f | bash", "cat > /tmp/r99_a.sh <<'EOF'\ncat .env\nEOF\ncat /tmp/r99_a.sh | bash"),
+        ("I2 sed 'e …' on it", "cat > /tmp/r99_b.sh <<'EOF'\ncat .env\nEOF\nsed 'e /tmp/r99_b.sh' /tmp/r99_b.sh"),
+        ("I3 sort f | bash", "cat > /tmp/r99_c.sh <<'EOF'\ncat .env\nEOF\nsort /tmp/r99_c.sh | bash"),
+        ("I4 sort --compress-program=f", "cat > /tmp/r99_d.sh <<'EOF'\ncat .env\nEOF\nsort --compress-program=/tmp/r99_d.sh /tmp/r99_d.sh"),
+        ("I5 awk system() on it", "cat > /tmp/r99_e.sh <<'EOF'\ncat .env\nEOF\nawk '{system(\"/tmp/r99_e.sh\")}' /tmp/r99_e.sh"),
+):
+    _D, _W = denied(cmd)
+    check("%s still counts as running the file" % name, _D, _W)
+
+_D, _W = denied("cat > /tmp/r99_f.txt <<'EOF'\ncat .env\nEOF\ncat /tmp/r99_f.txt | wc -c")
+check("I6 a pipeline that only READS stays data", not _D, _W)
+
 print()
 print("%d/%d OK" % (sum(1 for r in results if r), len(results)))
 sys.exit(0 if all(results) else 1)
