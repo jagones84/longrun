@@ -48,7 +48,10 @@ def classify_cause(outcome="done", stop_reason=None, error=None, code=None):
     """
     stop = str(stop_reason or "").strip().lower()
     out = str(outcome or "done").strip().lower()
-    if out == "user_abort":
+    # Round 92: a turn killed by a restart is not a failure of any of the four
+    # buckets — nothing about the provider, the budget, the model or the loop
+    # caused it. `reconcile_stale` writes this outcome at boot.
+    if out in ("user_abort", "interrupted"):
         return None
     if stop in _BUDGET_STOPS:
         return "budget"
@@ -151,3 +154,45 @@ def get(key):
             return json.load(f)
     except (OSError, ValueError):
         return None
+
+
+def reconcile_stale(before=None, outcome="interrupted",
+                    stop_reason="interrupted-by-restart"):
+    """Close the records of turns a restart killed (round 92).
+
+    `start()` writes `outcome: "running"` and only `finish()` replaces it, so a
+    process killed mid-turn leaves that row for ever — measured 2026-11-18: 19 of
+    141 records, the oldest 45 days old. The harness record
+    (`harness/record.py:258`) and `self.info` read this outcome, so those phantom
+    turns were reported as still running. The `runs` table already has this sweep
+    (`tracing.reconcile_orphans`, called at boot); the metrics ledger did not.
+
+    `before` is the boot clock: a record STARTED after it belongs to a turn this
+    process did not orphan and is never touched. Unreadable files are skipped,
+    `ended` stays None (the real end is unknown), and a second call is a no-op.
+    Returns {"closed": <n>, "keys": [...]}.
+    """
+    cut = time.time() if before is None else float(before)
+    closed, keys = 0, []
+    try:
+        names = [n for n in os.listdir(RUNS_DIR) if n.endswith(".json")]
+    except OSError:
+        return {"closed": 0, "keys": []}
+    for name in names:
+        key = name[:-5]
+        rec = get(key)
+        if not isinstance(rec, dict) or rec.get("outcome") != "running":
+            continue
+        try:
+            started = float(rec.get("started"))
+        except (TypeError, ValueError):
+            started = 0.0
+        if started >= cut:
+            continue
+        rec["outcome"] = outcome
+        rec["stop_reason"] = stop_reason
+        rec["failure_cause"] = classify_cause(outcome, stop_reason)
+        _write(key, rec)
+        closed += 1
+        keys.append(key)
+    return {"closed": closed, "keys": sorted(keys)}

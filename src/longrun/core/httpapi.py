@@ -3619,6 +3619,18 @@ def main():
     except Exception:  # noqa: BLE001 — a boot sweep must never stop the boot
         pass
     try:
+        # 2026-11-18 (round 92): the METRICS ledger has the same orphan. A turn
+        # killed by a restart leaves `outcome: "running"` in data/runs/<key>.json
+        # for ever — measured 19 rows, the oldest 45 days — and the harness record
+        # and `self.info` read that outcome, so the operator saw phantom turns.
+        from longrun.model import runmetrics as _rm_boot
+        _mr = _rm_boot.reconcile_stale(before=time.time())
+        if _mr.get("closed"):
+            publish("runmetrics.reconciled", closed=_mr["closed"],
+                    keys=_mr["keys"][:20])
+    except Exception:  # noqa: BLE001 — a boot sweep must never stop the boot
+        pass
+    try:
         # 2026-11-15: the harness restart owns its ticket; Matrix no longer does.
         from longrun.core import restart as _restart_boot
         _restart_boot.resume_after_restart()
