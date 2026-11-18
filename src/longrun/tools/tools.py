@@ -278,12 +278,29 @@ def _shell_hinted(args, run_id):
         # own remedy already states. The ROOT CAUSE goes first: a timed-out
         # heredoc is a timeout, not a quoting problem.
         if failed and res.get("timed_out"):
-            res.setdefault(
-                "hint", "the command hit `timeout_secs` and was interrupted; the "
-                        "partial output above is what it printed. For work that "
-                        "needs longer, start it with `background: true` (the call "
-                        "returns a job id at once) and poll it with "
-                        "`{action:\"status\", job:\"<id>\"}`")
+            if res.get("reset"):
+                # Round 57: the shell was KILLED, not merely interrupted. The
+                # register's 8 `terminal was reset` cards are the ones where a
+                # `cd`/export died with it and the command's effect is unknown;
+                # "was interrupted" did not say either.
+                res.setdefault(
+                    "hint", "the command hit `timeout_secs` and the terminal had "
+                            "to be RESET: the shell process is gone, so any `cd`, "
+                            "export or background job of this session is lost and "
+                            "the next command starts in the workspace root. The "
+                            "effect of the killed command is UNKNOWN — it may have "
+                            "finished (read the output above), been cut halfway "
+                            "(re-read the file it wrote), or never started. Verify "
+                            "with a read before assuming it ran. For work that "
+                            "needs longer, start it with `background: true` and "
+                            "poll it with `{action:\"status\", job:\"<id>\"}`")
+            else:
+                res.setdefault(
+                    "hint", "the command hit `timeout_secs` and was interrupted; the "
+                            "partial output above is what it printed. For work that "
+                            "needs longer, start it with `background: true` (the call "
+                            "returns a job id at once) and poll it with "
+                            "`{action:\"status\", job:\"<id>\"}`")
         if failed and "<<" in cmd and not res.get("hint"):
             res.setdefault(
                 "hint", "a heredoc in `command` failed and its program was never "
@@ -415,6 +432,13 @@ def _shell(args, run_id):
             res["error"] = r["error"]
         if r.get("timed_out"):
             res["timed_out"] = True
+        if r.get("reset"):
+            # Round 57: the shell this call used is DEAD. The next call spawns a
+            # fresh one in the workspace root, so that is the honest `workspace`
+            # for this observation — `sh.cwd` is where the dead shell was
+            # created, and reporting it reads as if its state had survived.
+            res["reset"] = True
+            res["workspace"] = cwd or os.getcwd()
         return res
     # Deny-only, never revert: what passes the gate runs untouched, and no
     # whole-tree diff runs afterwards (it could not attribute a concurrent

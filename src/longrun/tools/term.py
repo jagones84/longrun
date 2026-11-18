@@ -319,7 +319,7 @@ class Shell:
             # wedged behind a busy prompt. The panel shows the reset.
             reset(self.key)
             return {"ok": False, "exit_code": 124, "stdout": text, "timed_out": True,
-                    "error": "timeout — the terminal was reset"}
+                    "reset": True, "error": "timeout — the terminal was reset"}
         res = {"ok": code == 0, "exit_code": code if code is not None else 1,
                "stdout": text}
         # A Stop that killed the child leaves a normal exit code behind (the shell
