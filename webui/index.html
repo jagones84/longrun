@@ -2291,6 +2291,15 @@
   .perm-miss { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--line); }
   .perm-miss summary { cursor: pointer; }
   .perm-miss .perm-rule { opacity: .65; }
+  /* 2026-11-18 round 69 — a rule's EVIDENCE, one glyph, never a second row.
+     ✓N = it fired N times; ◌ = never fired but a test proves it; ◌! = never
+     fired and no test proves it (the state the operator audits). The glyph's
+     name lives in title + aria-label, per the WebUI graphics rules. */
+  .perm-ev { flex: 0 0 auto; font-size: 11px; line-height: 1; padding: 1px 4px;
+    border-radius: 6px; background: var(--soft, rgba(127,127,127,.12)); }
+  .perm-ev.never { opacity: .75; }
+  .perm-ev.unproven { color: var(--caution, #b26a00); font-weight: 600; }
+  .perm-cover { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
   /* 2026-11-05: a tool row is name + actions. On a desktop the actions sit at the
      right edge; on a phone they take their own line instead of pushing the row
      past the viewport (measured: 80 buttons overflowed 390px). */
@@ -15398,6 +15407,25 @@ function renderPermissions(el, d) {
   if (!Array.isArray(tools)) { json_pre(el, d); return; }
   const pol = (d && d.policy) || {};
   const mode = String(pol.mode || "normal");
+  // 2026-11-18 round 69: every rule shows its EVIDENCE, read from the SAME
+  // /api/tools payload (`rule_firings` — no second fetch, no mirror). A rule that
+  // fired is measured; one that never fired but names a proof is tested; one with
+  // neither is the residue the operator audits or retires.
+  const cov = (d && d.rule_firings) || {};
+  const firedOf = cov.firings || {};
+  const proofsOf = cov.never_fired_proof || {};
+  const unprovenSet = new Set(cov.never_fired_unproven || []);
+  const ev = (name, key, rule) => {
+    const k = name + ":" + key + ":" + rule;
+    const hit = firedOf[k];
+    if (hit && hit.n) return `<span class="perm-ev" title="fired ${hit.n} time(s) — measured"
+      aria-label="fired ${hit.n} times">✓${hit.n > 1 ? hit.n : ""}</span>`;
+    if (proofsOf[k]) return `<span class="perm-ev never" title="never fired — proven by ${esc(proofsOf[k])}"
+      aria-label="never fired, proven by ${esc(proofsOf[k])}">◌</span>`;
+    if (unprovenSet.has(k)) return `<span class="perm-ev unproven" title="never fired and no test proves it — audit or retire it"
+      aria-label="never fired, unproven">◌!</span>`;
+    return "";
+  };
   const collect = key => {
     const out = [];
     tools.forEach((t, i) => (t[key] || []).forEach((rule, j) =>
@@ -15424,6 +15452,7 @@ function renderPermissions(el, d) {
   const list = (items, key, empty) => items.length ? items.map(r =>
     `<div class="perm-row">
        <span class="perm-name" title="${esc(r.name)}">${esc(r.name)}</span>
+       ${ev(r.name, key, r.rule)}
        <code class="perm-rule" title="${esc(r.rule)}">${esc(r.rule)}</code>
        <button class="ghost" data-permrm="${key}:${r.i}:${r.j}" aria-label="remove rule" title="remove this rule">✕</button>
      </div>`).join("") : `<div class="remaining">${empty}</div>`;
@@ -15444,12 +15473,27 @@ function renderPermissions(el, d) {
        </div>
      </details>`;
   const off = tools.map((t, i) => ({ i, t })).filter(x => x.t.enabled === false);
+  // The same ledger, summed: what the page is about to show rule by rule. Absent
+  // on a build without the ledger — say so instead of printing zeros.
+  const nConf = Number(cov.configured_rules);
+  const nNever = (cov.never_fired || []).length;
+  const nUn = (cov.never_fired_unproven || []).length;
+  const cover = Number.isFinite(nConf)
+    ? `<div class="remaining perm-cover" id="permCoverage">
+         <span>${nConf} rule(s)</span>
+         <span class="perm-ev" title="this rule has fired — a measurement" aria-label="rules that fired">✓ ${Number(cov.fired_rules) || 0} fired</span>
+         <span class="perm-ev never" title="never fired, but a test proves the rule" aria-label="rules never fired but proven">◌ ${nNever} never (${Math.max(0, nNever - nUn)} proven)</span>
+         <span class="perm-ev unproven" title="never fired and no test proves it — audit or retire each one" aria-label="rules never fired and unproven">◌! ${nUn} unproven</span>
+         <span class="perm-ev" title="a rule the ledger still remembers that the policy no longer has" aria-label="retired rules still in the ledger">∅ ${(cov.retired_rules || []).length} retired</span>
+       </div>`
+    : `<div class="remaining" id="permCoverage">no rule-firing ledger on this build — each rule's evidence appears after its first match</div>`;
   el.innerHTML =
     `<div class="card perm-card">
        <div class="set-t">🛡 Permissions · what may run at all</div>
        <div class="remaining perm-legend">Permissions are checked <b>before</b> approvals. A hard block never
          runs; an always-ask rule reaches you even with approval mode <b>${esc(mode)}</b>. The decisions waiting
          for you right now are in the Approvals panel, not here.</div>
+       ${cover}
      </div>
      <h2>Hard blocks · refused, never executed</h2>
      <div class="card perm-card">${list(collect("deny"), "deny", "no hard blocks")}${recover(missing("deny"), "deny")}</div>
