@@ -57,6 +57,7 @@ Usage:
                            | criteria measure FILE.json | rubric errors FILE.json | docmaint measure FILE.json
                            | priority compare FILE.json | values compare FILE.json | crossenv measure FILE.json
                            | resolution verdict FILE.json | replay audit FILE.json | dialogue compare FILE.json
+                           | selective correct FILE.json | continuation burst FILE.json | bench score FILE.json
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -2187,6 +2188,121 @@ def cmd_dialogue(args):
     sys.exit(0)
 
 
+def cmd_selective(args):
+    """Round 136 (arXiv:2611.23174): an agent that picks the analysis pays for picking it."""
+    from longrun.harness import selective_replay
+    if not getattr(args, "file", None):
+        print("usage: selective correct|multiplier|gate|allocate|resample|audit|selfcorrect|detect|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "multiplier":
+        value = selective_replay.multiplier(doc.get("p"), doc.get("tail_rate"),
+                                            doc.get("body_rate"))
+        out = {"multiplier": None if value is None else round(value, 4)}
+    elif args.action == "correct":
+        out = selective_replay.corrected(
+            doc.get("p"), doc.get("tail_matches"), doc.get("tail_replays"),
+            doc.get("body_matches"), doc.get("body_replays"))
+    elif args.action == "gate":
+        out = selective_replay.gate(doc.get("corrected"), doc.get("alpha", 0.05))
+    elif args.action == "allocate":
+        out = selective_replay.allocation(doc.get("total"), doc.get("tail_rate"),
+                                          doc.get("body_rate"), doc.get("floor", 1))
+    elif args.action == "resample":
+        out = selective_replay.resampling(doc.get("m"), doc.get("n"),
+                                          doc.get("replacement", False),
+                                          doc.get("max_fraction", 0.2))
+    elif args.action == "audit":
+        out = selective_replay.audit(doc.get("run") or doc)
+    elif args.action == "selfcorrect":
+        out = selective_replay.self_correction(doc.get("row") or doc)
+    elif args.action == "detect":
+        out = selective_replay.detect(doc.get("rows") or [])
+    else:
+        out = selective_replay.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_continuation(args):
+    """Round 136 (arXiv:2611.22888): a stop is not the limit; a burst is the signal."""
+    from longrun.harness import continuation_policy
+    if not getattr(args, "file", None):
+        print("usage: continuation rate|burst|gains|judgment|relabel|summary|rules|compare|methods|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "rate":
+        out = continuation_policy.stop_rate(doc.get("turns") or [], doc.get("window"))
+    elif args.action == "burst":
+        out = continuation_policy.burst(doc.get("turns") or [], doc.get("window", 20),
+                                        doc.get("rho", 0.2))
+    elif args.action == "gains":
+        out = continuation_policy.gains(doc.get("bins") or [])
+    elif args.action == "judgment":
+        out = continuation_policy.judgment(doc.get("text") or "")
+    elif args.action == "relabel":
+        out = continuation_policy.relabel(doc.get("text") or "")
+    elif args.action == "summary":
+        out = continuation_policy.summary(doc.get("record") or doc)
+    elif args.action == "rules":
+        out = continuation_policy.policy(doc.get("spec") or doc)
+    elif args.action == "compare":
+        out = continuation_policy.compare(doc.get("rows") or [])
+    elif args.action == "methods":
+        out = continuation_policy.methods(doc.get("rows") or [])
+    else:
+        out = continuation_policy.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_bench(args):
+    """Round 136 (arXiv:2611.23045): the evidence is an experimental variable."""
+    from longrun.harness import evidence_replay
+    if not getattr(args, "file", None):
+        print("usage: bench state|freeze|leak|score|trajectory|paired|sources|memory|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "state":
+        out = evidence_replay.state(doc.get("record") or doc)
+    elif args.action == "freeze":
+        out = evidence_replay.freeze(doc.get("spec") or doc)
+    elif args.action == "leak":
+        out = evidence_replay.leak(doc.get("rows") or [])
+    elif args.action == "score":
+        out = evidence_replay.score(doc.get("rows") or [])
+    elif args.action == "trajectory":
+        out = evidence_replay.trajectory(doc.get("states") or [])
+    elif args.action == "paired":
+        out = evidence_replay.paired(doc.get("rows") or [])
+    elif args.action == "sources":
+        out = evidence_replay.sources(doc.get("rows") or [], doc.get("model_spread"))
+    elif args.action == "memory":
+        out = evidence_replay.memory(doc.get("rows") or [])
+    else:
+        out = evidence_replay.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
 def cmd_instructions(args):
     """Round 114 (arXiv:2611.13709): explicit context-file directives vs the cards."""
     from longrun.harness import instruction_audit
@@ -3960,6 +4076,21 @@ def main():
                                           "propositions", "schedule", "compare", "audit", "advise"]); \
         p.add_argument("file", nargs="?", help="JSON: {prior, action, utterance}, {belief}, {before, after}, {n, rate}, {comm, base}, or {profile}"); \
         p.set_defaults(fn=cmd_dialogue)
+    p = sub.add_parser("selective"); \
+        p.add_argument("action", choices=["correct", "multiplier", "gate", "allocate",
+                                          "resample", "audit", "selfcorrect", "detect", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {p, tail_matches, tail_replays, body_matches, body_replays}, {run}, {row}, {rows}, or {profile}"); \
+        p.set_defaults(fn=cmd_selective)
+    p = sub.add_parser("continuation"); \
+        p.add_argument("action", choices=["rate", "burst", "gains", "judgment", "relabel",
+                                          "summary", "rules", "compare", "methods", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {turns}, {bins}, {text}, {record}, {spec}, {rows}, or {profile}"); \
+        p.set_defaults(fn=cmd_continuation)
+    p = sub.add_parser("bench"); \
+        p.add_argument("action", choices=["state", "freeze", "leak", "score", "trajectory",
+                                          "paired", "sources", "memory", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {record}, {spec}, {rows}, {states}, or {profile}"); \
+        p.set_defaults(fn=cmd_bench)
     p = sub.add_parser("instructions"); p.add_argument("action", choices=["audit"]); \
         p.add_argument("file", nargs="?", help="JSON: {text, cards}"); \
         p.set_defaults(fn=cmd_instructions)
