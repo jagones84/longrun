@@ -62,6 +62,7 @@ Usage:
                            | repair churn FILE.json | validation risk FILE.json | grounding session FILE.json
                            | folding trigger FILE.json | invocation rates FILE.json | capabilities updating FILE.json
                            | govern validate FILE.json | typed build FILE.json | pipeline blame FILE.json
+                           | envelope weight FILE.json | tracefp attribute FILE.json | modelhandoff gate FILE.json
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -2711,6 +2712,114 @@ def cmd_pipeline(args):
     sys.exit(0)
 
 
+def cmd_envelope(args):
+    """Round 141 (arXiv:2611.23844): an envelope label is a weight, not a switch."""
+    from longrun.harness import defense_envelope
+    if not getattr(args, "file", None):
+        print("usage: envelope outcomes|weight|arbitration|content|dose|roles|stack|audit|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "outcomes":
+        out = defense_envelope.outcomes(doc.get("rows") or [])
+    elif args.action == "weight":
+        out = defense_envelope.weight(doc.get("arms") or doc)
+    elif args.action == "arbitration":
+        out = defense_envelope.arbitration(doc.get("backends") or doc)
+    elif args.action == "content":
+        out = defense_envelope.content(doc.get("arms") or doc)
+    elif args.action == "dose":
+        out = defense_envelope.dose(doc.get("levels") or [])
+    elif args.action == "roles":
+        out = defense_envelope.roles(doc.get("rows") or doc)
+    elif args.action == "stack":
+        out = defense_envelope.stack(doc)
+    elif args.action == "audit":
+        out = defense_envelope.audit(doc.get("record") or doc)
+    else:
+        out = defense_envelope.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_tracefp(args):
+    """Round 141 (arXiv:2610.32092): the repair trajectory is the fingerprint."""
+    from longrun.harness import execution_fingerprint
+    if not getattr(args, "file", None):
+        print("usage: tracefp trace|profile|attribute|separation|budget|robustness|probes|audit|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "trace":
+        out = execution_fingerprint.trace(doc.get("steps") or [])
+    elif args.action == "profile":
+        out = execution_fingerprint.profile(doc.get("traces") or [])
+    elif args.action == "attribute":
+        out = execution_fingerprint.attribute(doc.get("traces") or [],
+                                              doc.get("profiles") or {})
+    elif args.action == "separation":
+        out = execution_fingerprint.separation(doc.get("rows") or [])
+    elif args.action == "budget":
+        out = execution_fingerprint.budget(doc.get("rows") or [])
+    elif args.action == "robustness":
+        out = execution_fingerprint.robustness(doc.get("rows") or [])
+    elif args.action == "probes":
+        out = execution_fingerprint.probes(doc.get("row") or doc)
+    elif args.action == "audit":
+        out = execution_fingerprint.audit(doc.get("record") or doc)
+    else:
+        out = execution_fingerprint.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_modelhandoff(args):
+    """Round 141 (arXiv:2610.07816): route the step, not the query."""
+    from longrun.harness import model_handoff
+    if not getattr(args, "file", None):
+        print("usage: modelhandoff gate|signals|calibration|budget|pareto|handoff|recovery|saturate|audit|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "gate":
+        out = model_handoff.gate(doc.get("features") or doc)
+    elif args.action == "signals":
+        out = model_handoff.signals(doc.get("row") or doc)
+    elif args.action == "calibration":
+        out = model_handoff.calibration(doc.get("rows") or [])
+    elif args.action == "budget":
+        out = model_handoff.budget(doc.get("rows") or [])
+    elif args.action == "pareto":
+        out = model_handoff.pareto(doc.get("rows") or [])
+    elif args.action == "handoff":
+        out = model_handoff.handoff(doc.get("packet") or doc)
+    elif args.action == "recovery":
+        out = model_handoff.recovery(doc.get("rows") or [])
+    elif args.action == "saturate":
+        out = model_handoff.saturate(doc.get("rows") or [])
+    elif args.action == "audit":
+        out = model_handoff.audit(doc.get("record") or doc)
+    else:
+        out = model_handoff.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
 def cmd_instructions(args):
     """Round 114 (arXiv:2611.13709): explicit context-file directives vs the cards."""
     from longrun.harness import instruction_audit
@@ -4559,6 +4668,21 @@ def main():
                                           "pareto", "casting", "gain", "advise"]); \
         p.add_argument("file", nargs="?", help="JSON: {stages, gold}, {record}, {rows}, {pairs}, or {profile}"); \
         p.set_defaults(fn=cmd_pipeline)
+    p = sub.add_parser("envelope"); \
+        p.add_argument("action", choices=["outcomes", "weight", "arbitration", "content",
+                                          "dose", "roles", "stack", "audit", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {rows}, {arms}, {backends}, {levels}, or {profile}"); \
+        p.set_defaults(fn=cmd_envelope)
+    p = sub.add_parser("tracefp"); \
+        p.add_argument("action", choices=["trace", "profile", "attribute", "separation",
+                                          "budget", "robustness", "probes", "audit", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {steps}, {traces}, {profiles}, {rows}, or {profile}"); \
+        p.set_defaults(fn=cmd_tracefp)
+    p = sub.add_parser("modelhandoff"); \
+        p.add_argument("action", choices=["gate", "signals", "calibration", "budget", "pareto",
+                                          "handoff", "recovery", "saturate", "audit", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {features}, {rows}, {packet}, {record}, or {profile}"); \
+        p.set_defaults(fn=cmd_modelhandoff)
     p = sub.add_parser("instructions"); p.add_argument("action", choices=["audit"]); \
         p.add_argument("file", nargs="?", help="JSON: {text, cards}"); \
         p.set_defaults(fn=cmd_instructions)
