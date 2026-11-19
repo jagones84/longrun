@@ -52,6 +52,7 @@ Usage:
   python3 forge.py binding alignment FILE.json | gateway utility FILE.json | scoring advise FILE.json
                           | reversibility classify FILE.json | gain decide FILE.json | history advise FILE.json
                           | composed compose FILE.json | measure specs FILE.json | trap position FILE.json
+                           | evidence admit FILE.json | stress compare FILE.json | trial claim FILE.json
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -1688,6 +1689,97 @@ def cmd_trap(args):
     else:
         out = trap_path.false_positive(doc.get("bait_use") or {},
                                        doc.get("legitimate") or [])
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_evidence(args):
+    """Round 131 (arXiv:2611.22169): admission is decided outside the reasoner."""
+    from longrun.harness import evidence_gate
+    if not getattr(args, "file", None):
+        print("usage: evidence admit|gates|firstorder|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "admit":
+        out = evidence_gate.admit(doc.get("cards") or [], doc.get("context") or {})
+    elif args.action == "gates":
+        out = evidence_gate.gates(doc.get("rows") or [])
+    elif args.action == "firstorder":
+        out = evidence_gate.first_order(doc.get("rows") or [])
+    else:
+        out = evidence_gate.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_stress(args):
+    """Round 131 (arXiv:2611.22583): utility constrains parenthood, stressors evolve."""
+    from longrun.harness import stress_evolution
+    if not getattr(args, "file", None):
+        print("usage: stress qualify|promote|pareto|parent|compare|transfer|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "qualify":
+        out = stress_evolution.qualify(doc.get("candidate") or doc)
+    elif args.action == "promote":
+        out = stress_evolution.promote(doc.get("result") or doc)
+    elif args.action == "pareto":
+        out = stress_evolution.pareto(doc.get("candidates") or [])
+    elif args.action == "parent":
+        out = stress_evolution.sample_parent(doc.get("front") or [],
+                                             doc.get("seed") or 0)
+    elif args.action == "compare":
+        out = stress_evolution.compare_search(doc.get("configs") or [])
+    elif args.action == "transfer":
+        out = stress_evolution.transfer(doc.get("stressors") or [],
+                                        doc.get("recipients") or None)
+    else:
+        out = stress_evolution.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_trial(args):
+    """Round 131 (arXiv:2611.19359): one run is not enough."""
+    from longrun.harness import paired_trial
+    if not getattr(args, "file", None):
+        print("usage: trial paired|noise|claim|mechanism|funnel|budget|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "paired":
+        out = paired_trial.paired(doc.get("rows") or [])
+    elif args.action == "noise":
+        out = paired_trial.noise_floor(doc.get("run1") or [], doc.get("run2") or [])
+    elif args.action == "claim":
+        floor = paired_trial.noise_floor(doc.get("run1") or [], doc.get("run2") or []) \
+            if doc.get("run1") else doc.get("floor")
+        out = paired_trial.claim(doc.get("rows") or [], doc.get("strata"), floor)
+    elif args.action == "mechanism":
+        out = paired_trial.mechanism(doc.get("stats") or doc)
+    elif args.action == "funnel":
+        out = paired_trial.funnel(doc.get("stages") or [])
+    elif args.action == "budget":
+        out = paired_trial.budget(doc.get("points") or [])
+    else:
+        out = paired_trial.advise(doc.get("profile") or doc)
     print(json.dumps(out, indent=2, ensure_ascii=False))
     sys.exit(0)
 
@@ -3391,6 +3483,20 @@ def main():
                                           "scope", "falsepositive"]); \
         p.add_argument("file", nargs="?", help="JSON: {bait, weakness}, {baseline, hardened, defended}, {event, rules}, {revocation, clients}, or {bait_use, legitimate}"); \
         p.set_defaults(fn=cmd_trap)
+    p = sub.add_parser("evidence"); \
+        p.add_argument("action", choices=["admit", "gates", "firstorder", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {cards, context}, {rows}, or {profile}"); \
+        p.set_defaults(fn=cmd_evidence)
+    p = sub.add_parser("stress"); \
+        p.add_argument("action", choices=["qualify", "promote", "pareto", "parent",
+                                          "compare", "transfer", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {candidate}, {result}, {candidates}, {front, seed}, {configs}, {stressors, recipients}, or {profile}"); \
+        p.set_defaults(fn=cmd_stress)
+    p = sub.add_parser("trial"); \
+        p.add_argument("action", choices=["paired", "noise", "claim", "mechanism",
+                                          "funnel", "budget", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {rows}, {run1, run2}, {rows, strata, run1}, {stats}, {stages}, {points}, or {profile}"); \
+        p.set_defaults(fn=cmd_trial)
     p = sub.add_parser("instructions"); p.add_argument("action", choices=["audit"]); \
         p.add_argument("file", nargs="?", help="JSON: {text, cards}"); \
         p.set_defaults(fn=cmd_instructions)
