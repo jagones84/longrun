@@ -53,6 +53,7 @@ Usage:
                           | reversibility classify FILE.json | gain decide FILE.json | history advise FILE.json
                           | composed compose FILE.json | measure specs FILE.json | trap position FILE.json
                            | evidence admit FILE.json | stress compare FILE.json | trial claim FILE.json
+                           | scope witness FILE.json | round champion FILE.json | attest build FILE.json
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -1784,6 +1785,104 @@ def cmd_trial(args):
     sys.exit(0)
 
 
+def cmd_scope(args):
+    """Round 132 (arXiv:2611.22835): a passing check is not the requested operation."""
+    from longrun.harness import evidence_scope
+    if not getattr(args, "file", None):
+        print("usage: scope item|claim|witness|obligation|reach|classify|explain|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "item":
+        out = evidence_scope.item(doc.get("source"), doc.get("check"), doc.get("phase"),
+                                  doc.get("operation"), doc.get("witness"))
+    elif args.action == "claim":
+        out = evidence_scope.scope(doc.get("claim") or doc)
+    elif args.action == "witness":
+        out = evidence_scope.witness(doc.get("evidence") or {}, doc.get("expected_operation"))
+    elif args.action == "obligation":
+        out = evidence_scope.obligation(doc.get("evidence") or {}, doc.get("obligation"))
+    elif args.action == "reach":
+        out = evidence_scope.reachability(doc.get("run") or doc)
+    elif args.action == "classify":
+        out = evidence_scope.classify(doc.get("outcome") or doc)
+    elif args.action == "explain":
+        out = evidence_scope.explanation(doc.get("repair") or doc)
+    else:
+        out = evidence_scope.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_round(args):
+    """Round 132 (arXiv:2611.22661): the between-round decision is an object."""
+    from longrun.harness import round_controller
+    if not getattr(args, "file", None):
+        print("usage: round champion|decision|lesson|guardrails|ladder|progress|frontier|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "champion":
+        out = round_controller.champion(doc.get("rounds") or [])
+    elif args.action == "decision":
+        out = round_controller.decision(doc.get("decision") or doc)
+    elif args.action == "lesson":
+        out = round_controller.lesson(doc.get("entry") or doc)
+    elif args.action == "guardrails":
+        out = round_controller.guardrails(doc.get("decision") or {}, doc.get("state") or {})
+    elif args.action == "ladder":
+        out = round_controller.context_ladder(doc.get("rows") or [])
+    elif args.action == "progress":
+        out = round_controller.progress(doc.get("rounds") or [])
+    elif args.action == "frontier":
+        out = round_controller.frontier(doc.get("decision") or doc)
+    else:
+        out = round_controller.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_attest(args):
+    """Round 132 (arXiv:2611.23202): trust in the build and in the record."""
+    from longrun.harness import attestation_trust
+    if not getattr(args, "file", None):
+        print("usage: attest identity|certificate|build|calls|accountability|measure|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "identity":
+        out = attestation_trust.identity(doc.get("request") or doc)
+    elif args.action == "certificate":
+        out = attestation_trust.certificate(doc.get("cert") or {}, doc.get("federation") or ())
+    elif args.action == "build":
+        out = attestation_trust.attestation(doc.get("build") or {}, doc.get("approved") or {})
+    elif args.action == "calls":
+        out = attestation_trust.policy(doc.get("call") or doc)
+    elif args.action == "accountability":
+        out = attestation_trust.accountability(doc.get("entries") or [])
+    elif args.action == "measure":
+        out = attestation_trust.measure(doc.get("rows") or [])
+    else:
+        out = attestation_trust.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
 def cmd_instructions(args):
     """Round 114 (arXiv:2611.13709): explicit context-file directives vs the cards."""
     from longrun.harness import instruction_audit
@@ -3497,6 +3596,21 @@ def main():
                                           "funnel", "budget", "advise"]); \
         p.add_argument("file", nargs="?", help="JSON: {rows}, {run1, run2}, {rows, strata, run1}, {stats}, {stages}, {points}, or {profile}"); \
         p.set_defaults(fn=cmd_trial)
+    p = sub.add_parser("scope"); \
+        p.add_argument("action", choices=["item", "claim", "witness", "obligation",
+                                          "reach", "classify", "explain", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {source, check, phase, operation, witness}, {claim}, {evidence, expected_operation}, {evidence, obligation}, {run}, {outcome}, {repair}, or {profile}"); \
+        p.set_defaults(fn=cmd_scope)
+    p = sub.add_parser("round"); \
+        p.add_argument("action", choices=["champion", "decision", "lesson", "guardrails",
+                                          "ladder", "progress", "frontier", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {rounds}, {decision}, {entry}, {decision, state}, {rows}, {rounds}, {decision}, or {profile}"); \
+        p.set_defaults(fn=cmd_round)
+    p = sub.add_parser("attest"); \
+        p.add_argument("action", choices=["identity", "certificate", "build", "calls",
+                                          "accountability", "measure", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {request}, {cert, federation}, {build, approved}, {call}, {entries}, {rows}, or {profile}"); \
+        p.set_defaults(fn=cmd_attest)
     p = sub.add_parser("instructions"); p.add_argument("action", choices=["audit"]); \
         p.add_argument("file", nargs="?", help="JSON: {text, cards}"); \
         p.set_defaults(fn=cmd_instructions)
