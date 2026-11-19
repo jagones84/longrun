@@ -65,6 +65,7 @@ Usage:
                            | envelope weight FILE.json | tracefp attribute FILE.json | modelhandoff gate FILE.json
                            | admission aimd FILE.json | statesched kv FILE.json | capacity priority FILE.json
                            | slots suffix FILE.json | privmem sanitize FILE.json | privaudit disposition FILE.json
+                           | updategate admit FILE.json | expledger ledger FILE.json | prefetch benefit FILE.json
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -3054,6 +3055,128 @@ def cmd_privaudit(args):
     sys.exit(0)
 
 
+def cmd_updategate(args):
+    """Round 145 (arXiv:2611.23651): admit a self-improvement, or keep the parent."""
+    from longrun.harness import harness_update_gate
+    if not getattr(args, "file", None):
+        print("usage: updategate blocks|differential|confirm|localize|verify|risk|utility|admit|transfer|audit|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "blocks":
+        out = harness_update_gate.blocks(doc.get("items") or [])
+    elif args.action == "differential":
+        out = harness_update_gate.differential(doc.get("rows") or [])
+    elif args.action == "confirm":
+        out = harness_update_gate.confirm(doc.get("outcomes") or [],
+                                          require_all=doc.get("require_all") is True)
+    elif args.action == "localize":
+        out = harness_update_gate.localize(doc.get("rollbacks") or [])
+    elif args.action == "verify":
+        out = harness_update_gate.verify(doc.get("row") or doc)
+    elif args.action == "risk":
+        out = harness_update_gate.risk(doc.get("records") or [])
+    elif args.action == "utility":
+        out = harness_update_gate.utility(doc.get("rows") or [])
+    elif args.action == "admit":
+        out = harness_update_gate.admit(doc.get("row") or doc)
+    elif args.action == "transfer":
+        out = harness_update_gate.transfer(doc.get("row") or doc)
+    elif args.action == "audit":
+        out = harness_update_gate.audit(doc.get("record") or doc)
+    else:
+        out = harness_update_gate.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_expledger(args):
+    """Round 145 (arXiv:2611.23678): judge the process, not only the best score."""
+    from longrun.harness import experiment_ledger
+    if not getattr(args, "file", None):
+        print("usage: expledger scope|noop|precondition|decide|ledger|metrics|repeated|counterfactual|relabel|taxonomy|audit|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "scope":
+        out = experiment_ledger.scope(doc.get("row") or doc)
+    elif args.action == "noop":
+        out = experiment_ledger.noop(doc.get("row") or doc)
+    elif args.action == "precondition":
+        out = experiment_ledger.precondition(doc.get("row") or doc)
+    elif args.action == "decide":
+        out = experiment_ledger.decide(doc.get("row") or doc)
+    elif args.action == "ledger":
+        out = experiment_ledger.ledger(doc.get("records") or [])
+    elif args.action == "metrics":
+        out = experiment_ledger.metrics(doc.get("records") or [])
+    elif args.action == "repeated":
+        out = experiment_ledger.repeated(doc.get("proposals") or [],
+                                         float(doc.get("theta") or 0.6))
+    elif args.action == "counterfactual":
+        out = experiment_ledger.counterfactual(doc.get("pairs") or [])
+    elif args.action == "relabel":
+        out = experiment_ledger.relabel(doc.get("rows") or [])
+    elif args.action == "taxonomy":
+        out = experiment_ledger.taxonomy()
+    elif args.action == "audit":
+        out = experiment_ledger.audit(doc.get("record") or doc)
+    else:
+        out = experiment_ledger.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_prefetch(args):
+    """Round 145 (arXiv:2611.23857): predict the next recall before the demand."""
+    from longrun.harness import context_prefetch
+    if not getattr(args, "file", None):
+        print("usage: prefetch window|encode|decode|contract|prefetch|benefit|degrade|warmup|audit|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "window":
+        out = context_prefetch.window(doc.get("events") or [],
+                                      int(doc.get("size") or context_prefetch.DEFAULTS["window"]))
+    elif args.action == "encode":
+        out = context_prefetch.encode(doc.get("addresses") or [],
+                                      int(doc.get("cap") or context_prefetch.DEFAULTS["vocab_cap"]))
+    elif args.action == "decode":
+        out = context_prefetch.decode(doc.get("ranks") or [], doc.get("last"),
+                                      doc.get("rank_to_delta") or {})
+    elif args.action == "contract":
+        out = context_prefetch.contract(doc.get("packet") or doc)
+    elif args.action == "prefetch":
+        out = context_prefetch.prefetch(doc.get("row") or doc)
+    elif args.action == "benefit":
+        out = context_prefetch.benefit(doc.get("rows") or [])
+    elif args.action == "degrade":
+        out = context_prefetch.degrade(doc.get("row") or doc)
+    elif args.action == "warmup":
+        out = context_prefetch.warmup(doc.get("rows") or [])
+    elif args.action == "audit":
+        out = context_prefetch.audit(doc.get("record") or doc)
+    else:
+        out = context_prefetch.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
 def cmd_instructions(args):
     """Round 114 (arXiv:2611.13709): explicit context-file directives vs the cards."""
     from longrun.harness import instruction_audit
@@ -4951,6 +5074,21 @@ def main():
                                           "auditor", "audit", "advise"]); \
         p.add_argument("file", nargs="?", help="JSON: {row}, {reads}, {rows}, {record}, or {profile}"); \
         p.set_defaults(fn=cmd_privaudit)
+    p = sub.add_parser("updategate"); \
+        p.add_argument("action", choices=["blocks", "differential", "confirm", "localize", "verify",
+                                          "risk", "utility", "admit", "transfer", "audit", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {items}, {rows}, {outcomes}, {rollbacks}, {row}, {records}, {record}, or {profile}"); \
+        p.set_defaults(fn=cmd_updategate)
+    p = sub.add_parser("expledger"); \
+        p.add_argument("action", choices=["scope", "noop", "precondition", "decide", "ledger", "metrics",
+                                          "repeated", "counterfactual", "relabel", "taxonomy", "audit", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {row}, {records}, {proposals}, {pairs}, {rows}, {record}, or {profile}"); \
+        p.set_defaults(fn=cmd_expledger)
+    p = sub.add_parser("prefetch"); \
+        p.add_argument("action", choices=["window", "encode", "decode", "contract", "prefetch", "benefit",
+                                          "degrade", "warmup", "audit", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {events, size}, {addresses, cap}, {ranks, last, rank_to_delta}, {packet}, {row}, {rows}, {record}, or {profile}"); \
+        p.set_defaults(fn=cmd_prefetch)
     p = sub.add_parser("instructions"); p.add_argument("action", choices=["audit"]); \
         p.add_argument("file", nargs="?", help="JSON: {text, cards}"); \
         p.set_defaults(fn=cmd_instructions)
