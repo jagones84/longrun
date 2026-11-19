@@ -202,11 +202,11 @@ python3 forge.py sessions reset my-session      # clears the persistent task lis
 
 **`model-counterfactual`: what INDEX means, and what comes back.** A positive
 INDEX is the 0-based position printed by `sessions history`. A negative INDEX
-is an offset from the end (`-1` = the final position), and if that position is
-not itself intervenable the nearest earlier intervenable message is used. An
-intervenable message is a text USER message — an observation or a nudge — whose
-successor is the assistant's recorded reply; so `-1` always addresses the last
-message that can be intervened on. The final message, and any message without a
+counts INTERVENABLE messages from the end — `-1` is the last message an
+intervention can target, `-2` the one before it — and an offset past the
+available ones is refused with how many exist (`-1 .. -N`). An intervenable
+message is a text USER message — an observation or a nudge — whose successor is
+the assistant's recorded reply. The final message, and any message without a
 recorded assistant successor, is refused, because there is nothing to compare
 the replayed action against; so is an assistant message (editing the model's own
 reply is history editing, not an intervention on its input), a structured-content

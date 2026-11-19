@@ -51,7 +51,7 @@ from longrun.core.server import (ASSET_CTYPES, ASSET_EXTS,
                      _sse_queues,
                      _start_event_pruning, _turn_lock, _valid_sid, agent_run,
                      append_message, backfill_agents, backfill_session_workspaces,
-                     card_by_handle,
+                     card_by_handle, card_index_by_handle,
                      chat_once, clear_abort, clear_session, context_budget, default_model,
                      ensure_agent, ensure_model, ensure_reply_persisted, eval_list_tasks,
                      eval_run, events_since, feed_seq, fork_session, generate_plan,
@@ -2935,14 +2935,14 @@ class Handler(BaseHTTPRequestHandler):
             sess = load_session(sid)
             if not sess:
                 return self._send(404, {"error": "session not found"})
-            from longrun.plan import stopping
-            return self._send(200, stopping.analyze(sess.get("tool_cards") or []))
+            from longrun.plan import stopping as _stopping
+            return self._send(200, _stopping.analyze(sess.get("tool_cards") or []))
         if path == "/api/skills/maintenance":
             # Round 109 (arXiv:2611.22525): which skills still name tools/paths the
             # harness has. Read-only; `repair` is a CLI action on an explicit map.
-            from longrun.harness import skills_maintenance
+            from longrun.harness import skills_maintenance as _skills_maintenance
             import longrun.tools.registry as _reg
-            return self._send(200, skills_maintenance.maintain(
+            return self._send(200, _skills_maintenance.maintain(
                 os.path.join(_reg.REPO, "skills"), repo=_reg.REPO))
         if path.startswith("/api/sessions/") and path.endswith("/reuse"):
             # Round 110 (arXiv:2611.09254): repeated deterministic tool reads in
@@ -2954,10 +2954,10 @@ class Handler(BaseHTTPRequestHandler):
             sess = load_session(sid)
             if not sess:
                 return self._send(404, {"error": "session not found"})
-            from longrun.harness import reuse
+            from longrun.harness import reuse as _reuse
             allow = [t.strip() for t in (qs.get("allow") or "").split(",") if t.strip()] or None
-            return self._send(200, reuse.audit(sess.get("tool_cards") or [], allow=allow,
-                                              version=qs.get("version") or ""))
+            return self._send(200, _reuse.audit(sess.get("tool_cards") or [], allow=allow,
+                                               version=qs.get("version") or ""))
         if path == "/api/residency":
             # Round 110 (arXiv:2611.13412): the park/admit band over the sessions
             # that exist right now. `capacity` (the cache pool, tokens) is
@@ -2968,11 +2968,11 @@ class Handler(BaseHTTPRequestHandler):
             # NOTE: `list_sessions` is imported at module scope. A local import
             # here bound the name for the WHOLE `do_GET` frame and made every
             # `/api/sessions` request raise UnboundLocalError ("Failed to fetch").
-            from longrun.util import residency
+            from longrun.util import residency as _residency
             rows = [{"id": r.get("id"), "ctx_tokens": r.get("ctx_tokens") or 0,
                      "admitted": bool(r.get("running"))}
                     for r in list_sessions()]
-            return self._send(200, residency.plan(rows, cap, current=qs.get("current")))
+            return self._send(200, _residency.plan(rows, cap, current=qs.get("current")))
         if path.startswith("/api/sessions/") and path.endswith("/transport"):
             # Round 108 (arXiv:2611.18471): what compaction kept of the evidence a
             # verifier would cite, and the provenance block that restores it.
@@ -2982,8 +2982,8 @@ class Handler(BaseHTTPRequestHandler):
             sess = load_session(sid)
             if not sess:
                 return self._send(404, {"error": "session not found"})
-            from longrun.harness import verification_transport
-            return self._send(200, verification_transport.audit_messages(
+            from longrun.harness import verification_transport as _verification_transport
+            return self._send(200, _verification_transport.audit_messages(
                 sess.get("messages") or [], _int_arg(qs, "budget", 4000)))
         if path.startswith("/api/sessions/") and path.endswith("/backtrace"):
             # Round 107 (arXiv:2611.19448): from the failing card to the earlier
@@ -2994,14 +2994,17 @@ class Handler(BaseHTTPRequestHandler):
             sess = load_session(sid)
             if not sess:
                 return self._send(404, {"error": "session not found"})
-            from longrun.harness import backtrace
-            cards = sess.get("tool_cards") or []
+            from longrun.harness import backtrace as _backtrace
+            # `explain` indexes the dict cards, so the anchor must be a position
+            # in that same filtered list. Comparing `is` to the object the
+            # resolver returns left `anchor = None` for a valid handle whenever
+            # the resolver handed back anything but the stored object.
+            cards = [c for c in (sess.get("tool_cards") or []) if isinstance(c, dict)]
             handle = qs.get("card")
             if handle:
-                card = card_by_handle(sess, handle)
-                if card is None:
+                anchor = card_index_by_handle(sess, handle)
+                if anchor is None:
                     return self._send(404, {"error": "no card with that handle"})
-                anchor = next((i for i, c in enumerate(cards) if c is card), None)
             else:
                 # No handle: the LAST failing card is the anchor, which is what
                 # "why did this turn break" means after the fact.
@@ -3013,20 +3016,20 @@ class Handler(BaseHTTPRequestHandler):
                         anchor = i
                         break
                 if anchor is None:
-                    return self._send(200, {"format": backtrace.FORMAT,
+                    return self._send(200, {"format": _backtrace.FORMAT,
                                             "anchor": None, "causes": [],
                                             "verdict": "no-failed-call"})
-            return self._send(200, backtrace.explain(cards, anchor))
+            return self._send(200, _backtrace.explain(cards, anchor))
         if path == "/api/invariants":
             # Round 107 (arXiv:2611.19960): the corner cases written down as
             # checks over the config and the catalog. Read-only.
-            from longrun.harness import invariants
-            return self._send(200, invariants.check())
+            from longrun.harness import invariants as _invariants
+            return self._send(200, _invariants.check())
         if path == "/api/harness/manifest":
             # Round 107 (arXiv:2611.22299): what this harness currently decides,
             # for self-inspection before a self-evolution delta. Read-only.
-            from longrun.harness import manifest
-            return self._send(200, manifest.build())
+            from longrun.harness import manifest as _manifest
+            return self._send(200, _manifest.build())
         if path.startswith("/api/sessions/") and path.endswith("/export"):
             # Round 106 (arXiv:2611.20389): the evidence bundle someone else can
             # read. `profile=share` pseudonymises identifiers and buckets every
@@ -3034,9 +3037,9 @@ class Handler(BaseHTTPRequestHandler):
             sid = path[len("/api/sessions/"):-len("/export")].strip("/")
             if not sid or "/" in sid or ".." in sid:
                 return self._send(404, {"error": "session not found"})
-            from longrun.core import trace_export
+            from longrun.core import trace_export as _trace_export
             profile = str(qs.get("profile") or "share")
-            doc = trace_export.export(sid, profile)
+            doc = _trace_export.export(sid, profile)
             if doc.get("error"):
                 return self._send(404, doc)
             return self._send(200, doc)

@@ -14,7 +14,9 @@ Deterministic: plain data in, dicts out; no model, no network, no server.
 
 Run: python3 tests/acceptance/v1228_formation_teammate_principals.py
 """
+import json
 import os
+import subprocess
 import sys
 import tempfile
 
@@ -307,6 +309,33 @@ check("advice names the meeting shortfall",
 check("advice without data is honest",
       PP.advise({})["findings"]
       == ["no privacy, utility, conflict or meeting measurement supplied"])
+
+# ---- 4. reachable from the app: the forge subcommands ------------------
+_FORGE = open(os.path.join(REPO, "src", "longrun", "core", "forge.py"),
+              encoding="utf-8").read()
+check("`formation` is a registered forge subcommand",
+      'sub.add_parser("formation")' in _FORGE and "fn=cmd_formation" in _FORGE)
+check("`teammate` is a registered forge subcommand",
+      'sub.add_parser("teammate")' in _FORGE and "fn=cmd_teammate" in _FORGE)
+check("the principal policy is the `museprincipals` subcommand",
+      'sub.add_parser("museprincipals")' in _FORGE
+      and "fn=cmd_museprincipals" in _FORGE)
+check("each command imports its module",
+      all(("from longrun.harness import " + m) in _FORGE
+          for m in ("multiagent_formation", "teammate_eval", "principal_policy")))
+
+_empty = os.path.join(TMP, "empty.json")
+with open(_empty, "w", encoding="utf-8") as f:
+    json.dump({}, f)
+for _group, _action, _fmt in (("formation", "formations", MF.FORMAT),
+                              ("teammate", "dimensions", TE.FORMAT),
+                              ("museprincipals", "principals", PP.FORMAT)):
+    _p = subprocess.run([sys.executable, os.path.join(REPO, "forge.py"),
+                         _group, _action, _empty],
+                        capture_output=True, text=True, timeout=180)
+    check("`forge %s %s` reaches the module end to end" % (_group, _action),
+          _p.returncode == 0 and _fmt in _p.stdout,
+          (_p.returncode, (_p.stderr or "")[-200:]))
 
 # ---- verdict ----------------------------------------------------------
 passed = sum(1 for r in RESULTS if r)

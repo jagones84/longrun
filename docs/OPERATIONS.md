@@ -10,13 +10,23 @@ mandatory for every agent working in this repository.
 
 ## Before ANY service restart
 
-1. **Proof of idleness first.** A restart is allowed only when this answers with an empty list:
-   `curl -s -H "Authorization: Bearer $(grep -m1 '^LONGRUN_TOKEN=' .env | cut -d= -f2-)" \
-      http://127.0.0.1:8790/api/chat/live`
-   → `{"active": []}`. If anything is active, **wait**; re-check every few seconds.
+1. **Proof of idleness first.** A restart is allowed only when BOTH gates are empty — no live chat
+   turn AND no detached tool/background job still writing:
+
+   ```bash
+   TOKEN=$(grep -m1 '^LONGRUN_TOKEN=' "$(git rev-parse --show-toplevel)/.env" | cut -d= -f2-)
+   curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8790/api/chat/live      # {"active": []}
+   curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8790/api/tools/running   # {"running": []}
+   ```
+
+   The first must answer `{"active": []}` and the second `{"running": []}`. If anything is active,
+   **wait**; re-check every few seconds.
    Never chain it (`curl … && systemctl --user restart longrun`): `&&` runs on a NON-empty answer too.
-   Parse the JSON and exit when the list is not empty — on 2026-11-16 this exact chain restarted the
+   Parse the JSON and exit when a list is not empty — on 2026-11-16 this exact chain restarted the
    service under session `5033e643711a` (resumed from `service.resume`, but still an avoidable abort).
+   The `.env` path is repo-anchored so the command works from any directory (a relative `grep` would
+   yield an empty token and a 401); if the service gets its token from an `EnvironmentFile` instead,
+   substitute that as the source.
 2. Never `kill`, `pkill`, `kill -9` or `systemctl stop` the service to make a change land.
    `systemctl --user restart longrun` is the only supported form, and only under rule 1.
 3. Announce it in the same message: what changed, why the restart, and that a turn was or was
@@ -28,12 +38,14 @@ mandatory for every agent working in this repository.
 ## After a restart
 
 5. Read the recovery record — it names what was resumed, not what was lost:
-   `GET /api/events?kind=service.resume` (or the `service.resume` row in `data/events.db`).
+   `curl -s -H "Authorization: Bearer $TOKEN" 'http://127.0.0.1:8790/api/events?kind=service.resume'`
+   (`$TOKEN` as in rule 1; or read the `service.resume` row in `data/events.db`).
    `{"running": [...], "resumed": [...], "skipped": [...]}` is the answer.
 6. A session whose last message says *"interrupted by a service restart"* may already be running
    again in the background: the harness delivers a `[Harness restart]` continuation message.
-   **Read the stored history before re-briefing** (`GET /api/history?session=<id>`); sending the
-   same brief twice is a defect, not a retry.
+   **Read the stored history before re-briefing**
+   (`curl -s -H "Authorization: Bearer $TOKEN" 'http://127.0.0.1:8790/api/history?session=<id>'`);
+   sending the same brief twice is a defect, not a retry.
 7. Never report "the agent stopped / the work was lost" until you have quoted, for that session:
    the session id, the last message index, and whether a `[Harness restart]` message follows.
 

@@ -79,19 +79,40 @@ check("A2 the dependent of an interrupted job stays `blocked` (not 'dependency f
       _j25.get("status") == "blocked"
       and "dependency failed" not in str(_j25.get("error") or ""), str(_j25))
 
-# B: once the re-armed blocker completes, the sweep releases the dependent.
-# 2026-11-19: the released job carries no agents here, so `dispatch` starts no
-# worker that could still persist an older snapshot over the next section's
-# store (the C1 flake: 1 red in 1 parallel battery run, 0 in 20 standalone runs).
+# B: once the re-armed blocker completes, the sweep releases the dependent and
+# reaches dispatch with its agent roster intact. The 2026-11-19 change dropped
+# `agents` so dispatch started no worker; that weakened the case (release was no
+# longer observed on the agent-carrying path) without naming the real cause.
+# Every APP write to the store holds `_LOCK` (`_update` / `_release` /
+# `dispatch`), but this test's `_write_store` does not — a live worker thread
+# outliving section B could write over section C's fixture. That is a test
+# ISOLATION issue, not a job-store race. Stub only the thread-starting boundary
+# and assert it was reached.
 set_b = {"J24": {"id": "J24", "status": "done", "error": "", "goal": "g J24",
                  "blocked_by": [], "agents": ["A1"], "runs": {}, "subjobs": {}},
-         "J25": {**_blocked_job("J25", ["J24"]), "agents": []}}
+         "J25": _blocked_job("J25", ["J24"])}
 _write_store(set_b)
-_rel = JOBS_MOD.JOBS.wake()
+_orig_dispatch = JOBS_MOD.JOBS.dispatch
+_dispatched = []
+
+
+def _record_dispatch(jid):
+    _dispatched.append(jid)
+    return {"ok": True, "job": jid, "status": "created"}
+
+
+JOBS_MOD.JOBS.dispatch = _record_dispatch
+try:
+    _rel = JOBS_MOD.JOBS.wake()
+finally:
+    JOBS_MOD.JOBS.dispatch = _orig_dispatch
 _j25b = _job("J25")
 check("B1 a completed blocker releases the dependent (wake on job end)",
       any(r.get("job") == "J25" for r in (_rel.get("released") or []))
       and "dependency failed" not in str(_j25b.get("error") or ""), str(_rel))
+check("B2 the released dependent reaches dispatch with its agents intact",
+      _dispatched == ["J25"] and _j25b.get("agents") == ["A2"]
+      and _j25b.get("status") == "created", (_dispatched, _j25b))
 
 # C: a genuinely failed blocker still fails its dependent (JAG-348 kept)
 _write_store({"J34": {"id": "J34", "status": "error", "error": "boom", "goal": "g J34",

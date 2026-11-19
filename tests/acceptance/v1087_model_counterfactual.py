@@ -77,8 +77,8 @@ check("P3 it states its fidelity and caveat",
       p.get("fidelity") == "transcript+live-system" and bool(p.get("caveat")),
       p.get("fidelity"))
 p2, why2 = M.plan(SESS, -2, {"content": "different"})
-check("P4 -2 addresses the observation before the last assistant",
-      not why2 and p2.get("index") == 2, why2)
+check("P4 -2 addresses the intervenable message before the last one",
+      not why2 and p2.get("index") == 0, (p2, why2))
 
 refused = [
     ("no messages", {"messages": []}, 0, {"content": "x"}),

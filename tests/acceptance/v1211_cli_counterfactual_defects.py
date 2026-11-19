@@ -53,17 +53,17 @@ check("`-1` resolves to the last intervenable message", not why, why)
 check("`-1` names the message it replaced", plan.get("index") == 2, plan)
 check("`-1` carries the recorded reply",
       plan.get("recorded_reply") == "{\"action\": \"read\"}", plan)
-p2, why2 = M.plan(SESS, -2, {"content": "a different observation"})
-check("`-2` is an offset and lands on an intervenable message", not why2, why2)
-check("`-2` names the observation before the last assistant", p2.get("index") == 2, p2)
+p2, why2 = M.plan(SESS, -2, {"content": "a different question"})
+check("`-2` is the intervenable message before the last one", not why2, why2)
+check("`-2` names the first user message, not the last", p2.get("index") == 0, p2)
 p2b, why2b = M.plan(SESS, -3, {"content": "a different question"})
-check("`-3` walks back past the assistant to the first user message",
-      not why2b and p2b.get("index") == 0, (p2b, why2b))
+check("an offset past the available intervenable messages names how many exist",
+      why2b and "2 intervenable message(s)" in str(why2b), (p2b, why2b))
 p3, why3 = M.plan(SESS, 2, {"content": "positive still works"})
 check("a positive index is unchanged", not why3 and p3.get("index") == 2, p3)
 _, why4 = M.plan(SESS, -5, {"content": "too far"})
-check("an offset outside the transcript is refused",
-      "outside the transcript" in str(why4), why4)
+check("an offset past the available intervenable messages is refused",
+      "intervenable message(s)" in str(why4), why4)
 _, why5 = M.plan(SESS, 9, {"content": "outside"})
 check("a positive index outside the transcript is refused",
       "outside the transcript" in str(why5), why5)

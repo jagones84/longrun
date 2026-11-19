@@ -1375,6 +1375,25 @@ def get_or_create_session(sid, title=None, workspace=None, trust=None):
     return s
 
 
+def _card_rows(sess):
+    return [c for c in ((sess or {}).get("tool_cards") or []) if isinstance(c, dict)]
+
+
+def _card_index(cards, handle):
+    """The position of the card named by a manifest handle, or None."""
+    h = str(handle or "").strip().lstrip("#")
+    if not h:
+        return None
+    from longrun.model.context_engine import card_handle
+    for i, c in enumerate(cards):
+        if str(c.get("id") or "") == h:
+            return i
+    for i, c in enumerate(cards):
+        if card_handle(c) == h:
+            return i
+    return None
+
+
 def card_by_handle(sess, handle):
     """The tool card named by a manifest handle, or None.
 
@@ -1382,18 +1401,21 @@ def card_by_handle(sess, handle):
     for a card persisted before ids existed — with or without the leading `#`.
     One resolver for the CLI, the HTTP filter and the `sessions` tool.
     """
-    h = str(handle or "").strip().lstrip("#")
-    if not h:
-        return None
-    from longrun.model.context_engine import card_handle
-    cards = [c for c in ((sess or {}).get("tool_cards") or []) if isinstance(c, dict)]
-    for c in cards:
-        if str(c.get("id") or "") == h:
-            return c
-    for c in cards:
-        if card_handle(c) == h:
-            return c
-    return None
+    cards = _card_rows(sess)
+    i = _card_index(cards, handle)
+    return None if i is None else cards[i]
+
+
+def card_index_by_handle(sess, handle):
+    """The POSITION of the tool card named by a manifest handle, or None.
+
+    A caller that must point at the card (e.g. `harness.backtrace.explain`)
+    uses this instead of `is`-comparing the object `card_by_handle` returns.
+    The position indexes the session's dict cards — the same filtered list
+    `explain` indexes — so it cannot drift if the resolver ever hands back a
+    copy or a normalised dict.
+    """
+    return _card_index(_card_rows(sess), handle)
 
 
 def replay_record(cards, workspace="", upto_ts=None):

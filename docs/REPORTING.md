@@ -597,7 +597,7 @@ If any box is unchecked, the report is not sent.
   SVG; no other external asset).
 - Link it in the chat with `computer://`, with human-readable text.
 - If the operator approves an item, write `.agent/docs/plans/YYYY-MM-DD_<topic>.md` and register it in
-  `plans/longrun-upgrade-master.md` in the same session.
+  `.agent/docs/plans/longrun-upgrade-master.md` in the same session.
 - Do not duplicate the report in two places. The HTML is the artifact; the chat is a summary.
 
 ---

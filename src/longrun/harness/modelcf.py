@@ -31,22 +31,25 @@ def _messages(sess):
 
 
 def _intervenable(msgs, i):
-    """A message an intervention can target: a text USER message with a successor."""
+    """A message an intervention can target: a text USER message whose successor
+    is the assistant's recorded reply."""
     msg = msgs[i]
-    return (i < len(msgs) - 1
-            and str(msg.get("role") or "") == USER
-            and isinstance(msg.get("content"), str))
+    if i >= len(msgs) - 1:
+        return False
+    if str(msg.get("role") or "") != USER or not isinstance(msg.get("content"), str):
+        return False
+    return str(msgs[i + 1].get("role") or "") == ASSISTANT
 
 
 def _resolve(msgs, value):
-    """(index, reason) — 0-based position, or an offset from the end.
+    """(index, reason) — a 0-based position, or a count of INTERVENABLE messages.
 
-    A positive value is used as is. A negative value is an offset from the end
-    (``n + value``); if that position is not itself intervenable — an assistant
-    message, structured content, or the final message with no recorded successor
-    — the nearest EARLIER intervenable message is used. So `-1` always addresses
-    the last message that can be intervened on, which is what the CLI promises;
-    resolving `-1` to the raw final message made it impossible by construction.
+    A positive value is a raw position. A negative value counts INTERVENABLE
+    messages from the end — ``-1`` is the last message an intervention can
+    target, ``-2`` the one before it — and an offset past the available ones is
+    refused with the number that exist. Counting raw positions made `-1` and
+    `-2` both name the last user message whenever the transcript ended with a
+    reply, which is not what the CLI promises.
     """
     try:
         raw = int(value)
@@ -58,15 +61,15 @@ def _resolve(msgs, value):
         if raw >= n:
             return None, "index %r is outside the transcript (0..%d)" % (value, n - 1)
         return raw, ""
-    start = n + raw
-    if start < 0:
-        return None, "index %r is outside the transcript (0..%d)" % (value, n - 1)
-    for i in range(start, -1, -1):
-        if _intervenable(msgs, i):
-            return i, ""
-    return None, ("no intervenable message at or before position %d: a target "
-                  "must be a text USER message followed by the assistant's reply"
-                  % start)
+    targets = [i for i in range(n) if _intervenable(msgs, i)]
+    if not targets:
+        return None, ("no intervenable message: a target must be a text USER "
+                      "message followed by the assistant's reply")
+    pos = len(targets) + raw
+    if pos < 0:
+        return None, ("index %r is past the %d intervenable message(s) in this "
+                      "transcript (-1 .. -%d)" % (raw, len(targets), len(targets)))
+    return targets[pos], ""
 
 
 def window(messages, index, budget_chars):

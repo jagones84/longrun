@@ -9,7 +9,7 @@
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776ab.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![deps](https://img.shields.io/badge/deps-stdlib%20%2B%20PyYAML-brightgreen.svg)](#quick-start-windows)
-[![tests](https://img.shields.io/badge/battery-917%2F917%20tests-blue.svg)](#tests)
+[![tests](https://img.shields.io/badge/battery-918%2F918%20tests-blue.svg)](#tests)
 
 **Longrun is the self-hosted AI agent harness that drives the LLM — teams of
 agents, real tools, and verification, on your own machine.** One Python process
@@ -523,16 +523,16 @@ matching job's final reply or failure.
 ## Tests
 
 The acceptance battery runs tests in isolated temporary directories. A fix is
-proven on its own tests first (`tests/battery_tmp.sh`, rewritten per fix); the full
-suite runs on request. The fast run skips six heavy indexing and
-document-ingestion tests:
+proven on its own tests first: on a development checkout that is a per-fix
+launcher (`tests/battery_tmp.sh`, gitignored and never shipped); every checkout
+scopes the tracked battery with `LONGRUN_BATTERY_TESTS`. The full suite runs on
+request. The fast run skips six heavy indexing and document-ingestion tests:
 
-The suite is 917/917 tests — every acceptance file under `tests/acceptance/` is
+The suite is 918/918 tests — every acceptance file under `tests/acceptance/` is
 counted, and the badge above is the same number (one truth, pinned by `v354`).
 
 ```bash
-bash tests/battery_tmp.sh                      # the fix in flight (targeted)
-LONGRUN_BATTERY_TESTS="v753_stop_kills_work" bash tests/battery.sh
+LONGRUN_BATTERY_TESTS="v753_stop_kills_work" bash tests/battery.sh   # the fix in flight (targeted)
 bash tests/battery.sh
 LONGRUN_BATTERY_FULL=1 bash tests/battery.sh
 LONGRUN_BATTERY_JOBS=1 bash tests/battery.sh
