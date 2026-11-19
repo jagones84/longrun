@@ -81,6 +81,8 @@ Usage:
                            | orchcredit certify FILE.json
                            | intentgraph audit FILE.json | writeguard mediate FILE.json
                            | ctxregime regimes FILE.json
+                           | skillgate curve FILE.json | skillflow regime FILE.json
+                           | skilleve diagnose FILE.json
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -4312,6 +4314,115 @@ def cmd_ctxregime(args):
     sys.exit(0)
 
 
+def cmd_skillgate(args):
+    """Round 156 (arXiv:2608.05810): admission before the pool."""
+    from longrun.harness import skill_gate
+    if not getattr(args, "file", None) and args.action != "tiers":
+        print("usage: skillgate tiers|critic|gain|taxonomy|curve|select|"
+              "irreversibility|rollback|audit|advise [FILE.json]", file=sys.stderr)
+        sys.exit(2)
+    doc = {}
+    if getattr(args, "file", None):
+        try:
+            with open(args.file, encoding="utf-8") as fh:
+                doc = json.load(fh)
+        except (OSError, ValueError) as e:
+            print("bad file:", e, file=sys.stderr)
+            sys.exit(2)
+    if args.action == "tiers":
+        out = skill_gate.tiers()
+    elif args.action == "critic":
+        out = skill_gate.critic(doc.get("record") or doc)
+    elif args.action == "gain":
+        out = skill_gate.gain(doc.get("record") or doc)
+    elif args.action == "taxonomy":
+        out = skill_gate.taxonomy(doc.get("record") or doc)
+    elif args.action == "curve":
+        out = skill_gate.curve(doc.get("rows") or [])
+    elif args.action == "select":
+        out = skill_gate.select(doc.get("candidates") or [])
+    elif args.action == "irreversibility":
+        out = skill_gate.irreversibility(doc.get("record") or doc)
+    elif args.action == "rollback":
+        out = skill_gate.rollback(doc.get("record") or doc)
+    elif args.action == "audit":
+        out = skill_gate.audit_record(doc.get("record") or doc)
+    else:
+        out = skill_gate.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_skillflow(args):
+    """Round 156 (arXiv:2611.20584): the plugin population as a gas."""
+    from longrun.harness import skill_flow
+    if not getattr(args, "file", None):
+        print("usage: skillflow ledger|project|regime|sound|shock|instruments|"
+              "diagnose|audit|advise FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "ledger":
+        out = skill_flow.ledger(doc.get("events") or [])
+    elif args.action == "project":
+        out = skill_flow.project(doc.get("edits") or [], doc.get("reserve"))
+    elif args.action == "regime":
+        out = skill_flow.regime(doc.get("series") or [])
+    elif args.action == "sound":
+        out = skill_flow.sound(doc.get("record") or doc)
+    elif args.action == "shock":
+        out = skill_flow.shock(doc.get("record") or doc)
+    elif args.action == "instruments":
+        out = skill_flow.instruments(doc.get("record") or doc)
+    elif args.action == "diagnose":
+        out = skill_flow.diagnose(doc.get("record") or doc)
+    elif args.action == "audit":
+        out = skill_flow.audit_record(doc.get("record") or doc)
+    else:
+        out = skill_flow.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_skilleve(args):
+    """Round 156 (arXiv:2611.03238): evidence-grounded skill evolution."""
+    from longrun.harness import skill_evolution
+    if not getattr(args, "file", None):
+        print("usage: skilleve entry|evidence|diagnose|candidate|validate|"
+              "consolidate|budget|audit|advise FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "entry":
+        out = skill_evolution.entry(doc.get("record") or doc)
+    elif args.action == "evidence":
+        out = skill_evolution.evidence(doc.get("record") or doc)
+    elif args.action == "diagnose":
+        out = skill_evolution.diagnose(doc.get("record") or doc)
+    elif args.action == "candidate":
+        out = skill_evolution.candidate(doc.get("record") or doc)
+    elif args.action == "validate":
+        out = skill_evolution.validate(doc.get("record") or doc)
+    elif args.action == "consolidate":
+        out = skill_evolution.consolidate(doc.get("record") or doc)
+    elif args.action == "budget":
+        out = skill_evolution.budget(doc.get("record") or doc)
+    elif args.action == "audit":
+        out = skill_evolution.audit_record(doc.get("record") or doc)
+    else:
+        out = skill_evolution.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
 def cmd_instructions(args):
     """Round 114 (arXiv:2611.13709): explicit context-file directives vs the cards."""
     from longrun.harness import instruction_audit
@@ -6398,6 +6509,24 @@ def main():
                                           "audit", "advise"]); \
         p.add_argument("file", nargs="?", help="JSON: {record}, {rows}, or {profile}"); \
         p.set_defaults(fn=cmd_ctxregime)
+    p = sub.add_parser("skillgate"); \
+        p.add_argument("action", choices=["tiers", "critic", "gain", "taxonomy",
+                                          "curve", "select", "irreversibility",
+                                          "rollback", "audit", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {record}, {rows}, {candidates}, or {profile}"); \
+        p.set_defaults(fn=cmd_skillgate)
+    p = sub.add_parser("skillflow"); \
+        p.add_argument("action", choices=["ledger", "project", "regime", "sound",
+                                          "shock", "instruments", "diagnose",
+                                          "audit", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {events}, {edits}, {series}, {record}, or {profile}"); \
+        p.set_defaults(fn=cmd_skillflow)
+    p = sub.add_parser("skilleve"); \
+        p.add_argument("action", choices=["entry", "evidence", "diagnose", "candidate",
+                                          "validate", "consolidate", "budget",
+                                          "audit", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {record} or {profile}"); \
+        p.set_defaults(fn=cmd_skilleve)
     p = sub.add_parser("instructions"); p.add_argument("action", choices=["audit"]); \
         p.add_argument("file", nargs="?", help="JSON: {text, cards}"); \
         p.set_defaults(fn=cmd_instructions)
