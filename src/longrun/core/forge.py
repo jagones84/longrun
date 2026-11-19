@@ -59,6 +59,7 @@ Usage:
                            | resolution verdict FILE.json | replay audit FILE.json | dialogue compare FILE.json
                            | selective correct FILE.json | continuation burst FILE.json | bench score FILE.json
                            | deliberation audit FILE.json | frontier bracket FILE.json | transfer check FILE.json
+                           | repair churn FILE.json | validation risk FILE.json | grounding session FILE.json
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -2403,6 +2404,99 @@ def cmd_transfer(args):
     sys.exit(0)
 
 
+def cmd_repair(args):
+    """Round 138 (arXiv:2611.22991): accuracy hides repairs cancelled by regressions."""
+    from longrun.harness import repair_audit
+    if not getattr(args, "file", None):
+        print("usage: repair churn|reach|failure|capability|flags|provenance|veto|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "churn":
+        out = repair_audit.churn(doc.get("rows") or doc.get("executions") or [])
+    elif args.action == "reach":
+        out = repair_audit.reachability(doc.get("row") or doc)
+    elif args.action == "failure":
+        out = repair_audit.failure(doc.get("row") or doc)
+    elif args.action == "capability":
+        out = repair_audit.capability(doc.get("row") or doc)
+    elif args.action == "flags":
+        out = repair_audit.flags(doc.get("rows") or [])
+    elif args.action == "provenance":
+        out = repair_audit.provenance(doc.get("record") or doc)
+    elif args.action == "veto":
+        out = repair_audit.veto(doc.get("rows") or [])
+    else:
+        out = repair_audit.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_validation(args):
+    """Round 138 (arXiv:2611.22973): risk decides the evidence, and oversight must be real."""
+    from longrun.harness import validation_ladder
+    if not getattr(args, "file", None):
+        print("usage: validation risk|autonomy|controls|domains|evidence|calibrate|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "risk":
+        out = validation_ladder.risk(doc.get("row") or doc)
+    elif args.action == "autonomy":
+        out = validation_ladder.autonomy(doc.get("row") or doc)
+    elif args.action == "controls":
+        out = validation_ladder.controls(doc.get("row") or doc)
+    elif args.action == "domains":
+        out = validation_ladder.domains(doc.get("row") or doc)
+    elif args.action == "evidence":
+        out = validation_ladder.evidence(doc.get("row") or doc)
+    elif args.action == "calibrate":
+        out = validation_ladder.calibrate(doc.get("rows") or [])
+    else:
+        out = validation_ladder.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_grounding(args):
+    """Round 138 (arXiv:2611.23203): knowledge widens the search, a verifier keeps it honest."""
+    from longrun.harness import skill_grounding
+    if not getattr(args, "file", None):
+        print("usage: grounding skill|equivalence|verdict|session|layers|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "skill":
+        out = skill_grounding.skill(doc.get("spec") or doc)
+    elif args.action == "equivalence":
+        out = skill_grounding.equivalence(doc.get("record") or doc)
+    elif args.action == "verdict":
+        out = skill_grounding.verdict(doc.get("record") or doc)
+    elif args.action == "session":
+        out = skill_grounding.session(doc.get("rows") or [])
+    elif args.action == "layers":
+        out = skill_grounding.layers(doc.get("rows") or [])
+    else:
+        out = skill_grounding.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
 def cmd_instructions(args):
     """Round 114 (arXiv:2611.13709): explicit context-file directives vs the cards."""
     from longrun.harness import instruction_audit
@@ -4206,6 +4300,21 @@ def main():
                                           "pooled", "power", "advise"]); \
         p.add_argument("file", nargs="?", help="JSON: {rows}, {baseline}, {spec}, {phases}, {sd, effect}, or {profile}"); \
         p.set_defaults(fn=cmd_transfer)
+    p = sub.add_parser("repair"); \
+        p.add_argument("action", choices=["churn", "reach", "failure", "capability",
+                                          "flags", "provenance", "veto", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {rows}, {row}, {record}, or {profile}"); \
+        p.set_defaults(fn=cmd_repair)
+    p = sub.add_parser("validation"); \
+        p.add_argument("action", choices=["risk", "autonomy", "controls", "domains",
+                                          "evidence", "calibrate", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {row}, {rows}, or {profile}"); \
+        p.set_defaults(fn=cmd_validation)
+    p = sub.add_parser("grounding"); \
+        p.add_argument("action", choices=["skill", "equivalence", "verdict", "session",
+                                          "layers", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {spec}, {record}, {rows}, or {profile}"); \
+        p.set_defaults(fn=cmd_grounding)
     p = sub.add_parser("instructions"); p.add_argument("action", choices=["audit"]); \
         p.add_argument("file", nargs="?", help="JSON: {text, cards}"); \
         p.set_defaults(fn=cmd_instructions)
