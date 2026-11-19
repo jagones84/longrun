@@ -830,10 +830,17 @@ def _submit(delta, evidence, sid):
         content = "%s.%s = %s — %s" % (
             delta.get("target"), delta.get("field"),
             json.dumps(delta.get("value")), why)
+        # ITER-01 / R162: carry the failure mode and the reproduction verdict when
+        # the evidence has them, so `improve.decide` can apply the reproduce-or-revert
+        # rule (arXiv:2610.02616 §2.2). Absent keys change nothing.
+        exp = {"session": sid, "evidence": evidence}
+        ev = evidence if isinstance(evidence, dict) else {}
+        for key in ("failure_mode", "outcome_change", "reproduces"):
+            if ev.get(key) is not None:
+                exp[key] = ev[key]
         rec = _improve.propose(
             "registry", content, reason=why[:500],
-            origin="optimizer", delta=delta,
-            experiment={"session": sid, "evidence": evidence})
+            origin="optimizer", delta=delta, experiment=exp)
         return rec.get("id")
     except Exception:  # noqa: BLE001 — submitting is additive, never fails the session
         return None

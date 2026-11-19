@@ -729,6 +729,11 @@ tools:
   # context meter + manual compaction (JAG-431r2): the agent can check how
   # close the next turn is to the auto-compact trigger and run a manual
   # compaction to free headroom before a large tool call or paste.
+  # context meter + compaction, and (ITER-01/R162) reversible curation of this
+  # session's own tool results: `apply` archives each card's payload before its
+  # body is replaced and `recover` returns the archive, so the namespace default
+  # stays automatic; only tool cards are selectable, never user/system/assistant
+  # messages.
   context:
     enabled: true
     approval: auto

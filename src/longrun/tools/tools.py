@@ -2380,6 +2380,24 @@ def write_provenance():
     return getattr(_WRITE_CONTEXT, "provenance", None)
 
 
+def _context_apply(args, run_id):
+    """`context.apply` — the canonical subtool name IS the action, so bind it here."""
+    from longrun.tools import curation
+    return curation.handle(dict(args or {}, action="apply"), run_id=run_id)
+
+
+def _context_recover(args, run_id):
+    """`context.recover` — return an archived payload as a new card."""
+    from longrun.tools import curation
+    return curation.handle(dict(args or {}, action="recover"), run_id=run_id)
+
+
+def _context_list(args, run_id):
+    """`context.list` — what this session has curated."""
+    from longrun.tools import curation
+    return curation.handle(dict(args or {}, action="list"), run_id=run_id)
+
+
 def _memory(args, run_id):
     """Agent memory (JAG-73): store a durable note, or recall/search memories.
 
@@ -3900,18 +3918,29 @@ def _chapters(args, run_id):
 
 
 def _context(args, run_id):
-    """JAG-431r2: THIS session's context meter + manual compaction.
+    """JAG-431r2: THIS session's context meter + manual compaction, and (ITER-01 /
+    R162, arXiv:2610.10590 §3.1-§3.2) reversible curation of this session's own tool
+    results.
 
     action=status  -> tokens used, budget, pct, over_threshold, over_budget.
     action=compact -> run a manual compaction now (config summarizer model,
                       keep_recent from config/compaction.yaml). Returns the
                       compaction stats so the agent can tell what changed.
+    action=apply   -> archive each named card's payload and replace its body with a
+                      short note IN PLACE; the batch is validated whole, so one
+                      unknown/duplicate/already-curated target mutates nothing.
+    action=recover -> return an archived payload as a NEW result (never re-runs the
+                      tool).
+    action=list    -> the cards this session has curated.
     """
     from longrun.core import httpapi
     from longrun.model import rllm
     args = args or {}
     sid = str(args.get("session") or "").strip() or str(run_id or "")
     action = str(args.get("action") or "status").strip().lower()
+    if action in ("apply", "curate", "recover", "restore", "list", "curated"):
+        from longrun.tools import curation
+        return curation.handle(args, run_id=run_id)
     if not sid:
         return {"ok": False, "error": "no session in scope (pass session=)",
                 "backend": "host", "sandboxed": False}
@@ -4487,6 +4516,8 @@ def _docs_tool(args, run_id):
 
 
 _DISPATCH = {"shell": _shell_hinted, "shell.exec": _shell_hinted,
+             "context.apply": _context_apply, "context.recover": _context_recover,
+             "context.list": _context_list,
              "fs.read": _fs_read, "fs.write": _fs_write, "fs.edit": _fs_edit,
              "diff": _diff,
              "human": _human, "human.ask": _human,

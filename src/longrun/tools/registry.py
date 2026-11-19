@@ -624,24 +624,45 @@ _LEGACY_SCHEMAS = {
         "subject": "id",
     },
     "context": {
-        "description": ("THIS session's context meter + compaction. "
+        "description": ("THIS session's context meter + compaction, and reversible "
+                        "curation of its own tool results (ITER-01/R162, "
+                        "arXiv:2610.10590). "
                         "action=status -> tokens/budget/pct + over_threshold flag. "
                         "action=compact -> compaction now (summarizer model, merges "
                         "old turns into one summary). It REFUSES below the policy "
                         "trigger; pass force=true only when the user explicitly asked "
                         "to compact early. The harness auto-compacts at the trigger %. "
+                        "action=apply -> archive the payload of each named tool card "
+                        "and replace its body with a short note IN PLACE (the batch is "
+                        "validated whole: one unknown, duplicate or already-curated "
+                        "target refuses every change). action=recover -> return an "
+                        "archived payload as a NEW result without re-running the tool. "
+                        "action=list -> what this session has curated. Only tool "
+                        "results are selectable; user, system and assistant messages "
+                        "are not. "
                         "`session` defaults to this run's session (always allowed). "
                         "Naming ANOTHER one requires it to be BELOW you in the "
                         "reporting line (any level, same team); compacting another "
                         "session is a team operation and is refused upward or sideways."),
         "type": "object",
         "properties": {
-            "action": {"type": "string", "enum": ["status", "compact"], "default": "status"},
+            "action": {"type": "string",
+                       "enum": ["status", "compact", "apply", "recover", "list"],
+                       "default": "status"},
             "session": {"type": "string",
                         "description": "session id (default: this run's session)"},
             "force": {"type": "boolean", "default": False,
                       "description": "compact even below the policy trigger (only on "
                                      "an explicit user request)"},
+            "targets": {"type": "array",
+                        "description": ("action=apply: [{card, note}] — `card` is a "
+                                        "tool-card handle, `note` the short replacement"),
+                        "items": {"type": "object",
+                                  "properties": {"card": {"type": "string"},
+                                                 "note": {"type": "string"}},
+                                  "required": ["card", "note"]}},
+            "ref": {"type": "string",
+                    "description": "action=recover: the card handle that was archived"},
         },
         "required": [],
         "subject": "action",
@@ -1069,7 +1090,9 @@ _SUBTOOL_FIELDS = {
         "list": ["session"], "untitled": ["session", "limit"],
         "read": ["session", "id"], "title": ["session", "id", "title", "summary"],
     },
-    "context": {"status": ["session"], "compact": ["session"]},
+    "context": {"status": ["session"], "compact": ["session"],
+                "apply": ["targets", "session"], "recover": ["ref", "session"],
+                "list": ["session"]},
     "memory": {
         "store": ["content", "kind", "source", "ttl_secs"],
         "recall": ["query", "kind", "limit", "include_invalid", "semantic"],
@@ -1213,6 +1236,18 @@ _SUBTOOL_ANY_OF = {
 }
 
 _SUBTOOL_GUIDANCE = {
+    "context.apply": (
+        "Archive the payload of tool results you have finished with and leave a short "
+        "note in their place, so later turns carry the conclusion instead of the raw "
+        "output. `targets` is [{card, note}]; `card` is a tool-card handle. The batch "
+        "is validated whole — one unknown, duplicate or already-curated target changes "
+        "nothing — and `context.recover` returns the archived payload exactly."
+    ),
+    "context.recover": (
+        "Return an archived tool payload as a NEW result (the tool is not re-run). "
+        "`ref` is the card handle that was curated."
+    ),
+    "context.list": "List the tool results this session has curated, with their notes.",
     "workspace.set": (
         "Re-root an agent (scope=self, default) or its WHOLE org subtree "
         "(scope=subtree: the agent plus every report at every level). The agent "
@@ -1649,6 +1684,11 @@ TOOL_EFFECTS = {
     # let `memory.set_core` write with no provenance and no effect inspection.
     "memory.set_core": {"effect": "write", "idempotent": False,
                         "writes": ["memory"]},
+    "context.apply": {"effect": "write", "idempotent": False,
+                      "reads": ["session"], "writes": ["session", "file"]},
+    "context.recover": {"effect": "append", "idempotent": False,
+                        "reads": ["file"], "writes": ["session"]},
+    "context.list": {"effect": "read", "idempotent": True, "reads": ["session"]},
     "sessions.send": {"effect": "external", "idempotent": False, "writes": ["session"]},
     "agent.delete": {"effect": "delete", "idempotent": False,
                      "reads": ["agent"], "writes": ["agent"]},

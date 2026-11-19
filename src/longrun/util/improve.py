@@ -1198,6 +1198,62 @@ def _save(rec):
     return rec
 
 
+def _reproduction_gate(rec):
+    """The reproduce-or-revert rule (ITER-01 / R162).
+
+    Source: Z. Wang et al., *VERSE: Verified Self-Evolving Optimizer for Agent
+    Harnesses*, arXiv:2610.02616 (2026), §2.2 and App. B — a validation outcome
+    that differs from the parent is rerun once and a change that does not
+    reproduce is reverted to the parent's outcome; §4.4 measures 49% of 557
+    outcome changes not reproducing on a rerun.
+
+    Applies only when the proposal records an OUTCOME CHANGE, so a proposal with
+    no such claim is unaffected. Returns None when the row may proceed, or the
+    refusal dict when it may not.
+    """
+    exp = rec.get("experiment") or {}
+    if exp.get("outcome_change") is None:
+        return None
+    if exp.get("reproduces") is True:
+        return None
+    rec["status"] = "reverted"
+    rec["reverted_to"] = "parent"
+    rec["revert_reason"] = ("outcome change did not reproduce on a rerun"
+                            if exp.get("reproduces") is False
+                            else "outcome change carries no reproduction evidence")
+    saved = _save(rec)
+    try:
+        ledger_add("decide", origin=rec.get("origin", "agent"), scope=rec.get("scope"),
+                   proposal=rec["id"], decision="reverted", reverted_to="parent")
+    except Exception:  # noqa: BLE001 — the audit must never break a decision
+        pass
+    return {"ok": False, "error": "not-reproduced", "reverted_to": "parent", **saved}
+
+
+def failure_audit():
+    """Per-failure-mode audit across rounds (ITER-01 / R162, VERSE §3.1).
+
+    One row per failure mode the proposal store has seen: how many rows were
+    approved (the fix held), reverted (it did not reproduce), denied or are still
+    pending, and how many still carried the failure after the round. Ordered by
+    what still fails, then by mode.
+    """
+    modes = {}
+    for rec in list_proposals():
+        exp = rec.get("experiment") or {}
+        mode = str(exp.get("failure_mode") or "").strip()
+        if not mode:
+            continue
+        row = modes.setdefault(mode, {"failure_mode": mode, "approved": 0, "reverted": 0,
+                                      "denied": 0, "pending": 0, "still_failing": 0})
+        status = str(rec.get("status") or "")
+        if status in ("approved", "reverted", "denied", "pending"):
+            row[status] += 1
+        if exp.get("still_failing"):
+            row["still_failing"] += 1
+    return sorted(modes.values(), key=lambda r: (-r["still_failing"], r["failure_mode"]))
+
+
 def decide(pid, decision):
     """approve|deny. Only 'approve' on project/global writes (appends) the rules."""
     rec = get_proposal(pid)
@@ -1211,6 +1267,10 @@ def decide(pid, decision):
         return {"ok": True, **saved}
     if decision != "approve":
         return {"ok": False, "error": "decision must be approve|deny"}
+    # ITER-01 / R162: an outcome change counts only if it reproduced on a rerun.
+    gate = _reproduction_gate(rec)
+    if gate is not None:
+        return gate
     if rec.get("origin") == "harness":
         # H2R-3: a harness proposal may be approved only when it carries the
         # matched-run evidence that produced it. Legacy entries (and any entry
