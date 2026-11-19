@@ -87,6 +87,8 @@ Usage:
                            | longhorizon gap FILE.json
                            | memchannel exposure FILE.json | memauthority gate FILE.json
                            | exfild frontier FILE.json
+                           | formation outcome FILE.json | teammate score FILE.json
+                           | museprincipals meeting FILE.json
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -4640,6 +4642,113 @@ def cmd_exfild(args):
     sys.exit(0)
 
 
+def cmd_formation(args):
+    """Round 159 (arXiv:2610.00583): a team of separate agents against one coordinator."""
+    from longrun.harness import multiagent_formation
+    if not getattr(args, "file", None):
+        print("usage: formation formations|outcome|participation|fairness|"
+              "interference|mitigation|failure|audit|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "formations":
+        out = multiagent_formation.formations()
+    elif args.action == "outcome":
+        out = multiagent_formation.outcome(doc.get("record") or doc)
+    elif args.action == "participation":
+        out = multiagent_formation.participation(doc.get("record") or doc)
+    elif args.action == "fairness":
+        out = multiagent_formation.fairness(doc.get("record") or doc)
+    elif args.action == "interference":
+        out = multiagent_formation.interference(doc.get("record") or doc)
+    elif args.action == "mitigation":
+        out = multiagent_formation.mitigation(doc.get("record") or doc)
+    elif args.action == "failure":
+        out = multiagent_formation.failure(doc.get("record") or doc)
+    elif args.action == "audit":
+        out = multiagent_formation.audit_record(doc.get("record") or doc)
+    else:
+        out = multiagent_formation.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_teammate(args):
+    """Round 159 (arXiv:2611.02633): collaboration as one model's capability."""
+    from longrun.harness import teammate_eval
+    if not getattr(args, "file", None):
+        print("usage: teammate dimensions|score|gate|drop|conflict|"
+              "failure_mode|inheritance|audit|advise FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "dimensions":
+        out = teammate_eval.dimensions()
+    elif args.action == "score":
+        out = teammate_eval.score(doc.get("record") or doc)
+    elif args.action == "gate":
+        out = teammate_eval.gate(doc.get("record") or doc)
+    elif args.action == "drop":
+        out = teammate_eval.drop(doc.get("record") or doc)
+    elif args.action == "conflict":
+        out = teammate_eval.conflict(doc.get("record") or doc)
+    elif args.action == "failure_mode":
+        out = teammate_eval.failure_mode(doc.get("record") or doc)
+    elif args.action == "inheritance":
+        out = teammate_eval.inheritance(doc.get("record") or doc)
+    elif args.action == "audit":
+        out = teammate_eval.audit_record(doc.get("record") or doc)
+    else:
+        out = teammate_eval.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_museprincipals(args):
+    """Round 159 (arXiv:2604.08567): one context, many principals, explicit rules."""
+    from longrun.harness import principal_policy
+    if not getattr(args, "file", None):
+        print("usage: museprincipals principals|precedence|access|selection|"
+              "privacy_utility|meeting|conflict_effect|audit|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "principals":
+        out = principal_policy.principals(doc.get("record") or doc)
+    elif args.action == "precedence":
+        out = principal_policy.precedence(doc.get("record") or doc)
+    elif args.action == "access":
+        out = principal_policy.access(doc.get("record") or doc)
+    elif args.action == "selection":
+        out = principal_policy.selection(doc.get("record") or doc)
+    elif args.action == "privacy_utility":
+        out = principal_policy.privacy_utility(doc.get("record") or doc)
+    elif args.action == "meeting":
+        out = principal_policy.meeting(doc.get("record") or doc)
+    elif args.action == "conflict_effect":
+        out = principal_policy.conflict_effect(doc.get("record") or doc)
+    elif args.action == "audit":
+        out = principal_policy.audit_record(doc.get("record") or doc)
+    else:
+        out = principal_policy.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
 def cmd_instructions(args):
     """Round 114 (arXiv:2611.13709): explicit context-file directives vs the cards."""
     from longrun.harness import instruction_audit
@@ -6778,6 +6887,24 @@ def main():
                                           "advise"]); \
         p.add_argument("file", nargs="?", help="JSON: {record}, {rows} or {profile}"); \
         p.set_defaults(fn=cmd_exfild)
+    p = sub.add_parser("formation"); \
+        p.add_argument("action", choices=["formations", "outcome", "participation",
+                                          "fairness", "interference", "mitigation",
+                                          "failure", "audit", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {record} or {profile}"); \
+        p.set_defaults(fn=cmd_formation)
+    p = sub.add_parser("teammate"); \
+        p.add_argument("action", choices=["dimensions", "score", "gate", "drop",
+                                          "conflict", "failure_mode", "inheritance",
+                                          "audit", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {record} or {profile}"); \
+        p.set_defaults(fn=cmd_teammate)
+    p = sub.add_parser("museprincipals"); \
+        p.add_argument("action", choices=["principals", "precedence", "access",
+                                          "selection", "privacy_utility", "meeting",
+                                          "conflict_effect", "audit", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {record} or {profile}"); \
+        p.set_defaults(fn=cmd_museprincipals)
     p = sub.add_parser("instructions"); p.add_argument("action", choices=["audit"]); \
         p.add_argument("file", nargs="?", help="JSON: {text, cards}"); \
         p.set_defaults(fn=cmd_instructions)
