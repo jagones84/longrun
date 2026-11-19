@@ -64,6 +64,7 @@ Usage:
                            | govern validate FILE.json | typed build FILE.json | pipeline blame FILE.json
                            | envelope weight FILE.json | tracefp attribute FILE.json | modelhandoff gate FILE.json
                            | admission aimd FILE.json | statesched kv FILE.json | capacity priority FILE.json
+                           | slots suffix FILE.json | privmem sanitize FILE.json | privaudit disposition FILE.json
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -2941,6 +2942,118 @@ def cmd_capacity(args):
     sys.exit(0)
 
 
+def cmd_slots(args):
+    """Round 144 (arXiv:2607.17147): hide the value, keep the structure."""
+    from longrun.harness import transcript_privacy
+    if not getattr(args, "file", None):
+        print("usage: slots suffix|slot|bind|rebind|graph|leak|compatibility|overhead|audit|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "suffix":
+        out = transcript_privacy.suffix(doc.get("path"), doc.get("roots") or [])
+    elif args.action == "slot":
+        out = transcript_privacy.slot(doc.get("value"), doc.get("kind"),
+                                      doc.get("index", 1))
+    elif args.action == "bind":
+        out = transcript_privacy.bind(doc.get("value"), doc.get("kind"),
+                                      doc.get("session_key"))
+    elif args.action == "rebind":
+        out = transcript_privacy.rebind(doc.get("handle"), doc.get("table") or {},
+                                        doc.get("scope"))
+    elif args.action == "graph":
+        out = transcript_privacy.graph(doc.get("pairs") or [])
+    elif args.action == "leak":
+        out = transcript_privacy.leak(doc.get("rows") or [])
+    elif args.action == "compatibility":
+        out = transcript_privacy.compatibility(doc.get("rows") or [])
+    elif args.action == "overhead":
+        out = transcript_privacy.overhead(doc.get("rows") or [])
+    elif args.action == "audit":
+        out = transcript_privacy.audit(doc.get("record") or doc)
+    else:
+        out = transcript_privacy.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_privmem(args):
+    """Round 144 (arXiv:2605.09530): a typed placeholder, not an asterisk."""
+    from longrun.harness import privacy_memory
+    if not getattr(args, "file", None):
+        print("usage: privmem levels|classify|sanitize|restore|extraction|utility|leakage|threshold|audit|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "levels":
+        out = {"levels": privacy_memory.levels()}
+    elif args.action == "classify":
+        out = privacy_memory.classify(doc.get("level"))
+    elif args.action == "sanitize":
+        out = privacy_memory.sanitize(doc.get("spans") or [],
+                                      doc.get("threshold", "PL2"))
+    elif args.action == "restore":
+        out = privacy_memory.restore(doc.get("text"), doc.get("mapping") or {})
+    elif args.action == "extraction":
+        out = privacy_memory.extraction(doc.get("rows") or [])
+    elif args.action == "utility":
+        out = privacy_memory.utility(doc.get("rows") or [])
+    elif args.action == "leakage":
+        out = privacy_memory.leakage(doc.get("rows") or [])
+    elif args.action == "threshold":
+        out = privacy_memory.threshold(doc.get("rows") or [],
+                                       doc.get("tolerance", 0.016))
+    elif args.action == "audit":
+        out = privacy_memory.audit(doc.get("record") or doc)
+    else:
+        out = privacy_memory.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_privaudit(args):
+    """Round 144 (arXiv:2610.06454): gate the outbound write."""
+    from longrun.harness import privacy_audit
+    if not getattr(args, "file", None):
+        print("usage: privaudit flow|disposition|inventory|compare|criteria|auditor|audit|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "flow":
+        out = privacy_audit.flow(doc.get("row") or doc)
+    elif args.action == "disposition":
+        out = privacy_audit.disposition(doc.get("row") or doc)
+    elif args.action == "inventory":
+        out = privacy_audit.inventory(doc.get("reads") or [])
+    elif args.action == "compare":
+        out = privacy_audit.compare(doc.get("rows") or [])
+    elif args.action == "criteria":
+        out = privacy_audit.criteria(doc.get("rows") or [])
+    elif args.action == "auditor":
+        out = privacy_audit.auditor(doc.get("row") or doc)
+    elif args.action == "audit":
+        out = privacy_audit.audit(doc.get("record") or doc)
+    else:
+        out = privacy_audit.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
 def cmd_instructions(args):
     """Round 114 (arXiv:2611.13709): explicit context-file directives vs the cards."""
     from longrun.harness import instruction_audit
@@ -4823,6 +4936,21 @@ def main():
                                           "fairshare", "advise"]); \
         p.add_argument("file", nargs="?", help="JSON: {name}, {row}, {items}, {rows}, or {profile}"); \
         p.set_defaults(fn=cmd_capacity)
+    p = sub.add_parser("slots"); \
+        p.add_argument("action", choices=["suffix", "slot", "bind", "rebind", "graph", "leak",
+                                          "compatibility", "overhead", "audit", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {path, roots}, {value, kind}, {handle, table}, {rows}, or {profile}"); \
+        p.set_defaults(fn=cmd_slots)
+    p = sub.add_parser("privmem"); \
+        p.add_argument("action", choices=["levels", "classify", "sanitize", "restore", "extraction",
+                                          "utility", "leakage", "threshold", "audit", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {level}, {spans, threshold}, {text, mapping}, {rows}, or {profile}"); \
+        p.set_defaults(fn=cmd_privmem)
+    p = sub.add_parser("privaudit"); \
+        p.add_argument("action", choices=["flow", "disposition", "inventory", "compare", "criteria",
+                                          "auditor", "audit", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {row}, {reads}, {rows}, {record}, or {profile}"); \
+        p.set_defaults(fn=cmd_privaudit)
     p = sub.add_parser("instructions"); p.add_argument("action", choices=["audit"]); \
         p.add_argument("file", nargs="?", help="JSON: {text, cards}"); \
         p.set_defaults(fn=cmd_instructions)
