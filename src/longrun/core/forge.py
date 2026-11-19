@@ -60,6 +60,7 @@ Usage:
                            | selective correct FILE.json | continuation burst FILE.json | bench score FILE.json
                            | deliberation audit FILE.json | frontier bracket FILE.json | transfer check FILE.json
                            | repair churn FILE.json | validation risk FILE.json | grounding session FILE.json
+                           | folding trigger FILE.json | invocation rates FILE.json | capabilities updating FILE.json
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -2497,6 +2498,106 @@ def cmd_grounding(args):
     sys.exit(0)
 
 
+def cmd_folding(args):
+    """Round 139 (arXiv:2611.16627): the reduced view is a selection, not a rewrite."""
+    from longrun.harness import context_folding
+    if not getattr(args, "file", None):
+        print("usage: folding levels|contract|fold|trigger|cost|recover|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "levels":
+        out = context_folding.levels(doc.get("record") or doc)
+    elif args.action == "contract":
+        out = context_folding.contract(doc.get("record") or doc)
+    elif args.action == "fold":
+        out = context_folding.fold(doc.get("turns") or [], doc.get("budget"))
+    elif args.action == "trigger":
+        out = context_folding.trigger(
+            doc.get("requests") or [], doc.get("stable_prefix", 0.0),
+            doc.get("layout_budget", 0.0), doc.get("dossier", 0.0),
+            doc.get("rewrite_ratio", 30.0), doc.get("lam", 1.0))
+    elif args.action == "cost":
+        out = context_folding.cost(doc.get("usage") or {}, doc.get("ratios"))
+    elif args.action == "recover":
+        out = context_folding.recover(doc.get("rows") or [])
+    else:
+        out = context_folding.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_invocation(args):
+    """Round 139 (arXiv:2608.26189): a wrong call poisons every step that follows."""
+    from longrun.harness import invocation_reliability
+    if not getattr(args, "file", None):
+        print("usage: invocation rates|wiring|severity|recovery|scoring|terminal|discrimination|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "rates":
+        out = invocation_reliability.rates(doc.get("rows") or [], doc.get("depth"))
+    elif args.action == "wiring":
+        out = invocation_reliability.wiring(doc.get("rows") or [])
+    elif args.action == "severity":
+        out = invocation_reliability.severity(doc.get("rows") or [])
+    elif args.action == "recovery":
+        out = invocation_reliability.recovery(doc.get("rows") or [])
+    elif args.action == "scoring":
+        out = invocation_reliability.scoring(doc.get("rows") or [])
+    elif args.action == "terminal":
+        out = invocation_reliability.terminal(doc.get("rows") or [])
+    elif args.action == "discrimination":
+        out = invocation_reliability.discrimination(doc.get("rows") or [])
+    else:
+        out = invocation_reliability.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_capabilities(args):
+    """Round 139 (arXiv:2605.30621): updating a harness and benefiting from it differ."""
+    from longrun.harness import evolution_capabilities
+    if not getattr(args, "file", None):
+        print("usage: capabilities updating|benefit|activation|adherence|budget|pairing|insitu|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "updating":
+        out = evolution_capabilities.updating(doc.get("rows") or [])
+    elif args.action == "benefit":
+        out = evolution_capabilities.benefit(doc.get("rows") or [])
+    elif args.action == "activation":
+        out = evolution_capabilities.activation(doc.get("rows") or [])
+    elif args.action == "adherence":
+        out = evolution_capabilities.adherence(doc.get("rows") or [])
+    elif args.action == "budget":
+        out = evolution_capabilities.budget(doc.get("rows") or [])
+    elif args.action == "pairing":
+        out = evolution_capabilities.pairing(doc.get("row") or doc)
+    elif args.action == "insitu":
+        out = evolution_capabilities.insitu(doc.get("row") or doc)
+    else:
+        out = evolution_capabilities.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
 def cmd_instructions(args):
     """Round 114 (arXiv:2611.13709): explicit context-file directives vs the cards."""
     from longrun.harness import instruction_audit
@@ -4315,6 +4416,21 @@ def main():
                                           "layers", "advise"]); \
         p.add_argument("file", nargs="?", help="JSON: {spec}, {record}, {rows}, or {profile}"); \
         p.set_defaults(fn=cmd_grounding)
+    p = sub.add_parser("folding"); \
+        p.add_argument("action", choices=["levels", "contract", "fold", "trigger",
+                                          "cost", "recover", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {record}, {turns}, {requests}, {usage}, {rows}, or {profile}"); \
+        p.set_defaults(fn=cmd_folding)
+    p = sub.add_parser("invocation"); \
+        p.add_argument("action", choices=["rates", "wiring", "severity", "recovery",
+                                          "scoring", "terminal", "discrimination", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {rows, depth} or {profile}"); \
+        p.set_defaults(fn=cmd_invocation)
+    p = sub.add_parser("capabilities"); \
+        p.add_argument("action", choices=["updating", "benefit", "activation", "adherence",
+                                          "budget", "pairing", "insitu", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {rows}, {row}, or {profile}"); \
+        p.set_defaults(fn=cmd_capabilities)
     p = sub.add_parser("instructions"); p.add_argument("action", choices=["audit"]); \
         p.add_argument("file", nargs="?", help="JSON: {text, cards}"); \
         p.set_defaults(fn=cmd_instructions)
