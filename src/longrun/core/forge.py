@@ -58,6 +58,7 @@ Usage:
                            | priority compare FILE.json | values compare FILE.json | crossenv measure FILE.json
                            | resolution verdict FILE.json | replay audit FILE.json | dialogue compare FILE.json
                            | selective correct FILE.json | continuation burst FILE.json | bench score FILE.json
+                           | deliberation audit FILE.json | frontier bracket FILE.json | transfer check FILE.json
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -2303,6 +2304,105 @@ def cmd_bench(args):
     sys.exit(0)
 
 
+def cmd_deliberation(args):
+    """Round 137 (arXiv:2611.22905): a generic summary can hide a missing design judgement."""
+    from longrun.harness import deliberation_audit
+    if not getattr(args, "file", None):
+        print("usage: deliberation type|match|tags|metadata|summary|ablation|audit|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "type":
+        out = deliberation_audit.artifact(doc.get("artifact") or doc)
+    elif args.action == "match":
+        out = deliberation_audit.match(doc.get("gold") or [], doc.get("model") or [])
+    elif args.action == "tags":
+        out = deliberation_audit.tags(doc.get("gold") or [], doc.get("model") or [])
+    elif args.action == "metadata":
+        out = deliberation_audit.metadata(doc.get("gold") or [], doc.get("model") or [],
+                                          doc.get("threshold", 0.82))
+    elif args.action == "summary":
+        out = deliberation_audit.summary(doc.get("score"), doc.get("coverage"))
+    elif args.action == "ablation":
+        out = deliberation_audit.ablation(doc.get("rows") or [])
+    elif args.action == "audit":
+        out = deliberation_audit.audit(doc.get("record") or doc)
+    else:
+        out = deliberation_audit.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_frontier(args):
+    """Round 137 (arXiv:2611.23080): a bracket says what is known and where the gap is."""
+    from longrun.harness import complexity_frontier
+    if not getattr(args, "file", None):
+        print("usage: frontier bracket|open|coascent|evidence|memory|round|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "bracket":
+        out = complexity_frontier.bracket(doc.get("regimes") or [])
+    elif args.action == "open":
+        out = complexity_frontier.frontier(doc.get("rows") or [])
+    elif args.action == "coascent":
+        out = complexity_frontier.coascent(doc.get("record") or doc)
+    elif args.action == "evidence":
+        out = complexity_frontier.evidence(doc.get("record") or doc)
+    elif args.action == "memory":
+        out = complexity_frontier.memory(doc.get("rows") or [])
+    elif args.action == "round":
+        out = complexity_frontier.round(doc.get("rows") or [])
+    else:
+        out = complexity_frontier.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_transfer(args):
+    """Round 137 (arXiv:2611.23216): a benchmark gain is not yet work done."""
+    from longrun.harness import work_transfer
+    if not getattr(args, "file", None):
+        print("usage: transfer check|pool|ceiling|design|reversal|pooled|power|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "check":
+        out = work_transfer.transfer(doc.get("rows") or doc.get("upgrades") or [])
+    elif args.action == "pool":
+        out = work_transfer.pool(doc.get("rows") or [])
+    elif args.action == "ceiling":
+        out = work_transfer.ceiling(doc.get("baseline"), doc.get("open_outcome"),
+                                    doc.get("threshold", 0.9))
+    elif args.action == "design":
+        out = work_transfer.design(doc.get("spec") or doc)
+    elif args.action == "reversal":
+        out = work_transfer.reversal(doc.get("phases") or doc)
+    elif args.action == "pooled":
+        out = work_transfer.pooled_comparison(doc.get("rows") or [])
+    elif args.action == "power":
+        out = work_transfer.power(doc.get("sd"), doc.get("effect"), doc.get("available"))
+    else:
+        out = work_transfer.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
 def cmd_instructions(args):
     """Round 114 (arXiv:2611.13709): explicit context-file directives vs the cards."""
     from longrun.harness import instruction_audit
@@ -4091,6 +4191,21 @@ def main():
                                           "paired", "sources", "memory", "advise"]); \
         p.add_argument("file", nargs="?", help="JSON: {record}, {spec}, {rows}, {states}, or {profile}"); \
         p.set_defaults(fn=cmd_bench)
+    p = sub.add_parser("deliberation"); \
+        p.add_argument("action", choices=["type", "match", "tags", "metadata", "summary",
+                                          "ablation", "audit", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {artifact}, {gold, model}, {score, coverage}, {rows}, {record}, or {profile}"); \
+        p.set_defaults(fn=cmd_deliberation)
+    p = sub.add_parser("frontier"); \
+        p.add_argument("action", choices=["bracket", "open", "coascent", "evidence",
+                                          "memory", "round", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {regimes}, {rows}, {record}, or {profile}"); \
+        p.set_defaults(fn=cmd_frontier)
+    p = sub.add_parser("transfer"); \
+        p.add_argument("action", choices=["check", "pool", "ceiling", "design", "reversal",
+                                          "pooled", "power", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {rows}, {baseline}, {spec}, {phases}, {sd, effect}, or {profile}"); \
+        p.set_defaults(fn=cmd_transfer)
     p = sub.add_parser("instructions"); p.add_argument("action", choices=["audit"]); \
         p.add_argument("file", nargs="?", help="JSON: {text, cards}"); \
         p.set_defaults(fn=cmd_instructions)
