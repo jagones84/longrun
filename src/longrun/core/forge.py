@@ -83,6 +83,8 @@ Usage:
                            | ctxregime regimes FILE.json
                            | skillgate curve FILE.json | skillflow regime FILE.json
                            | skilleve diagnose FILE.json
+                           | takeover delivery FILE.json | anytime grid FILE.json
+                           | longhorizon gap FILE.json
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -4423,6 +4425,111 @@ def cmd_skilleve(args):
     sys.exit(0)
 
 
+def cmd_takeover(args):
+    """Round 157 (arXiv:2611.07307): requirements recovered, then delivered."""
+    from longrun.harness import takeover_eval
+    if not getattr(args, "file", None):
+        print("usage: takeover atom|update|delivery|rq1|rq2|decision|poststate|"
+              "clarify|audit|advise FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "atom":
+        out = takeover_eval.atom(doc.get("record") or doc)
+    elif args.action == "update":
+        out = takeover_eval.update(doc.get("before") or {},
+                                   doc.get("change") or {})
+    elif args.action == "delivery":
+        out = takeover_eval.delivery(doc.get("rows") or [])
+    elif args.action == "rq1":
+        out = takeover_eval.rq1(doc.get("pred") or {}, doc.get("gold") or {})
+    elif args.action == "rq2":
+        out = takeover_eval.rq2(doc.get("pred") or {}, doc.get("gold") or {},
+                                doc.get("matched") or [])
+    elif args.action == "decision":
+        out = takeover_eval.decision(doc.get("rows") or [])
+    elif args.action == "poststate":
+        out = takeover_eval.poststate(doc.get("record") or doc)
+    elif args.action == "clarify":
+        out = takeover_eval.clarify(doc.get("record") or doc)
+    elif args.action == "audit":
+        out = takeover_eval.audit_record(doc.get("record") or doc)
+    else:
+        out = takeover_eval.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_anytime(args):
+    """Round 157 (arXiv:2611.21241): certificates after an adaptive sweep."""
+    from longrun.harness import anytime_cert
+    if not getattr(args, "file", None):
+        print("usage: anytime certificate|grid|structured|margin|allocate|"
+              "optimism|audit|advise FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "certificate":
+        out = anytime_cert.certificate(doc.get("record") or doc)
+    elif args.action == "grid":
+        out = anytime_cert.grid(doc.get("record") or doc)
+    elif args.action == "structured":
+        out = anytime_cert.structured(doc.get("record") or doc)
+    elif args.action == "margin":
+        out = anytime_cert.margin(doc.get("record") or doc)
+    elif args.action == "allocate":
+        out = anytime_cert.allocate(doc.get("record") or doc)
+    elif args.action == "optimism":
+        out = anytime_cert.optimism(doc.get("record") or doc)
+    elif args.action == "audit":
+        out = anytime_cert.audit_record(doc.get("record") or doc)
+    else:
+        out = anytime_cert.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_longhorizon(args):
+    """Round 157 (arXiv:2611.05620): all-or-nothing delivery over many requests."""
+    from longrun.harness import longhorizon_eval
+    if not getattr(args, "file", None):
+        print("usage: longhorizon plan|grade|gap|horizon|split|grade_quality|"
+              "audit|advise FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "plan":
+        out = longhorizon_eval.plan(doc.get("record") or doc)
+    elif args.action == "grade":
+        out = longhorizon_eval.grade(doc.get("record") or doc)
+    elif args.action == "gap":
+        out = longhorizon_eval.gap(doc.get("record") or doc)
+    elif args.action == "horizon":
+        out = longhorizon_eval.horizon(doc.get("record") or doc)
+    elif args.action == "split":
+        out = longhorizon_eval.split(doc.get("record") or doc)
+    elif args.action == "grade_quality":
+        out = longhorizon_eval.grade_quality(doc.get("record") or doc)
+    elif args.action == "audit":
+        out = longhorizon_eval.audit_record(doc.get("record") or doc)
+    else:
+        out = longhorizon_eval.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
 def cmd_instructions(args):
     """Round 114 (arXiv:2611.13709): explicit context-file directives vs the cards."""
     from longrun.harness import instruction_audit
@@ -6527,6 +6634,22 @@ def main():
                                           "audit", "advise"]); \
         p.add_argument("file", nargs="?", help="JSON: {record} or {profile}"); \
         p.set_defaults(fn=cmd_skilleve)
+    p = sub.add_parser("takeover"); \
+        p.add_argument("action", choices=["atom", "update", "delivery", "rq1", "rq2",
+                                          "decision", "poststate", "clarify",
+                                          "audit", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {record}, {before,change}, {rows}, or {pred,gold}"); \
+        p.set_defaults(fn=cmd_takeover)
+    p = sub.add_parser("anytime"); \
+        p.add_argument("action", choices=["certificate", "grid", "structured", "margin",
+                                          "allocate", "optimism", "audit", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {record} or {profile}"); \
+        p.set_defaults(fn=cmd_anytime)
+    p = sub.add_parser("longhorizon"); \
+        p.add_argument("action", choices=["plan", "grade", "gap", "horizon", "split",
+                                          "grade_quality", "audit", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {record} or {profile}"); \
+        p.set_defaults(fn=cmd_longhorizon)
     p = sub.add_parser("instructions"); p.add_argument("action", choices=["audit"]); \
         p.add_argument("file", nargs="?", help="JSON: {text, cards}"); \
         p.set_defaults(fn=cmd_instructions)
