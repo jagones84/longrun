@@ -70,7 +70,8 @@ Usage:
                            | stateev recover FILE.json | evidenceview rates FILE.json | uncert paired FILE.json
                            | skillcfi admit FILE.json | memcomm selection FILE.json | sparseval alc FILE.json
                            | budgetaudit solve FILE.json | simaudit coverage FILE.json
-                           | progjudge consensus FILE.json
+                           | progjudge consensus FILE.json | reql triage FILE.json
+                           | replan repair FILE.json | localcost expected FILE.json
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -3648,6 +3649,116 @@ def cmd_progjudge(args):
     sys.exit(0)
 
 
+def cmd_reql(args):
+    """Round 150 (arXiv:2611.24924): a change lands because a requirement says so."""
+    from longrun.harness import requirement_loop
+    if not getattr(args, "file", None):
+        print("usage: reql issue|triage|consolidate|admission|review|rounds|"
+              "delivery|generalisation|audit|advise FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "issue":
+        out = requirement_loop.issue(doc.get("report") or doc)
+    elif args.action == "triage":
+        out = requirement_loop.triage(doc.get("report") or doc)
+    elif args.action == "consolidate":
+        out = requirement_loop.consolidate(doc.get("rows") or [])
+    elif args.action == "admission":
+        out = requirement_loop.admission(doc.get("rows") or [])
+    elif args.action == "review":
+        out = requirement_loop.review(doc.get("record") or doc)
+    elif args.action == "rounds":
+        out = requirement_loop.rounds(doc.get("rows") or [])
+    elif args.action == "delivery":
+        out = requirement_loop.delivery(doc.get("record") or doc)
+    elif args.action == "generalisation":
+        out = requirement_loop.generalisation(doc.get("rows") or [])
+    elif args.action == "audit":
+        out = requirement_loop.audit(doc.get("record") or doc)
+    else:
+        out = requirement_loop.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_replan(args):
+    """Round 150 (arXiv:2611.24839): templates in, validated repairs out."""
+    from longrun.harness import secure_replan
+    if not getattr(args, "file", None):
+        print("usage: replan apply|validate|templates|repair|closeout|exposure|"
+              "validation|audit|advise FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "apply":
+        out = secure_replan.apply(doc.get("plan") or {},
+                                  doc.get("operators") or [])
+    elif args.action == "validate":
+        out = secure_replan.validate(doc.get("plan") or {}, doc)
+    elif args.action == "templates":
+        out = secure_replan.templates()
+    elif args.action == "repair":
+        out = secure_replan.repair(doc)
+    elif args.action == "closeout":
+        out = secure_replan.close_out(doc.get("record") or doc)
+    elif args.action == "exposure":
+        out = secure_replan.exposure(doc.get("record") or doc)
+    elif args.action == "validation":
+        out = secure_replan.validation_effect(doc.get("record") or doc)
+    elif args.action == "audit":
+        out = secure_replan.audit(doc.get("record") or doc)
+    else:
+        out = secure_replan.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_localcost(args):
+    """Round 150 (arXiv:2611.24880): what a solved task costs on your own device."""
+    from longrun.harness import local_cost
+    if not getattr(args, "file", None):
+        print("usage: localcost expected|energy|capacity|rate|required|computed|"
+              "notice|compare|audit|advise FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "expected":
+        out = local_cost.expected(doc.get("record") or doc)
+    elif args.action == "energy":
+        out = local_cost.energy(doc.get("record") or doc)
+    elif args.action == "capacity":
+        out = local_cost.capacity(doc.get("record") or doc)
+    elif args.action == "rate":
+        out = local_cost.decode_rate(doc.get("record") or doc)
+    elif args.action == "required":
+        out = local_cost.required_rate(doc.get("record") or doc)
+    elif args.action == "computed":
+        out = local_cost.computed(doc.get("record") or doc)
+    elif args.action == "notice":
+        out = local_cost.budget_notice(doc.get("record") or doc)
+    elif args.action == "compare":
+        out = local_cost.compare(doc.get("record") or doc)
+    elif args.action == "audit":
+        out = local_cost.audit(doc.get("record") or doc)
+    else:
+        out = local_cost.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
 def cmd_instructions(args):
     """Round 114 (arXiv:2611.13709): explicit context-file directives vs the cards."""
     from longrun.harness import instruction_audit
@@ -5629,6 +5740,24 @@ def main():
                                           "audit", "advise"]); \
         p.add_argument("file", nargs="?", help="JSON: {answers}, {grades}, {rows}, {record}, or {profile}"); \
         p.set_defaults(fn=cmd_progjudge)
+    p = sub.add_parser("reql"); \
+        p.add_argument("action", choices=["issue", "triage", "consolidate", "admission",
+                                          "review", "rounds", "delivery",
+                                          "generalisation", "audit", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {report}, {rows}, {record}, or {profile}"); \
+        p.set_defaults(fn=cmd_reql)
+    p = sub.add_parser("replan"); \
+        p.add_argument("action", choices=["apply", "validate", "templates", "repair",
+                                          "closeout", "exposure", "validation",
+                                          "audit", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: plan+operators, plan+registry, {record}, or {profile}"); \
+        p.set_defaults(fn=cmd_replan)
+    p = sub.add_parser("localcost"); \
+        p.add_argument("action", choices=["expected", "energy", "capacity", "rate",
+                                          "required", "computed", "notice", "compare",
+                                          "audit", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {record}, {local,cloud}, or {profile}"); \
+        p.set_defaults(fn=cmd_localcost)
     p = sub.add_parser("instructions"); p.add_argument("action", choices=["audit"]); \
         p.add_argument("file", nargs="?", help="JSON: {text, cards}"); \
         p.set_defaults(fn=cmd_instructions)
