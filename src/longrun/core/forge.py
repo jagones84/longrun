@@ -67,6 +67,7 @@ Usage:
                            | slots suffix FILE.json | privmem sanitize FILE.json | privaudit disposition FILE.json
                            | updategate admit FILE.json | expledger ledger FILE.json | prefetch benefit FILE.json
                            | coverage coverage FILE.json | purpleloop collapse FILE.json | renderdef modality FILE.json
+                           | stateev recover FILE.json | evidenceview rates FILE.json | uncert paired FILE.json
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -3296,6 +3297,117 @@ def cmd_renderdef(args):
     sys.exit(0)
 
 
+def cmd_stateev(args):
+    """Round 147 (arXiv:2611.24357): carry the interpretation, keep the proof."""
+    from longrun.harness import state_evidence
+    if not getattr(args, "file", None):
+        print("usage: stateev state|delta|ack|recover|locality|budget|paired|benefit|audit|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "state":
+        out = state_evidence.state(doc.get("entries") or [])
+    elif args.action == "delta":
+        out = state_evidence.apply_delta(doc.get("row") or doc)
+    elif args.action == "ack":
+        out = state_evidence.acknowledge(doc.get("row") or doc)
+    elif args.action == "recover":
+        out = state_evidence.recover(doc.get("row") or doc)
+    elif args.action == "locality":
+        out = state_evidence.locality(doc.get("rows") or [])
+    elif args.action == "budget":
+        out = state_evidence.budget(doc.get("row") or doc)
+    elif args.action == "paired":
+        out = state_evidence.paired(doc.get("row") or doc)
+    elif args.action == "benefit":
+        out = state_evidence.benefit(doc.get("rows") or [])
+    elif args.action == "audit":
+        out = state_evidence.audit(doc.get("record") or doc)
+    else:
+        out = state_evidence.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_evidenceview(args):
+    """Round 147 (arXiv:2611.24353): mentioning a figure is not checking it."""
+    from longrun.harness import evidence_review
+    if not getattr(args, "file", None):
+        print("usage: evidenceview outcomes|rates|aided|shortlist|evidence-type|assertion|instrument|near-miss|noise|audit|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "outcomes":
+        out = evidence_review.outcomes()
+    elif args.action == "rates":
+        out = evidence_review.rates(doc.get("rows") or [])
+    elif args.action == "aided":
+        out = evidence_review.aided(doc.get("rows") or [])
+    elif args.action == "shortlist":
+        out = evidence_review.shortlist(doc.get("row") or doc)
+    elif args.action == "evidence-type":
+        out = evidence_review.evidence_type(doc.get("rows") or [])
+    elif args.action == "assertion":
+        out = evidence_review.assertion(doc.get("rows") or [])
+    elif args.action == "instrument":
+        out = evidence_review.instrument(doc.get("row") or doc)
+    elif args.action == "near-miss":
+        out = evidence_review.near_miss(doc.get("rows") or [])
+    elif args.action == "noise":
+        out = evidence_review.noise(doc.get("row") or doc)
+    elif args.action == "audit":
+        out = evidence_review.audit(doc.get("record") or doc)
+    else:
+        out = evidence_review.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_uncert(args):
+    """Round 147 (arXiv:2611.24351): say how sure the evidence is."""
+    from longrun.harness import uncertainty_context
+    if not getattr(args, "file", None):
+        print("usage: uncert paired|alignment|subset|flips|correctness|entropy|sensitivity|audit|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "paired":
+        out = uncertainty_context.paired(doc.get("row") or doc)
+    elif args.action == "alignment":
+        out = uncertainty_context.alignment(doc.get("rows") or [])
+    elif args.action == "subset":
+        out = uncertainty_context.subset(doc.get("rows") or [])
+    elif args.action == "flips":
+        out = uncertainty_context.flips(doc.get("row") or doc)
+    elif args.action == "correctness":
+        out = uncertainty_context.correctness(doc.get("rows") or [])
+    elif args.action == "entropy":
+        out = uncertainty_context.entropy(doc.get("rows") or [])
+    elif args.action == "sensitivity":
+        out = uncertainty_context.sensitivity(doc.get("rows") or [])
+    elif args.action == "audit":
+        out = uncertainty_context.audit(doc.get("record") or doc)
+    else:
+        out = uncertainty_context.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
 def cmd_instructions(args):
     """Round 114 (arXiv:2611.13709): explicit context-file directives vs the cards."""
     from longrun.harness import instruction_audit
@@ -5226,6 +5338,22 @@ def main():
                                           "authorization", "audit", "advise"]); \
         p.add_argument("file", nargs="?", help="JSON: {rows}, {row}, {record}, or {profile}"); \
         p.set_defaults(fn=cmd_renderdef)
+    p = sub.add_parser("stateev"); \
+        p.add_argument("action", choices=["state", "delta", "ack", "recover", "locality",
+                                          "budget", "paired", "benefit", "audit", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {entries}, {row}, {rows}, {record}, or {profile}"); \
+        p.set_defaults(fn=cmd_stateev)
+    p = sub.add_parser("evidenceview"); \
+        p.add_argument("action", choices=["outcomes", "rates", "aided", "shortlist", "evidence-type",
+                                          "assertion", "instrument", "near-miss", "noise",
+                                          "audit", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {rows}, {row}, {record}, or {profile}"); \
+        p.set_defaults(fn=cmd_evidenceview)
+    p = sub.add_parser("uncert"); \
+        p.add_argument("action", choices=["paired", "alignment", "subset", "flips", "correctness",
+                                          "entropy", "sensitivity", "audit", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {row}, {rows}, {record}, or {profile}"); \
+        p.set_defaults(fn=cmd_uncert)
     p = sub.add_parser("instructions"); p.add_argument("action", choices=["audit"]); \
         p.add_argument("file", nargs="?", help="JSON: {text, cards}"); \
         p.set_defaults(fn=cmd_instructions)
