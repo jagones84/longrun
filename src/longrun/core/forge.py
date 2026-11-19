@@ -56,6 +56,7 @@ Usage:
                            | scope witness FILE.json | round champion FILE.json | attest build FILE.json
                            | criteria measure FILE.json | rubric errors FILE.json | docmaint measure FILE.json
                            | priority compare FILE.json | values compare FILE.json | crossenv measure FILE.json
+                           | resolution verdict FILE.json | replay audit FILE.json | dialogue compare FILE.json
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -2075,6 +2076,117 @@ def cmd_crossenv(args):
     sys.exit(0)
 
 
+def cmd_resolution(args):
+    """Round 135 (arXiv:2611.23068): evolution stalls because improvements go unidentified."""
+    from longrun.harness import resolution_budget
+    if not getattr(args, "file", None):
+        print("usage: resolution runs|decompose|verdict|select|quality|advantage|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "runs":
+        out = {"runs_required": resolution_budget.runs_required(
+            doc.get("margin"), doc.get("sd"),
+            doc.get("alpha", 0.05), doc.get("power", 0.8))}
+    elif args.action == "decompose":
+        out = resolution_budget.decompose(doc.get("rows") or doc.get("measurements") or [],
+                                         doc.get("margin"))
+    elif args.action == "verdict":
+        out = resolution_budget.resolution(doc.get("rows") or doc.get("measurements") or [],
+                                          doc.get("margin"), doc.get("budget", 8))
+    elif args.action == "select":
+        out = resolution_budget.selection(doc.get("pairs") or doc.get("rows") or [])
+    elif args.action == "quality":
+        out = resolution_budget.quality_at_k(doc.get("rows") or doc.get("pool") or [],
+                                             doc.get("k", 1))
+    elif args.action == "advantage":
+        out = resolution_budget.advantage(doc.get("rows") or doc.get("pool") or [],
+                                          doc.get("k", 1))
+    else:
+        out = resolution_budget.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_replay(args):
+    """Round 135 (arXiv:2611.23151): a faster environment is admissible only if it replays."""
+    from longrun.harness import replay_parity
+    if not getattr(args, "file", None):
+        print("usage: replay trace|replay|variation|parity|render|timing|audit|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "trace":
+        out = replay_parity.trace(doc.get("states") or doc.get("rollout") or [])
+    elif args.action == "replay":
+        out = replay_parity.replay(doc.get("record") or doc)
+    elif args.action == "variation":
+        out = replay_parity.variation(doc.get("record") or doc)
+    elif args.action == "parity":
+        out = replay_parity.parity(doc.get("source") or [], doc.get("port") or [],
+                                   doc.get("tol", 1e-6))
+    elif args.action == "render":
+        out = replay_parity.render_parity(doc.get("mse_mean"), doc.get("mse_max"),
+                                          doc.get("tol_mean", 1e-3), doc.get("tol_max", 1e-2))
+    elif args.action == "timing":
+        out = replay_parity.timing(doc.get("rows") or doc.get("windows") or [])
+    elif args.action == "audit":
+        out = replay_parity.audit(doc.get("record") or doc)
+    else:
+        out = replay_parity.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_dialogue(args):
+    """Round 135 (arXiv:2611.23119): what a teammate says is evidence about hidden state."""
+    from longrun.harness import dialogue_allocation
+    if not getattr(args, "file", None):
+        print("usage: dialogue posterior|entropy|speak|evidence|propositions|schedule|compare|audit|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "posterior":
+        out = dialogue_allocation.posterior(doc.get("prior") or {}, doc.get("action"),
+                                            doc.get("utterance"))
+    elif args.action == "entropy":
+        out = dialogue_allocation.entropy(doc.get("belief") or {})
+    elif args.action == "speak":
+        out = dialogue_allocation.speak(doc.get("belief") or {}, doc.get("epsilon", 0.7))
+    elif args.action == "evidence":
+        out = dialogue_allocation.evidence(doc.get("before") or [], doc.get("after") or [])
+    elif args.action == "propositions":
+        out = dialogue_allocation.propositions(
+            doc.get("prior") or {}, doc.get("kind") or "none", doc.get("affected") or [],
+            doc.get("evidence_likelihood"), doc.get("implied"))
+    elif args.action == "schedule":
+        out = dialogue_allocation.schedule(doc.get("n", 3), doc.get("rate", 0.025),
+                                           doc.get("horizon", 300), doc.get("seed", 7))
+    elif args.action == "compare":
+        out = dialogue_allocation.compare(doc.get("comm") or [], doc.get("base") or [])
+    elif args.action == "audit":
+        out = dialogue_allocation.audit(doc.get("spec") or doc)
+    else:
+        out = dialogue_allocation.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
 def cmd_instructions(args):
     """Round 114 (arXiv:2611.13709): explicit context-file directives vs the cards."""
     from longrun.harness import instruction_audit
@@ -3833,6 +3945,21 @@ def main():
                                           "curriculum", "measure", "advise"]); \
         p.add_argument("file", nargs="?", help="JSON: {spec}, {records}, {task}, {row}, {levels}, {rows}, or {profile}"); \
         p.set_defaults(fn=cmd_crossenv)
+    p = sub.add_parser("resolution"); \
+        p.add_argument("action", choices=["runs", "decompose", "verdict", "select",
+                                          "quality", "advantage", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {margin, sd}, {rows}, {pairs}, {pool, k}, or {profile}"); \
+        p.set_defaults(fn=cmd_resolution)
+    p = sub.add_parser("replay"); \
+        p.add_argument("action", choices=["trace", "replay", "variation", "parity",
+                                          "render", "timing", "audit", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {states}, {record}, {source, port}, {rows}, or {profile}"); \
+        p.set_defaults(fn=cmd_replay)
+    p = sub.add_parser("dialogue"); \
+        p.add_argument("action", choices=["posterior", "entropy", "speak", "evidence",
+                                          "propositions", "schedule", "compare", "audit", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {prior, action, utterance}, {belief}, {before, after}, {n, rate}, {comm, base}, or {profile}"); \
+        p.set_defaults(fn=cmd_dialogue)
     p = sub.add_parser("instructions"); p.add_argument("action", choices=["audit"]); \
         p.add_argument("file", nargs="?", help="JSON: {text, cards}"); \
         p.set_defaults(fn=cmd_instructions)
