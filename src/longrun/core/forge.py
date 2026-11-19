@@ -66,6 +66,7 @@ Usage:
                            | admission aimd FILE.json | statesched kv FILE.json | capacity priority FILE.json
                            | slots suffix FILE.json | privmem sanitize FILE.json | privaudit disposition FILE.json
                            | updategate admit FILE.json | expledger ledger FILE.json | prefetch benefit FILE.json
+                           | coverage coverage FILE.json | purpleloop collapse FILE.json | renderdef modality FILE.json
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -3177,6 +3178,124 @@ def cmd_prefetch(args):
     sys.exit(0)
 
 
+def cmd_coverage(args):
+    """Round 146 (arXiv:2611.24313): count the ways in, not only how often."""
+    from longrun.harness import redteam_coverage
+    if not getattr(args, "file", None):
+        print("usage: coverage taxonomy|coverage|concentration|jaccard|asr|equal-sample|equal-cost|labels|audit|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "taxonomy":
+        out = redteam_coverage.taxonomy(doc.get("units") or [])
+    elif args.action == "coverage":
+        out = redteam_coverage.coverage(doc.get("successes") or [],
+                                        doc.get("totals") or {})
+    elif args.action == "concentration":
+        out = redteam_coverage.concentration(doc.get("successes") or [],
+                                             str(doc.get("level") or "technique"))
+    elif args.action == "jaccard":
+        out = redteam_coverage.jaccard(doc.get("successes") or [],
+                                       str(doc.get("level") or "technique"))
+    elif args.action == "asr":
+        out = redteam_coverage.asr_at_k(doc.get("attempts") or [],
+                                        int(doc.get("k") or 1))
+    elif args.action == "equal-sample":
+        out = redteam_coverage.equal_sample(doc.get("successes") or [],
+                                            int(doc.get("k") or 1),
+                                            str(doc.get("level") or "technique"))
+    elif args.action == "equal-cost":
+        out = redteam_coverage.equal_cost(doc.get("rows") or [])
+    elif args.action == "labels":
+        out = redteam_coverage.label_check(doc.get("rows") or [])
+    elif args.action == "audit":
+        out = redteam_coverage.audit(doc.get("record") or doc)
+    else:
+        out = redteam_coverage.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_purpleloop(args):
+    """Round 146 (arXiv:2611.24362): discoveries into robustness, not volume."""
+    from longrun.harness import purple_loop
+    if not getattr(args, "file", None):
+        print("usage: purpleloop primitives|explainability|reward|collapse|rewards|requirements|compare|ablate|audit|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "primitives":
+        out = purple_loop.primitives(doc.get("records") or [],
+                                     int(doc.get("k") or 3))
+    elif args.action == "explainability":
+        out = purple_loop.explainability(doc.get("row") or doc)
+    elif args.action == "reward":
+        out = purple_loop.coverage_reward(doc.get("row") or doc)
+    elif args.action == "collapse":
+        out = purple_loop.collapse(doc.get("series") or [])
+    elif args.action == "rewards":
+        out = purple_loop.rewards(doc.get("row") or doc)
+    elif args.action == "requirements":
+        out = purple_loop.requirements(doc.get("row") or doc)
+    elif args.action == "compare":
+        out = purple_loop.compare(doc.get("rows") or [])
+    elif args.action == "ablate":
+        out = purple_loop.ablate(doc.get("rows") or [])
+    elif args.action == "audit":
+        out = purple_loop.audit(doc.get("record") or doc)
+    else:
+        out = purple_loop.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_renderdef(args):
+    """Round 146 (arXiv:2611.24231): protection that depends on the operation."""
+    from longrun.harness import render_defense
+    if not getattr(args, "file", None):
+        print("usage: renderdef operations|modality|aggregate|utility|presentation|candidates|dissociation|authorization|audit|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "operations":
+        out = render_defense.operations()
+    elif args.action == "modality":
+        out = render_defense.modality(doc.get("rows") or [])
+    elif args.action == "aggregate":
+        out = render_defense.aggregate(doc.get("rows") or [])
+    elif args.action == "utility":
+        out = render_defense.utility(doc.get("rows") or [])
+    elif args.action == "presentation":
+        out = render_defense.presentation(doc.get("rows") or [])
+    elif args.action == "candidates":
+        out = render_defense.candidates(doc.get("rows") or [])
+    elif args.action == "dissociation":
+        out = render_defense.dissociation(doc.get("rows") or [])
+    elif args.action == "authorization":
+        out = render_defense.authorization(doc.get("row") or doc)
+    elif args.action == "audit":
+        out = render_defense.audit(doc.get("record") or doc)
+    else:
+        out = render_defense.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
 def cmd_instructions(args):
     """Round 114 (arXiv:2611.13709): explicit context-file directives vs the cards."""
     from longrun.harness import instruction_audit
@@ -5089,6 +5208,24 @@ def main():
                                           "degrade", "warmup", "audit", "advise"]); \
         p.add_argument("file", nargs="?", help="JSON: {events, size}, {addresses, cap}, {ranks, last, rank_to_delta}, {packet}, {row}, {rows}, {record}, or {profile}"); \
         p.set_defaults(fn=cmd_prefetch)
+    p = sub.add_parser("coverage"); \
+        p.add_argument("action", choices=["taxonomy", "coverage", "concentration", "jaccard",
+                                          "asr", "equal-sample", "equal-cost", "labels",
+                                          "audit", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {units}, {successes, totals}, {attempts, k}, {rows}, {record}, or {profile}"); \
+        p.set_defaults(fn=cmd_coverage)
+    p = sub.add_parser("purpleloop"); \
+        p.add_argument("action", choices=["primitives", "explainability", "reward", "collapse",
+                                          "rewards", "requirements", "compare", "ablate",
+                                          "audit", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {records, k}, {row}, {series}, {rows}, {record}, or {profile}"); \
+        p.set_defaults(fn=cmd_purpleloop)
+    p = sub.add_parser("renderdef"); \
+        p.add_argument("action", choices=["operations", "modality", "aggregate", "utility",
+                                          "presentation", "candidates", "dissociation",
+                                          "authorization", "audit", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {rows}, {row}, {record}, or {profile}"); \
+        p.set_defaults(fn=cmd_renderdef)
     p = sub.add_parser("instructions"); p.add_argument("action", choices=["audit"]); \
         p.add_argument("file", nargs="?", help="JSON: {text, cards}"); \
         p.set_defaults(fn=cmd_instructions)
