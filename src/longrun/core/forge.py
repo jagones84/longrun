@@ -77,6 +77,8 @@ Usage:
                            | toolext admit FILE.json | fastpath calibrate FILE.json
                            | tariff coverage FILE.json | hyperke oke FILE.json
                            | beliefprobe scaling FILE.json
+                           | awareness snapshot FILE.json | diagnostics severity FILE.json
+                           | orchcredit certify FILE.json
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -4080,6 +4082,125 @@ def cmd_beliefprobe(args):
     sys.exit(0)
 
 
+def cmd_awareness(args):
+    """Round 154 (arXiv:2611.05391): verified host state as a bounded decision input."""
+    from longrun.harness import awareness
+    if not getattr(args, "file", None):
+        print("usage: awareness reduce|cost|best|regret|snapshot|choose|ablate|"
+              "wilson|authority|audit|advise FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "reduce":
+        out = awareness.reduce(doc.get("observations") or [], doc.get("window"))
+    elif args.action == "cost":
+        out = awareness.cost(doc.get("row") or doc)
+    elif args.action == "best":
+        out = awareness.best(doc.get("rows") or [])
+    elif args.action == "regret":
+        out = awareness.regret(doc.get("rows") or [], doc.get("choice"))
+    elif args.action == "snapshot":
+        out = awareness.snapshot(doc.get("rows") or [], doc.get("now"),
+                                 doc.get("max_age_ms", awareness.DEFAULT_MAX_AGE_MS),
+                                 doc.get("max_rows"), doc.get("verified", True))
+    elif args.action == "choose":
+        out = awareness.choose(doc.get("snapshot") or {}, doc.get("action"),
+                               doc.get("current"))
+    elif args.action == "ablate":
+        out = awareness.ablate(doc.get("arms") or [])
+    elif args.action == "wilson":
+        out = awareness.wilson(doc.get("k"), doc.get("n"))
+    elif args.action == "authority":
+        out = awareness.authority(doc.get("record") or doc)
+    elif args.action == "audit":
+        out = awareness.audit(doc.get("record") or doc)
+    else:
+        out = awareness.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_diagnostics(args):
+    """Round 154 (arXiv:2611.04507): findings, Signals, severity and remediation."""
+    from longrun.harness import diagnostics
+    if not getattr(args, "file", None):
+        print("usage: diagnostics taxonomy|finding|scope|severity|group|update|"
+              "match|coverage|audit|advise FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "taxonomy":
+        out = diagnostics.taxonomy()
+    elif args.action == "finding":
+        out = diagnostics.finding(doc.get("record") or doc)
+    elif args.action == "scope":
+        out = diagnostics.scope(doc.get("affected"), doc.get("analyzed"))
+    elif args.action == "severity":
+        out = diagnostics.severity(doc.get("record") or doc)
+    elif args.action == "group":
+        out = diagnostics.group(doc.get("findings") or [])
+    elif args.action == "update":
+        out = diagnostics.update(doc.get("signal") or {}, doc.get("run") or {})
+    elif args.action == "match":
+        out = diagnostics.match(doc.get("predicted") or [], doc.get("reference") or [])
+    elif args.action == "coverage":
+        out = diagnostics.coverage(doc.get("predicted") or [],
+                                   doc.get("reference") or [])
+    elif args.action == "audit":
+        out = diagnostics.audit(doc.get("record") or doc)
+    else:
+        out = diagnostics.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_orchcredit(args):
+    """Round 154 (arXiv:2611.07495): interaction-aware credit and certified updates."""
+    from longrun.harness import orchestration_credit
+    if not getattr(args, "file", None):
+        print("usage: orchcredit orders|bound|z2|certify|select|detect|leaps|"
+              "complementarity|controlled|audit|advise FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "orders":
+        out = orchestration_credit.orders(doc.get("record") or doc)
+    elif args.action == "bound":
+        out = orchestration_credit.bound(doc.get("K"), doc.get("eta"), doc.get("gbar"))
+    elif args.action == "z2":
+        out = orchestration_credit.z2(doc.get("record") or doc)
+    elif args.action == "certify":
+        out = orchestration_credit.certify(doc.get("record") or doc)
+    elif args.action == "select":
+        out = orchestration_credit.select(doc.get("candidates") or [])
+    elif args.action == "detect":
+        out = orchestration_credit.detect(doc.get("record") or doc)
+    elif args.action == "leaps":
+        out = orchestration_credit.leaps(doc.get("record") or doc)
+    elif args.action == "complementarity":
+        out = orchestration_credit.complementarity(doc.get("record") or doc)
+    elif args.action == "controlled":
+        out = orchestration_credit.controlled(doc.get("record") or doc)
+    elif args.action == "audit":
+        out = orchestration_credit.audit(doc.get("record") or doc)
+    else:
+        out = orchestration_credit.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
 def cmd_instructions(args):
     """Round 114 (arXiv:2611.13709): explicit context-file directives vs the cards."""
     from longrun.harness import instruction_audit
@@ -6131,6 +6252,24 @@ def main():
                                           "advise"]); \
         p.add_argument("file", nargs="?", help="JSON: {rows}, {record}, or {profile}"); \
         p.set_defaults(fn=cmd_beliefprobe)
+    p = sub.add_parser("awareness"); \
+        p.add_argument("action", choices=["reduce", "cost", "best", "regret", "snapshot",
+                                          "choose", "ablate", "wilson", "authority",
+                                          "audit", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {observations}, {rows}, {arms}, or {record}"); \
+        p.set_defaults(fn=cmd_awareness)
+    p = sub.add_parser("diagnostics"); \
+        p.add_argument("action", choices=["taxonomy", "finding", "scope", "severity",
+                                          "group", "update", "match", "coverage",
+                                          "audit", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {record}, {findings}, {signal,run}, or label sets"); \
+        p.set_defaults(fn=cmd_diagnostics)
+    p = sub.add_parser("orchcredit"); \
+        p.add_argument("action", choices=["orders", "bound", "z2", "certify", "select",
+                                          "detect", "leaps", "complementarity",
+                                          "controlled", "audit", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {record}, {candidates}, or {profile}"); \
+        p.set_defaults(fn=cmd_orchcredit)
     p = sub.add_parser("instructions"); p.add_argument("action", choices=["audit"]); \
         p.add_argument("file", nargs="?", help="JSON: {text, cards}"); \
         p.set_defaults(fn=cmd_instructions)
