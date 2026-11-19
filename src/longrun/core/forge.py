@@ -29,66 +29,9 @@ Usage:
                          | checkpoints rm CP_ID | checkpoints prune
   python3 forge.py setup run PLAN.json [--workspace DIR] [--reuse] [--state DIR]
   python3 forge.py invariants | manifest
-  python3 forge.py skills stale [--json] | skills value FILE.json | skills repair FILE.json --map old=new
-  python3 forge.py reuse audit FILE.json [--allow t1,t2] | principals check FILE.json
-  python3 forge.py residency plan FILE.json --capacity N [--current SID]
-  python3 forge.py procedure run FILE.json | intent check|audit FILE.json
-  python3 forge.py handoff audit FILE.json
-  python3 forge.py approvals audit FILE.json | autonomy check FILE.json | skills prune FILE.json
-  python3 forge.py memory surface FILE.json | teams audit FILE.json | toolgraph build|feedback FILE.json
-  python3 forge.py memory boundary|conflicts FILE.json | instructions audit FILE.json
-  python3 forge.py memory ledger FILE.json | episodes audit FILE.json | contract check FILE.json
-  python3 forge.py recovery adjudicate FILE.json | effects coverage|verify FILE.json | context cost FILE.json
-  python3 forge.py commit decide FILE.json | expectations verify FILE.json | governance decide FILE.json
-  python3 forge.py capsule compile|replay FILE.json | flow judge FILE.json | selfdirected audit FILE.json
-  python3 forge.py harnessevo diagnose|admit FILE.json | contextpipeline deliver FILE.json | stepzero extract FILE.json
-  python3 forge.py harnessrecord audit FILE.json | conduct score FILE.json | completion check FILE.json
-  python3 forge.py skillret calibrate FILE.json | ruleret closure FILE.json | skillquality profile FILE.json
-  python3 forge.py opspolicy realize FILE.json | execpolicy confirm FILE.json
-  python3 forge.py skilladapter bind FILE.json | intake admit FILE.json
-  python3 forge.py memcredit arbitrate FILE.json | lessongate probe FILE.json | seclattice admit FILE.json
-  python3 forge.py optmemory continuity FILE.json | detour classify FILE.json | patchprobe compare FILE.json
-  python3 forge.py poison trace FILE.json | boundary evaluate FILE.json | gapleak verify FILE.json
-  python3 forge.py binding alignment FILE.json | gateway utility FILE.json | scoring advise FILE.json
-                          | reversibility classify FILE.json | gain decide FILE.json | history advise FILE.json
-                          | composed compose FILE.json | measure specs FILE.json | trap position FILE.json
-                           | evidence admit FILE.json | stress compare FILE.json | trial claim FILE.json
-                           | scope witness FILE.json | round champion FILE.json | attest build FILE.json
-                           | criteria measure FILE.json | rubric errors FILE.json | docmaint measure FILE.json
-                           | priority compare FILE.json | values compare FILE.json | crossenv measure FILE.json
-                           | resolution verdict FILE.json | replay audit FILE.json | dialogue compare FILE.json
-                           | selective correct FILE.json | continuation burst FILE.json | bench score FILE.json
-                           | deliberation audit FILE.json | frontier bracket FILE.json | transfer check FILE.json
-                           | repair churn FILE.json | validation risk FILE.json | grounding session FILE.json
-                           | folding trigger FILE.json | invocation rates FILE.json | capabilities updating FILE.json
-                           | govern validate FILE.json | typed build FILE.json | pipeline blame FILE.json
-                           | envelope weight FILE.json | tracefp attribute FILE.json | modelhandoff gate FILE.json
-                           | admission aimd FILE.json | statesched kv FILE.json | capacity priority FILE.json
-                           | slots suffix FILE.json | privmem sanitize FILE.json | privaudit disposition FILE.json
-                           | updategate admit FILE.json | expledger ledger FILE.json | prefetch benefit FILE.json
-                           | coverage coverage FILE.json | purpleloop collapse FILE.json | renderdef modality FILE.json
-                           | stateev recover FILE.json | evidenceview rates FILE.json | uncert paired FILE.json
-                           | skillcfi admit FILE.json | memcomm selection FILE.json | sparseval alc FILE.json
-                           | budgetaudit solve FILE.json | simaudit coverage FILE.json
-                           | progjudge consensus FILE.json | reql triage FILE.json
-                           | replan repair FILE.json | localcost expected FILE.json
-                           | intentc validate FILE.json | warrant transport FILE.json
-                           | platformeval alpha FILE.json | contaudit realism FILE.json
-                           | toolext admit FILE.json | fastpath calibrate FILE.json
-                           | tariff coverage FILE.json | hyperke oke FILE.json
-                           | beliefprobe scaling FILE.json
-                           | awareness snapshot FILE.json | diagnostics severity FILE.json
-                           | orchcredit certify FILE.json
-                           | intentgraph audit FILE.json | writeguard mediate FILE.json
-                           | ctxregime regimes FILE.json
-                           | skillgate curve FILE.json | skillflow regime FILE.json
-                           | skilleve diagnose FILE.json
-                           | takeover delivery FILE.json | anytime grid FILE.json
-                           | longhorizon gap FILE.json
-                           | memchannel exposure FILE.json | memauthority gate FILE.json
-                           | exfild frontier FILE.json
-                           | formation outcome FILE.json | teammate score FILE.json
-                           | museprincipals meeting FILE.json
+  python3 forge.py harness [GROUP]      # every per-paper group: actions + where its JSON goes
+  python3 forge.py skills stale | skills value FILE.json | skills repair FILE.json --map old=new
+  python3 forge.py approvals audit [FILE.json]   # no FILE: the live approval store
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -505,19 +448,26 @@ def cmd_tools(args):
 def cmd_approvals(args):
     if args.action == "audit":
         # Round 112 (arXiv:2611.19237): refusal safety vs authorization
-        # completeness over caller-supplied decision/call/dispatch/effect records.
+        # completeness. With no FILE this audits the RUNNING harness: the tool
+        # gate records decision -> call -> dispatch -> effect on every approval,
+        # and `approvals.audit_records()` is the one adapter to the auditor's
+        # shape. A FILE is still accepted for a hand-written ledger.
         from longrun.harness import approval_audit
-        if not args.value:
-            print("usage: approvals audit FILE.json", file=sys.stderr)
-            sys.exit(2)
-        try:
-            with open(args.value, encoding="utf-8") as fh:
-                doc = json.load(fh)
-        except (OSError, ValueError) as e:
-            print("bad file:", e, file=sys.stderr)
-            sys.exit(2)
-        rows = doc.get("records") if isinstance(doc, dict) else doc
+        from longrun.tools import approvals as _ap
+        if args.value:
+            try:
+                with open(args.value, encoding="utf-8") as fh:
+                    doc = json.load(fh)
+            except (OSError, ValueError) as e:
+                print("bad file:", e, file=sys.stderr)
+                sys.exit(2)
+            rows = doc.get("records") if isinstance(doc, dict) else doc
+            source = "file"
+        else:
+            rows = _ap.audit_records()
+            source = "live-store"
         out = approval_audit.audit(rows or [])
+        out["source"] = source
         print(json.dumps(out, indent=2, ensure_ascii=False))
         sys.exit(0 if out.get("verdict") == "clean" else 1)
     if args.action == "ls":
@@ -657,60 +607,87 @@ def cmd_memory(args):
             print(" [%.3f] %s" % (r.get("score", 0), r.get("content", "")[:120]))
 
 
-def cmd_episodes(args):
-    """Round 115 (arXiv:2611.13254): validate a fault episode record and name controls."""
-    from longrun.harness import fault_episode
-    if not getattr(args, "file", None):
-        print("usage: episodes audit FILE.json", file=sys.stderr)
+# ------------------------------------------------------- harness commands ---
+# Every per-paper group below is the same three steps: read one JSON record,
+# call one pure checker, print its verdict and turn the verdict into an exit
+# code. These two helpers are the ONE implementation of the first and third
+# step — the old copies drifted (some took `doc["x"]`, some `doc["x"] or doc`,
+# and the module's FORMAT was never checked at all).
+
+def _load_doc(args, usage, allow_list=False):
+    """Read a harness group's JSON input, or exit 2 with that group's usage.
+
+    `file` or `value` is the path (both spellings exist in the parser). A
+    top-level array is accepted only where the checker takes a bare sequence;
+    otherwise a list is refused, so a document with the wrong shape can never
+    reach a checker as an empty default.
+    """
+    path = getattr(args, "file", None) or getattr(args, "value", None)
+    if not path:
+        print("usage: " + usage, file=sys.stderr)
         sys.exit(2)
     try:
-        with open(args.file, encoding="utf-8") as fh:
+        with open(path, encoding="utf-8") as fh:
             doc = json.load(fh)
     except (OSError, ValueError) as e:
         print("bad file:", e, file=sys.stderr)
         sys.exit(2)
+    if isinstance(doc, dict) or (allow_list and isinstance(doc, list)):
+        return doc
+    print("bad file: expected a JSON object%s in %s"
+          % (" or array" if allow_list else "", path), file=sys.stderr)
+    sys.exit(2)
+
+
+def _emit(mod, out, ok=None, codes=None):
+    """Print one harness verdict and exit with an explicit code.
+
+    Every module declares `FORMAT` and stamps it on every result; a result that
+    does not carry the module's own format is a wiring bug (a renamed key, a
+    half-built record), so it exits 2 instead of letting a wrong key quietly
+    flip the exit code. `ok(out)` maps a verdict to 0/1; `codes(out)` overrides
+    that for tri-state groups (effect_types uses 0 safe / 1 unsafe / 3
+    undecidable). With neither, any verdict exits 0 (report-only groups).
+    """
+    expected = getattr(mod, "FORMAT", None)
+    got = out.get("format") if isinstance(out, dict) else None
+    if expected and got != expected:
+        print("harness error: %s returned format %r, expected %r"
+              % (getattr(mod, "__name__", mod), got, expected), file=sys.stderr)
+        sys.exit(2)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    if codes is not None:
+        sys.exit(codes(out))
+    sys.exit(0 if (ok is None or ok(out)) else 1)
+
+
+def cmd_episodes(args):
+    """Round 115 (arXiv:2611.13254): validate a fault episode record and name controls."""
+    from longrun.harness import fault_episode
+    doc = _load_doc(args, "episodes audit FILE.json")
     out = fault_episode.audit(doc)
     out["controls"] = fault_episode.controls(doc)["controls"]
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0 if out["verdict"] == "complete" else 1)
+    _emit(fault_episode, out, lambda o: o["verdict"] == "complete")
 
 
 def cmd_contract(args):
     """Round 115 (arXiv:2611.15207): a declared call-order contract vs a sequence."""
     from longrun.harness import api_contract
-    if not getattr(args, "file", None):
-        print("usage: contract check FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "contract check FILE.json")
     out = api_contract.check(doc.get("contract") or {}, doc.get("sequence") or [])
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0 if out["verdict"] == "pass" else 1)
+    _emit(api_contract, out, lambda o: o["verdict"] == "pass")
 
 
 def cmd_recovery(args):
     """Round 116 (arXiv:2610.41453): what a timeout lets you re-issue safely."""
     from longrun.harness import effect_recovery
-    if not getattr(args, "file", None):
-        print("usage: recovery adjudicate|trace FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "recovery adjudicate|trace FILE.json")
     if args.action == "trace":
         out = effect_recovery.trace_safety(doc.get("trace") or [], doc.get("capabilities") or {})
-        print(json.dumps(out, indent=2, ensure_ascii=False))
-        sys.exit(0 if out["verdict"] == "clean" else 1)
+        _emit(effect_recovery, out, lambda o: o["verdict"] == "clean")
     out = effect_recovery.adjudicate(doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0 if out["certificate"] in ("goal-satisfied", "safe-stop") else 1)
+    _emit(effect_recovery, out,
+          lambda o: o["certificate"] in ("goal-satisfied", "safe-stop"))
 
 
 def cmd_effects(args):
@@ -727,39 +704,21 @@ def cmd_effects(args):
                                     "writes": row.get("writes") or []}
         out = effect_types.coverage(catalog)
         out["source"] = "live-catalog"
-        print(json.dumps(out, indent=2, ensure_ascii=False))
-        sys.exit(0 if out["verdict"] in ("typed", "partial") else 1)
-    if not getattr(args, "file", None):
-        print("usage: effects coverage|verify FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+        _emit(effect_types, out, lambda o: o["verdict"] in ("typed", "partial"))
+    doc = _load_doc(args, "effects coverage|verify FILE.json")
     if args.action == "coverage":
         out = effect_types.coverage(doc.get("catalog") or {})
-        print(json.dumps(out, indent=2, ensure_ascii=False))
-        sys.exit(0 if out["verdict"] == "typed" else 1)
+        _emit(effect_types, out, lambda o: o["verdict"] == "typed")
     out = effect_types.verify_trace(doc.get("trace") or [], doc.get("catalog") or {})
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0 if out["verdict"] == "safe" else 1)
+    # 0 safe, 1 proven unsafe, 3 not decidable (an untyped call left it unjudged).
+    _emit(effect_types, out,
+          codes=lambda o: {"safe": 0, "unsafe": 1}.get(o["verdict"], 3))
 
 
 def _context_cost(args):
     """Round 116 (arXiv:2611.22238): price a run, or compare two policies, in money."""
     from longrun.harness import context_cost
-    path = getattr(args, "file", None) or getattr(args, "value", None)
-    if not path:
-        print("usage: context cost FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(path, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "context cost FILE.json")
     prices = doc.get("prices")
     if "runs" in doc:
         out = context_cost.screen(doc.get("runs") or {}, prices, doc.get("baseline") or "baseline")
@@ -768,108 +727,63 @@ def _context_cost(args):
                                    doc.get("label") or "treatment")
     else:
         out = context_cost.run_cost(doc.get("run") or doc, prices)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0 if out.get("verdict") not in ("more-expensive", "no-baseline") else 1)
+    _emit(context_cost, out,
+          lambda o: o.get("verdict") not in ("more-expensive", "no-baseline"))
 
 
 def cmd_commit(args):
     """Round 117 (arXiv:2611.19663): repair, replan or abandon, by damage depth."""
     from longrun.plan import commitment
-    if not getattr(args, "file", None):
-        print("usage: commit decide|diagnose FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "commit decide|diagnose FILE.json")
     out = commitment.worth_diagnosis(doc) if args.action == "diagnose" else commitment.decide(doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
     if args.action == "diagnose":
-        sys.exit(0 if out["worth"] else 1)
-    sys.exit(0 if out["decision"] in ("repair", "replan", "abandon") else 1)
+        _emit(commitment, out, lambda o: o["worth"])
+    _emit(commitment, out,
+          lambda o: o["decision"] in ("repair", "replan", "abandon"))
 
 
 def cmd_expectations(args):
     """Round 117 (arXiv:2611.02438): does the batch still match its expectations?"""
     from longrun.harness import expectations
-    if not getattr(args, "file", None):
-        print("usage: expectations verify|savings FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "expectations verify|savings FILE.json")
     steps = doc.get("steps") or []
     if args.action == "savings":
         out = expectations.savings(steps, doc.get("tokens_per_step"))
     else:
         out = expectations.verify(steps, doc.get("keys"))
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0 if out.get("action", "continue") == "continue" else 1)
+    _emit(expectations, out, lambda o: o.get("action", "continue") == "continue")
 
 
 def cmd_governance(args):
     """Round 117 (arXiv:2611.06682): ready, waiting or forbidden from an ontology."""
     from longrun.harness import governance
-    if not getattr(args, "file", None):
-        print("usage: governance decide|check FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "governance decide|check FILE.json")
     if args.action == "check":
         out = governance.check_ontology(doc.get("ontology") or {})
-        print(json.dumps(out, indent=2, ensure_ascii=False))
-        sys.exit(0 if out["verdict"] == "consistent" else 1)
+        _emit(governance, out, lambda o: o["verdict"] == "consistent")
     out = governance.decide(doc.get("call") or {}, doc.get("ontology") or {}, doc.get("state") or {})
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0 if out["decision"] == "ready" else 1)
+    _emit(governance, out, lambda o: o["decision"] == "ready")
 
 
 def cmd_capsule(args):
     """Round 120 (arXiv:2611.10022): compile one invocation into a replayable capsule."""
     from longrun.harness import skill_cache
-    if not getattr(args, "file", None):
-        print("usage: capsule compile|replay|savings FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "capsule compile|replay|savings FILE.json")
     if args.action == "compile":
         out = skill_cache.compile_capsule(doc.get("invocation") or doc, doc.get("skill"))
-        print(json.dumps(out, indent=2, ensure_ascii=False))
-        sys.exit(0 if out["ok"] else 1)
+        _emit(skill_cache, out, lambda o: o["ok"])
     cap = doc.get("capsule") or {}
     if args.action == "savings":
         out = skill_cache.savings(cap, doc.get("tokens_per_step"), doc.get("model_tokens"))
     else:
         out = skill_cache.replay(cap, doc.get("state") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0 if out.get("decision") in ("reuse", None) else 1)
+    _emit(skill_cache, out, lambda o: o.get("decision") in ("reuse", None))
 
 
 def cmd_flow(args):
     """Round 120 (arXiv:2611.21520): judge a relay by behaviour and policy."""
     from longrun.harness import flow_guard
-    if not getattr(args, "file", None):
-        print("usage: flow judge|calibrate|evaluate FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "flow judge|calibrate|evaluate FILE.json")
     if args.action == "judge":
         out = flow_guard.judge(doc.get("relay") or doc)
     elif args.action == "calibrate":
@@ -878,87 +792,52 @@ def cmd_flow(args):
     else:
         out = flow_guard.evaluate(doc.get("scores") or [], doc.get("labels") or [],
                                   doc.get("threshold"))
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0 if out.get("decision") in ("allow", None) else 1)
+    _emit(flow_guard, out, lambda o: o.get("decision") in ("allow", None))
 
 
 def cmd_selfdirected(args):
     """Round 120 (arXiv:2611.23219): was the improvement loop the agent's own?"""
     from longrun.harness import self_directed
-    if not getattr(args, "file", None):
-        print("usage: selfdirected audit|transfer FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "selfdirected audit|transfer FILE.json")
     out = (self_directed.transfer(doc) if args.action == "transfer"
            else self_directed.audit(doc))
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0 if out.get("verdict") in ("self-directed", "improved", None) else 1)
+    _emit(self_directed, out,
+          lambda o: o.get("verdict") in ("self-directed", "improved", None))
 
 
 def cmd_harnessevo(args):
     """Round 121 (arXiv:2611.22299): attribute a failure and gate a harness edit."""
     from longrun.harness import harness_evolution
-    if not getattr(args, "file", None):
-        print("usage: harnessevo diagnose|admit|bloat FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "harnessevo diagnose|admit|bloat FILE.json")
     if args.action == "diagnose":
         out = harness_evolution.diagnose(doc)
     elif args.action == "bloat":
         out = harness_evolution.bloat(doc.get("rules") or doc)
     else:
         out = harness_evolution.admit(doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0 if out.get("attribution") in ("harness", None)
-             and out.get("decision") in ("merge", "route", "keep", None) else 1)
+    _emit(harness_evolution, out,
+          lambda o: o.get("attribution") in ("harness", None)
+          and o.get("decision") in ("merge", "route", "keep", None))
 
 
 def cmd_contextpipeline(args):
     """Round 121 (arXiv:2610.36114): measure what a tool result loses before delivery."""
     from longrun.harness import context_pipeline
-    if not getattr(args, "file", None):
-        print("usage: contextpipeline boundaries | deliver|profile FILE.json", file=sys.stderr)
-        sys.exit(2)
     if args.action == "boundaries":
-        print(json.dumps(context_pipeline.boundaries(), indent=2, ensure_ascii=False))
-        sys.exit(0)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+        _emit(context_pipeline, context_pipeline.boundaries())
+    doc = _load_doc(args, "contextpipeline boundaries | deliver|profile FILE.json")
     if args.action == "deliver":
         out = context_pipeline.deliver(doc.get("payload") or doc,
                                        doc.get("budget", 0), doc.get("mode", "prefix"))
     else:
         out = context_pipeline.profile(doc.get("runs") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0 if out.get("ok", True) else 1)
+    _emit(context_pipeline, out, lambda o: o.get("ok", True))
 
 
 def cmd_stepzero(args):
     """Round 121 (arXiv:2611.01953): gate the first processing of an opaque carrier."""
     from longrun.harness import step_zero
-    if not getattr(args, "file", None):
-        print("usage: stepzero peek|extract|bind FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "stepzero peek|extract|bind FILE.json")
     budget = doc.get("budget", step_zero.DEFAULT_BUDGET)
     if args.action == "peek":
         out = step_zero.peek(doc.get("members") or doc, budget)
@@ -969,22 +848,14 @@ def cmd_stepzero(args):
         out = step_zero.bind_write(doc.get("declared_name"), doc.get("body_sha"),
                                    doc.get("declared_sha"), doc.get("protect"),
                                    bool(doc.get("allow_overwrite")))
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0 if out.get("decision") in ("safe", "commit", "write", None) else 1)
+    _emit(step_zero, out,
+          lambda o: o.get("decision") in ("safe", "commit", "write", None))
 
 
 def cmd_harnessrecord(args):
     """Round 122 (arXiv:2610.40917): is the harness that ran described, and did it stay in envelope?"""
     from longrun.harness import harness_record
-    if not getattr(args, "file", None):
-        print("usage: harnessrecord audit|degradation|drift FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "harnessrecord audit|degradation|drift FILE.json")
     if args.action == "audit":
         out = harness_record.audit(doc)
     elif args.action == "degradation":
@@ -993,62 +864,38 @@ def cmd_harnessrecord(args):
     else:
         out = harness_record.drift(doc.get("declared") or {},
                                   doc.get("observed") or {})
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0 if out.get("ok") is not False and out.get("decision") != "block" else 1)
+    _emit(harness_record, out,
+          lambda o: o.get("ok") is not False and o.get("decision") != "block")
 
 
 def cmd_conduct(args):
     """Round 122 (arXiv:2611.06116): score the action log, then compare it with the message."""
     from longrun.harness import conduct_audit
-    if not getattr(args, "file", None):
-        print("usage: conduct score|stated|matrix FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "conduct score|stated|matrix FILE.json")
     if args.action == "score":
         out = conduct_audit.score(doc.get("episode") or doc)
     elif args.action == "stated":
         out = conduct_audit.stated(doc.get("episode") or doc)
     else:
         out = conduct_audit.matrix(doc.get("rows") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0 if out.get("outcome") in ("correct", None) and out.get("agrees") is not False else 1)
+    _emit(conduct_audit, out,
+          lambda o: o.get("outcome") in ("correct", None)
+          and o.get("agrees") is not False)
 
 
 def cmd_completion(args):
     """Round 122 (arXiv:2611.21407): an exit status is not a deliverable."""
     from longrun.harness import completion_gate
-    if not getattr(args, "file", None):
-        print("usage: completion check|ladder FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "completion check|ladder FILE.json")
     out = (completion_gate.ladder(doc.get("rows") or doc) if args.action == "ladder"
            else completion_gate.check(doc.get("run") or doc))
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0 if out.get("complete") is not False else 1)
+    _emit(completion_gate, out, lambda o: o.get("complete") is not False)
 
 
 def cmd_skillret(args):
     """Round 123 (arXiv:2611.01115): retrieval calibrated by matched execution comparisons."""
     from longrun.harness import skill_retrieval
-    if not getattr(args, "file", None):
-        print("usage: skillret calibrate|rank|apply FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "skillret calibrate|rank|apply FILE.json")
     if args.action == "calibrate":
         out = skill_retrieval.calibrate(doc.get("pairs") or doc)
     elif args.action == "rank":
@@ -1056,65 +903,40 @@ def cmd_skillret(args):
                                    doc.get("learned") or {})
     else:
         out = skill_retrieval.apply(doc.get("learned") or {}, doc.get("skill"))
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0 if out.get("write") is not False else 1)
+    _emit(skill_retrieval, out, lambda o: o.get("write") is not False)
 
 
 def cmd_ruleret(args):
     """Round 123 (arXiv:2611.01042): closure-based rule retrieval under a context budget."""
     from longrun.harness import rule_retrieval
-    if not getattr(args, "file", None):
-        print("usage: ruleret closure|audit FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "ruleret closure|audit FILE.json")
     if args.action == "closure":
         out = rule_retrieval.closure(doc.get("rules") or [], doc.get("seeds") or [],
                                      doc.get("budget"))
     else:
         out = rule_retrieval.audit(doc.get("selection") or [], doc.get("rules") or [],
                                    doc.get("seeds") or [], doc.get("budget"))
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0 if out.get("ok") is not False and out.get("decision") != "refuse" else 1)
+    _emit(rule_retrieval, out,
+          lambda o: o.get("ok") is not False and o.get("decision") != "refuse")
 
 
 def cmd_skillquality(args):
     """Round 123 (arXiv:2610.38147): nine-dimension skill profile, execution-free estimate."""
     from longrun.harness import skill_quality
-    if not getattr(args, "file", None):
-        print("usage: skillquality profile|predict FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "skillquality profile|predict FILE.json")
     if args.action == "profile":
         out = skill_quality.profile(doc.get("skill") or doc)
     else:
         out = skill_quality.predict(doc.get("skill") or {}, doc.get("references") or [],
                                     doc.get("k", 3))
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0 if out.get("verdict") in ("complete", "partial", None) else 1)
+    _emit(skill_quality, out,
+          lambda o: o.get("verdict") in ("complete", "partial", None))
 
 
 def cmd_opspolicy(args):
     """Round 124 (arXiv:2611.15006): harness as an operational policy, per-model affinity."""
     from longrun.harness import operational_policy
-    if not getattr(args, "file", None):
-        print("usage: opspolicy realize|ground|affinity|route FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "opspolicy realize|ground|affinity|route FILE.json")
     if args.action == "realize":
         out = operational_policy.realize(doc.get("output") or doc, doc.get("tools") or [],
                                          doc.get("guidance"))
@@ -1126,24 +948,14 @@ def cmd_opspolicy(args):
     else:
         out = operational_policy.route(doc.get("models") or [],
                                        doc.get("learned") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    blocked = out.get("decision") == "diagnose" or out.get("supported") is False
-    sys.exit(1 if blocked else 0)
+    _emit(operational_policy, out,
+          lambda o: not (o.get("decision") == "diagnose" or o.get("supported") is False))
 
 
 def cmd_execpolicy(args):
     """Round 124 (arXiv:2611.21688): reversal, frozen-panel replacement, amortization."""
     from longrun.harness import execution_policy
-    if not getattr(args, "file", None):
-        print("usage: execpolicy reversal|confirm|efficiency|amortize FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "execpolicy reversal|confirm|efficiency|amortize FILE.json")
     if args.action == "reversal":
         out = execution_policy.reversal(doc.get("declared") or {}, doc.get("measured") or {})
     elif args.action == "confirm":
@@ -1154,22 +966,14 @@ def cmd_execpolicy(args):
     else:
         out = execution_policy.amortize(doc.get("acquisition_s"), doc.get("gain_per_task_s"),
                                         doc.get("tasks"))
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(1 if out.get("decision") == "retain" else 0)
+    _emit(execution_policy, out,
+          codes=lambda o: 1 if o.get("decision") == "retain" else 0)
 
 
 def cmd_skilladapter(args):
     """Round 124 (arXiv:2611.17007): adapter binding, preload re-check, evidence expiry."""
     from longrun.harness import skill_adapter
-    if not getattr(args, "file", None):
-        print("usage: skilladapter bind|recheck|expire|maintain FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "skilladapter bind|recheck|expire|maintain FILE.json")
     if args.action == "bind":
         out = skill_adapter.bind(doc.get("skill") or {}, doc.get("adapters") or [],
                                  doc.get("context") or {})
@@ -1180,22 +984,14 @@ def cmd_skilladapter(args):
                                    doc.get("ttl_days", 30))
     else:
         out = skill_adapter.maintain(doc.get("entries") or [], doc.get("events") or [])
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(1 if args.action == "bind" and not out.get("changes") else 0)
+    _emit(skill_adapter, out,
+          codes=lambda o: 1 if args.action == "bind" and not o.get("changes") else 0)
 
 
 def cmd_intake(args):
     """Round 124 (transcript OrcsMi2-IcM): deterministic gate, mandate, shadow-first work."""
     from longrun.harness import intake_gate
-    if not getattr(args, "file", None):
-        print("usage: intake admit|mandate|subscribe|preset|shadow FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "intake admit|mandate|subscribe|preset|shadow FILE.json")
     if args.action == "admit":
         out = intake_gate.admit(doc.get("trigger") or {}, doc.get("policy") or {})
     elif args.action == "mandate":
@@ -1207,22 +1003,14 @@ def cmd_intake(args):
                                  doc.get("background_shell_s", 5))
     else:
         out = intake_gate.shadow(doc.get("actions") or [], doc.get("confirmed", False))
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(1 if out.get("decision") == "ignore" or out.get("valid") is False else 0)
+    _emit(intake_gate, out,
+          codes=lambda o: 1 if o.get("decision") == "ignore" or o.get("valid") is False else 0)
 
 
 def cmd_memcredit(args):
     """Round 125 (arXiv:2611.15600): memory arbitrated by decision utility, not relevance."""
     from longrun.harness import memory_credit
-    if not getattr(args, "file", None):
-        print("usage: memcredit credit|arbitrate|sparsity FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "memcredit credit|arbitrate|sparsity FILE.json")
     if args.action == "credit":
         out = memory_credit.credit(doc.get("candidate") or {}, doc.get("reference") or [])
     elif args.action == "arbitrate":
@@ -1230,23 +1018,15 @@ def cmd_memcredit(args):
                                       doc.get("min_credit", 0.0))
     else:
         out = memory_credit.sparsity(doc.get("rows") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(1 if out.get("findings") and args.action == "arbitrate"
-             and not out.get("selected") else 0)
+    _emit(memory_credit, out,
+          codes=lambda o: 1 if o.get("findings") and args.action == "arbitrate"
+          and not o.get("selected") else 0)
 
 
 def cmd_lessongate(args):
     """Round 125 (arXiv:2611.14326): a lesson is committed only after its probes pass."""
     from longrun.harness import lesson_gate
-    if not getattr(args, "file", None):
-        print("usage: lessongate hypothesis|trial|probe FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "lessongate hypothesis|trial|probe FILE.json")
     if args.action == "hypothesis":
         out = lesson_gate.hypothesis(doc.get("lesson") or doc)
     elif args.action == "trial":
@@ -1254,23 +1034,15 @@ def cmd_lessongate(args):
                                 doc.get("persist", False))
     else:
         out = lesson_gate.probe(doc.get("lesson") or {}, doc.get("results") or {})
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0 if out.get("decision") in ("commit", None) and out.get("applied") is not False
-             and out.get("valid") is not False else 1)
+    _emit(lesson_gate, out,
+          lambda o: o.get("decision") in ("commit", None) and o.get("applied") is not False
+          and o.get("valid") is not False)
 
 
 def cmd_seclattice(args):
     """Round 125 (arXiv:2611.13960): product taint lattice, attenuation, provenance ledger."""
     from longrun.harness import security_lattice
-    if not getattr(args, "file", None):
-        print("usage: seclattice admit|attenuate|write|read|effect FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "seclattice admit|attenuate|write|read|effect FILE.json")
     if args.action == "admit":
         out = security_lattice.admit(doc.get("label") or {}, doc.get("action"))
     elif args.action == "attenuate":
@@ -1283,23 +1055,15 @@ def cmd_seclattice(args):
                                            doc.get("actor") or {})
     else:
         out = security_lattice.admit_effect(doc.get("actor") or {}, doc.get("effect"))
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(1 if out.get("allowed") is False or out.get("valid") is False
-             or out.get("found") is False else 0)
+    _emit(security_lattice, out,
+          codes=lambda o: 1 if o.get("allowed") is False or o.get("valid") is False
+          or o.get("found") is False else 0)
 
 
 def cmd_optmemory(args):
     """Round 126 (arXiv:2611.18856): the optimizer's memory of why a harness was edited."""
     from longrun.harness import optimizer_memory
-    if not getattr(args, "file", None):
-        print("usage: optmemory record|continuity|advantage FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "optmemory record|continuity|advantage FILE.json")
     if args.action == "record":
         out = optimizer_memory.record(doc.get("memory") or {}, doc.get("edit") or {})
     elif args.action == "continuity":
@@ -1307,25 +1071,15 @@ def cmd_optmemory(args):
                                           doc.get("target") or {})
     else:
         out = optimizer_memory.advantage(doc.get("pairs") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    blocked = any(f["kind"] in ("no-root-cause", "not-significant", "no-pairs")
-                  for f in (out.get("findings") or []))
-    sys.exit(1 if blocked else 0)
+    _emit(optimizer_memory, out,
+          codes=lambda o: 1 if any(f["kind"] in ("no-root-cause", "not-significant", "no-pairs")
+                                   for f in (o.get("findings") or [])) else 0)
 
 
 def cmd_detour(args):
     """Round 126 (arXiv:2611.20844): success, attainment, residual work, detour."""
     from longrun.harness import detour
-    if not getattr(args, "file", None):
-        print("usage: detour attainment|residual|progress|classify|rank FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "detour attainment|residual|progress|classify|rank FILE.json")
     if args.action == "attainment":
         out = detour.attainment(doc.get("success"), doc.get("charged"), doc.get("optimum"))
     elif args.action == "residual":
@@ -1337,24 +1091,15 @@ def cmd_detour(args):
         out = detour.classify(doc.get("episodes") or doc)
     else:
         out = detour.rank_models(doc.get("episodes") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(1 if any(f["kind"] in ("below-optimum", "no-optimum")
-                      for f in (out.get("findings") or [])) else 0)
+    _emit(detour, out,
+          codes=lambda o: 1 if any(f["kind"] in ("below-optimum", "no-optimum")
+                                   for f in (o.get("findings") or [])) else 0)
 
 
 def cmd_patchprobe(args):
     """Round 126 (arXiv:2611.20514): control-gated verdicts, sibling paths, provenance."""
     from longrun.harness import patch_probe
-    if not getattr(args, "file", None):
-        print("usage: patchprobe verdict|compare|provenance|validate FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "patchprobe verdict|compare|provenance|validate FILE.json")
     if args.action == "verdict":
         out = patch_probe.verdict(doc.get("control_ok"), doc.get("effect_seen"),
                                   doc.get("token_ok", True))
@@ -1364,63 +1109,39 @@ def cmd_patchprobe(args):
         out = patch_probe.provenance(doc.get("runs") or [], doc.get("advisory") or {})
     else:
         out = patch_probe.validate(doc.get("runs") or [])
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0 if out.get("valid") is not False and out.get("verdict") != "INCONCLUSIVE"
-             else 1)
+    _emit(patch_probe, out,
+          lambda o: o.get("valid") is not False and o.get("verdict") != "INCONCLUSIVE")
 
 
 def cmd_poison(args):
     """Round 127 (arXiv:2611.09721): a payload's lifecycle through agent memory."""
     from longrun.harness import memory_poison
-    if not getattr(args, "file", None):
-        print("usage: poison trace|descendants FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "poison trace|descendants FILE.json")
     if args.action == "trace":
         out = memory_poison.trace(doc.get("run") or doc)
     else:
         out = memory_poison.descendants(doc.get("store") or {}, doc.get("poisoned") or [])
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(1 if out.get("isr") == 0 or out.get("br") == 0 else 0)
+    _emit(memory_poison, out,
+          codes=lambda o: 1 if o.get("isr") == 0 or o.get("br") == 0 else 0)
 
 
 def cmd_boundary(args):
     """Round 127 (arXiv:2611.21259): identity, authorization and propagation at a seam."""
     from longrun.harness import trust_boundary
-    if not getattr(args, "file", None):
-        print("usage: boundary evaluate|classify FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "boundary evaluate|classify FILE.json")
     if args.action == "evaluate":
         out = trust_boundary.evaluate(doc.get("call") or doc)
+        failed = out.get("decision") != "allow"
     else:
         out = trust_boundary.classify(doc.get("outcome") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(1 if out.get("decision") == "deny" else 0)
+        failed = False
+    _emit(trust_boundary, out, lambda o: not failed)
 
 
 def cmd_gapleak(args):
     """Round 127 (arXiv:2611.22223): information gap, disclosure, submission-time filter."""
     from longrun.harness import gap_leak
-    if not getattr(args, "file", None):
-        print("usage: gapleak gap|disclosure|verify|compare FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "gapleak gap|disclosure|verify|compare FILE.json")
     if args.action == "gap":
         out = gap_leak.gap(doc.get("requested") or [], doc.get("authorized") or [],
                            doc.get("reachable") or [])
@@ -1432,23 +1153,14 @@ def cmd_gapleak(args):
                               doc.get("required") or [])
     else:
         out = gap_leak.compare(doc.get("before") or {}, doc.get("after") or {})
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(1 if out.get("preserved_required") is False else 0)
+    _emit(gap_leak, out,
+          codes=lambda o: 1 if o.get("preserved_required") is False else 0)
 
 
 def cmd_binding(args):
     """Round 128 (arXiv:2611.21577): a tool advertisement is not a provider identity."""
     from longrun.harness import provider_binding
-    if not getattr(args, "file", None):
-        print("usage: binding alignment|pressure|bind|resolve|outcomes|judge|sweep FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "binding alignment|pressure|bind|resolve|outcomes|judge|sweep FILE.json")
     if args.action in ("alignment", "pressure"):
         out = getattr(provider_binding, args.action)(doc.get("advert") or {},
                                                      doc.get("reference") or {})
@@ -1461,26 +1173,19 @@ def cmd_binding(args):
         out = getattr(provider_binding, args.action)(doc.get("trials") or [])
     else:
         out = provider_binding.sweep(doc.get("rows") or [])
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(1 if (args.action == "bind" and not out.get("provider_bound"))
-             or (args.action == "resolve" and out.get("decision") != "bound") else 0)
+    _emit(provider_binding, out,
+          codes=lambda o: 1 if (args.action == "bind" and not o.get("provider_bound"))
+          or (args.action == "resolve" and o.get("decision") != "bound") else 0)
 
 
 def cmd_gateway(args):
     """Round 128 (arXiv:2611.19123): code mode, stubs, router and fallback accounting."""
     from longrun.harness import gateway_shape
-    if not getattr(args, "file", None):
-        print("usage: gateway utility|delta|holm|claim|stub|hints|fallback|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "gateway utility|delta|holm|claim|stub|hints|fallback|advise FILE.json")
     if args.action == "utility":
-        out = gateway_shape.utility(doc.get("cell") or doc)
+        # A scalar helper: the group's own FORMAT is what makes it a group result.
+        out = {"format": gateway_shape.FORMAT,
+               "utility": gateway_shape.utility(doc.get("cell") or doc)}
     elif args.action == "delta":
         out = gateway_shape.paired_delta(doc.get("base") or [], doc.get("candidate") or [],
                                          resamples=doc.get("resamples") or 2000)
@@ -1498,23 +1203,13 @@ def cmd_gateway(args):
                                              doc.get("bounded") or {})
     else:
         out = gateway_shape.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(gateway_shape, out)
 
 
 def cmd_scoring(args):
     """Round 128 (arXiv:2611.20335): pointwise, setwise or candidate attention."""
     from longrun.harness import scoring_mode
-    if not getattr(args, "file", None):
-        print("usage: scoring depends|reversal|select|paired|advise|binary|learn FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "scoring depends|reversal|select|paired|advise|binary|learn FILE.json")
     if args.action == "depends":
         out = scoring_mode.depends_on_candidates(doc.get("mode"))
     elif args.action == "reversal":
@@ -1530,23 +1225,13 @@ def cmd_scoring(args):
                                              doc.get("predicted_yes"))
     else:
         out = scoring_mode.learnability(doc.get("mode"), doc.get("relational_share"))
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(scoring_mode, out)
 
 
 def cmd_reversibility(args):
     """Round 129 (arXiv:2611.22075): reversibility classes and recovery claims."""
     from longrun.harness import reversibility
-    if not getattr(args, "file", None):
-        print("usage: reversibility classify|restoration|capture|classes|recovery|replay FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "reversibility classify|restoration|capture|classes|recovery|replay FILE.json")
     if args.action == "classify":
         out = reversibility.classify(doc.get("call") or doc, doc.get("record"))
     elif args.action == "restoration":
@@ -1559,23 +1244,13 @@ def cmd_reversibility(args):
         out = reversibility.recovery(doc.get("observations") or [])
     else:
         out = reversibility.replay(doc.get("rows") or [], doc.get("baseline_policy"))
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(reversibility, out)
 
 
 def cmd_gain(args):
     """Round 129 (arXiv:2611.20736): gain-based stopping under a quality allowance."""
     from longrun.harness import gain_control
-    if not getattr(args, "file", None):
-        print("usage: gain vector|interpolate|reference|decide|calibrate|frontier|matched|verdict|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "gain vector|interpolate|reference|decide|calibrate|frontier|matched|verdict|advise FILE.json")
     if args.action == "vector":
         out = gain_control.gain_vector(doc.get("score"))
     elif args.action == "interpolate":
@@ -1599,23 +1274,13 @@ def cmd_gain(args):
                                    doc.get("level") or 0.975)
     else:
         out = gain_control.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(gain_control, out)
 
 
 def cmd_history(args):
     """Round 129 (arXiv:2611.14654): a record edited against a live world."""
     from longrun.harness import history_truth
-    if not getattr(args, "file", None):
-        print("usage: history agree|disclose|effect|interaction|recheck|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "history agree|disclose|effect|interaction|recheck|advise FILE.json")
     if args.action == "agree":
         out = history_truth.agreement(doc.get("record") or {}, doc.get("world") or {})
     elif args.action == "disclose":
@@ -1628,23 +1293,13 @@ def cmd_history(args):
         out = history_truth.recheck(doc.get("runs") or [])
     else:
         out = history_truth.advise(doc.get("policy") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(history_truth, out)
 
 
 def cmd_composed(args):
     """Round 130 (arXiv:2611.22971): a safe screen is not a safe task."""
     from longrun.harness import composed_harm
-    if not getattr(args, "file", None):
-        print("usage: composed compose|screens|recognition|channel|gate|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "composed compose|screens|recognition|channel|gate|advise FILE.json")
     if args.action == "compose":
         out = composed_harm.compose(doc.get("facts") or [],
                                     doc.get("binding") or {})
@@ -1658,27 +1313,16 @@ def cmd_composed(args):
         out = composed_harm.commit_gate(doc.get("state") or doc)
     else:
         out = composed_harm.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(composed_harm, out)
 
 
 def cmd_measure(args):
     """Round 130 (arXiv:2611.21784): measurement choices decide the verdict."""
     from longrun.harness import measurement_spec
     if args.action == "checklist":
-        out = measurement_spec.checklist()
-        print(json.dumps(out, indent=2, ensure_ascii=False))
-        sys.exit(0)
-    if not getattr(args, "file", None):
-        print("usage: measure specify|specs|decides|power|classifiers|checklist FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+        _emit(measurement_spec, measurement_spec.checklist())
+    doc = _load_doc(
+        args, "measure specify|specs|decides|power|classifiers|checklist FILE.json")
     if args.action == "specify":
         out = measurement_spec.specify(doc.get("choice"), doc.get("level"),
                                        **(doc.get("params") or {}))
@@ -1692,23 +1336,13 @@ def cmd_measure(args):
                                      doc.get("detectable_above", 3.13))
     else:
         out = measurement_spec.classifier_family(doc.get("rows") or [])
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(measurement_spec, out)
 
 
 def cmd_trap(args):
     """Round 130 (arXiv:2611.19295): traps on the path, alerts that can be trusted."""
     from longrun.harness import trap_path
-    if not getattr(args, "file", None):
-        print("usage: trap position|ablation|alert|scope|falsepositive FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "trap position|ablation|alert|scope|falsepositive FILE.json")
     if args.action == "position":
         out = trap_path.path_position(doc.get("bait") or {},
                                       doc.get("weakness") or {})
@@ -1725,23 +1359,13 @@ def cmd_trap(args):
     else:
         out = trap_path.false_positive(doc.get("bait_use") or {},
                                        doc.get("legitimate") or [])
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(trap_path, out)
 
 
 def cmd_evidence(args):
     """Round 131 (arXiv:2611.22169): admission is decided outside the reasoner."""
     from longrun.harness import evidence_gate
-    if not getattr(args, "file", None):
-        print("usage: evidence admit|gates|firstorder|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "evidence admit|gates|firstorder|advise FILE.json")
     if args.action == "admit":
         out = evidence_gate.admit(doc.get("cards") or [], doc.get("context") or {})
     elif args.action == "gates":
@@ -1750,23 +1374,13 @@ def cmd_evidence(args):
         out = evidence_gate.first_order(doc.get("rows") or [])
     else:
         out = evidence_gate.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(evidence_gate, out)
 
 
 def cmd_stress(args):
     """Round 131 (arXiv:2611.22583): utility constrains parenthood, stressors evolve."""
     from longrun.harness import stress_evolution
-    if not getattr(args, "file", None):
-        print("usage: stress qualify|promote|pareto|parent|compare|transfer|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "stress qualify|promote|pareto|parent|compare|transfer|advise FILE.json")
     if args.action == "qualify":
         out = stress_evolution.qualify(doc.get("candidate") or doc)
     elif args.action == "promote":
@@ -1783,23 +1397,13 @@ def cmd_stress(args):
                                         doc.get("recipients") or None)
     else:
         out = stress_evolution.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(stress_evolution, out)
 
 
 def cmd_trial(args):
     """Round 131 (arXiv:2611.19359): one run is not enough."""
     from longrun.harness import paired_trial
-    if not getattr(args, "file", None):
-        print("usage: trial paired|noise|claim|mechanism|funnel|budget|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "trial paired|noise|claim|mechanism|funnel|budget|advise FILE.json")
     if args.action == "paired":
         out = paired_trial.paired(doc.get("rows") or [])
     elif args.action == "noise":
@@ -1816,23 +1420,13 @@ def cmd_trial(args):
         out = paired_trial.budget(doc.get("points") or [])
     else:
         out = paired_trial.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(paired_trial, out)
 
 
 def cmd_scope(args):
     """Round 132 (arXiv:2611.22835): a passing check is not the requested operation."""
     from longrun.harness import evidence_scope
-    if not getattr(args, "file", None):
-        print("usage: scope item|claim|witness|obligation|reach|classify|explain|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "scope item|claim|witness|obligation|reach|classify|explain|advise FILE.json")
     if args.action == "item":
         out = evidence_scope.item(doc.get("source"), doc.get("check"), doc.get("phase"),
                                   doc.get("operation"), doc.get("witness"))
@@ -1850,23 +1444,13 @@ def cmd_scope(args):
         out = evidence_scope.explanation(doc.get("repair") or doc)
     else:
         out = evidence_scope.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(evidence_scope, out)
 
 
 def cmd_round(args):
     """Round 132 (arXiv:2611.22661): the between-round decision is an object."""
     from longrun.harness import round_controller
-    if not getattr(args, "file", None):
-        print("usage: round champion|decision|lesson|guardrails|ladder|progress|frontier|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "round champion|decision|lesson|guardrails|ladder|progress|frontier|advise FILE.json")
     if args.action == "champion":
         out = round_controller.champion(doc.get("rounds") or [])
     elif args.action == "decision":
@@ -1883,23 +1467,13 @@ def cmd_round(args):
         out = round_controller.frontier(doc.get("decision") or doc)
     else:
         out = round_controller.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(round_controller, out)
 
 
 def cmd_attest(args):
     """Round 132 (arXiv:2611.23202): trust in the build and in the record."""
     from longrun.harness import attestation_trust
-    if not getattr(args, "file", None):
-        print("usage: attest identity|certificate|build|calls|accountability|measure|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "attest identity|certificate|build|calls|accountability|measure|advise FILE.json")
     if args.action == "identity":
         out = attestation_trust.identity(doc.get("request") or doc)
     elif args.action == "certificate":
@@ -1914,23 +1488,13 @@ def cmd_attest(args):
         out = attestation_trust.measure(doc.get("rows") or [])
     else:
         out = attestation_trust.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(attestation_trust, out)
 
 
 def cmd_criteria(args):
     """Round 133 (arXiv:2611.23074): per-criterion ternary verdicts at runtime."""
     from longrun.harness import criterion_verification
-    if not getattr(args, "file", None):
-        print("usage: criteria criterion|verdict|coverage|escalate|measure|decompose|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "criteria criterion|verdict|coverage|escalate|measure|decompose|advise FILE.json")
     if args.action == "criterion":
         out = criterion_verification.criterion(
             doc.get("text"), doc.get("source") or "developer",
@@ -1950,23 +1514,13 @@ def cmd_criteria(args):
             doc.get("text") or "", doc.get("expected_per_words") or 20, doc.get("actual"))
     else:
         out = criterion_verification.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(criterion_verification, out)
 
 
 def cmd_rubric(args):
     """Round 133 (arXiv:2611.22841): the verifier is the object."""
     from longrun.harness import rubric_verification
-    if not getattr(args, "file", None):
-        print("usage: rubric capability|verifier|errors|batch|ablation|agreement|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "rubric capability|verifier|errors|batch|ablation|agreement|advise FILE.json")
     if args.action == "capability":
         out = rubric_verification.capability(doc.get("name"), doc.get("description") or "")
     elif args.action == "verifier":
@@ -1981,23 +1535,13 @@ def cmd_rubric(args):
         out = rubric_verification.agreement(doc.get("rows") or [])
     else:
         out = rubric_verification.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(rubric_verification, out)
 
 
 def cmd_docmaint(args):
     """Round 133 (arXiv:2611.23142): a human correction is a gap signal."""
     from longrun.harness import doc_maintenance
-    if not getattr(args, "file", None):
-        print("usage: docmaint signal|gap|tracker|pipeline|measure|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "docmaint signal|gap|tracker|pipeline|measure|advise FILE.json")
     if args.action == "signal":
         out = doc_maintenance.signal(doc.get("ticket") or doc)
     elif args.action == "gap":
@@ -2010,23 +1554,13 @@ def cmd_docmaint(args):
         out = doc_maintenance.measure(doc.get("rows") or [])
     else:
         out = doc_maintenance.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(doc_maintenance, out)
 
 
 def cmd_priority(args):
     """Round 134 (arXiv:2611.22989): a priority says what to attend to, not how to judge."""
     from longrun.harness import priority_criteria
-    if not getattr(args, "file", None):
-        print("usage: priority statement|report|trace|compare|evidence|revise|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "priority statement|report|trace|compare|evidence|revise|advise FILE.json")
     if args.action == "statement":
         out = priority_criteria.priority(doc.get("text") or "")
     elif args.action == "report":
@@ -2041,23 +1575,13 @@ def cmd_priority(args):
         out = priority_criteria.revise(doc.get("interface") or doc)
     else:
         out = priority_criteria.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(priority_criteria, out)
 
 
 def cmd_values(args):
     """Round 134 (arXiv:2611.23067): a value statement shapes what the agent builds."""
     from longrun.harness import value_disposition
-    if not getattr(args, "file", None):
-        print("usage: values statement|compare|solutions|oversight|progress|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "values statement|compare|solutions|oversight|progress|advise FILE.json")
     if args.action == "statement":
         out = value_disposition.statement(doc.get("text") or "",
                                           doc.get("value") or "openness",
@@ -2073,23 +1597,13 @@ def cmd_values(args):
         out = value_disposition.progress(doc.get("rows") or [])
     else:
         out = value_disposition.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(value_disposition, out)
 
 
 def cmd_crossenv(args):
     """Round 134 (arXiv:2611.22777): a workflow that spans services needs joint verification."""
     from longrun.harness import cross_env_tasks
-    if not getattr(args, "file", None):
-        print("usage: crossenv task|align|rules|validate|curriculum|measure|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "crossenv task|align|rules|validate|curriculum|measure|advise FILE.json")
     if args.action == "task":
         out = cross_env_tasks.task(doc.get("spec") or doc)
     elif args.action == "align":
@@ -2104,27 +1618,19 @@ def cmd_crossenv(args):
         out = cross_env_tasks.measure(doc.get("rows") or [])
     else:
         out = cross_env_tasks.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(cross_env_tasks, out)
 
 
 def cmd_resolution(args):
     """Round 135 (arXiv:2611.23068): evolution stalls because improvements go unidentified."""
     from longrun.harness import resolution_budget
-    if not getattr(args, "file", None):
-        print("usage: resolution runs|decompose|verdict|select|quality|advantage|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(
+        args, "resolution runs|decompose|verdict|select|quality|advantage|advise FILE.json")
     if args.action == "runs":
-        out = {"runs_required": resolution_budget.runs_required(
-            doc.get("margin"), doc.get("sd"),
-            doc.get("alpha", 0.05), doc.get("power", 0.8))}
+        out = {"format": resolution_budget.FORMAT,
+               "runs_required": resolution_budget.runs_required(
+                   doc.get("margin"), doc.get("sd"),
+                   doc.get("alpha", 0.05), doc.get("power", 0.8))}
     elif args.action == "decompose":
         out = resolution_budget.decompose(doc.get("rows") or doc.get("measurements") or [],
                                          doc.get("margin"))
@@ -2141,23 +1647,13 @@ def cmd_resolution(args):
                                           doc.get("k", 1))
     else:
         out = resolution_budget.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(resolution_budget, out)
 
 
 def cmd_replay(args):
     """Round 135 (arXiv:2611.23151): a faster environment is admissible only if it replays."""
     from longrun.harness import replay_parity
-    if not getattr(args, "file", None):
-        print("usage: replay trace|replay|variation|parity|render|timing|audit|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "replay trace|replay|variation|parity|render|timing|audit|advise FILE.json")
     if args.action == "trace":
         out = replay_parity.trace(doc.get("states") or doc.get("rollout") or [])
     elif args.action == "replay":
@@ -2176,23 +1672,13 @@ def cmd_replay(args):
         out = replay_parity.audit(doc.get("record") or doc)
     else:
         out = replay_parity.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(replay_parity, out)
 
 
 def cmd_dialogue(args):
     """Round 135 (arXiv:2611.23119): what a teammate says is evidence about hidden state."""
     from longrun.harness import dialogue_allocation
-    if not getattr(args, "file", None):
-        print("usage: dialogue posterior|entropy|speak|evidence|propositions|schedule|compare|audit|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "dialogue posterior|entropy|speak|evidence|propositions|schedule|compare|audit|advise FILE.json")
     if args.action == "posterior":
         out = dialogue_allocation.posterior(doc.get("prior") or {}, doc.get("action"),
                                             doc.get("utterance"))
@@ -2215,27 +1701,19 @@ def cmd_dialogue(args):
         out = dialogue_allocation.audit(doc.get("spec") or doc)
     else:
         out = dialogue_allocation.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(dialogue_allocation, out)
 
 
 def cmd_selective(args):
     """Round 136 (arXiv:2611.23174): an agent that picks the analysis pays for picking it."""
     from longrun.harness import selective_replay
-    if not getattr(args, "file", None):
-        print("usage: selective correct|multiplier|gate|allocate|resample|audit|selfcorrect|detect|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(
+        args, "selective correct|multiplier|gate|allocate|resample|audit|selfcorrect|detect|advise FILE.json")
     if args.action == "multiplier":
         value = selective_replay.multiplier(doc.get("p"), doc.get("tail_rate"),
                                             doc.get("body_rate"))
-        out = {"multiplier": None if value is None else round(value, 4)}
+        out = {"format": selective_replay.FORMAT,
+               "multiplier": None if value is None else round(value, 4)}
     elif args.action == "correct":
         out = selective_replay.corrected(
             doc.get("p"), doc.get("tail_matches"), doc.get("tail_replays"),
@@ -2257,23 +1735,13 @@ def cmd_selective(args):
         out = selective_replay.detect(doc.get("rows") or [])
     else:
         out = selective_replay.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(selective_replay, out)
 
 
 def cmd_continuation(args):
     """Round 136 (arXiv:2611.22888): a stop is not the limit; a burst is the signal."""
     from longrun.harness import continuation_policy
-    if not getattr(args, "file", None):
-        print("usage: continuation rate|burst|gains|judgment|relabel|summary|rules|compare|methods|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "continuation rate|burst|gains|judgment|relabel|summary|rules|compare|methods|advise FILE.json")
     if args.action == "rate":
         out = continuation_policy.stop_rate(doc.get("turns") or [], doc.get("window"))
     elif args.action == "burst":
@@ -2295,23 +1763,13 @@ def cmd_continuation(args):
         out = continuation_policy.methods(doc.get("rows") or [])
     else:
         out = continuation_policy.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(continuation_policy, out)
 
 
 def cmd_bench(args):
     """Round 136 (arXiv:2611.23045): the evidence is an experimental variable."""
     from longrun.harness import evidence_replay
-    if not getattr(args, "file", None):
-        print("usage: bench state|freeze|leak|score|trajectory|paired|sources|memory|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "bench state|freeze|leak|score|trajectory|paired|sources|memory|advise FILE.json")
     if args.action == "state":
         out = evidence_replay.state(doc.get("record") or doc)
     elif args.action == "freeze":
@@ -2330,23 +1788,13 @@ def cmd_bench(args):
         out = evidence_replay.memory(doc.get("rows") or [])
     else:
         out = evidence_replay.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(evidence_replay, out)
 
 
 def cmd_deliberation(args):
     """Round 137 (arXiv:2611.22905): a generic summary can hide a missing design judgement."""
     from longrun.harness import deliberation_audit
-    if not getattr(args, "file", None):
-        print("usage: deliberation type|match|tags|metadata|summary|ablation|audit|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "deliberation type|match|tags|metadata|summary|ablation|audit|advise FILE.json")
     if args.action == "type":
         out = deliberation_audit.artifact(doc.get("artifact") or doc)
     elif args.action == "match":
@@ -2364,23 +1812,13 @@ def cmd_deliberation(args):
         out = deliberation_audit.audit(doc.get("record") or doc)
     else:
         out = deliberation_audit.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(deliberation_audit, out)
 
 
 def cmd_frontier(args):
     """Round 137 (arXiv:2611.23080): a bracket says what is known and where the gap is."""
     from longrun.harness import complexity_frontier
-    if not getattr(args, "file", None):
-        print("usage: frontier bracket|open|coascent|evidence|memory|round|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "frontier bracket|open|coascent|evidence|memory|round|advise FILE.json")
     if args.action == "bracket":
         out = complexity_frontier.bracket(doc.get("regimes") or [])
     elif args.action == "open":
@@ -2395,23 +1833,13 @@ def cmd_frontier(args):
         out = complexity_frontier.round(doc.get("rows") or [])
     else:
         out = complexity_frontier.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(complexity_frontier, out)
 
 
 def cmd_transfer(args):
     """Round 137 (arXiv:2611.23216): a benchmark gain is not yet work done."""
     from longrun.harness import work_transfer
-    if not getattr(args, "file", None):
-        print("usage: transfer check|pool|ceiling|design|reversal|pooled|power|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "transfer check|pool|ceiling|design|reversal|pooled|power|advise FILE.json")
     if args.action == "check":
         out = work_transfer.transfer(doc.get("rows") or doc.get("upgrades") or [])
     elif args.action == "pool":
@@ -2429,23 +1857,13 @@ def cmd_transfer(args):
         out = work_transfer.power(doc.get("sd"), doc.get("effect"), doc.get("available"))
     else:
         out = work_transfer.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(work_transfer, out)
 
 
 def cmd_repair(args):
     """Round 138 (arXiv:2611.22991): accuracy hides repairs cancelled by regressions."""
     from longrun.harness import repair_audit
-    if not getattr(args, "file", None):
-        print("usage: repair churn|reach|failure|capability|flags|provenance|veto|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "repair churn|reach|failure|capability|flags|provenance|veto|advise FILE.json")
     if args.action == "churn":
         out = repair_audit.churn(doc.get("rows") or doc.get("executions") or [])
     elif args.action == "reach":
@@ -2462,23 +1880,13 @@ def cmd_repair(args):
         out = repair_audit.veto(doc.get("rows") or [])
     else:
         out = repair_audit.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(repair_audit, out)
 
 
 def cmd_validation(args):
     """Round 138 (arXiv:2611.22973): risk decides the evidence, and oversight must be real."""
     from longrun.harness import validation_ladder
-    if not getattr(args, "file", None):
-        print("usage: validation risk|autonomy|controls|domains|evidence|calibrate|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "validation risk|autonomy|controls|domains|evidence|calibrate|advise FILE.json")
     if args.action == "risk":
         out = validation_ladder.risk(doc.get("row") or doc)
     elif args.action == "autonomy":
@@ -2493,23 +1901,13 @@ def cmd_validation(args):
         out = validation_ladder.calibrate(doc.get("rows") or [])
     else:
         out = validation_ladder.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(validation_ladder, out)
 
 
 def cmd_grounding(args):
     """Round 138 (arXiv:2611.23203): knowledge widens the search, a verifier keeps it honest."""
     from longrun.harness import skill_grounding
-    if not getattr(args, "file", None):
-        print("usage: grounding skill|equivalence|verdict|session|layers|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "grounding skill|equivalence|verdict|session|layers|advise FILE.json")
     if args.action == "skill":
         out = skill_grounding.skill(doc.get("spec") or doc)
     elif args.action == "equivalence":
@@ -2522,23 +1920,13 @@ def cmd_grounding(args):
         out = skill_grounding.layers(doc.get("rows") or [])
     else:
         out = skill_grounding.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(skill_grounding, out)
 
 
 def cmd_folding(args):
     """Round 139 (arXiv:2611.16627): the reduced view is a selection, not a rewrite."""
     from longrun.harness import context_folding
-    if not getattr(args, "file", None):
-        print("usage: folding levels|contract|fold|trigger|cost|recover|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "folding levels|contract|fold|trigger|cost|recover|advise FILE.json")
     if args.action == "levels":
         out = context_folding.levels(doc.get("record") or doc)
     elif args.action == "contract":
@@ -2556,23 +1944,13 @@ def cmd_folding(args):
         out = context_folding.recover(doc.get("rows") or [])
     else:
         out = context_folding.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(context_folding, out)
 
 
 def cmd_invocation(args):
     """Round 139 (arXiv:2608.26189): a wrong call poisons every step that follows."""
     from longrun.harness import invocation_reliability
-    if not getattr(args, "file", None):
-        print("usage: invocation rates|wiring|severity|recovery|scoring|terminal|discrimination|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "invocation rates|wiring|severity|recovery|scoring|terminal|discrimination|advise FILE.json")
     if args.action == "rates":
         out = invocation_reliability.rates(doc.get("rows") or [], doc.get("depth"))
     elif args.action == "wiring":
@@ -2589,23 +1967,13 @@ def cmd_invocation(args):
         out = invocation_reliability.discrimination(doc.get("rows") or [])
     else:
         out = invocation_reliability.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(invocation_reliability, out)
 
 
 def cmd_capabilities(args):
     """Round 139 (arXiv:2605.30621): updating a harness and benefiting from it differ."""
     from longrun.harness import evolution_capabilities
-    if not getattr(args, "file", None):
-        print("usage: capabilities updating|benefit|activation|adherence|budget|pairing|insitu|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "capabilities updating|benefit|activation|adherence|budget|pairing|insitu|advise FILE.json")
     if args.action == "updating":
         out = evolution_capabilities.updating(doc.get("rows") or [])
     elif args.action == "benefit":
@@ -2622,23 +1990,13 @@ def cmd_capabilities(args):
         out = evolution_capabilities.insitu(doc.get("row") or doc)
     else:
         out = evolution_capabilities.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(evolution_capabilities, out)
 
 
 def cmd_govern(args):
     """Round 140 (arXiv:2609.34017): a deterministic gate, and the halt it earns."""
     from longrun.harness import handoff_governance
-    if not getattr(args, "file", None):
-        print("usage: govern anchor|validate|attribute|compare|coverage|posture|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "govern anchor|validate|attribute|compare|coverage|posture|advise FILE.json")
     if args.action == "anchor":
         out = handoff_governance.anchor(doc.get("rules") or [], doc.get("version", 1))
     elif args.action == "validate":
@@ -2656,37 +2014,33 @@ def cmd_govern(args):
         out = handoff_governance.posture(doc.get("profile") or doc)
     else:
         out = handoff_governance.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(handoff_governance, out)
 
 
 def cmd_typed(args):
     """Round 140 (arXiv:2610.37461): withhold the tool, do not ask the model."""
     from longrun.harness import session_protocol
-    if not getattr(args, "file", None):
-        print("usage: typed build|allowed|tick|refines|split|charge|compliance|pressure|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(
+        args, "typed build|allowed|tick|refines|split|charge|compliance|pressure|advise FILE.json")
     if args.action == "build":
         out = session_protocol.protocol(
             doc.get("states") or [], doc.get("actions") or [], doc.get("start"),
             doc.get("finals") or [], doc.get("delta") or {})
     elif args.action == "allowed":
-        out = {"allowed": session_protocol.allowed(doc.get("protocol") or doc,
+        out = {"format": session_protocol.FORMAT,
+               "allowed": session_protocol.allowed(doc.get("protocol") or doc,
                                                    doc.get("state"))}
     elif args.action == "tick":
+        # `tick`/`refines` are operational helpers that return bare results, so
+        # the CLI stamps the group's FORMAT on them (all fields stay top-level).
         out = session_protocol.tick(doc.get("protocol") or {}, doc.get("state"),
                                     doc.get("action"), doc.get("target"))
+        out["format"] = session_protocol.FORMAT
     elif args.action == "refines":
         out = session_protocol.refines(
             doc.get("parent") or {}, doc.get("child") or {},
             doc.get("human_parent") or [], doc.get("human_child") or [])
+        out["format"] = session_protocol.FORMAT
     elif args.action == "split":
         out = session_protocol.split(doc.get("budget") or {}, doc.get("share", 0.5))
     elif args.action == "charge":
@@ -2697,25 +2051,17 @@ def cmd_typed(args):
         out = session_protocol.pressure(doc.get("rows") or [])
     else:
         out = session_protocol.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(session_protocol, out)
 
 
 def cmd_pipeline(args):
     """Round 140 (arXiv:2510.07614): blame is a computation over stages."""
     from longrun.harness import pipeline_traceability
-    if not getattr(args, "file", None):
-        print("usage: pipeline final|blame|handoff|rates|origins|pareto|casting|gain|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(
+        args, "pipeline final|blame|handoff|rates|origins|pareto|casting|gain|advise FILE.json")
     if args.action == "final":
-        out = {"final": pipeline_traceability.final(doc.get("stages") or doc)}
+        out = {"format": pipeline_traceability.FORMAT,
+               "final": pipeline_traceability.final(doc.get("stages") or doc)}
     elif args.action == "blame":
         out = pipeline_traceability.blame(doc.get("stages") or doc,
                                           doc.get("gold"))
@@ -2734,23 +2080,13 @@ def cmd_pipeline(args):
                                          doc.get("flat_band", 0.5))
     else:
         out = pipeline_traceability.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(pipeline_traceability, out)
 
 
 def cmd_envelope(args):
     """Round 141 (arXiv:2611.23844): an envelope label is a weight, not a switch."""
     from longrun.harness import defense_envelope
-    if not getattr(args, "file", None):
-        print("usage: envelope outcomes|weight|arbitration|content|dose|roles|stack|audit|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "envelope outcomes|weight|arbitration|content|dose|roles|stack|audit|advise FILE.json")
     if args.action == "outcomes":
         out = defense_envelope.outcomes(doc.get("rows") or [])
     elif args.action == "weight":
@@ -2769,23 +2105,13 @@ def cmd_envelope(args):
         out = defense_envelope.audit(doc.get("record") or doc)
     else:
         out = defense_envelope.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(defense_envelope, out)
 
 
 def cmd_tracefp(args):
     """Round 141 (arXiv:2610.32092): the repair trajectory is the fingerprint."""
     from longrun.harness import execution_fingerprint
-    if not getattr(args, "file", None):
-        print("usage: tracefp trace|profile|attribute|separation|budget|robustness|probes|audit|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "tracefp trace|profile|attribute|separation|budget|robustness|probes|audit|advise FILE.json")
     if args.action == "trace":
         out = execution_fingerprint.trace(doc.get("steps") or [])
     elif args.action == "profile":
@@ -2805,23 +2131,13 @@ def cmd_tracefp(args):
         out = execution_fingerprint.audit(doc.get("record") or doc)
     else:
         out = execution_fingerprint.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(execution_fingerprint, out)
 
 
 def cmd_modelhandoff(args):
     """Round 141 (arXiv:2610.07816): route the step, not the query."""
     from longrun.harness import model_handoff
-    if not getattr(args, "file", None):
-        print("usage: modelhandoff gate|signals|calibration|budget|pareto|handoff|recovery|saturate|audit|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "modelhandoff gate|signals|calibration|budget|pareto|handoff|recovery|saturate|audit|advise FILE.json")
     if args.action == "gate":
         out = model_handoff.gate(doc.get("features") or doc)
     elif args.action == "signals":
@@ -2842,23 +2158,13 @@ def cmd_modelhandoff(args):
         out = model_handoff.audit(doc.get("record") or doc)
     else:
         out = model_handoff.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(model_handoff, out)
 
 
 def cmd_admission(args):
     """Round 143 (arXiv:2604.17111): the API is a shared resource, so schedule it."""
     from longrun.harness import admission_schedule
-    if not getattr(args, "file", None):
-        print("usage: admission provider|slot|aimd|circuit|backoff|budget|order|ablate|pressure|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "admission provider|slot|aimd|circuit|backoff|budget|order|ablate|pressure|advise FILE.json")
     if args.action == "provider":
         out = admission_schedule.provider(doc.get("profile") or doc)
     elif args.action == "slot":
@@ -2884,25 +2190,17 @@ def cmd_admission(args):
         out = admission_schedule.pressure(doc.get("rows") or [])
     else:
         out = admission_schedule.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(admission_schedule, out)
 
 
 def cmd_statesched(args):
     """Round 143 (arXiv:2512.14142): optimize the request lifecycle, not the segment."""
     from longrun.harness import stateful_scheduling
-    if not getattr(args, "file", None):
-        print("usage: statesched hrrn|queue|aging|batch|kv|predict|jct|compare|stability|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(
+        args, "statesched hrrn|queue|aging|batch|kv|predict|jct|compare|stability|advise FILE.json")
     if args.action == "hrrn":
-        out = {"score": stateful_scheduling.hrrn(doc.get("wait"),
+        out = {"format": stateful_scheduling.FORMAT,
+               "score": stateful_scheduling.hrrn(doc.get("wait"),
                                                  doc.get("proc"))}
     elif args.action == "queue":
         out = stateful_scheduling.queue_event(doc.get("row") or doc)
@@ -2923,25 +2221,16 @@ def cmd_statesched(args):
         out = stateful_scheduling.stability(doc.get("rows") or [])
     else:
         out = stateful_scheduling.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(stateful_scheduling, out)
 
 
 def cmd_capacity(args):
     """Round 143 (arXiv:2603.00356): admission at the gateway, priced in inference units."""
     from longrun.harness import capacity_pools
-    if not getattr(args, "file", None):
-        print("usage: capacity classes|classify|priority|debt|burst|resources|admission|reclaim|protect|fairshare|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(
+        args, "capacity classes|classify|priority|debt|burst|resources|admission|reclaim|protect|fairshare|advise FILE.json")
     if args.action == "classes":
-        out = {"classes": capacity_pools.classes()}
+        out = {"format": capacity_pools.FORMAT, "classes": capacity_pools.classes()}
     elif args.action == "classify":
         out = capacity_pools.classify(doc.get("name"))
     elif args.action == "priority":
@@ -2962,23 +2251,13 @@ def cmd_capacity(args):
         out = capacity_pools.fairshare(doc.get("row") or doc)
     else:
         out = capacity_pools.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(capacity_pools, out)
 
 
 def cmd_slots(args):
     """Round 144 (arXiv:2607.17147): hide the value, keep the structure."""
     from longrun.harness import transcript_privacy
-    if not getattr(args, "file", None):
-        print("usage: slots suffix|slot|bind|rebind|graph|leak|compatibility|overhead|audit|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "slots suffix|slot|bind|rebind|graph|leak|compatibility|overhead|audit|advise FILE.json")
     if args.action == "suffix":
         out = transcript_privacy.suffix(doc.get("path"), doc.get("roots") or [])
     elif args.action == "slot":
@@ -3002,25 +2281,16 @@ def cmd_slots(args):
         out = transcript_privacy.audit(doc.get("record") or doc)
     else:
         out = transcript_privacy.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(transcript_privacy, out)
 
 
 def cmd_privmem(args):
     """Round 144 (arXiv:2605.09530): a typed placeholder, not an asterisk."""
     from longrun.harness import privacy_memory
-    if not getattr(args, "file", None):
-        print("usage: privmem levels|classify|sanitize|restore|extraction|utility|leakage|threshold|audit|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(
+        args, "privmem levels|classify|sanitize|restore|extraction|utility|leakage|threshold|audit|advise FILE.json")
     if args.action == "levels":
-        out = {"levels": privacy_memory.levels()}
+        out = {"format": privacy_memory.FORMAT, "levels": privacy_memory.levels()}
     elif args.action == "classify":
         out = privacy_memory.classify(doc.get("level"))
     elif args.action == "sanitize":
@@ -3041,23 +2311,13 @@ def cmd_privmem(args):
         out = privacy_memory.audit(doc.get("record") or doc)
     else:
         out = privacy_memory.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(privacy_memory, out)
 
 
 def cmd_privaudit(args):
     """Round 144 (arXiv:2610.06454): gate the outbound write."""
     from longrun.harness import privacy_audit
-    if not getattr(args, "file", None):
-        print("usage: privaudit flow|disposition|inventory|compare|criteria|auditor|audit|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "privaudit flow|disposition|inventory|compare|criteria|auditor|audit|advise FILE.json")
     if args.action == "flow":
         out = privacy_audit.flow(doc.get("row") or doc)
     elif args.action == "disposition":
@@ -3074,23 +2334,13 @@ def cmd_privaudit(args):
         out = privacy_audit.audit(doc.get("record") or doc)
     else:
         out = privacy_audit.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(privacy_audit, out)
 
 
 def cmd_updategate(args):
     """Round 145 (arXiv:2611.23651): admit a self-improvement, or keep the parent."""
     from longrun.harness import harness_update_gate
-    if not getattr(args, "file", None):
-        print("usage: updategate blocks|differential|confirm|localize|verify|risk|utility|admit|transfer|audit|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "updategate blocks|differential|confirm|localize|verify|risk|utility|admit|transfer|audit|advise FILE.json")
     if args.action == "blocks":
         out = harness_update_gate.blocks(doc.get("items") or [])
     elif args.action == "differential":
@@ -3114,23 +2364,13 @@ def cmd_updategate(args):
         out = harness_update_gate.audit(doc.get("record") or doc)
     else:
         out = harness_update_gate.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(harness_update_gate, out)
 
 
 def cmd_expledger(args):
     """Round 145 (arXiv:2611.23678): judge the process, not only the best score."""
     from longrun.harness import experiment_ledger
-    if not getattr(args, "file", None):
-        print("usage: expledger scope|noop|precondition|decide|ledger|metrics|repeated|counterfactual|relabel|taxonomy|audit|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "expledger scope|noop|precondition|decide|ledger|metrics|repeated|counterfactual|relabel|taxonomy|audit|advise FILE.json")
     if args.action == "scope":
         out = experiment_ledger.scope(doc.get("row") or doc)
     elif args.action == "noop":
@@ -3156,23 +2396,13 @@ def cmd_expledger(args):
         out = experiment_ledger.audit(doc.get("record") or doc)
     else:
         out = experiment_ledger.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(experiment_ledger, out)
 
 
 def cmd_prefetch(args):
     """Round 145 (arXiv:2611.23857): predict the next recall before the demand."""
     from longrun.harness import context_prefetch
-    if not getattr(args, "file", None):
-        print("usage: prefetch window|encode|decode|contract|prefetch|benefit|degrade|warmup|audit|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "prefetch window|encode|decode|contract|prefetch|benefit|degrade|warmup|audit|advise FILE.json")
     if args.action == "window":
         out = context_prefetch.window(doc.get("events") or [],
                                       int(doc.get("size") or context_prefetch.DEFAULTS["window"]))
@@ -3196,23 +2426,13 @@ def cmd_prefetch(args):
         out = context_prefetch.audit(doc.get("record") or doc)
     else:
         out = context_prefetch.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(context_prefetch, out)
 
 
 def cmd_coverage(args):
     """Round 146 (arXiv:2611.24313): count the ways in, not only how often."""
     from longrun.harness import redteam_coverage
-    if not getattr(args, "file", None):
-        print("usage: coverage taxonomy|coverage|concentration|jaccard|asr|equal-sample|equal-cost|labels|audit|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "coverage taxonomy|coverage|concentration|jaccard|asr|equal-sample|equal-cost|labels|audit|advise FILE.json")
     if args.action == "taxonomy":
         out = redteam_coverage.taxonomy(doc.get("units") or [])
     elif args.action == "coverage":
@@ -3239,23 +2459,13 @@ def cmd_coverage(args):
         out = redteam_coverage.audit(doc.get("record") or doc)
     else:
         out = redteam_coverage.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(redteam_coverage, out)
 
 
 def cmd_purpleloop(args):
     """Round 146 (arXiv:2611.24362): discoveries into robustness, not volume."""
     from longrun.harness import purple_loop
-    if not getattr(args, "file", None):
-        print("usage: purpleloop primitives|explainability|reward|collapse|rewards|requirements|compare|ablate|audit|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "purpleloop primitives|explainability|reward|collapse|rewards|requirements|compare|ablate|audit|advise FILE.json")
     if args.action == "primitives":
         out = purple_loop.primitives(doc.get("records") or [],
                                      int(doc.get("k") or 3))
@@ -3277,23 +2487,13 @@ def cmd_purpleloop(args):
         out = purple_loop.audit(doc.get("record") or doc)
     else:
         out = purple_loop.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(purple_loop, out)
 
 
 def cmd_renderdef(args):
     """Round 146 (arXiv:2611.24231): protection that depends on the operation."""
     from longrun.harness import render_defense
-    if not getattr(args, "file", None):
-        print("usage: renderdef operations|modality|aggregate|utility|presentation|candidates|dissociation|authorization|audit|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "renderdef operations|modality|aggregate|utility|presentation|candidates|dissociation|authorization|audit|advise FILE.json")
     if args.action == "operations":
         out = render_defense.operations()
     elif args.action == "modality":
@@ -3314,23 +2514,13 @@ def cmd_renderdef(args):
         out = render_defense.audit(doc.get("record") or doc)
     else:
         out = render_defense.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(render_defense, out)
 
 
 def cmd_stateev(args):
     """Round 147 (arXiv:2611.24357): carry the interpretation, keep the proof."""
     from longrun.harness import state_evidence
-    if not getattr(args, "file", None):
-        print("usage: stateev state|delta|ack|recover|locality|budget|paired|benefit|audit|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "stateev state|delta|ack|recover|locality|budget|paired|benefit|audit|advise FILE.json")
     if args.action == "state":
         out = state_evidence.state(doc.get("entries") or [])
     elif args.action == "delta":
@@ -3351,23 +2541,13 @@ def cmd_stateev(args):
         out = state_evidence.audit(doc.get("record") or doc)
     else:
         out = state_evidence.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(state_evidence, out)
 
 
 def cmd_evidenceview(args):
     """Round 147 (arXiv:2611.24353): mentioning a figure is not checking it."""
     from longrun.harness import evidence_review
-    if not getattr(args, "file", None):
-        print("usage: evidenceview outcomes|rates|aided|shortlist|evidence-type|assertion|instrument|near-miss|noise|audit|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "evidenceview outcomes|rates|aided|shortlist|evidence-type|assertion|instrument|near-miss|noise|audit|advise FILE.json")
     if args.action == "outcomes":
         out = evidence_review.outcomes()
     elif args.action == "rates":
@@ -3390,23 +2570,13 @@ def cmd_evidenceview(args):
         out = evidence_review.audit(doc.get("record") or doc)
     else:
         out = evidence_review.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(evidence_review, out)
 
 
 def cmd_uncert(args):
     """Round 147 (arXiv:2611.24351): say how sure the evidence is."""
     from longrun.harness import uncertainty_context
-    if not getattr(args, "file", None):
-        print("usage: uncert paired|alignment|subset|flips|correctness|entropy|sensitivity|audit|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "uncert paired|alignment|subset|flips|correctness|entropy|sensitivity|audit|advise FILE.json")
     if args.action == "paired":
         out = uncertainty_context.paired(doc.get("row") or doc)
     elif args.action == "alignment":
@@ -3425,23 +2595,13 @@ def cmd_uncert(args):
         out = uncertainty_context.audit(doc.get("record") or doc)
     else:
         out = uncertainty_context.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(uncertainty_context, out)
 
 
 def cmd_skillcfi(args):
     """Round 148 (arXiv:2611.24185): hold a skill to its control skeleton."""
     from longrun.harness import skill_cfi
-    if not getattr(args, "file", None):
-        print("usage: skillcfi skeleton|enforceable|dispositions|admit|result|violation|refusal|recovery|audit|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "skillcfi skeleton|enforceable|dispositions|admit|result|violation|refusal|recovery|audit|advise FILE.json")
     if args.action == "skeleton":
         out = skill_cfi.skeleton(doc.get("row") or doc)
     elif args.action == "enforceable":
@@ -3462,23 +2622,13 @@ def cmd_skillcfi(args):
         out = skill_cfi.audit(doc.get("record") or doc)
     else:
         out = skill_cfi.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(skill_cfi, out)
 
 
 def cmd_memcomm(args):
     """Round 148 (arXiv:2611.24165): memory as a shared, operable object."""
     from longrun.harness import memory_commune
-    if not getattr(args, "file", None):
-        print("usage: memcomm entry|scope|proposals|transfer|selection|citation|audit|alignment|gap|activity|audit-record|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "memcomm entry|scope|proposals|transfer|selection|citation|audit|alignment|gap|activity|audit-record|advise FILE.json")
     if args.action == "entry":
         out = memory_commune.entry(doc.get("row") or doc)
     elif args.action == "scope":
@@ -3503,23 +2653,13 @@ def cmd_memcomm(args):
         out = memory_commune.audit_record(doc.get("record") or doc)
     else:
         out = memory_commune.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(memory_commune, out)
 
 
 def cmd_sparseval(args):
     """Round 148 (arXiv:2611.24159): a weak prior and an exact update."""
     from longrun.harness import sparse_eval
-    if not getattr(args, "file", None):
-        print("usage: sparseval prior|posterior|sensitivity|value|brier|alc|calibration|audit|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "sparseval prior|posterior|sensitivity|value|brier|alc|calibration|audit|advise FILE.json")
     if args.action == "prior":
         out = sparse_eval.prior(doc.get("rows") or [])
     elif args.action == "posterior":
@@ -3538,29 +2678,21 @@ def cmd_sparseval(args):
         out = sparse_eval.audit_record(doc.get("record") or doc)
     else:
         out = sparse_eval.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(sparse_eval, out)
 
 
 def cmd_budgetaudit(args):
     """Round 149 (arXiv:2611.24867): what the looks cost, per step."""
     from longrun.harness import budget_audit
-    if not getattr(args, "file", None):
-        print("usage: budgetaudit belief|value|observe|qvalue|solve|decompose|anchors|"
-              "staged|routing|bound|audit|advise FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(
+        args, "budgetaudit belief|value|observe|qvalue|solve|decompose|anchors|"
+              "staged|routing|bound|audit|advise FILE.json")
     if args.action == "belief":
         out = budget_audit.belief(doc.get("state") or doc)
     elif args.action == "value":
         out = budget_audit.value(doc.get("state") or doc)
     elif args.action == "observe":
-        out = {"outcomes": [
+        out = {"format": budget_audit.FORMAT, "outcomes": [
             {"p": prob, "state": child}
             for prob, child in budget_audit.observe(
                 doc.get("state") or {}, doc.get("reads") or 0)]}
@@ -3585,23 +2717,13 @@ def cmd_budgetaudit(args):
         out = budget_audit.audit(doc.get("record") or doc)
     else:
         out = budget_audit.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(budget_audit, out)
 
 
 def cmd_simaudit(args):
     """Round 149 (arXiv:2611.24892): does the metric notice the injected failure?"""
     from longrun.harness import simulator_audit
-    if not getattr(args, "file", None):
-        print("usage: simaudit paired|population|coverage|auroc|retention|levels|"
-              "simulators|evidence|audit|advise FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "simaudit paired|population|coverage|auroc|retention|levels|simulators|evidence|audit|advise FILE.json")
     if args.action == "paired":
         out = simulator_audit.paired(doc.get("rows") or [])
     elif args.action == "population":
@@ -3623,23 +2745,13 @@ def cmd_simaudit(args):
         out = simulator_audit.audit(doc.get("record") or doc)
     else:
         out = simulator_audit.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(simulator_audit, out)
 
 
 def cmd_progjudge(args):
     """Round 149 (arXiv:2611.24849): one program per topic instead of a call per document."""
     from longrun.harness import program_judge
-    if not getattr(args, "file", None):
-        print("usage: progjudge answers|consensus|single|rubric|errors|kendall|"
-              "labelgain|breakeven|sandbox|audit|advise FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "progjudge answers|consensus|single|rubric|errors|kendall|labelgain|breakeven|sandbox|audit|advise FILE.json")
     if args.action == "answers":
         out = program_judge.answers(doc.get("answers") or doc)
     elif args.action == "consensus":
@@ -3662,23 +2774,13 @@ def cmd_progjudge(args):
         out = program_judge.audit(doc.get("record") or doc)
     else:
         out = program_judge.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(program_judge, out)
 
 
 def cmd_reql(args):
     """Round 150 (arXiv:2611.24924): a change lands because a requirement says so."""
     from longrun.harness import requirement_loop
-    if not getattr(args, "file", None):
-        print("usage: reql issue|triage|consolidate|admission|review|rounds|"
-              "delivery|generalisation|audit|advise FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "reql issue|triage|consolidate|admission|review|rounds|delivery|generalisation|audit|advise FILE.json")
     if args.action == "issue":
         out = requirement_loop.issue(doc.get("report") or doc)
     elif args.action == "triage":
@@ -3699,23 +2801,13 @@ def cmd_reql(args):
         out = requirement_loop.audit(doc.get("record") or doc)
     else:
         out = requirement_loop.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(requirement_loop, out)
 
 
 def cmd_replan(args):
     """Round 150 (arXiv:2611.24839): templates in, validated repairs out."""
     from longrun.harness import secure_replan
-    if not getattr(args, "file", None):
-        print("usage: replan apply|validate|templates|repair|closeout|exposure|"
-              "validation|audit|advise FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "replan apply|validate|templates|repair|closeout|exposure|validation|audit|advise FILE.json")
     if args.action == "apply":
         out = secure_replan.apply(doc.get("plan") or {},
                                   doc.get("operators") or [])
@@ -3735,23 +2827,13 @@ def cmd_replan(args):
         out = secure_replan.audit(doc.get("record") or doc)
     else:
         out = secure_replan.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(secure_replan, out)
 
 
 def cmd_localcost(args):
     """Round 150 (arXiv:2611.24880): what a solved task costs on your own device."""
     from longrun.harness import local_cost
-    if not getattr(args, "file", None):
-        print("usage: localcost expected|energy|capacity|rate|required|computed|"
-              "notice|compare|audit|advise FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "localcost expected|energy|capacity|rate|required|computed|notice|compare|audit|advise FILE.json")
     if args.action == "expected":
         out = local_cost.expected(doc.get("record") or doc)
     elif args.action == "energy":
@@ -3772,23 +2854,13 @@ def cmd_localcost(args):
         out = local_cost.audit(doc.get("record") or doc)
     else:
         out = local_cost.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(local_cost, out)
 
 
 def cmd_intentc(args):
     """Round 151 (arXiv:2611.24025): a contract the trusted side can check and execute."""
     from longrun.harness import intent_contract
-    if not getattr(args, "file", None):
-        print("usage: intentc validate|coverage|mcnemar|outcomes|bundling|targets|"
-              "properties|audit|advise FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "intentc validate|coverage|mcnemar|outcomes|bundling|targets|properties|audit|advise FILE.json")
     if args.action == "validate":
         out = intent_contract.validate(doc.get("record") or doc)
     elif args.action == "coverage":
@@ -3807,23 +2879,13 @@ def cmd_intentc(args):
         out = intent_contract.audit(doc.get("record") or doc)
     else:
         out = intent_contract.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(intent_contract, out)
 
 
 def cmd_warrant(args):
     """Round 151 (arXiv:2611.23990): which old evidence is admissible in the new context."""
     from longrun.harness import evidence_warrant
-    if not getattr(args, "file", None):
-        print("usage: warrant wrc|admissibility|transport|authorize|provenance|"
-              "composition|selective|audit|advise FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "warrant wrc|admissibility|transport|authorize|provenance|composition|selective|audit|advise FILE.json")
     if args.action == "wrc":
         out = evidence_warrant.wrc(doc.get("record") or doc)
     elif args.action == "admissibility":
@@ -3842,23 +2904,13 @@ def cmd_warrant(args):
         out = evidence_warrant.audit(doc.get("record") or doc)
     else:
         out = evidence_warrant.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(evidence_warrant, out)
 
 
 def cmd_platformeval(args):
     """Round 151 (arXiv:2611.24039): gates before scores, with the halo reported."""
     from longrun.harness import platform_eval
-    if not getattr(args, "file", None):
-        print("usage: platformeval score|alpha|tiers|gates|reliability|cost|value|"
-              "audit|advise FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "platformeval score|alpha|tiers|gates|reliability|cost|value|audit|advise FILE.json")
     if args.action == "score":
         out = platform_eval.score(doc.get("matrix") or doc.get("rows") or [])
     elif args.action == "alpha":
@@ -3878,23 +2930,13 @@ def cmd_platformeval(args):
         out = platform_eval.audit(doc.get("record") or doc)
     else:
         out = platform_eval.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(platform_eval, out)
 
 
 def cmd_contaudit(args):
     """Round 152 (arXiv:2611.24491): continue a real session, judge only what follows."""
     from longrun.harness import continuation_audit
-    if not getattr(args, "file", None):
-        print("usage: contaudit cuts|realism|awareness|score|narrow|mandate|cover|"
-              "ablation|audit|advise FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "contaudit cuts|realism|awareness|score|narrow|mandate|cover|ablation|audit|advise FILE.json")
     if args.action == "cuts":
         out = continuation_audit.cuts(doc.get("rows") or [])
     elif args.action == "realism":
@@ -3915,23 +2957,13 @@ def cmd_contaudit(args):
         out = continuation_audit.audit(doc.get("record") or doc)
     else:
         out = continuation_audit.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(continuation_audit, out)
 
 
 def cmd_toolext(args):
     """Round 152 (arXiv:2611.23810): a new tool reuses when-to-call, not which-tool."""
     from longrun.harness import tool_extension
-    if not getattr(args, "file", None):
-        print("usage: toolext verified|retention|gain|drift|decisions|cost|admit|"
-              "audit|advise FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "toolext verified|retention|gain|drift|decisions|cost|admit|audit|advise FILE.json")
     if args.action == "verified":
         out = tool_extension.verified(doc.get("rows") or [])
     elif args.action == "retention":
@@ -3950,23 +2982,13 @@ def cmd_toolext(args):
         out = tool_extension.audit(doc.get("record") or doc)
     else:
         out = tool_extension.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(tool_extension, out)
 
 
 def cmd_fastpath(args):
     """Round 152 (arXiv:2611.23751): bounded choices in one pass, the rest to System-2."""
     from longrun.harness import fast_path
-    if not getattr(args, "file", None):
-        print("usage: fastpath classify|program|calibrate|gate|cost|smoothed|aurc|"
-              "collapsed|audit|advise FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "fastpath classify|program|calibrate|gate|cost|smoothed|aurc|collapsed|audit|advise FILE.json")
     if args.action == "classify":
         out = fast_path.classify(doc.get("record") or doc)
     elif args.action == "program":
@@ -3987,23 +3009,13 @@ def cmd_fastpath(args):
         out = fast_path.audit(doc.get("record") or doc)
     else:
         out = fast_path.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(fast_path, out)
 
 
 def cmd_tariff(args):
     """Round 153 (arXiv:2611.24071): what a retained token is charged, and which bound holds."""
     from longrun.harness import context_tariff
-    if not getattr(args, "file", None):
-        print("usage: tariff charge|lifetime|coverage|bounds|quality|fairness|audit|"
-              "advise FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "tariff charge|lifetime|coverage|bounds|quality|fairness|audit|advise FILE.json")
     if args.action == "charge":
         out = context_tariff.charge(doc.get("record") or doc)
     elif args.action == "lifetime":
@@ -4020,23 +3032,13 @@ def cmd_tariff(args):
         out = context_tariff.audit(doc.get("record") or doc)
     else:
         out = context_tariff.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(context_tariff, out)
 
 
 def cmd_hyperke(args):
     """Round 153 (arXiv:2611.24294): a typed store kept sound under edits."""
     from longrun.harness import hypergraph_ke
-    if not getattr(args, "file", None):
-        print("usage: hyperke ingest|join|edit|route|evidence|oke|audit|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "hyperke ingest|join|edit|route|evidence|oke|audit|advise FILE.json")
     if args.action == "ingest":
         out = hypergraph_ke.ingest(doc.get("rows") or [])
     elif args.action == "join":
@@ -4053,23 +3055,13 @@ def cmd_hyperke(args):
         out = hypergraph_ke.audit(doc.get("record") or doc)
     else:
         out = hypergraph_ke.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(hypergraph_ke, out)
 
 
 def cmd_beliefprobe(args):
     """Round 153 (arXiv:2611.23938): did the fact go in, and does the metric still mean anything?"""
     from longrun.harness import belief_probe
-    if not getattr(args, "file", None):
-        print("usage: beliefprobe belief|categories|scaling|depth|judge|independence|"
-              "reality|audit|advise FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "beliefprobe belief|categories|scaling|depth|judge|independence|reality|audit|advise FILE.json")
     if args.action == "belief":
         out = belief_probe.belief_rate(doc.get("rows") or [])
     elif args.action == "categories":
@@ -4088,23 +3080,13 @@ def cmd_beliefprobe(args):
         out = belief_probe.audit(doc.get("record") or doc)
     else:
         out = belief_probe.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(belief_probe, out)
 
 
 def cmd_awareness(args):
     """Round 154 (arXiv:2611.05391): verified host state as a bounded decision input."""
     from longrun.harness import awareness
-    if not getattr(args, "file", None):
-        print("usage: awareness reduce|cost|best|regret|snapshot|choose|ablate|"
-              "wilson|authority|audit|advise FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "awareness reduce|cost|best|regret|snapshot|choose|ablate|wilson|authority|audit|advise FILE.json")
     if args.action == "reduce":
         out = awareness.reduce(doc.get("observations") or [], doc.get("window"))
     elif args.action == "cost":
@@ -4123,30 +3105,23 @@ def cmd_awareness(args):
     elif args.action == "ablate":
         out = awareness.ablate(doc.get("arms") or [])
     elif args.action == "wilson":
-        out = awareness.wilson(doc.get("k"), doc.get("n"))
+        # A helper interval, not a verdict: stamp the group's FORMAT so the
+        # output contract is the same as every other action of this group.
+        out = {"format": awareness.FORMAT,
+               "wilson": awareness.wilson(doc.get("k"), doc.get("n"))}
     elif args.action == "authority":
         out = awareness.authority(doc.get("record") or doc)
     elif args.action == "audit":
         out = awareness.audit(doc.get("record") or doc)
     else:
         out = awareness.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(awareness, out)
 
 
 def cmd_diagnostics(args):
     """Round 154 (arXiv:2611.04507): findings, Signals, severity and remediation."""
     from longrun.harness import diagnostics
-    if not getattr(args, "file", None):
-        print("usage: diagnostics taxonomy|finding|scope|severity|group|update|"
-              "match|coverage|audit|advise FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "diagnostics taxonomy|finding|scope|severity|group|update|match|coverage|audit|advise FILE.json")
     if args.action == "taxonomy":
         out = diagnostics.taxonomy()
     elif args.action == "finding":
@@ -4168,23 +3143,13 @@ def cmd_diagnostics(args):
         out = diagnostics.audit(doc.get("record") or doc)
     else:
         out = diagnostics.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(diagnostics, out)
 
 
 def cmd_orchcredit(args):
     """Round 154 (arXiv:2611.07495): interaction-aware credit and certified updates."""
     from longrun.harness import orchestration_credit
-    if not getattr(args, "file", None):
-        print("usage: orchcredit orders|bound|z2|certify|select|detect|leaps|"
-              "complementarity|controlled|audit|advise FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "orchcredit orders|bound|z2|certify|select|detect|leaps|complementarity|controlled|audit|advise FILE.json")
     if args.action == "orders":
         out = orchestration_credit.orders(doc.get("record") or doc)
     elif args.action == "bound":
@@ -4207,32 +3172,55 @@ def cmd_orchcredit(args):
         out = orchestration_credit.audit(doc.get("record") or doc)
     else:
         out = orchestration_credit.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(orchestration_credit, out)
+
+
+def _schema_record(doc):
+    """A checker record whose `name` may be supplied as a live tool name.
+
+    `registry.tool_record` is the ONE schema normalizer, so a CLI fixture may be
+    `{"tool": "fs.write"}` instead of a hand-assembled `args` list.
+    """
+    rec = doc.get("record") or doc
+    if isinstance(rec, dict) and not rec.get("name"):
+        tool = rec.get("tool")
+        if isinstance(tool, str) and tool:
+            try:
+                from longrun.tools import registry
+                return registry.tool_record(tool) or rec
+            except Exception:  # noqa: BLE001 — a missing catalog keeps the input
+                return rec
+    return rec
+
+
+def _live_call(doc):
+    """A call record whose string `tool` is resolved through the normalizer."""
+    call = dict(doc.get("call") or {})
+    tool = call.get("tool")
+    if isinstance(tool, str) and tool:
+        try:
+            from longrun.tools import registry
+            rec = registry.tool_record(tool)
+        except Exception:  # noqa: BLE001 — a missing catalog keeps the input
+            rec = None
+        if rec:
+            call["tool"] = rec
+    return call
 
 
 def cmd_intentgraph(args):
     """Round 155 (arXiv:2611.11305): least-privilege auditing against an intent DAG."""
     from longrun.harness import intent_audit
-    if not getattr(args, "file", None):
-        print("usage: intentgraph graph|scope|classify|audit|metrics|coupling|"
-              "audit_record|advise FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "intentgraph graph|scope|classify|audit|metrics|coupling|audit_record|advise FILE.json")
     if args.action == "graph":
         out = intent_audit.graph(doc.get("record") or doc)
     elif args.action == "scope":
         out = intent_audit.scope(doc.get("expr"), doc.get("params") or {},
                                  doc.get("policy") or "fail-closed")
     elif args.action == "classify":
-        out = intent_audit.policy(doc.get("record") or doc)
+        out = intent_audit.policy(_schema_record(doc))
     elif args.action == "audit":
-        out = intent_audit.audit(doc.get("call") or {}, doc.get("graph") or {},
+        out = intent_audit.audit(_live_call(doc), doc.get("graph") or {},
                                  doc.get("state"), doc.get("bypass") is True,
                                  doc.get("severity"), doc.get("threshold", 0.99),
                                  doc.get("scope_policy") or "fail-closed")
@@ -4244,31 +3232,21 @@ def cmd_intentgraph(args):
         out = intent_audit.audit_record(doc.get("record") or doc)
     else:
         out = intent_audit.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(intent_audit, out)
 
 
 def cmd_writeguard(args):
     """Round 155 (arXiv:2611.17115): schema-derived policy and exact grounding."""
     from longrun.harness import write_integrity
-    if not getattr(args, "file", None):
-        print("usage: writeguard classify|grounding|commit|mediate|integrity|"
-              "ablate|audit|advise FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "writeguard classify|grounding|commit|mediate|integrity|ablate|audit|advise FILE.json")
     if args.action == "classify":
-        out = write_integrity.policy(doc.get("record") or doc)
+        out = write_integrity.policy(_schema_record(doc))
     elif args.action == "grounding":
         out = write_integrity.grounding(doc.get("request") or doc.get("text"))
     elif args.action == "commit":
         out = write_integrity.commit(doc.get("plan") or doc)
     elif args.action == "mediate":
-        out = write_integrity.mediate(doc.get("call") or {},
+        out = write_integrity.mediate(_live_call(doc),
                                       doc.get("ground") or {},
                                       doc.get("plan"), doc.get("schema"))
     elif args.action == "integrity":
@@ -4279,23 +3257,13 @@ def cmd_writeguard(args):
         out = write_integrity.audit_record(doc.get("record") or doc)
     else:
         out = write_integrity.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(write_integrity, out)
 
 
 def cmd_ctxregime(args):
     """Round 155 (arXiv:2611.05306): short working context and disciplined state."""
     from longrun.harness import context_regime
-    if not getattr(args, "file", None):
-        print("usage: ctxregime length|charge|savings|compaction|regimes|"
-              "selective|sac|history|audit|advise FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "ctxregime length|charge|savings|compaction|regimes|selective|sac|history|audit|advise FILE.json")
     if args.action == "length":
         out = context_regime.length(doc.get("record") or doc)
     elif args.action == "charge":
@@ -4316,25 +3284,18 @@ def cmd_ctxregime(args):
         out = context_regime.audit_record(doc.get("record") or doc)
     else:
         out = context_regime.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(context_regime, out)
 
 
 def cmd_skillgate(args):
     """Round 156 (arXiv:2608.05810): admission before the pool."""
     from longrun.harness import skill_gate
+    usage = ("skillgate tiers|critic|gain|taxonomy|curve|select|"
+             "irreversibility|rollback|audit|advise [FILE.json]")
     if not getattr(args, "file", None) and args.action != "tiers":
-        print("usage: skillgate tiers|critic|gain|taxonomy|curve|select|"
-              "irreversibility|rollback|audit|advise [FILE.json]", file=sys.stderr)
+        print("usage: " + usage, file=sys.stderr)
         sys.exit(2)
-    doc = {}
-    if getattr(args, "file", None):
-        try:
-            with open(args.file, encoding="utf-8") as fh:
-                doc = json.load(fh)
-        except (OSError, ValueError) as e:
-            print("bad file:", e, file=sys.stderr)
-            sys.exit(2)
+    doc = _load_doc(args, usage) if getattr(args, "file", None) else {}
     if args.action == "tiers":
         out = skill_gate.tiers()
     elif args.action == "critic":
@@ -4355,23 +3316,13 @@ def cmd_skillgate(args):
         out = skill_gate.audit_record(doc.get("record") or doc)
     else:
         out = skill_gate.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(skill_gate, out)
 
 
 def cmd_skillflow(args):
     """Round 156 (arXiv:2611.20584): the plugin population as a gas."""
     from longrun.harness import skill_flow
-    if not getattr(args, "file", None):
-        print("usage: skillflow ledger|project|regime|sound|shock|instruments|"
-              "diagnose|audit|advise FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "skillflow ledger|project|regime|sound|shock|instruments|diagnose|audit|advise FILE.json")
     if args.action == "ledger":
         out = skill_flow.ledger(doc.get("events") or [])
     elif args.action == "project":
@@ -4390,23 +3341,13 @@ def cmd_skillflow(args):
         out = skill_flow.audit_record(doc.get("record") or doc)
     else:
         out = skill_flow.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(skill_flow, out)
 
 
 def cmd_skilleve(args):
     """Round 156 (arXiv:2611.03238): evidence-grounded skill evolution."""
     from longrun.harness import skill_evolution
-    if not getattr(args, "file", None):
-        print("usage: skilleve entry|evidence|diagnose|candidate|validate|"
-              "consolidate|budget|audit|advise FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "skilleve entry|evidence|diagnose|candidate|validate|consolidate|budget|audit|advise FILE.json")
     if args.action == "entry":
         out = skill_evolution.entry(doc.get("record") or doc)
     elif args.action == "evidence":
@@ -4425,23 +3366,13 @@ def cmd_skilleve(args):
         out = skill_evolution.audit_record(doc.get("record") or doc)
     else:
         out = skill_evolution.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(skill_evolution, out)
 
 
 def cmd_takeover(args):
     """Round 157 (arXiv:2611.07307): requirements recovered, then delivered."""
     from longrun.harness import takeover_eval
-    if not getattr(args, "file", None):
-        print("usage: takeover atom|update|delivery|rq1|rq2|decision|poststate|"
-              "clarify|audit|advise FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "takeover atom|update|delivery|rq1|rq2|decision|poststate|clarify|audit|advise FILE.json")
     if args.action == "atom":
         out = takeover_eval.atom(doc.get("record") or doc)
     elif args.action == "update":
@@ -4464,23 +3395,13 @@ def cmd_takeover(args):
         out = takeover_eval.audit_record(doc.get("record") or doc)
     else:
         out = takeover_eval.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(takeover_eval, out)
 
 
 def cmd_anytime(args):
     """Round 157 (arXiv:2611.21241): certificates after an adaptive sweep."""
     from longrun.harness import anytime_cert
-    if not getattr(args, "file", None):
-        print("usage: anytime certificate|grid|structured|margin|allocate|"
-              "optimism|audit|advise FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "anytime certificate|grid|structured|margin|allocate|optimism|audit|advise FILE.json")
     if args.action == "certificate":
         out = anytime_cert.certificate(doc.get("record") or doc)
     elif args.action == "grid":
@@ -4497,23 +3418,13 @@ def cmd_anytime(args):
         out = anytime_cert.audit_record(doc.get("record") or doc)
     else:
         out = anytime_cert.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(anytime_cert, out)
 
 
 def cmd_longhorizon(args):
     """Round 157 (arXiv:2611.05620): all-or-nothing delivery over many requests."""
     from longrun.harness import longhorizon_eval
-    if not getattr(args, "file", None):
-        print("usage: longhorizon plan|grade|gap|horizon|split|grade_quality|"
-              "audit|advise FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "longhorizon plan|grade|gap|horizon|split|grade_quality|audit|advise FILE.json")
     if args.action == "plan":
         out = longhorizon_eval.plan(doc.get("record") or doc)
     elif args.action == "grade":
@@ -4530,23 +3441,13 @@ def cmd_longhorizon(args):
         out = longhorizon_eval.audit_record(doc.get("record") or doc)
     else:
         out = longhorizon_eval.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(longhorizon_eval, out)
 
 
 def cmd_memchannel(args):
     """Round 158 (arXiv:2606.04329): a memory write is a trigger plus an authority."""
     from longrun.harness import memory_channel
-    if not getattr(args, "file", None):
-        print("usage: memchannel channels|vulns|classify|taxonomy|exposure|"
-              "coverage|cost|audit|advise FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "memchannel channels|vulns|classify|taxonomy|exposure|coverage|cost|audit|advise FILE.json")
     if args.action == "channels":
         out = memory_channel.channels()
     elif args.action == "vulns":
@@ -4565,24 +3466,13 @@ def cmd_memchannel(args):
         out = memory_channel.audit_record(doc.get("record") or doc)
     else:
         out = memory_channel.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(memory_channel, out)
 
 
 def cmd_memauthority(args):
     """Round 158 (arXiv:2606.24322): authority is bound to origin, at write time."""
     from longrun.harness import memory_authority
-    if not getattr(args, "file", None):
-        print("usage: memauthority item|derive|corroborate|authorize|gate|"
-              "weakening|separation|model_check|audit|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "memauthority item|derive|corroborate|authorize|gate|weakening|separation|model_check|audit|advise FILE.json")
     if args.action == "item":
         out = memory_authority.item(doc.get("record") or doc)
     elif args.action == "derive":
@@ -4603,23 +3493,13 @@ def cmd_memauthority(args):
         out = memory_authority.audit_record(doc.get("record") or doc)
     else:
         out = memory_authority.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(memory_authority, out)
 
 
 def cmd_exfild(args):
     """Round 158 (arXiv:2605.01970): every defense breaks one of three steps."""
     from longrun.harness import exfil_defense
-    if not getattr(args, "file", None):
-        print("usage: exfild points|defenses|applicability|chain|utility|"
-              "frontier|persistence|audit|advise FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "exfild points|defenses|applicability|chain|utility|frontier|persistence|audit|advise FILE.json")
     if args.action == "points":
         out = exfil_defense.points()
     elif args.action == "defenses":
@@ -4638,24 +3518,13 @@ def cmd_exfild(args):
         out = exfil_defense.audit_record(doc.get("record") or doc)
     else:
         out = exfil_defense.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(exfil_defense, out)
 
 
 def cmd_formation(args):
     """Round 159 (arXiv:2610.00583): a team of separate agents against one coordinator."""
     from longrun.harness import multiagent_formation
-    if not getattr(args, "file", None):
-        print("usage: formation formations|outcome|participation|fairness|"
-              "interference|mitigation|failure|audit|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "formation formations|outcome|participation|fairness|interference|mitigation|failure|audit|advise FILE.json")
     if args.action == "formations":
         out = multiagent_formation.formations()
     elif args.action == "outcome":
@@ -4674,23 +3543,13 @@ def cmd_formation(args):
         out = multiagent_formation.audit_record(doc.get("record") or doc)
     else:
         out = multiagent_formation.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(multiagent_formation, out)
 
 
 def cmd_teammate(args):
     """Round 159 (arXiv:2611.02633): collaboration as one model's capability."""
     from longrun.harness import teammate_eval
-    if not getattr(args, "file", None):
-        print("usage: teammate dimensions|score|gate|drop|conflict|"
-              "failure_mode|inheritance|audit|advise FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "teammate dimensions|score|gate|drop|conflict|failure_mode|inheritance|audit|advise FILE.json")
     if args.action == "dimensions":
         out = teammate_eval.dimensions()
     elif args.action == "score":
@@ -4709,24 +3568,13 @@ def cmd_teammate(args):
         out = teammate_eval.audit_record(doc.get("record") or doc)
     else:
         out = teammate_eval.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(teammate_eval, out)
 
 
 def cmd_museprincipals(args):
     """Round 159 (arXiv:2604.08567): one context, many principals, explicit rules."""
     from longrun.harness import principal_policy
-    if not getattr(args, "file", None):
-        print("usage: museprincipals principals|precedence|access|selection|"
-              "privacy_utility|meeting|conflict_effect|audit|advise FILE.json",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "museprincipals principals|precedence|access|selection|privacy_utility|meeting|conflict_effect|audit|advise FILE.json")
     if args.action == "principals":
         out = principal_policy.principals(doc.get("record") or doc)
     elif args.action == "precedence":
@@ -4745,67 +3593,37 @@ def cmd_museprincipals(args):
         out = principal_policy.audit_record(doc.get("record") or doc)
     else:
         out = principal_policy.advise(doc.get("profile") or doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0)
+    _emit(principal_policy, out)
 
 
 def cmd_instructions(args):
     """Round 114 (arXiv:2611.13709): explicit context-file directives vs the cards."""
     from longrun.harness import instruction_audit
-    if not getattr(args, "file", None):
-        print("usage: instructions audit FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "instructions audit FILE.json")
     out = instruction_audit.audit(doc.get("text") or "", doc.get("cards") or [])
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0 if out["verdict"] == "clean" else 1)
+    _emit(instruction_audit, out, lambda o: o["verdict"] == "clean")
 
 
 def cmd_teams(args):
     """Round 113 (arXiv:2611.17820): the safety lead + published safety specs audit."""
     from longrun.harness import team_safety
-    if not getattr(args, "file", None):
-        print("usage: teams audit FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "teams audit FILE.json")
     out = team_safety.audit(doc)
     out["brief"] = team_safety.brief(doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0 if out["verdict"] == "covered" else 1)
+    _emit(team_safety, out, lambda o: o["verdict"] == "covered")
 
 
 def cmd_toolgraph(args):
     """Round 113 (arXiv:2611.20569): compile the tool dependency graph, or ask it."""
     from longrun.harness import tool_graph
-    if not getattr(args, "file", None):
-        print("usage: toolgraph %s FILE.json" % args.action, file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(args.file, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "toolgraph %s FILE.json" % args.action)
     graph = tool_graph.build(doc.get("catalog") or [], doc.get("transitions") or [],
                              doc.get("probes") or [])
     if args.action == "build":
-        print(json.dumps({k: v for k, v in graph.items() if k != "nodes"}, indent=2,
-                         ensure_ascii=False))
-        return
-    print(json.dumps(tool_graph.feedback(graph, doc.get("goal") or "",
-                                         doc.get("candidate") or "",
-                                         doc.get("state_types") or []),
-                     indent=2, ensure_ascii=False))
+        _emit(tool_graph, {k: v for k, v in graph.items() if k != "nodes"})
+    _emit(tool_graph, tool_graph.feedback(graph, doc.get("goal") or "",
+                                          doc.get("candidate") or "",
+                                          doc.get("state_types") or []))
 
 
 def cmd_subagent(args):
@@ -5743,49 +4561,27 @@ def cmd_skills(args):
         # Round 118: verified-trace compilation (2611.01386), SkIR repair (2611.20856),
         # cross-skill conflict (2610.35082).
         from longrun.harness import skill_compiler, skill_repair, skill_conflict
-        path = getattr(args, "value", None)
-        if not path:
-            print("usage: skills %s FILE.json" % args.action, file=sys.stderr)
-            sys.exit(2)
-        try:
-            with open(path, encoding="utf-8") as fh:
-                doc = json.load(fh)
-        except (OSError, ValueError) as e:
-            print("bad file:", e, file=sys.stderr)
-            sys.exit(2)
+        doc = _load_doc(args, "skills %s FILE.json" % args.action)
         if args.action == "compile":
             out = skill_compiler.compile_skill(doc.get("trace") or doc,
                                                doc.get("min_strength") or "independent")
-            print(json.dumps(out, indent=2, ensure_ascii=False))
-            sys.exit(0 if out["admitted"] else 1)
+            _emit(skill_compiler, out, lambda o: o["admitted"])
         if args.action == "optimize":
             out = skill_repair.repair(doc)
-            print(json.dumps(out, indent=2, ensure_ascii=False))
-            sys.exit(0 if out["accepted"] else 1)
+            _emit(skill_repair, out, lambda o: o["accepted"])
         out = skill_conflict.conflicts(doc.get("pool") or doc)
-        print(json.dumps(out, indent=2, ensure_ascii=False))
-        sys.exit(0 if out["verdict"] == "clean" else 1)
+        _emit(skill_conflict, out, lambda o: o["verdict"] == "clean")
     if args.action == "prune":
         # Round 112 (arXiv:2611.19823): compact a skill without touching contract lines.
         from longrun.harness import skill_prune
-        path = getattr(args, "value", None)
-        if not path:
-            print("usage: skills prune FILE.json [--budget N] [--write]", file=sys.stderr)
-            sys.exit(2)
-        try:
-            with open(path, encoding="utf-8") as fh:
-                doc = json.load(fh)
-        except (OSError, ValueError) as e:
-            print("bad file:", e, file=sys.stderr)
-            sys.exit(2)
+        doc = _load_doc(args, "skills prune FILE.json [--budget N] [--write]",
+                        allow_list=False)
         text = doc.get("text") if isinstance(doc, dict) else doc
         out = skill_prune.prune(text or "", budget_tokens=getattr(args, "budget", None))
         if getattr(args, "write", False):
-            with open(path, "w", encoding="utf-8") as fh:
+            with open(args.value, "w", encoding="utf-8") as fh:
                 fh.write(out["text"])
-        print(json.dumps({k: v for k, v in out.items() if k != "text"},
-                         indent=2, ensure_ascii=False))
-        return
+        _emit(skill_prune, {k: v for k, v in out.items() if k != "text"})
     if args.action == "stale":
         import longrun.tools.registry as _reg
         out = skills_maintenance.maintain(os.path.join(_reg.REPO, "skills"),
@@ -5798,20 +4594,10 @@ def cmd_skills(args):
         c = out.get("counts") or {}
         print("skills=%s stale=%s" % (c.get("skills"), c.get("stale")))
         sys.exit(0 if not c.get("stale") else 1)
-    path = getattr(args, "value", None)
-    if not path:
-        print("usage: skills %s FILE" % args.action, file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(path, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "skills %s FILE" % args.action, allow_list=True)
     if args.action == "value":
         recs = doc.get("records") if isinstance(doc, dict) else doc
-        print(json.dumps(skill_value.paired(recs), indent=2, ensure_ascii=False))
-        return
+        _emit(skill_value, skill_value.paired(recs))
     mapping = {}
     for pair in getattr(args, "map", None) or []:
         old, _, new = str(pair).partition("=")
@@ -5823,119 +4609,65 @@ def cmd_skills(args):
     text = doc.get("text") if isinstance(doc, dict) else doc
     res = skills_maintenance.repair(text, mapping)
     if getattr(args, "write", False):
-        with open(path, "w", encoding="utf-8") as fh:
+        with open(args.value, "w", encoding="utf-8") as fh:
             fh.write(res["text"])
-    print(json.dumps({"changes": res["changes"], "written": bool(getattr(args, "write", False))},
-                     indent=2, ensure_ascii=False))
+    _emit(skills_maintenance,
+          {"format": skills_maintenance.FORMAT, "changes": res["changes"],
+           "written": bool(getattr(args, "write", False))})
 
 
 def cmd_autonomy(args):
     """Round 112 (arXiv:2611.10058): bounded/observable/reversible autonomy scorecard."""
     from longrun.harness import autonomy
-    path = getattr(args, "file", None)
-    if not path:
-        print("usage: autonomy check FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(path, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "autonomy check FILE.json", allow_list=True)
     rows = doc.get("actions") if isinstance(doc, dict) else doc
     out = autonomy.scoreboard(rows or [])
-    print(json.dumps(out, indent=2, ensure_ascii=False))
+    _emit(autonomy, out)
 
 
 def cmd_reuse(args):
     """Round 110 (arXiv:2611.09254): repeated deterministic reads in a card file."""
     from longrun.harness import reuse
-    path = getattr(args, "file", None)
-    if not path:
-        print("usage: reuse audit FILE.json [--allow a,b]", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(path, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "reuse audit FILE.json [--allow a,b]", allow_list=True)
     cards = doc.get("cards") if isinstance(doc, dict) else doc
     allow = None
     if getattr(args, "allow", None):
         allow = [t.strip() for t in str(args.allow).split(",") if t.strip()]
     out = reuse.audit(cards or [], allow=allow)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
+    _emit(reuse, out)
 
 
 def cmd_principals(args):
     """Round 110 (arXiv:2611.08768): principal-context authorization + laundering."""
     from longrun.harness import principals
-    path = getattr(args, "file", None)
-    if not path:
-        print("usage: principals check FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(path, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "principals check FILE.json")
     out = principals.check(doc)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0 if out.get("allow") else 1)
+    _emit(principals, out, lambda o: o.get("allow"))
 
 
 def cmd_residency(args):
     """Round 110 (arXiv:2611.13412): the park/admit band over a session file."""
     from longrun.util import residency
-    path = getattr(args, "file", None)
-    if not path:
-        print("usage: residency plan FILE.json --capacity N [--current SID]",
-              file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(path, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "residency plan FILE.json --capacity N [--current SID]",
+                    allow_list=True)
     sessions = doc.get("sessions") if isinstance(doc, dict) else doc
     out = residency.plan(sessions or [], getattr(args, "capacity", 0),
                          current=getattr(args, "current", None))
-    print(json.dumps(out, indent=2, ensure_ascii=False))
+    _emit(residency, out)
 
 
 def cmd_procedure(args):
     """Round 111 (arXiv:2611.10884): replay a procedure FSM over plain events."""
     from longrun.plan import procedure
-    path = getattr(args, "file", None)
-    if not path:
-        print("usage: procedure run FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(path, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "procedure run FILE.json")
     out = procedure.replay(doc.get("procedure") or doc, doc.get("events") or [])
-    print(json.dumps(out, indent=2, ensure_ascii=False))
+    _emit(procedure, out)
 
 
 def cmd_intent(args):
     """Round 111 (arXiv:2611.06563): declarations against observed effects."""
     from longrun.harness import intent_journal
-    path = getattr(args, "file", None)
-    if not path:
-        print("usage: intent %s FILE.json" % args.action, file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(path, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "intent %s FILE.json" % args.action, allow_list=True)
     if args.action == "check":
         out = intent_journal.check(doc.get("declaration") or {},
                                    doc.get("effects") or {},
@@ -5943,26 +4675,15 @@ def cmd_intent(args):
     else:
         rows = doc.get("entries") if isinstance(doc, dict) else doc
         out = intent_journal.audit(rows)
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0 if out.get("verdict") in ("clean",) else 1)
+    _emit(intent_journal, out, lambda o: o.get("verdict") in ("clean",))
 
 
 def cmd_handoff(args):
     """Round 111 (arXiv:2611.06545): policy sentences vs the permission ledger."""
     from longrun.harness import handoff_audit
-    path = getattr(args, "file", None)
-    if not path:
-        print("usage: handoff audit FILE.json", file=sys.stderr)
-        sys.exit(2)
-    try:
-        with open(path, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as e:
-        print("bad file:", e, file=sys.stderr)
-        sys.exit(2)
+    doc = _load_doc(args, "handoff audit FILE.json")
     out = handoff_audit.audit(doc.get("text") or "", doc.get("ledger") or [])
-    print(json.dumps(out, indent=2, ensure_ascii=False))
-    sys.exit(0 if out.get("verdict") == "clean" else 1)
+    _emit(handoff_audit, out, lambda o: o.get("verdict") == "clean")
 
 
 def cmd_invariants(_):
@@ -5983,7 +4704,7 @@ def cmd_invariants(_):
 def cmd_manifest(_):
     """Round 107 (arXiv:2611.22299): what this harness currently decides."""
     from longrun.harness import manifest
-    print(json.dumps(manifest.build(), indent=2, ensure_ascii=False))
+    _emit(manifest, manifest.build())
 
 
 def cmd_checkpoints(args):
@@ -6236,7 +4957,63 @@ def cmd_paperclip_bot(args):
     sys.exit(paperclip_main())
 
 
-def main():
+def cmd_harness(args):
+    """List the per-paper groups from the PARSER, not from a hand-written block.
+
+    The old docstring usage block drifted: it named `skills prune FILE.json`
+    although `skills` keeps its path in `value`, it showed one action per group
+    while the parser registers up to eleven, and it kept a `--json` flag nobody
+    defines. This prints what is actually registered: every group whose command
+    is a round-derived checker, its action choices, where its JSON input comes
+    from, and the actions that read the live app instead. `harness GROUP` adds
+    the group's own `-h`.
+    """
+    ap = _build_parser()
+    sub = next(a for a in ap._actions
+               if isinstance(a, argparse._SubParsersAction))
+    if getattr(args, "group", None):
+        target = sub.choices.get(args.group)
+        if target is None:
+            print("unknown group %r" % args.group, file=sys.stderr)
+            sys.exit(2)
+        target.print_help()
+        return
+    # A group is a per-paper checker when its command is one of the round-derived
+    # wrappers, or when it is `skills` — a multi-purpose group whose stale/value/
+    # repair/prune/compile/optimize/conflict actions are all round 112-156
+    # checkers but whose docstring cannot start with "Round" (it also lists,
+    # reads and audits the library).
+    extra = {"skills"}
+    rows = []
+    for name, parser in sub.choices.items():
+        fn = parser.get_default("fn")
+        doc = (getattr(fn, "__doc__", "") or "").strip()
+        if name not in extra and not re.match(r"Round \d+", doc):
+            continue
+        actions = []
+        file_arg = None
+        for act in parser._actions:
+            if isinstance(act, argparse._SubParsersAction):
+                continue
+            if getattr(act, "choices", None):
+                actions = list(act.choices)
+            if act.dest in ("file", "value") and act.nargs in ("?", None) \
+                    and act.dest not in ("action",):
+                if act.dest == "file" or (file_arg is None and act.help
+                                          and "JSON" in str(act.help)):
+                    file_arg = act.dest
+        rows.append((name, actions, file_arg))
+    width = max(len(r[0]) for r in rows) if rows else 0
+    print("%d per-paper groups (JSON in FILE; `harness GROUP -h` for one group)"
+          % len(rows))
+    for name, actions, file_arg in sorted(rows):
+        where = ("file" if file_arg == "file"
+                 else ("value" if file_arg == "value" else "—"))
+        print("  %-*s  %-8s  %s" % (width, name, where,
+                                    ", ".join(actions) or "-"))
+
+
+def _build_parser():
     ap = argparse.ArgumentParser(prog="forge")
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("chat"); p.add_argument("message"); p.add_argument("--session"); \
@@ -7025,6 +5802,15 @@ def main():
         p.add_argument("value", nargs="?"); p.add_argument("--to"); p.add_argument("--blocked-by"); \
         p.add_argument("--agents"); p.add_argument("--coordinator"); p.add_argument("--mode"); \
         p.set_defaults(fn=cmd_jobs)
+    p = sub.add_parser("harness",
+                       help="list the per-paper groups, their actions and their input")
+    p.add_argument("group", nargs="?", help="one group: print its own -h")
+    p.set_defaults(fn=cmd_harness)
+    return ap
+
+
+def main():
+    ap = _build_parser()
     args = ap.parse_args()
     if args.cmd == "plan":
         args.goal = args.value if getattr(args, "action", None) in ("generate", "set") else None

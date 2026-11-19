@@ -322,6 +322,88 @@ This is Longrun's own `src/longrun/harness/` package. It is not the external
 Harness² upstream (arXiv:2610.14224): that is only a comparison arm in
 `benchmarks/jobbench_compare.py`, and none of its code runs here.
 
+### Wired vs report-only
+
+The package is a measurement and verification library, not a set of runtime
+guards. Two statuses coexist and must not be confused.
+
+**Wired into the running app** (they read live state or participate in a real
+path): `snapshot.py`, `whole.py`, `gateway.py` and `unixshim.py` for the frozen
+experiment runtime below; `counterfactual.py` and `modelcf.py` behind
+`api_v02.counterfactual_run` / `model_counterfactual_run` (`POST
+/api/sessions/<id>/counterfactual`, `/counterfactual/model`, and the `sessions`
+tool's `counterfactual` / `model_counterfactual` actions); `backtrace.py` and
+`verification_transport.py` behind `GET /api/sessions/<id>/backtrace` and
+`/transport`; `plan/stopping.py` behind `/stopping`; `tools/registry.py`
+`TOOL_EFFECTS`, the single owner of each declared tool effect that the
+catalogue publishes; `effect_types`, whose `escalation()` runs in
+`api_v02.tool_action` and `api_v02.gated_call` before dispatch; and
+`intent_audit`, whose objective-scoped DAG (`from_objective`) is built from the
+run goal plus the live catalog in `api_v02.tool_action`; and `effect_recovery`,
+whose `adjudicate()` runs in those same two doors (`_recovery_escalation`). An
+automatic approval is upgraded to `required` for a declared `delete`, for an
+exact repeat of a non-idempotent call that already executed in the run (the
+chat path feeds the session's recent `tool_cards` in as that trace), for a
+retry of a non-idempotent call on the SAME object after an ambiguous
+(timeout/kill) outcome — unless a declared read-back of that object proves
+nothing committed — and for a declared mutating tool the objective did not
+authorize. The recovery record is built from that trace: the capability flags
+come from `TOOL_EFFECTS` (`idempotent` and a derived `read_after_write`), the
+obligation is the proposed action on one object, and `retry` is the proposed
+next action. `approval_audit` also participates: the approval store itself
+produces its four observables — `create()` records the generated call,
+`decide()` the human decision, `record_outcome()` the dispatch and the native
+effect with the tool's own evidence as witness — and `forge approvals audit`
+with no FILE audits that live store through `approvals.audit_records()`
+(refusal safety and authorization completeness are then statements about the
+running gate, not about a hand-written file). `from_objective` only withholds a tool
+with a declared effect: untyped and read tools stay authorized, and a goal that
+names no namespace or effect verb authorizes everything, so generic prose never
+invents a restriction. These are approval gates, not denials, and
+`approvals.mode=full` remains the operator's explicit "never ask" opt-out.
+
+`memory_channel` and `memory_authority` participate on both sides of the memory
+path. At write time, `memory.store()` records `origin` and `trigger` on every
+record (an older caller gets `agent`/`policy`); the `memory.store` tool binds
+origin to the CALLER — `agent` — instead of honouring the model's `origin`,
+keeps the forged claim as `origin_claim`, classifies the write as the
+explicit-instruction channel (C1), and stores the bound act class. The tool gate
+marks a write `untrusted` when the proposing context carried untrusted content,
+and its content is tracked per run. At act time, `api_v02._memory_gate` runs in
+`tool_action` and `gated_call`: an automatic approval is upgraded to `required`
+when a declared mutating/external call carries content from that untrusted
+memory, because `memory_authority.gate()` denies it unless corroborated or
+covered by a fresh action-bound authorization. `from_memory()` is the adapter
+that turns a stored record into the authority item both checks consume.
+
+Both `intent_audit` and `write_integrity` read the same schema record:
+`tools/registry.py` `tool_record()` is the ONE bridge from a live spec to the
+flat `args`/`required` shape, and `harness/tool_policy.py` is the ONE
+verb/role classifier they share (the old independent lists had already drifted).
+`write_integrity.mediate()` therefore classifies real tools instead of denying
+them as unclassified, but it still has no live caller: a call needs a
+request-grounding set and a committed plan, neither of which the runtime
+produces yet.
+
+**Report-only** (measurement, not enforcement): the deterministic per-paper
+checkers added from round 110 onward — `trust_boundary`,
+`write_integrity`, `context_regime`,
+`skill_gate` and the rest of the `harness/` list above — and
+the `forge.py` groups that expose them. Each reads a JSON record from disk,
+calls one function and prints a verdict; no agent-loop, approval,
+tool-dispatch or HTTP path calls it. Memory provenance and the act-time memory
+gate are the exception already described above; what stays report-only is the
+schema-derived write policy (`write_integrity.mediate()` has no grounding set or
+committed plan) and the trust-boundary gate (no seam emits identity,
+authorization and capability evidence). A checker's verdict is evidence about
+the record it was handed, never a statement that the live system is protected.
+
+Promoting a checker to enforcement is deliberate work, not an implied
+consequence of the module existing. The cut points are the tool gate
+(`tools/registry.py` plus dispatch), the memory write path
+(`memory/stores.py`), and the approval path (`tools/approvals.py`). Until such
+a change lands, treat the report-only groups as a measurement surface.
+
 `GET /api/harness/cycle` reports the effective enable flag, whole-run readiness,
 canonical library counts and last cycle. `POST` defaults to a dry run: build a
 **session aggregate** from existing `memory.stores` tool cards and current

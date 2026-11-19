@@ -29,6 +29,7 @@ sys.path.insert(0, os.path.join(REPO, "src"))
 from longrun.harness import intent_audit as IA       # noqa: E402
 from longrun.harness import write_integrity as WI    # noqa: E402
 from longrun.harness import context_regime as CR     # noqa: E402
+from longrun.tools import registry as REG            # noqa: E402
 
 RESULTS = []
 
@@ -122,6 +123,53 @@ A7 = IA.audit({"tool": "send_email", "params": {"recipient": "bob@x.com"}},
               severity={"n2": 0.995})
 check("a simulated future violation blocks", A7["type"] == "FUTURE_VIOLATION")
 check("the severity threshold is 0.99", close(0.995 >= 0.99, 1.0))
+
+# ---- 1b. the objective-scoped producer the app now runs --------------------
+# `from_objective` is the trusted-objective producer: a declared mutating tool
+# is authorized only by a namespace/verb the objective names; reads and untyped
+# tools stay authorized; generic prose authorizes everything.
+TOOLS = ["fs.read", "fs.write", "shell.exec", "agent.delete", "web.search",
+         "sessions.send", "todo.update"]
+EFFECTS = {"fs.read": {"effect": "read", "reads": ["file"]},
+           "fs.write": {"effect": "write", "idempotent": False},
+           "shell.exec": {"effect": "external", "idempotent": False},
+           "agent.delete": {"effect": "delete", "idempotent": False},
+           "web.search": {"effect": "read", "reads": ["network"]},
+           "sessions.send": {"effect": "external", "idempotent": False}}
+
+
+def _authorized(objective):
+    g = IA.graph(IA.from_objective(objective, TOOLS, EFFECTS))
+    return g, g["nodes"]["objective"]["tools"]
+
+
+OG, _ok = _authorized("edit the report")
+check("the objective producer yields a valid graph", OG["verdict"] == "valid", OG)
+check("a write verb authorizes the declared write", "fs.write" in _ok, _ok)
+check("an unmentioned external tool is withheld", "shell.exec" not in _ok, _ok)
+check("the unmentioned delete tool is withheld", "agent.delete" not in _ok, _ok)
+check("a declared read stays authorized", "fs.read" in _ok, _ok)
+check("an untyped control tool stays authorized", "todo.update" in _ok, _ok)
+_, _ok = _authorized("delete the stale logs")
+check("the delete verb authorizes a destructive tool", "agent.delete" in _ok, _ok)
+_, _ok = _authorized("fix the failing test")
+check("generic prose authorizes every tool rather than inventing a restriction",
+      set(_ok) == set(TOOLS), _ok)
+_, _ok = _authorized("audit the fs tree")
+check("a named namespace authorizes all of its tools", "fs.write" in _ok, _ok)
+
+_og, _ = _authorized("edit the report")
+A8 = IA.audit({"tool": "shell.exec", "params": {"command": "ls"}, "kind": "write"},
+              _og, bypass=True)
+check("a mutating call outside the objective is blocked as unknown",
+      A8["verdict"] == "BLOCK" and A8["type"] == "UNKNOWN", A8)
+A9 = IA.audit({"tool": "fs.write", "params": {"path": "a"}, "kind": "write"},
+              _og, bypass=True)
+check("a mutating call the objective authorized passes", A9["verdict"] == "ALLOW", A9)
+A10 = IA.audit({"tool": "fs.write", "params": {"path": "a"}, "kind": "write"},
+               _og, state={"untrusted": True}, bypass=True)
+check("a boolean untrusted state flags a write", A10["type"] == "TAINT", A10)
+
 M = IA.metrics([
     {"attacked": True, "compromised": True, "flagged_first": False,
      "harmful": True, "flagged_harmful": False},
@@ -221,6 +269,38 @@ check("an out-of-enum control denies",
                            "args": [{"name": "mode", "type": "enum",
                                      "enum": ["fast"]}]},
                   "params": {"mode": "slow"}}, GQ)["reason"] == "control-value")
+
+# ---- 2b. ONE schema normalizer, ONE classifier -----------------------------
+# The registry bridge turns a live spec into the record both checkers read, and
+# the shared classifier owns the verb lists, so the two cannot disagree.
+REC_W = REG.tool_record("fs.write")
+check("the registry normalizer exposes the flat argument list",
+      REC_W["name"] == "fs.write"
+      and {"path", "content"} <= {a["name"] for a in REC_W["args"]}
+      and REC_W["required"] == ["path", "content"], REC_W)
+REC_R = REG.tool_record("fs.read")
+check("both checkers classify a live write the same way",
+      IA.policy(REC_W)["kind"] == "write" and WI.policy(REC_W)["kind"] == "write")
+check("both checkers classify a live read the same way",
+      IA.policy(REC_R)["kind"] == "local-read"
+      and WI.policy(REC_R)["kind"] == "read")
+check("the verb lists are shared objects, so they cannot drift",
+      IA.READ_VERBS is WI.READ_VERBS and IA.EFFECT_VERBS is WI.EFFECT_VERBS)
+check("the merged lists carry both modules' verbs",
+      "download" in IA.READ_VERBS and "invite" in WI.EFFECT_VERBS)
+check("a dotted live tool is classified, not left unclassified",
+      IA.policy(REC_R)["kind"] == "local-read"
+      and WI.policy(REC_R)["denied"] is False)
+REAL = WI.mediate({"tool": REC_W, "params": {"path": "a.py", "content": "x"}},
+                  WI.grounding('write "a.py"'))
+check("mediate classifies a live registry record instead of denying it",
+      REAL["decision"] == "execute", REAL)
+ASK = WI.mediate({"tool": REC_W,
+                  "params": {"path": "elsewhere.py", "content": "x"}},
+                 WI.grounding('write "a.py"'))
+check("an ungrounded authority argument still asks",
+      ASK["decision"] == "ask" and ASK["argument"] == "path", ASK)
+
 PLAN = WI.commit({"calls": [
     {"tool": {"name": "send_email", "description": "send an email"},
      "params": {"recipient": "bob@x.com"}},

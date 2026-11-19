@@ -13,11 +13,14 @@ executor, and delegation that carries no authority check (§3). It also separate
 an attempted operation from an actual unauthorized effect (E1/E3), and finds
 memory poisoning distinct from access control (E9/E10).
 
-  * `evaluate(call)` — allow or deny across the seven boundaries, naming
-    `identity-unverified`, `operation-not-authorized`, `capability-not-granted`,
-    `stale-validation` (the value was checked, then changed), `delegation-widens`
-    and `encoded-instruction`, plus the missing-evidence findings
-    `identity-unasserted`, `authorization-missing` and `capability-unasserted`.
+  * `evaluate(call)` — allow / deny / undetermined across the seven boundaries,
+    naming `identity-unverified`, `operation-not-authorized`,
+    `capability-not-granted`, `stale-validation` (the value was checked, then
+    changed), `delegation-widens` and `encoded-instruction`, plus the
+    missing-evidence findings `identity-unasserted`, `authorization-missing`
+    and `capability-unasserted`, and the emitter-gap findings
+    `identity-not-modeled`, `authorization-not-modeled` and
+    `capability-not-modeled`.
   * `classify(outcome)` — attempted / unauthorized effect / disclosure, so a
     proposal is not reported as an effect.
 
@@ -28,6 +31,17 @@ grant is denied, never allowed by omission (`identity-unasserted`,
 Validation, delegation and encoding are CLAIMS: they are checked when asserted,
 and their absence asserts nothing.
 
+The checker is report-only: it is fed a call record, it is not on the live
+dispatch path. A record that carries no `evidence_model` makes no declaration
+about what its emitter can produce, so a missing required item is a missing
+assertion and the decision is `deny` (the fail-closed default). A record that
+does carry `evidence_model` names the evidence categories its emitting call
+path is able to supply. A required category absent from that set is an
+emitter gap, not a missing assertion: it is reported as `*-not-modeled` and
+the decision is `undetermined`, so "the trace shape cannot express this yet"
+is never mistaken for an actual authorization failure. Any real violation
+still produces `deny`, which outranks `undetermined`.
+
 Pure: a call description in, a decision out.
 """
 from __future__ import annotations
@@ -35,10 +49,38 @@ from __future__ import annotations
 FORMAT = "longrun-trust-boundary/1"
 BOUNDARIES = ("user-model", "content-model", "model-tool", "agent-filesystem",
               "agent-execution", "agent-memory", "agent-agent")
+EVIDENCE_CATEGORIES = {
+    "identity": ("claimed_identity", "principal"),
+    "authorization": ("authorized_operations", "operations"),
+    "capability": ("required_capability",),
+}
 
 
 def _set(value):
     return {str(v) for v in (value or [])}
+
+
+def _modeled_evidence(call):
+    """The evidence categories the emitting call path declares it can supply.
+
+    ``None`` means the record makes no declaration, so absence is a missing
+    assertion and the decision fails closed exactly as before. A set means the
+    emitter has stated what it models: a required category left out of the set
+    is a gap in the emitter, not an unasserted call.
+    """
+    model = call.get("evidence_model")
+    if model is None:
+        return None
+    names = model if isinstance(model, (list, tuple, set, frozenset)) else [model]
+    names = {str(v) for v in names}
+    return {category for category, aliases in EVIDENCE_CATEGORIES.items()
+            if names & (set(aliases) | {category})}
+
+
+def _unmodeled(call, category):
+    """True when the emitter declares it cannot produce this evidence."""
+    modeled = _modeled_evidence(call)
+    return modeled is not None and category not in modeled
 
 
 def evaluate(call):
@@ -46,20 +88,28 @@ def evaluate(call):
 
     Identity, authorization and capability are required evidence: a call that
     does not carry them is denied, because an absent proof of authority is not
-    a proof of authority. Validation, delegation and encoding are claims —
-    checked when asserted, absent means nothing was claimed.
+    a proof of authority. When the record declares an ``evidence_model`` that
+    excludes one of them, its absence is an emitter gap and the decision is
+    ``undetermined`` instead of ``deny``. Validation, delegation and encoding
+    are claims — checked when asserted, absent means nothing was claimed.
     """
     call = call if isinstance(call, dict) else {}
     boundary = str(call.get("boundary") or "")
     findings = []
+    gaps = []
     if boundary not in BOUNDARIES:
         findings.append({"kind": "unknown-boundary", "boundary": boundary,
                          "why": "a seam outside the seven is not assessed here"})
     claimed = call.get("claimed_identity")
     verified = call.get("verified_identity")
     if not claimed:
-        findings.append({"kind": "identity-unasserted",
-                         "why": "no principal was asserted, so no principal was authenticated"})
+        if _unmodeled(call, "identity"):
+            gaps.append({"kind": "identity-not-modeled",
+                         "why": "the emitter declares no identity evidence, "
+                                "so this call's authority cannot be assessed"})
+        else:
+            findings.append({"kind": "identity-unasserted",
+                             "why": "no principal was asserted, so no principal was authenticated"})
     elif str(claimed) != str(verified):
         findings.append({"kind": "identity-unverified", "claimed": claimed,
                          "verified": verified,
@@ -67,16 +117,26 @@ def evaluate(call):
     operation = str(call.get("operation") or "")
     authorized = _set(call.get("authorized_operations"))
     if not authorized:
-        findings.append({"kind": "authorization-missing", "operation": operation,
-                         "why": "no authorised operation set was supplied, "
-                                "so the operation is not authorised"})
+        if _unmodeled(call, "authorization"):
+            gaps.append({"kind": "authorization-not-modeled", "operation": operation,
+                         "why": "the emitter declares no authorised operation set, "
+                                "so the operation is neither authorised nor refused"})
+        else:
+            findings.append({"kind": "authorization-missing", "operation": operation,
+                             "why": "no authorised operation set was supplied, "
+                                    "so the operation is not authorised"})
     elif operation not in authorized:
         findings.append({"kind": "operation-not-authorized", "operation": operation})
     required = call.get("required_capability")
     granted = _set(call.get("granted_capabilities"))
     if not required:
-        findings.append({"kind": "capability-unasserted",
-                         "why": "no required capability was named, so no grant was checked"})
+        if _unmodeled(call, "capability"):
+            gaps.append({"kind": "capability-not-modeled",
+                         "why": "the emitter declares no required capability, "
+                                "so no grant could be checked"})
+        else:
+            findings.append({"kind": "capability-unasserted",
+                             "why": "no required capability was named, so no grant was checked"})
     elif str(required) not in granted:
         findings.append({"kind": "capability-not-granted", "capability": required,
                          "granted": sorted(granted),
@@ -103,11 +163,20 @@ def evaluate(call):
             and not call.get("decode_policy"):
         findings.append({"kind": "encoded-instruction",
                          "why": "an encoded payload reaches a privileged component undecoded"})
+    if findings:
+        decision = "deny"
+        why = "the receiving component has to assess authority independently"
+    elif gaps:
+        decision = "undetermined"
+        why = ("the emitter does not model the missing evidence, so authority "
+               "was neither asserted nor assessed")
+    else:
+        decision = "allow"
+        why = "every check found the evidence it required"
     return {"format": FORMAT, "boundary": boundary,
-            "decision": "deny" if findings else "allow",
-            "findings": findings,
-            "why": ("every check found the evidence it required" if not findings
-                    else "the receiving component has to assess authority independently")}
+            "decision": decision,
+            "findings": findings + gaps,
+            "why": why}
 
 
 def classify(outcome):

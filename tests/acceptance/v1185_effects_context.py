@@ -154,9 +154,13 @@ prog = ET.verify_trace([{"tool": "fs.write"}, {"tool": "fs.read"}], CATALOG)
 check("a call consuming the previous write could have been one turn",
       any(f["kind"] == "program-opportunity" for f in prog["findings"]), prog)
 undecl = ET.verify_trace([{"tool": "ghost"}], CATALOG)
-check("an undeclared tool makes the trace unverifiable",
-      undecl["verdict"] == "unsafe"
+check("an undeclared tool leaves the trace undecidable, not unsafe",
+      undecl["verdict"] == "undecidable"
       and any(f["kind"] == "undeclared-tool" for f in undecl["findings"]), undecl)
+mixed = ET.verify_trace([{"tool": "ghost"}, {"tool": "fs.write"},
+                         {"tool": "fs.write"}], CATALOG)
+check("a proven violation outranks an undecidable call",
+      mixed["verdict"] == "unsafe", mixed)
 
 # ---- 3. context cost -------------------------------------------------------
 PRICES = {"uncached": 1.0, "cached": 0.1, "output": 4.0}

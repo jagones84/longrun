@@ -1664,6 +1664,38 @@ def effect_row(name):
     return out
 
 
+def tool_record(name):
+    """One tool flattened to the schema record the harness checkers read.
+
+    The catalogue row keeps the model-facing `inputSchema`; `harness.intent_audit`
+    and `harness.write_integrity` need a flat `args` list plus the top-level
+    required set. This is the ONE bridge from a registry spec to that shape, so a
+    checker never has to guess how `properties`/`anyOf` are spelled. `anyOf`
+    branches contribute argument NAMES only: their `required` entries are
+    alternatives, not a flat requirement, so they are not merged into `required`.
+    """
+    spec = tool_spec(name)
+    if not spec:
+        return None
+    schema = spec.get("schema") or {}
+    props = dict(schema.get("properties") or {})
+    for branch in schema.get("anyOf") or []:
+        if isinstance(branch, dict):
+            for key, value in (branch.get("properties") or {}).items():
+                props.setdefault(key, value)
+    args = []
+    for aname, prop in props.items():
+        p = prop if isinstance(prop, dict) else {}
+        enum = p.get("enum")
+        args.append({"name": aname, "type": p.get("type") or "",
+                     "enum": list(enum) if isinstance(enum, (list, tuple)) else [],
+                     "description": str(p.get("description") or "")})
+    return {"name": name,
+            "description": str(schema.get("description") or ""),
+            "args": args,
+            "required": [str(r) for r in (schema.get("required") or [])]}
+
+
 # Action spellings the HANDLERS accept but the schema enum does not advertise.
 # They used to fall through to the plain namespace, whose policy row is
 # `approval: auto`, so the gated row was never looked up: `memory{action:"delete"}`

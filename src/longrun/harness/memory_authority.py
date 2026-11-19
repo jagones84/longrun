@@ -26,8 +26,13 @@ FORMAT = "longrun-memory-authority/1"
 
 # Integrity order: untrusted ⊏ agent ⊏ trusted (paper §IV, `:196`).
 _ORDER = {"untrusted": 0, "agent": 1, "trusted": 2}
+# The app's own provenance vocabulary (`memory.store` origin) maps onto the
+# paper's three classes. Harness-authored knowledge is agent-derived, never
+# trusted by its label alone; only the operator path is `user`/trusted.
 _ORIGINS = {"untrusted": "untrusted", "external": "untrusted",
             "agent": "agent", "self": "agent",
+            "reflect": "agent", "mining": "agent", "harness": "agent",
+            "anchor": "agent", "meta": "agent", "auto": "agent",
             "trusted": "trusted", "tool": "trusted", "user": "trusted"}
 _ACT = {"untrusted": "none", "agent": "inform", "trusted": "act"}
 _ACT_RANK = {"none": 0, "inform": 1, "act": 2}
@@ -65,6 +70,20 @@ def item(record):
     out["verdict"] = ("non-actionable" if act == "none"
                       else "inform-only" if act == "inform" else "actionable")
     return out
+
+
+def from_memory(record):
+    """An authority item from a stored memory record's own provenance.
+
+    The store now carries `origin`, `trigger` and (when a caller forged an
+    elevated label) `origin_claim`. This is the adapter that makes a real
+    recalled record consumable by `derive()` and `gate()`; the claim is passed
+    as evidence and ignored by `item()`, exactly as the paper requires.
+    """
+    r = record if isinstance(record, dict) else {}
+    return item({"origin": r.get("origin"), "content": r.get("content"),
+                 "scope": r.get("scope") or "session",
+                 "claims_trust": bool(r.get("origin_claim"))})
 
 
 def derive(record):

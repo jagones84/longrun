@@ -96,11 +96,12 @@ GATED = SG.curve([
 ])
 check("the gated curve is monotone", GATED["verdict"] == "monotone")
 check("the gated pool is 5x smaller", 179 / 37 > 4.0)
+WARM = {"schema_ok": True, "replay_delta": 0.0, "semantic_ok": True}
 SEL = SG.select([
-    {"id": "A", "gain": 5.0},
-    {"id": "B", "gain": 4.0, "interactions": {"A": -7.0}},
-    {"id": "C", "gain": 3.0},
-    {"id": "D", "gain": -1.0},
+    dict(WARM, id="A", gain=5.0),
+    dict(WARM, id="B", gain=4.0, interactions={"A": -7.0}),
+    dict(WARM, id="C", gain=3.0),
+    dict(WARM, id="D", gain=-1.0),
 ])
 check("greedy takes the best singleton first", SEL["hot"][0] == "A")
 check("a candidate that conflicts with the set is rejected", "B" not in SEL["hot"])
@@ -108,6 +109,30 @@ check("a positive addition is taken", "C" in SEL["hot"])
 check("a negative candidate is rejected", "D" in SEL["rejected"])
 check("the joint gain is the sum of kept gains", close(SEL["gain"], 8.0))
 check("an empty candidate list is refused", SG.select([])["verdict"] == "no-candidates")
+# Gate 1 is a prerequisite for Gate 2: gain alone cannot admit a candidate.
+NOGATE = SG.select([{"id": "A", "gain": 100.0}])
+check("a candidate with no Gate-1 evidence is never promoted",
+      NOGATE["hot"] == [] and NOGATE["unadmitted"] == ["A"], NOGATE)
+BADGATE = SG.select([{"id": "A", "gain": 100.0, "schema_ok": True,
+                      "replay_delta": -1.0, "semantic_ok": True}])
+check("a candidate that failed a critic is never promoted on gain",
+      BADGATE["hot"] == [] and BADGATE["unadmitted"] == ["A"], BADGATE)
+check("a committee of no eligible candidates is not a promotion",
+      NOGATE["verdict"] == "no-promotion")
+# Interaction convention: interactions[id] is THIS candidate's extra gain when
+# `id` is already Hot, so the total must equal the greedy objective.
+DIR = SG.select([dict(WARM, id="X", gain=2.0),
+                 dict(WARM, id="Y", gain=2.0, interactions={"X": 1.0})])
+check("a directed interaction is counted once, in the direction that occurred",
+      DIR["hot"] == ["X", "Y"] and close(DIR["gain"], 5.0), DIR)
+REV = SG.select([dict(WARM, id="A", gain=2.0, interactions={"B": 9.0}),
+                 dict(WARM, id="B", gain=2.0)])
+check("an interaction toward a skill that joined later is not counted",
+      REV["hot"] == ["A", "B"] and close(REV["gain"], 4.0), REV)
+SYM = SG.select([dict(WARM, id="A", gain=2.0, interactions={"B": 1.0}),
+                 dict(WARM, id="B", gain=2.0, interactions={"A": 1.0})])
+check("a symmetric pair is not double-counted",
+      close(SYM["gain"], 5.0) and SYM["hot"] == ["A", "B"], SYM)
 IR = SG.irreversibility({"peak": 62.3, "after": 50.0, "source_recovery": 1.7,
                          "lineage_recovery": 6.7})
 check("the collapse is 12.3 points", close(IR["drop"], 12.3))

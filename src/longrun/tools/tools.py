@@ -2366,6 +2366,20 @@ def _memory_match_ids(mem, query, kind):
     return ids
 
 
+# Round 158: the gate tells the memory write path whether the proposing context
+# was untrusted. It travels out-of-band (thread-local) so no private key has to
+# be injected into `args`, where the model/feed would see it.
+_WRITE_CONTEXT = threading.local()
+
+
+def set_write_provenance(value):
+    _WRITE_CONTEXT.provenance = str(value) if value else None
+
+
+def write_provenance():
+    return getattr(_WRITE_CONTEXT, "provenance", None)
+
+
 def _memory(args, run_id):
     """Agent memory (JAG-73): store a durable note, or recall/search memories.
 
@@ -2425,11 +2439,33 @@ def _memory(args, run_id):
             return {"ok": False, "error": "content required for action=store",
                     "backend": "host", "sandboxed": False}
         kind = (args.get("kind") or "memory.store").strip()
-        # JAG-447: provenance — `source` is the free tag, `origin` the segregation
-        # key the WebUI/prompt group by (agent-stored vs. user-authored).
+        # Round 158: origin is BOUND at write time, not taken from the model.
+        # This tool is the explicit-instruction channel (C1); the caller is the
+        # agent, and the gate marks the write `untrusted` when the proposing
+        # context itself was untrusted. A model-supplied origin is provenance
+        # evidence, never a promotion: an agent cannot mint `user`/`trusted`
+        # memory (that path is the operator's POST /api/memory).
+        claimed = str(args.get("origin") or "").strip()
+        prov = str(write_provenance() or "").strip().lower()
+        origin = "untrusted" if prov == "untrusted" else "agent"
+        trigger = "instruction"
         meta = {"session": run_id or "",
                 "source": str(args.get("source") or "agent"),
-                "origin": str(args.get("origin") or "agent")}
+                "origin": origin, "trigger": trigger}
+        if claimed and claimed.lower() != origin:
+            meta["origin_claim"] = claimed[:60]
+        try:
+            from longrun.harness import memory_authority, memory_channel
+            ch = memory_channel.classify({"trigger": trigger,
+                                          "authority": "instruction"})
+            meta["channel"] = ch.get("channel") or ""
+            bound = memory_authority.item(
+                {"origin": origin, "content": content,
+                 "claims_trust": bool(claimed and claimed.lower() != origin)})
+            if bound.get("act"):
+                meta["act"] = bound["act"]
+        except Exception:  # noqa: BLE001 — a checker must not block a write
+            pass
         # JAG-204: optional expiry (ttl_secs) — a memory can be time-bounded.
         try:
             ttl = float(args.get("ttl_secs") or args.get("ttl") or 0)

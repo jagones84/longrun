@@ -165,6 +165,13 @@ def create(tool, args, run_id=None, decision="pending", reason="",
             "uses_left": uses_left,
             "expires_at": expires_at,
             "digest": _digest(tool, args),
+            # Round 112 (arXiv:2611.19237): the audit chain is decision ->
+            # generated call -> dispatch -> native effect. `create` owns the
+            # call and `decide` owns the decision; the last two stay `None`
+            # until `record_outcome` (the tool gate) or a refusal supplies
+            # them. `None` is "not observed", never "did not happen".
+            "dispatched": None,
+            "effect": None,
         }
         store["approvals"].append(rec)
         dropped = _trim(store, cap)
@@ -579,9 +586,71 @@ def decide(aid, decision, by="human"):
         rec["status"] = status
         rec["decided_by"] = by
         rec["decided_ts"] = round(time.time(), 3)
+        if status != "approved":
+            # A refusal is itself the observation that nothing was dispatched:
+            # every door returns before `execute` unless the status is approved.
+            rec["dispatched"] = False
+            rec["effect"] = {"applied": False, "witness": ""}
         _persist()
     _events.setdefault(aid, threading.Event()).set()
     return rec
+
+
+def record_outcome(aid, ok, witness="", dispatched=True):
+    """Attach the dispatch/effect half of the audit chain to a decided record.
+
+    Round 112 (arXiv:2611.19237): `create` records the generated call and
+    `decide` the human decision; this is the ONE producer of the other two
+    observables, called by the tool gate right after (or instead of) dispatch.
+    `witness` is the tool's own evidence payload — empty means the effect has no
+    native record, which the audit reports rather than hides. Never raises: an
+    audit bookkeeping write must not break a call.
+    """
+    try:
+        with _lock:
+            rec = get(aid)
+            if not rec:
+                return None
+            rec["dispatched"] = bool(dispatched)
+            rec["effect"] = {"applied": bool(ok),
+                             "witness": str(witness or "")[:500]}
+            _persist()
+        return rec
+    except Exception:  # noqa: BLE001 — bookkeeping must never break the gate
+        return None
+
+
+def audit_records(limit=500):
+    """The live gate's decided records in `harness.approval_audit`'s shape.
+
+    One adapter, in the store that owns the schema: status -> decision,
+    `summary` -> generated call, and the outcome the gate recorded. A record
+    whose `dispatched` is still `None` predates the producer (or the process
+    died before dispatch was observed), so it is left out instead of being
+    reported as a failure.
+    """
+    rows = []
+    for rec in list_all(None, limit):
+        if rec.get("dispatched") is None:
+            continue
+        status = str(rec.get("status") or "")
+        if status in ("approved", "auto_approved"):
+            decision = "approve"
+        elif status == "denied":
+            decision = "reject"
+        else:                     # expired: nobody decided
+            decision = "undecided"
+        effect = rec.get("effect") if isinstance(rec.get("effect"), dict) else {}
+        rows.append({
+            "id": rec.get("id"),
+            "decision": decision,
+            "intent": rec.get("reason") or "",
+            "generated_call": rec.get("summary") or "",
+            "dispatched": bool(rec.get("dispatched")),
+            "effect": {"applied": bool(effect.get("applied")),
+                       "witness": effect.get("witness") or ""},
+        })
+    return rows
 
 
 def delete(aid):

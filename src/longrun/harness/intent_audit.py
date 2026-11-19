@@ -21,6 +21,9 @@ call is checked against it with plain code (`intent_graph_audit_2611.11305.txt:6
     (TPR 0.762 vs 0.072–0.121) (`:516`, `:537`).
 
   * `graph(record)` — validate the DAG and return its frontier.
+  * `from_objective(objective, tools, effects)` — the trusted-objective producer:
+    a catalog tool is authorized only when the objective names its namespace or
+    a verb for its declared effect; reads and untyped tools stay authorized.
   * `scope(expr, params)` — the hardened expression language and its policy.
   * `policy(record)` — local read / external read / write / unclassified.
   * `audit(call, graph, state)` — Algorithm 1, with the read-only bypass.
@@ -33,19 +36,20 @@ Pure: graphs, calls, states and outcome rows in; verdicts and rates out.
 from __future__ import annotations
 
 import ast
+import re
+
+from longrun.harness import tool_policy
 
 FORMAT = "longrun-intent-audit/1"
 
 VERDICTS = ("ALLOW", "FLAG", "BLOCK")
 FAILURE_TYPES = ("NONE", "UNKNOWN", "OUT_OF_ORDER", "SCOPE_VIOLATION",
                  "FUTURE_VIOLATION", "TAINT")
-READ_VERBS = ("get", "search", "list", "read", "fetch", "find", "query",
-              "lookup", "view", "retrieve")
-EFFECT_VERBS = ("send", "create", "pay", "update", "delete", "remove", "add",
-                "set", "write", "post", "put", "upload", "move", "edit",
-                "modify", "rename", "publish", "submit", "purchase", "order",
-                "grant", "revoke", "transfer", "pay", "cancel", "schedule")
-DESTINATION_HINTS = ("url", "uri", "link", "webpage", "website", "endpoint")
+# ONE classifier: the shared module owns the verb lists and the argument roles.
+# Kept as module aliases so existing callers keep resolving the names.
+READ_VERBS = tool_policy.READ_VERBS
+EFFECT_VERBS = tool_policy.EFFECT_VERBS
+DESTINATION_HINTS = tool_policy.DESTINATION_HINTS
 LOOKUP_FUNCS = {"all": all, "any": any, "len": len, "str": str,
                 "isinstance": isinstance, "int": int, "float": float,
                 "bool": bool, "lower": str.lower}
@@ -113,6 +117,57 @@ def graph(record):
             "preds": preds, "verdict": "valid"}
 
 
+# The verbs an objective has to use before a declared mutating tool is in scope.
+# Only declared effects are listed: an untyped tool cannot be proven harmful, so
+# it stays authorized rather than being restricted from prose alone.
+_EFFECT_SCOPE_VERBS = {
+    "write": ("write", "edit", "create", "save", "modify", "update", "rename"),
+    "append": ("append", "add", "store", "save", "remember"),
+    "delete": ("delete", "remove", "rm", "purge", "forget", "drop"),
+    "external": ("send", "run", "exec", "execute", "shell", "command",
+                 "post", "upload", "fetch", "request", "dispatch", "deploy"),
+}
+_MUTATING_EFFECTS = tuple(_EFFECT_SCOPE_VERBS)
+
+
+def from_objective(objective, tools, effects=None):
+    """Build the intent node the trusted objective authorizes.
+
+    Deterministic approximation of the paper's extraction (`:60`, `:158`).
+    Untyped, `none` and `read` tools stay authorized: the catalog cannot prove
+    what an untyped tool does, and a read is not the harmful step. A DECLARED
+    mutating tool is authorized only when the objective names its namespace
+    (`fs`) or uses a verb for its effect (`write`/`edit`, `delete`/`remove`,
+    `send`/`run`). An objective that names neither a namespace nor any such
+    verb authorizes everything, so generic prose never invents a restriction.
+    """
+    names = sorted({str(t) for t in (tools or []) if t})
+    effects = effects or {}
+    words = set(re.findall(r"[a-z0-9]+", str(objective or "").lower()))
+    namespaces = {n.split(".", 1)[0] for n in names}
+    named = namespaces & words
+    any_verb = any(v in words for vs in _EFFECT_SCOPE_VERBS.values() for v in vs)
+    authorized = []
+    for name in names:
+        effect = (effects.get(name) or {}).get("effect")
+        if effect not in _MUTATING_EFFECTS:
+            authorized.append(name)
+            continue
+        if not named and not any_verb:
+            authorized.append(name)
+            continue
+        if name.split(".", 1)[0] in named:
+            authorized.append(name)
+            continue
+        if any(v in words for v in _EFFECT_SCOPE_VERBS.get(effect, ())):
+            authorized.append(name)
+    if not authorized:
+        authorized = names
+    return {"nodes": [{"id": "objective", "tools": authorized,
+                       "scope": None, "repeatable": True}],
+            "edges": [], "satisfied": []}
+
+
 def scope(expr, params, policy="fail-closed"):
     """Evaluate a scope predicate; a broken expression follows the policy."""
     text = str(expr or "").strip()
@@ -147,49 +202,17 @@ def scope(expr, params, policy="fail-closed"):
 
 def policy(record):
     """Classify a tool from its schema: local read, external read or write."""
-    r = record or {}
-    name = str(r.get("name") or "").lower()
-    docs = str(r.get("description") or "").lower()
-    words = (name.split("_") + docs.split())[:12]
-    first_name = name.split("_")[0] if name else ""
-    first_doc = docs.split()[0] if docs else ""
-    read = first_name in READ_VERBS and (not first_doc or first_doc in READ_VERBS)
-    effect = first_name in EFFECT_VERBS or first_doc in EFFECT_VERBS
-    destination = any(hint in name or hint in docs for hint in DESTINATION_HINTS)
-    if effect:
-        kind = "write"
-    elif read and destination:
-        kind = "external-read"
-    elif read:
-        kind = "local-read"
-    else:
-        kind = "unclassified"
-    roles = {}
-    for arg in r.get("args") or []:
-        a = arg or {}
-        aname = str(a.get("name") or "").lower()
-        if a.get("payload") is True or aname in ("body", "content", "subject",
-                                                  "title", "description",
-                                                  "message", "text", "note",
-                                                  "notes", "comment", "comments"):
-            role = "payload"
-        elif any(h in aname for h in ("url", "uri", "link", "webpage",
-                                      "website")):
-            role = "authority"
-        elif any(h in aname for h in ("date", "time", "day")):
-            role = "temporal"
-        elif str(a.get("type") or "") in ("boolean", "enum"):
-            role = "control"
-        else:
-            role = "authority"
-        roles[aname] = role
-    return {"format": FORMAT, "kind": kind, "roles": roles,
-            "bypass_allowed": kind == "local-read",
-            "verdict": "classified" if kind != "unclassified" else "unclassified"}
+    p = tool_policy.classify(record or {})
+    return {"format": FORMAT, "kind": p["kind"], "roles": p["roles"],
+            "bypass_allowed": p["kind"] == "local-read",
+            "verdict": p["verdict"]}
 
 
 def _tainted(call, state):
-    values = [str(v).lower() for v in (state or {}).get("tainted") or [] if v]
+    s = state if isinstance(state, dict) else {}
+    values = [str(v).lower() for v in s.get("tainted") or [] if v]
+    if s.get("untrusted") is True:
+        return True
     if not values:
         return False
     for value in (call or {}).get("params", {}).values():
@@ -215,7 +238,7 @@ def audit(call, intent, state=None, bypass=False, severity=None, threshold=0.99,
         kind = str(c.get("kind") or "")
         if not kind:
             p = policy({"name": tool, "description": c.get("description") or "",
-                        "args": c.get("schema") or []})
+                        "args": c.get("schema") or c.get("args") or []})
             kind = p["kind"]
         if kind == "local-read":
             return {"format": FORMAT, "verdict": "ALLOW", "type": "NONE",

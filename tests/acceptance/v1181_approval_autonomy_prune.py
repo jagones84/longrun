@@ -105,6 +105,41 @@ check("the two properties are reported independently",
 check("an undecided action is counted, never silently approved",
       mixed["counts"]["undecided"] == 1 and mixed["verdict"] == "violations", mixed["counts"])
 
+# ---- 1b. the app's own approval store emits that chain ----------------------
+# The runtime used to have no producer, so `approvals audit` could only judge a
+# hand-written file. `create` records the call, `decide` the decision,
+# `record_outcome` the dispatch and effect; `audit_records()` is the adapter.
+from longrun.tools import approvals as AP           # noqa: E402
+DEN = AP.create("fs.write", {"path": "deny.txt"}, run_id="r1")
+AP.decide(DEN["id"], "deny", by="test")
+AUTO = AP.create("fs.read", {"path": "read.txt"}, run_id="r1",
+                 decision="auto_approved")
+AP.record_outcome(AUTO["id"], True, witness="file contents")
+LOST = AP.create("fs.write", {"path": "lost.txt"}, run_id="r1")
+AP.decide(LOST["id"], "approve", by="test")
+AP.record_outcome(LOST["id"], False, witness="call does not match", dispatched=False)
+NOWIT = AP.create("fs.write", {"path": "quiet.txt"}, run_id="r1",
+                  decision="auto_approved")
+AP.record_outcome(NOWIT["id"], True, witness="")
+AP.create("fs.write", {"path": "unobserved.txt"}, run_id="r1",
+          decision="auto_approved")   # process died before dispatch was observed
+LIVE = AA.audit(AP.audit_records())
+_by_id = {r["id"]: r for r in LIVE["actions"]}
+check("a denied gate record is refusal-safe", _by_id[DEN["id"]]["verdict"] == "refused-clean",
+      _by_id[DEN["id"]])
+check("an executed auto approval is approved-complete",
+      _by_id[AUTO["id"]]["verdict"] == "approved-complete", _by_id[AUTO["id"]])
+check("approved but never dispatched diverges at the harness",
+      _by_id[LOST["id"]]["verdict"] == "approved-incomplete"
+      and _by_id[LOST["id"]]["diverged_at"] == "harness-dispatch", _by_id[LOST["id"]])
+check("an applied effect without a witness is reported",
+      _by_id[NOWIT["id"]]["verdict"] == "approved-complete-unwitnessed",
+      _by_id[NOWIT["id"]])
+check("a record whose dispatch was never observed is left out, not failed",
+      len(LIVE["actions"]) == 4, LIVE["actions"])
+check("the live audit reads the real decision and call",
+      LIVE["refusal_safety"] == 1.0 and LIVE["counts"]["approved"] == 3, LIVE["counts"])
+
 # ---- 2. autonomy pillars ----------------------------------------------------
 full = AU.evaluate("read repo", {"allowlist": True, "budget": True,
                                  "intent_required": True, "journal": True,

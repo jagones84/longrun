@@ -41,9 +41,39 @@ fv = read("src", "longrun", "core/forge.py")
 usage = fv.split('"""', 2)[1]
 cmds = sorted(set(re.findall(r'add_parser\("([a-z-]+)"\)', fv)))
 
-# ---- JAG-CLIa: every subcommand appears in the Usage block ------------------
-missing = [c for c in cmds if c not in usage and c != "paperclip-bot"]
-check("JAG-CLIa usage lists every subcommand", not missing, "missing=%s" % missing)
+# ---- JAG-CLIa: usage stays in sync with the parser --------------------------
+# The ~140 per-paper groups are no longer hand-listed in the docstring (that
+# block drifted: it showed one action per group and a `--json` flag nobody
+# defines). `forge harness` derives them from the parser instead, so the test
+# checks THAT listing rather than a hand-maintained string.
+import contextlib
+import io
+
+sys.path.insert(0, os.path.join(REPO, "src"))
+from longrun.core import forge as _forge                  # noqa: E402
+
+_ap = _forge._build_parser()
+_sub = next(a for a in _ap._actions
+            if hasattr(a, "choices") and a.choices)
+_round = sorted(
+    name for name, parser in _sub.choices.items()
+    if re.match(r"Round \d+",
+                (getattr(parser.get_default("fn"), "__doc__", "") or "").strip())
+    or name == "skills")
+_buf = io.StringIO()
+with contextlib.redirect_stdout(_buf):
+    _forge.cmd_harness(type("Args", (), {"group": None})())
+_listed = _buf.getvalue()
+check("JAG-CLIa harness lists every per-paper group",
+      not [g for g in _round if g not in _listed],
+      "missing=%s" % [g for g in _round if g not in _listed])
+check("JAG-CLIa harness reports actions, not one example",
+      "tiers" in _listed and "adjudicate" in _listed)
+check("JAG-CLIa usage points at the generated index", "harness [GROUP]" in usage)
+_core_missing = [c for c in cmds if c not in usage and c != "paperclip-bot"
+                 and c not in _round and c != "harness"]
+check("JAG-CLIa usage lists every core subcommand", not _core_missing,
+      "missing=%s" % _core_missing)
 for c in ("roles", "agents", "routines", "jobs", "index", "knowledge",
           "research", "embedding", "hooks"):
     check("JAG-CLIa usage mentions %s" % c, c in usage)

@@ -158,6 +158,30 @@ check("the fail-closed default does not need an explicit deny flag",
       all(TB.evaluate({**GOOD, key: None})["decision"] == "deny"
           for key in ("authorized_operations", "required_capability",
                       "claimed_identity")))
+
+# ---- 2c. an emitter that cannot produce the evidence says so ----------------
+# Declaring an evidence model separates "the emitter does not model this yet"
+# (undetermined) from "this call asserted nothing" (denied). A record with no
+# declaration still fails closed.
+UNMODELLED = {"boundary": "model-tool", "operation": "fs.read",
+              "evidence_model": []}
+check("an emitter that models no evidence is undetermined, not denied",
+      TB.evaluate(UNMODELLED)["decision"] == "undetermined",
+      TB.evaluate(UNMODELLED))
+check("an unmodelled gap is named apart from a missing assertion",
+      "identity-not-modeled" in kinds(TB.evaluate(UNMODELLED))
+      and "identity-unasserted" not in kinds(TB.evaluate(UNMODELLED)))
+check("a category the emitter models but the call omits is still denied",
+      TB.evaluate({**GOOD, "claimed_identity": None,
+                   "evidence_model": ["identity", "authorization",
+                                      "capability"]})["decision"] == "deny")
+check("a real violation outranks an unmodelled gap",
+      TB.evaluate({**UNMODELLED, "encoded": True})["decision"] == "deny",
+      TB.evaluate({**UNMODELLED, "encoded": True}))
+check("a fully modelled, fully asserted call is allowed",
+      TB.evaluate({**GOOD, "evidence_model": ["identity", "authorization",
+                                              "capability"]})["decision"] == "allow")
+
 check("an attempt alone is not an effect",
       TB.classify({"attempted": True})["outcome"] == "attempted-only")
 check("an effect without disclosure is its own row",

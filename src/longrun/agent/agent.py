@@ -1881,6 +1881,35 @@ def _card_tool_name(tool, args=None):
         return tool
 
 
+def _effect_trace(sess, limit=200):
+    """The session's recent tool cards in the run-trace shape effect typing reads.
+
+    Round 119: the chat path goes through `gated_call`, which has no in-memory
+    trace. The persisted cards carry tool + args + ok, which is all
+    `effect_types.escalation` needs to recognise an exact repeat. Round 116: they
+    also carry `exit_code` and the error text, which is what tells the recovery
+    adjudication an ambiguous outcome (a timeout/kill) from an explicit
+    rejection. Bounded to the last `limit` cards so a long session does not pay a
+    full-history scan per call.
+    """
+    rows = []
+    for card in ((sess or {}).get("tool_cards") or [])[-limit:]:
+        if not isinstance(card, dict) or not card.get("tool"):
+            continue
+        raw = card.get("args")
+        if isinstance(raw, str):
+            try:
+                raw = json.loads(raw)
+            except ValueError:
+                raw = {}
+        rows.append({"action": "tool", "tool": card.get("tool"),
+                     "args": raw if isinstance(raw, dict) else {},
+                     "tool_result": {"ok": card.get("ok"),
+                                     "exit_code": card.get("exit_code"),
+                                     "stderr": card.get("error") or ""}})
+    return rows
+
+
 def _card_args(tool, args):
     """The args a chat card shows: a copy WITHOUT the redundant `action` selector.
 
@@ -3028,6 +3057,7 @@ def _apply_chat_batch(sess, act, on_event, av02, node=None, after=None, hist=Non
                                   timeout=CHAT_APPROVAL_WAIT,
                                   workspace=_chat_workspace(sess),
                                   obs_max=CHAT_OBS_FULL, hist=hist,
+                                  trace=_effect_trace(sess),
                                   announce=False)   # the tool.result below is this call's one event
         except Exception as e:  # noqa: BLE001
             return {"tool": tool, "ok": False,
@@ -3272,6 +3302,7 @@ def maybe_reflect(sess, message, answer, used_tools, model=None, evidence=None):
         # A session with no workspace writes a global note, as before.
         memory.store("agent.note", lesson, session=sess["id"], source="reflect",
                      origin="reflect",  # JAG-447: provenance for segregation
+                     trigger="experience",  # round 158: experience-to-procedure
                      workspace=(sess or {}).get("workspace") or "")
         _REFLECT_LATEST[sess["id"]] = now
         return lesson
@@ -6649,6 +6680,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                                          timeout=CHAT_APPROVAL_WAIT,
                                          workspace=_chat_workspace(sess),
                                          obs_max=CHAT_OBS_FULL, hist=msgs,
+                                         trace=_effect_trace(sess),
                                          announce=False)   # `_tool_event` below is the one event
                 status = res.get("status")
                 obs = (res.get("observation") or res.get("error") or res.get("reason")

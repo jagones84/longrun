@@ -341,9 +341,31 @@ python3 forge.py tools call shell.exec '{"command":"ls -la"}'
 python3 forge.py tools policy shell.exec --approval always
 python3 forge.py approvals ls
 python3 forge.py approvals approve ap_123
+python3 forge.py approvals audit   # no FILE: refusal safety + completeness over the LIVE store
 python3 forge.py hooks            # configured git/event hooks
 python3 forge.py sandbox          # sandbox backend + isolation state (force probe)
 ```
+
+### Per-paper harness groups (`forge harness`)
+
+The ~140 groups added from rounds 110–159 are all one shape: a JSON record in,
+one deterministic verdict out. Their index is generated from the parser, not
+hand-maintained:
+
+```bash
+python3 forge.py harness              # every group, its actions, and where its JSON goes
+python3 forge.py harness recovery     # one group's own -h
+python3 forge.py recovery adjudicate /tmp/record.json
+```
+
+- **Input**: `FILE` is a positional (or `value` where the parser keeps the path
+  there — `skills value FILE.json`). `harness` prints which one a group uses.
+- **Exit codes**: `0` clean/complete, `1` the checker's negative verdict, `2`
+  bad or missing input, `3` not decidable (only the tri-state groups, e.g.
+  `effects verify`).
+- **FORMAT**: every result carries the module's own `format` string; the CLI
+  refuses (exit 2) a result whose format does not match, so a renamed key cannot
+  silently flip the exit code.
 
 ### Runs & observability
 

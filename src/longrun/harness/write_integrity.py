@@ -35,17 +35,16 @@ from __future__ import annotations
 
 import re
 
+from longrun.harness import tool_policy
+
 FORMAT = "longrun-write-integrity/1"
 
-READ_VERBS = ("get", "search", "list", "read", "fetch", "find", "query",
-              "lookup", "view", "retrieve", "download")
-EFFECT_VERBS = ("send", "create", "pay", "update", "delete", "remove", "add",
-                "set", "write", "post", "put", "upload", "move", "edit",
-                "modify", "rename", "publish", "submit", "purchase", "order",
-                "grant", "revoke", "transfer", "cancel", "schedule", "invite")
-PAYLOAD_NAMES = ("body", "content", "subject", "title", "description",
-                 "message", "text", "note", "notes", "comment", "comments")
-DESTINATION_HINTS = ("url", "uri", "link", "webpage", "website", "endpoint")
+# ONE classifier: the shared module owns the verb lists and the argument roles.
+# Kept as module aliases so existing callers keep resolving the names.
+READ_VERBS = tool_policy.READ_VERBS
+EFFECT_VERBS = tool_policy.EFFECT_VERBS
+PAYLOAD_NAMES = tool_policy.PAYLOAD_NAMES
+DESTINATION_HINTS = tool_policy.DESTINATION_HINTS
 EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 IBAN_RE = re.compile(r"\b[A-Z]{2}[0-9]{2}[A-Z0-9]{8,30}\b")
 URL_RE = re.compile(r"(?:https?://|www\.)[^\s\"<>]+")
@@ -70,43 +69,9 @@ def _num(value):
 
 def policy(record):
     """A tool's class and its argument roles, from the schema alone."""
-    r = record or {}
-    name = str(r.get("name") or "").lower()
-    docs = str(r.get("description") or "").lower()
-    first_name = name.split("_")[0] if name else ""
-    first_doc = docs.split()[0] if docs else ""
-    if first_name in EFFECT_VERBS or first_doc in EFFECT_VERBS:
-        kind = "write"
-    elif first_name in READ_VERBS and (not first_doc or first_doc in READ_VERBS):
-        kind = "read"
-    else:
-        kind = "unclassified"
-    roles = {}
-    enum = {}
-    for arg in r.get("args") or []:
-        a = arg or {}
-        aname = str(a.get("name") or "")
-        low = aname.lower()
-        atype = str(a.get("type") or "").lower()
-        if a.get("payload") is True or low in PAYLOAD_NAMES:
-            role = "payload"
-        elif any(h in low for h in DESTINATION_HINTS):
-            role = "authority"
-        elif any(h in low for h in ("date", "time", "day")) or \
-                "yyyy-mm-dd" in str(a.get("description") or "").lower():
-            role = "temporal"
-        elif atype in ("boolean", "enum") or a.get("enum"):
-            role = "control"
-        else:
-            role = "authority"
-        roles[aname] = role
-        if a.get("enum"):
-            enum[aname] = list(a.get("enum") or [])
-    if kind == "read":
-        for aname, role in roles.items():
-            if any(h in aname.lower() for h in DESTINATION_HINTS):
-                roles[aname] = "authority"
-    return {"format": FORMAT, "kind": kind, "roles": roles, "enum": enum,
+    p = tool_policy.classify(record or {})
+    kind = "read" if p["kind"] in ("local-read", "external-read") else p["kind"]
+    return {"format": FORMAT, "kind": kind, "roles": p["roles"], "enum": p["enum"],
             "denied": kind == "unclassified", "verdict": "classified"}
 
 

@@ -32,6 +32,7 @@ import copy
 import json
 import os
 import queue
+import re
 import sys
 import threading
 import time
@@ -271,6 +272,321 @@ def _trace_escalation(tool, args, st):
         return None, None
 
 
+def _canonical_trace(trace):
+    """The run trace with every tool name canonicalised, in one place.
+
+    Both effect escalations (`effect_types` and `effect_recovery`) judge prior
+    calls, and a legacy `namespace + {action}` row must be the same action as
+    the canonical name the gate is about to dispatch.
+    """
+    rows = []
+    for entry in trace or []:
+        if not isinstance(entry, dict) or entry.get("action") != "tool":
+            continue
+        row = dict(entry)
+        try:
+            row["tool"] = registry.canonical_name(row.get("tool"),
+                                                  row.get("args") or {})
+        except Exception:  # noqa: BLE001 — keep the recorded name
+            pass
+        rows.append(row)
+    return rows
+
+
+def _effect_escalation(tool, args, trace):
+    """Round 119: a declared effect may upgrade auto to required.
+
+    Uses the ONE declaration table (`registry.TOOL_EFFECTS`) and the run trace,
+    through `harness.effect_types.escalation`. Escalation only — an untyped tool
+    stays governed by the existing policy. Never raises.
+    """
+    try:
+        from longrun.harness import effect_types
+        name = registry.canonical_name(tool, args)
+        return effect_types.escalation(name, registry.effect_row(name),
+                                       args, _canonical_trace(trace))
+    except Exception:  # noqa: BLE001 — a probe must not break the gate
+        return None, None
+
+
+# Round 116 (arXiv:2610.41453): a tool failure says nothing about whether the
+# effect committed. These are the signals that make an outcome AMBIGUOUS rather
+# than an explicit rejection; a 124/137/143 exit is the GNU `timeout` / SIGKILL /
+# SIGTERM convention.
+_RECOVERY_TARGET_ARGS = ("path", "url", "agent", "session", "record", "key",
+                         "name", "id", "file")
+_AMBIGUOUS_MARKS = ("timed out", "timeout", "timed-out", "killed", "sigkill",
+                    "sigterm", "interrupted", "still running", "in flight",
+                    "connection reset")
+_AMBIGUOUS_CODES = (124, 137, 143)
+_MUTATING_EFFECTS = ("write", "append", "delete", "external")
+
+
+def _recovery_target(args):
+    """The object a call acts on — the identity that separates a retry from a
+    new action. Two writes to different paths are not the same obligation."""
+    for key in _RECOVERY_TARGET_ARGS:
+        value = (args or {}).get(key)
+        if isinstance(value, (str, int)) and str(value):
+            return str(value)
+    return ""
+
+
+def _recovery_evidence(entry):
+    """The evidence one prior attempt left: `timeout` only when ambiguous.
+
+    A returned call (`ok: true`) is a completed outcome, not an ambiguous one —
+    treating it as in-flight would make every ordinary re-write ask for
+    approval. An explicit failure with a definite exit is a rejection: nothing
+    committed, so a retry is safe.
+    """
+    meta = entry.get("tool_result")
+    if isinstance(meta, dict) and meta.get("ok") is True:
+        return None
+    if isinstance(meta, dict):
+        code = meta.get("exit_code")
+        text = ("%s %s" % (meta.get("stderr") or "",
+                           entry.get("observation") or "")).lower()
+        if code in _AMBIGUOUS_CODES or any(m in text for m in _AMBIGUOUS_MARKS):
+            return "timeout"
+        if meta.get("ok") is False:
+            return None
+        return "timeout"          # no verdict recorded (crash / no result)
+    return "timeout"
+
+
+def _recovery_readback(rows, start, tool, target):
+    """A declared read of the SAME object after an ambiguous attempt.
+
+    `readback-committed` proves the write landed; `readback-absent` proves it did
+    not, but only for a provider that can read after write (the capability is
+    derived from the declarations: some read tool reads a resource this tool
+    writes).
+    """
+    writes = set((registry.effect_row(tool) or {}).get("writes") or [])
+    if not writes:
+        return None
+    for entry in rows[start + 1:]:
+        other = entry.get("tool")
+        if not other or other == tool:
+            continue
+        row = registry.effect_row(other) or {}
+        if row.get("effect") != "read":
+            continue
+        if not writes & set(row.get("reads") or []):
+            continue
+        if _recovery_target(entry.get("args") or {}) != target:
+            continue
+        meta = entry.get("tool_result")
+        if isinstance(meta, dict) and meta.get("ok") is False:
+            return "readback-absent"
+        return "readback-committed"
+    return None
+
+
+def _recovery_capabilities(names):
+    """Declared provider capabilities, derived from `registry.TOOL_EFFECTS`.
+
+    `idempotent` is the declaration itself. `read_after_write` is true only when
+    the resources this tool writes are read by some declared read tool
+    (`fs.write` -> `fs.read`), so no second capability table is invented.
+    `atomic_abort` stays False: none of the declared providers guarantees that a
+    timed-out call left nothing behind.
+    """
+    rows = {}
+    readable = set()
+    for name in names or []:
+        row = registry.effect_row(name) or {}
+        if row:
+            rows[name] = row
+            if row.get("effect") == "read":
+                readable.update(row.get("reads") or [])
+    caps = {}
+    for name, row in rows.items():
+        caps[name] = {"idempotent": bool(row.get("idempotent")),
+                      "read_after_write": bool(set(row.get("writes") or [])
+                                               & readable),
+                      "atomic_abort": False}
+    return caps
+
+
+def _recovery_escalation(tool, args, trace):
+    """Round 116: an ambiguous failure may not be retried without approval.
+
+    `effect_types.escalation` skips a failed prior call as "not a duplicate",
+    which is right for an explicit rejection and wrong for a timeout: the effect
+    may have committed. This builds the record `effect_recovery.adjudicate`
+    expects from the live run trace — the obligation is this action on this
+    object, the evidence is the ambiguous attempts plus any declared read-back —
+    and upgrades an automatic approval when the adjudication proves a retry
+    would duplicate the effect. Escalation only; an idempotent or untyped tool
+    is left alone. Never raises.
+    """
+    try:
+        from longrun.harness import effect_recovery
+        name = registry.canonical_name(tool, args)
+        decl = registry.effect_row(name)
+        if not decl or decl.get("idempotent"):
+            return None, None
+        if decl.get("effect") not in _MUTATING_EFFECTS:
+            return None, None
+        target = _recovery_target(args)
+        rows = _canonical_trace(trace)
+        attempts = []
+        for i, entry in enumerate(rows):
+            if entry.get("tool") != name:
+                continue
+            if _recovery_target(entry.get("args") or {}) != target:
+                continue
+            if _recovery_evidence(entry) == "timeout":
+                attempts.append(i)
+        if not attempts:
+            return None, None
+        evidence = [{"obligation": "current", "kind": "timeout"}
+                    for _ in attempts]
+        readback = _recovery_readback(rows, attempts[-1], name, target)
+        if readback:
+            evidence.append({"obligation": "current", "kind": readback})
+        out = effect_recovery.adjudicate(
+            {"capabilities": _recovery_capabilities(registry.tool_names()),
+             "obligations": [{"id": "current", "action": name}],
+             "evidence": evidence,
+             "proposed": [{"obligation": "current", "action": "retry"}]})
+        for finding in out.get("findings") or []:
+            if finding.get("kind") == "retry-would-duplicate":
+                return ("recovery-retry-would-duplicate",
+                        "an earlier `%s` call on this object ended with an "
+                        "ambiguous outcome; %s" % (
+                            name, finding.get("why") or "it may have committed"))
+        return None, None
+    except Exception:  # noqa: BLE001 — a probe must not break the gate
+        return None, None
+
+
+def _intent_audit(tool, args, objective, hist):
+    """Round 155: objective-scoped least privilege, escalation only.
+
+    Builds the three producers the audit needs — the DAG from the trusted
+    objective plus the live catalog, the call record from the tool spec, and the
+    taint state from the M2a probe — then returns (rule, reason) to upgrade an
+    automatic approval. Never denies; a missing objective or catalog is a no-op.
+    """
+    try:
+        from longrun.harness import intent_audit
+        if not objective:
+            return None, None
+        names = registry.tool_names()
+        effects = {n: registry.effect_row(n) for n in names}
+        g = intent_audit.graph(intent_audit.from_objective(objective, names, effects))
+        if g.get("verdict") != "valid":
+            return None, None
+        name = registry.canonical_name(tool, args)
+        # ONE schema normalizer: the registry flattens `properties`/`anyOf` into
+        # the `args` list the harness checkers read.
+        record = dict(registry.tool_record(name) or {})
+        record["tool"] = name
+        record["params"] = args or {}
+        row = effects.get(name) or registry.effect_row(name) or {}
+        effect = row.get("effect")
+        if effect == "read":
+            kind = ("external-read" if "network" in (row.get("reads") or [])
+                    else "local-read")
+        elif effect in ("write", "append", "delete", "external"):
+            kind = "write"
+        else:
+            kind = None
+        if kind:
+            record["kind"] = kind
+        state = {"untrusted": registry.context_has_untrusted(hist)}
+        out = intent_audit.audit(record, g, state, bypass=True)
+        verdict, failure = out.get("verdict"), out.get("type")
+        if verdict in ("FLAG", "BLOCK") and failure not in (None, "NONE"):
+            return ("intent-%s" % str(failure).lower(),
+                    "the objective-scoped intent audit returned %s (%s)"
+                    % (verdict, failure))
+        return None, None
+    except Exception:  # noqa: BLE001 — a probe must not break the gate
+        return None, None
+
+
+# Round 158: memory written while the proposing context was untrusted is bound
+# to origin=untrusted at write time. A small per-run ledger lets the action gate
+# recognise a later call that carries that content, without re-reading the store.
+_UNTRUSTED_MEMORY = {}
+_UNTRUSTED_LOCK = threading.Lock()
+_STOP_TOKENS = {"please", "should", "would", "could", "their", "there",
+                "these", "those", "which", "about", "after", "before",
+                "because", "system", "memory", "content", "string"}
+
+
+def _strong_tokens(text):
+    """Distinctive tokens: long identifiers, or values with a number/@/dot.
+
+    Short common words ("deploy", "reboot") are excluded so a memory about a
+    topic does not taint an unrelated write that merely mentions it.
+    """
+    out = set()
+    for word in re.findall(r"[a-z0-9@._%+-]{4,}", str(text or "").lower()):
+        if word in _STOP_TOKENS:
+            continue
+        if len(word) >= 8 or any(ch.isdigit() for ch in word) \
+                or any(ch in word for ch in "@."):
+            out.add(word)
+    return out
+
+
+def _remember_untrusted(run_id, content):
+    if not run_id or not content:
+        return
+    with _UNTRUSTED_LOCK:
+        rows = _UNTRUSTED_MEMORY.setdefault(str(run_id), [])
+        rows.append({"content": str(content)[:2000]})
+        del rows[:-64]
+
+
+def _untrusted_memory(run_id):
+    if not run_id:
+        return []
+    with _UNTRUSTED_LOCK:
+        return list(_UNTRUSTED_MEMORY.get(str(run_id)) or [])
+
+
+def _memory_gate(tool, args, run_id):
+    """Round 158: an action carrying untrusted-memory content takes approval.
+
+    Uses the live provenance bound at write time. Returns (rule, reason) to
+    upgrade an automatic approval, or (None, None). Escalation only — a call
+    whose parameters share no distinctive token with an untrusted item is
+    untouched.
+    """
+    try:
+        from longrun.harness import memory_authority
+        rows = _untrusted_memory(run_id)
+        if not rows:
+            return None, None
+        name = registry.canonical_name(tool, args)
+        effect = (registry.effect_row(name) or {}).get("effect")
+        if effect not in ("write", "append", "delete", "external"):
+            return None, None
+        have = _strong_tokens(" ".join(str(v) for v in (args or {}).values()))
+        parents = [memory_authority.from_memory(
+                       {"origin": "untrusted", "content": row.get("content")})
+                   for row in rows
+                   if have & _strong_tokens(row.get("content"))]
+        if not parents:
+            return None, None
+        out = memory_authority.gate(
+            {"parents": parents,
+             "action": {"tool": name, "value": " ".join(sorted(have))[:200]}})
+        if out.get("verdict") == "deny":
+            return ("memory-untrusted-derived",
+                    "the call carries content written from an untrusted context "
+                    "and has no corroboration or action-bound authorization")
+        return None, None
+    except Exception:  # noqa: BLE001 — a probe must not break the gate
+        return None, None
+
+
 def _workspace_is_object_field(tool):
     """True when `workspace` names ANOTHER folder (an object field), not a cwd.
 
@@ -334,6 +650,47 @@ def tool_action(st, tool, args, on_event, workspace=None, hist=None):
                      reason=_tp_reason)
             _publish("agent.trace_policy", run=run_id, rule=_tp_rule,
                      reason=_tp_reason)
+    # Round 119/155: the declaration and objective audits only ESCALATE an
+    # automatic approval. `approvals.mode=full` is the operator's explicit
+    # "never ask", so it stays the one opt-out; a hard deny above is unaffected.
+    _may_ask = not registry._approvals_full()
+    if decision == "auto" and _may_ask:
+        _ef_rule, _ef_reason = _effect_escalation(
+            tool, args, getattr(st, "trace", None) or [])
+        if _ef_reason:
+            decision, reason = "required", _ef_reason
+            on_event("agent.effect_policy", run=run_id, rule=_ef_rule,
+                     reason=_ef_reason)
+            _publish("agent.effect_policy", run=run_id, rule=_ef_rule,
+                     reason=_ef_reason)
+    if decision == "auto" and _may_ask:
+        # Round 116: a retry after an AMBIGUOUS failure is adjudicated from the
+        # evidence in the run trace, not assumed safe because the call failed.
+        _rc_rule, _rc_reason = _recovery_escalation(
+            tool, args, getattr(st, "trace", None) or [])
+        if _rc_reason:
+            decision, reason = "required", _rc_reason
+            on_event("agent.effect_recovery", run=run_id, rule=_rc_rule,
+                     reason=_rc_reason)
+            _publish("agent.effect_recovery", run=run_id, rule=_rc_rule,
+                     reason=_rc_reason)
+    if decision == "auto" and _may_ask:
+        _ia_rule, _ia_reason = _intent_audit(
+            tool, args, getattr(st, "goal", None), hist)
+        if _ia_reason:
+            decision, reason = "required", _ia_reason
+            on_event("agent.intent_audit", run=run_id, rule=_ia_rule,
+                     reason=_ia_reason)
+            _publish("agent.intent_audit", run=run_id, rule=_ia_rule,
+                     reason=_ia_reason)
+    if decision == "auto" and _may_ask:
+        _ma_rule, _ma_reason = _memory_gate(tool, args, run_id)
+        if _ma_reason:
+            decision, reason = "required", _ma_reason
+            on_event("agent.memory_authority", run=run_id, rule=_ma_rule,
+                     reason=_ma_reason)
+            _publish("agent.memory_authority", run=run_id, rule=_ma_rule,
+                     reason=_ma_reason)
     if decision in ("disabled", "denied"):
         _publish("tool.blocked", run=run_id, tool=tool, args=args, reason=reason)
         on_event("tool.blocked", run=run_id, tool=tool, reason=reason)
@@ -364,6 +721,10 @@ def tool_action(st, tool, args, on_event, workspace=None, hist=None):
         _ok, _consume_msg = approvals.consume(rec["id"], tool, args,
                                                  run_id=run_id)
         if not _ok:
+            # Round 112: approved but never dispatched is a divergence the audit
+            # must see, not an unobserved record it has to drop.
+            approvals.record_outcome(rec["id"], False, witness=_consume_msg,
+                                     dispatched=False)
             return ("action not executed: approval %s cannot be consumed: %s"
                     % (rec["id"], _consume_msg),
                     {"tool": tool, "approval_id": rec["id"],
@@ -380,7 +741,25 @@ def tool_action(st, tool, args, on_event, workspace=None, hist=None):
 
     _publish("tool.call", run=run_id, tool=tool, args=args, approval=rec["id"])
     on_event("tool.call", run=run_id, tool=tool, args=args, approval=rec["id"])
-    res = toolmod.execute(tool, args, run_id=run_id)
+    # Round 158: bind memory provenance from the call that triggered the write.
+    # Untrusted proposing context => the stored item is untrusted, and a later
+    # action that carries its content is escalated by `_memory_gate`.
+    try:
+        _cname = registry.canonical_name(tool, args)
+    except Exception:  # noqa: BLE001 — a naming probe must not break a call
+        _cname = tool
+    _prov = None
+    if _cname == "memory.store":
+        _prov = ("untrusted" if registry.context_has_untrusted(hist) else "agent")
+        toolmod.set_write_provenance(_prov)
+    try:
+        res = toolmod.execute(tool, args, run_id=run_id)
+    finally:
+        if _cname == "memory.store":
+            toolmod.set_write_provenance(None)
+    if (_cname == "memory.store" and _prov == "untrusted"
+            and res.get("ok") is not False):
+        _remember_untrusted(run_id, (args or {}).get("content"))
     # F1: a successful mutating call makes the run's current step non-text-only,
     # so `verifier.closeout` can ask for environment proof when it is closed.
     # I-7: the file it touched is recorded too, for the job overlap report.
@@ -396,6 +775,11 @@ def tool_action(st, tool, args, on_event, workspace=None, hist=None):
     # it in `content`, so without this fallback the tool card / feed showed an
     # empty result for every file read.
     _payload = res.get("stdout") or res.get("content") or ""
+    # Round 112: the approval record now carries the whole audit chain —
+    # decision (`decide`), generated call (`create`), this dispatch, and the
+    # native effect with the tool's own evidence as its witness.
+    approvals.record_outcome(rec["id"], res.get("ok") is not False,
+                             witness=_payload)
     meta = {"tool": tool, "approval_id": rec["id"], "approval_status": rec["status"],
             "approval_by": rec.get("decided_by"), "sandbox_backend": res.get("backend"),
             "sandboxed": res.get("sandboxed"), "exit_code": res.get("exit_code"),
@@ -512,7 +896,8 @@ def batch_action(st, items, on_event, srv, workspace=None, hist=None):
 
 
 def gated_call(tool, args, run_id=None, wait=True, by="api", timeout=None, workspace=None,
-               obs_max=1600, hist=None, allow=None, scope_name=None, announce=True):
+               obs_max=1600, hist=None, allow=None, scope_name=None, announce=True,
+               trace=None):
     """One-shot gated tool call used by POST /api/tools/call and the chat loop.
 
     `announce` (round 88): whether this call publishes the `tool.result` event.
@@ -533,7 +918,10 @@ def gated_call(tool, args, run_id=None, wait=True, by="api", timeout=None, works
     `hist` (I-4) is the context the caller actually sent to the model: passing it
     makes the M2a taint rule live on THIS path too, so a recalled memory block
     suspends a standing auto-approval. `None` = one-shot call with no proposing
-    context, which is clean by definition.
+    context, which is clean by definition. `trace` (round 119) is that session's
+    prior tool calls in the run-trace shape (`{action, tool, args, tool_result}`),
+    so a declared destructive or repeated non-idempotent effect can escalate the
+    automatic approval. `None` = no history, the destructive rule still applies.
     """
     # JAG-535: the ONE place both the chat loop and POST /api/tools/call go
     # through. A legacy `namespace` + {action: sub} call is the same tool as the
@@ -574,6 +962,31 @@ def gated_call(tool, args, run_id=None, wait=True, by="api", timeout=None, works
                                          # session but classify never saw it, so a
                                          # locked session could still write.
                                          session=run_id)
+    if decision == "auto" and not registry._approvals_full():
+        # Round 119: a declared destructive effect (or an exact repeat of a
+        # non-idempotent call) may not be auto-approved; it takes the existing
+        # `required` path. `trace` is the caller's prior calls, when it has them.
+        # `approvals.mode=full` stays the operator's explicit "never ask".
+        _ef_rule, _ef_reason = _effect_escalation(tool, args, trace or [])
+        if _ef_reason:
+            decision, reason = "required", _ef_reason
+            _publish("agent.effect_policy", run=run_id, tool=tool,
+                     rule=_ef_rule, reason=_ef_reason)
+    if decision == "auto" and not registry._approvals_full():
+        # Round 116: the recovery adjudication sees the same trace.
+        _rc_rule, _rc_reason = _recovery_escalation(tool, args, trace or [])
+        if _rc_reason:
+            decision, reason = "required", _rc_reason
+            _publish("agent.effect_recovery", run=run_id, tool=tool,
+                     rule=_rc_rule, reason=_rc_reason)
+    if decision == "auto" and not registry._approvals_full():
+        # Round 158: an action carrying content written from an untrusted
+        # context takes the existing `required` path.
+        _ma_rule, _ma_reason = _memory_gate(tool, args, run_id)
+        if _ma_reason:
+            decision, reason = "required", _ma_reason
+            _publish("agent.memory_authority", run=run_id, tool=tool,
+                     rule=_ma_rule, reason=_ma_reason)
     if decision in ("disabled", "denied"):
         _publish("tool.blocked", run=run_id, tool=tool, args=args, reason=reason)
         # F-1 (2026-11-04): the reason travels in BOTH fields. A hard denial creates
@@ -596,6 +1009,10 @@ def gated_call(tool, args, run_id=None, wait=True, by="api", timeout=None, works
             _ok, _consume_msg = approvals.consume(rec["id"], tool, args,
                                                  run_id=run_id)
             if not _ok:
+                # Round 112: approved but never dispatched — a divergence the
+                # approval audit reports, not an unobserved record it drops.
+                approvals.record_outcome(rec["id"], False, witness=_consume_msg,
+                                         dispatched=False)
                 return {"status": "denied", "approval": rec,
                         "reason": "approval cannot be consumed: %s" % _consume_msg}
             rec = approvals.get(rec["id"]) or rec
@@ -608,14 +1025,33 @@ def gated_call(tool, args, run_id=None, wait=True, by="api", timeout=None, works
     else:
         _publish("approval.auto", id=rec["id"], run=run_id, tool=tool,
                  summary=rec["summary"], reason=reason)
-    res = toolmod.execute(tool, args, run_id=run_id)
+    # Round 158: bind memory provenance from the call that triggered the write.
+    try:
+        _cname = registry.canonical_name(tool, args)
+    except Exception:  # noqa: BLE001 — a naming probe must not break a call
+        _cname = tool
+    _prov = None
+    if _cname == "memory.store":
+        _prov = ("untrusted" if registry.context_has_untrusted(hist) else "agent")
+        toolmod.set_write_provenance(_prov)
+    try:
+        res = toolmod.execute(tool, args, run_id=run_id)
+    finally:
+        if _cname == "memory.store":
+            toolmod.set_write_provenance(None)
+    if (_cname == "memory.store" and _prov == "untrusted"
+            and res.get("ok") is not False):
+        _remember_untrusted(run_id, (args or {}).get("content"))
+    # JAG-347's fallback chain, extended (round 88): a failing tool puts its
+    # reason in `error` (a missing argument, a refused path) or builds the
+    # observation itself, and both used to be dropped — the stored row said
+    # `ok: false` and nothing else.
+    _payload = (res.get("stdout") or res.get("content") or res.get("observation")
+                or res.get("error") or "")
+    # Round 112: this door is the second producer of the approval audit chain.
+    approvals.record_outcome(rec["id"], res.get("ok") is not False,
+                             witness=_payload)
     if announce:
-        # JAG-347's fallback chain, extended (round 88): a failing tool puts its
-        # reason in `error` (a missing argument, a refused path) or builds the
-        # observation itself, and both used to be dropped here — the stored row
-        # said `ok: false` and nothing else.
-        _payload = (res.get("stdout") or res.get("content") or res.get("observation")
-                    or res.get("error") or "")
         _publish("tool.result", run=run_id, tool=tool, approval=rec["id"],
                  ok=res.get("ok"), exit_code=res.get("exit_code"),
                  backend=res.get("backend"), sandboxed=res.get("sandboxed"),

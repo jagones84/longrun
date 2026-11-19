@@ -164,6 +164,12 @@ def store(kind, content, **meta):
     """
     global _writes_since_index
     score = float(meta.pop("score", 1.0))
+    # Round 158: every record carries the provenance the authority/channel
+    # checkers read. A caller may pass a more specific label (`user` from the
+    # operator API, `reflect`/`mining` from the harness writers); the defaults
+    # keep an older caller from writing an untyped record.
+    origin = str(meta.pop("origin", None) or "agent")
+    trigger = str(meta.pop("trigger", None) or "policy")
     with _lock:
         rec = {
             "mid": uuid.uuid4().hex[:8],
@@ -171,6 +177,8 @@ def store(kind, content, **meta):
             "kind": kind,
             "content": str(content)[:8000],
             "score": score,
+            "origin": origin,
+            "trigger": trigger,
             **{k: str(v)[:500] for k, v in meta.items()},
         }
         md = _render_md(rec)
@@ -207,8 +215,9 @@ def _render_md(rec):
     # in. Rendered here or it would not survive the round-trip: `store()` keeps
     # free `**meta`, but only the keys in this tuple are written to the file.
     for key in ("mid", "ts", "kind", "session", "run_id", "source", "origin",
-                "workspace", "expires_ts", "target", "tags", "model", "tool",
-                "score", "superseded_by"):
+                "trigger", "channel", "act", "origin_claim", "workspace",
+                "expires_ts", "target", "tags", "model", "tool", "score",
+                "superseded_by"):
         val = rec.get(key)
         if val is not None:
             lines.append("%s: %s" % (key, val))
@@ -218,9 +227,10 @@ def _render_md(rec):
     # deterministically (sorted) instead of silently dropping them.
     for key in sorted(k for k in rec
                       if k not in ("content", "mid", "ts", "kind", "session",
-                                   "run_id", "source", "origin", "expires_ts",
-                                   "target", "tags", "model", "tool", "score",
-                                   "superseded_by")):
+                                   "run_id", "source", "origin", "trigger",
+                                   "channel", "act", "origin_claim",
+                                   "expires_ts", "target", "tags", "model",
+                                   "tool", "score", "superseded_by")):
         val = rec.get(key)
         if val is not None:
             lines.append("%s: %s" % (key, val))

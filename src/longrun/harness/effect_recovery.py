@@ -18,6 +18,14 @@ third-party exactly-once execution. A non-idempotent action whose evidence
 allows ``committed`` or ``in-flight`` is NEVER re-issued here: the recommendation
 is verify-then-decide or compensate.
 
+`adjudicate()` is the LIVE entry point. `api_v02._recovery_escalation` builds
+its record from the run trace and `registry.TOOL_EFFECTS` — the obligation is the
+proposed action on one object, the evidence is every ambiguous attempt on that
+object plus any declared read-back of it, and the proposed next action is
+`retry` — then upgrades an automatic approval when the adjudication proves the
+retry would duplicate the effect. Escalation only: an idempotent action, a
+cleanly rejected attempt, or an untyped tool is left to the existing policy.
+
 Pure: record in, adjudication out.
 """
 from __future__ import annotations

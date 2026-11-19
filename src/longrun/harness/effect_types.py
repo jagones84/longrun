@@ -12,7 +12,8 @@ model*. This module implements that verifier plus a coverage report, so an
 untyped catalog is a number instead of an assumption.
 
 Findings (deterministic, no model):
-  undeclared-tool     a call whose tool is absent from the catalog;
+  undeclared-tool     a call whose tool is absent from the catalog — it does
+                      not make the trace unsafe, it makes that call undecidable;
   repeat-write        a non-idempotent write to a resource already written, with
                       no read of that resource in between;
   delete-without-read a delete whose target was never read earlier in the trace;
@@ -20,17 +21,78 @@ Findings (deterministic, no model):
   program-opportunity consecutive calls where a later call's only input is the
                       previous call's write (a short program would do).
 
+The verdict is tri-state. `unsafe` is a proven violation, `safe` means every
+call was typed and none violated, and `undecidable` means an untyped call left
+part of the trace unjudged — an untyped catalog is a coverage number, not an
+accusation. A proven violation outranks an unjudged call.
+
+`escalation()` is the LIVE entry point: the tool gate calls it for one proposed
+call and it upgrades an automatic approval to a required one when the declared
+effect is destructive or the exact non-idempotent call already ran. It only
+escalates — it never denies and never touches an untyped tool, so a mostly
+untyped catalog cannot turn into a blanket approval prompt.
+
 Pure: catalog + trace in, findings out.
 """
 from __future__ import annotations
 
+import hashlib
+import json
+
 FORMAT = "longrun-effect-types/1"
 EFFECTS = ("none", "read", "append", "write", "delete", "external")
+_UNSAFE_KINDS = {"repeat-write", "delete-without-read", "malformed-call"}
+_UNDECIDABLE_KINDS = {"undeclared-tool"}
 
 
 def _decl(catalog, tool):
     row = (catalog or {}).get(tool)
     return row if isinstance(row, dict) else None
+
+
+def _digest(tool, args):
+    """A stable identity for one concrete call (tool + normalised args)."""
+    try:
+        body = json.dumps({"tool": tool, "args": args or {}}, sort_keys=True,
+                          ensure_ascii=False, default=str)
+    except (TypeError, ValueError):
+        body = repr((tool, args))
+    return hashlib.sha256(body.encode("utf-8")).hexdigest()
+
+
+def escalation(tool, decl, args, trace):
+    """(rule, reason) to upgrade an auto-approved live call, or (None, None).
+
+    Called by the tool gate BEFORE dispatch. Two declared effects cannot be
+    approved automatically: a destructive `delete`, and an exact repeat of a
+    non-idempotent call that already executed in this run (the effect would be
+    duplicated). An untyped tool is left to the existing policy — this function
+    never escalates one. Pure and total: a missing/invalid declaration is a no-op.
+    """
+    if not isinstance(decl, dict):
+        return None, None
+    effect = decl.get("effect")
+    if effect not in EFFECTS:
+        return None, None
+    if effect == "delete":
+        return ("effect-destructive",
+                "the declared effect is destructive (`delete`); a destructive "
+                "call may not be approved automatically")
+    if effect in ("write", "append", "external") and not decl.get("idempotent"):
+        want = _digest(tool, args)
+        for entry in trace or []:
+            if not isinstance(entry, dict) or entry.get("action") != "tool":
+                continue
+            if entry.get("tool") != tool:
+                continue
+            meta = entry.get("tool_result") or {}
+            if isinstance(meta, dict) and meta.get("ok") is False:
+                continue
+            if _digest(tool, entry.get("args") or {}) == want:
+                return ("effect-repeat",
+                        "this exact non-idempotent `%s` call already ran in this "
+                        "run; repeating it may duplicate the effect" % effect)
+    return None, None
 
 
 def coverage(catalog):
@@ -107,6 +169,10 @@ def verify_trace(trace, catalog):
             read_state[r] = True
         prev_writes = set(writes)
     kinds = {f["kind"] for f in findings}
-    return {"format": FORMAT, "findings": findings,
-            "verdict": "unsafe" if kinds & {"repeat-write", "delete-without-read",
-                                            "undeclared-tool", "malformed-call"} else "safe"}
+    if kinds & _UNSAFE_KINDS:
+        verdict = "unsafe"
+    elif kinds & _UNDECIDABLE_KINDS:
+        verdict = "undecidable"
+    else:
+        verdict = "safe"
+    return {"format": FORMAT, "findings": findings, "verdict": verdict}

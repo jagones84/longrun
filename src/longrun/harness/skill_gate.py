@@ -25,7 +25,8 @@ back, because a defective skill becomes reference material for later distillatio
   * `gain(record)` — the injection gain g(A, τ).
   * `taxonomy(record)` — individual vs combinatorial classification.
   * `curve(rows)` — the capability–contamination tipping point.
-  * `select(candidates)` — marginal-gain greedy promotion to Hot.
+  * `select(candidates)` — Gate 2: marginal-gain greedy promotion to Hot,
+    eligible only for candidates whose Gate 1 verdict is `promote-warm`.
   * `irreversibility(record)` — the recovery gap after post-hoc rollback.
   * `audit_record(record)` / `advise(profile)` — misreadings and mapping.
 
@@ -123,18 +124,39 @@ def curve(rows):
 
 
 def select(candidates):
-    """Marginal-gain greedy: add only what improves measured joint performance."""
+    """Gate 2: marginal-gain greedy over the candidates that cleared Gate 1.
+
+    Gate 1 is a prerequisite, not a separate report: a candidate is eligible only
+    when its own `critic()` record is `promote-warm` (schema + replay + semantic).
+    A candidate that fails a critic — or carries no evidence at all — is listed
+    in `unadmitted` and can never be promoted on gain alone (`:208`).
+
+    Interaction convention, stated once and applied to both the greedy objective
+    and the reported total: `candidate["interactions"][other_id]` is the EXTRA
+    gain THIS candidate contributes when `other_id` is already Hot. It is
+    directed: when a candidate joins the pool, what it adds is its own
+    interaction with each skill already there. Its interaction with a skill that
+    joins LATER is never used, because that union never happened. The reported
+    `gain` therefore equals the objective the greedy loop maximised — every
+    added candidate is counted once, with `hot[:i]` as its context, so no pair is
+    counted twice and no reverse edge influences the result.
+    """
     rows = []
-    for item in candidates or []:
+    unadmitted = []
+    for index, item in enumerate(candidates or []):
         c = item or {}
         base = _num(c.get("gain"))
         if base is None:
             continue
-        rows.append({"id": str(c.get("id") or len(rows)),
-                     "gain": base,
-                     "interactions": {str(k): _num(v) or 0.0
-                                      for k, v in (c.get("interactions") or {}).items()}})
-    if not rows:
+        row = {"id": str(c.get("id") or index),
+               "gain": base,
+               "interactions": {str(k): _num(v) or 0.0
+                                for k, v in (c.get("interactions") or {}).items()}}
+        if critic(c).get("verdict") != "promote-warm":
+            unadmitted.append(row["id"])
+            continue
+        rows.append(row)
+    if not rows and not unadmitted:
         return {"format": FORMAT, "verdict": "no-candidates"}
     hot = []
     rejected = []
@@ -154,13 +176,14 @@ def select(candidates):
             break
         hot.append(best)
         remaining = [c for c in remaining if c["id"] != best["id"]]
-    total = sum(c["gain"] for c in hot)
+    total = 0.0
     for i, cand in enumerate(hot):
-        for other in hot[i + 1:]:
-            total += cand["interactions"].get(other["id"], 0.0)
+        total += cand["gain"]
+        for earlier in hot[:i]:
+            total += cand["interactions"].get(earlier["id"], 0.0)
     return {"format": FORMAT, "hot": [c["id"] for c in hot],
-            "rejected": rejected, "steps": steps, "gain": total,
-            "verdict": "promoted"}
+            "rejected": rejected, "unadmitted": unadmitted, "steps": steps,
+            "gain": total, "verdict": "promoted" if hot else "no-promotion"}
 
 
 def irreversibility(record):
