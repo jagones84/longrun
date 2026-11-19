@@ -122,14 +122,20 @@ def adjudicate(record):
             rec_kind = "verify"
         if wants and wants not in ("retry", "verify", "compensate", "stop"):
             findings.append({"kind": "invalid-proposal", "value": wants})
+        rows.append({"id": o["id"], "action": o.get("action"), "states": states,
+                     "next": rec_kind})
+    # R160 bug hunt: dependencies are checked after EVERY obligation's state is
+    # known. The old single pass read `states_by_id` while it was still being
+    # filled, so a dependency listed after its dependent was reported unproven
+    # (`dep_states: null`) and the certificate came out `unsafe`/`incomplete`
+    # purely because of the order of the list.
+    for o in obligations:
         for dep in o.get("requires") or []:
             if dep not in known:
                 findings.append({"kind": "dangling-dependency", "obligation": o["id"], "dep": dep})
             elif states_by_id.get(dep) != ["committed"]:
                 findings.append({"kind": "blocked-by-unproven-dependency", "obligation": o["id"],
                                  "dep": dep, "dep_states": states_by_id.get(dep)})
-        rows.append({"id": o["id"], "action": o.get("action"), "states": states,
-                     "next": rec_kind})
 
     owned = {o.get("action") for o in obligations}
     for r in rec.get("residual") or []:
@@ -145,7 +151,12 @@ def _certificate(rows, findings):
     if any(f["kind"] in ("retry-would-duplicate", "blocked-by-unproven-dependency",
                          "unowned-residue") for f in findings):
         return "unsafe"
-    if rows and all(r["next"] == "satisfied" for r in rows):
+    if not rows:
+        # R160 bug hunt: nothing was adjudicated, so nothing is proven. The old
+        # vacuous `all(...)` returned `safe-stop` (exit 0) for an empty or
+        # id-less record.
+        return "incomplete"
+    if all(r["next"] == "satisfied" for r in rows):
         return "goal-satisfied"
     if all(r["next"] in ("satisfied", "retry-safe", "expired") for r in rows):
         return "safe-stop"

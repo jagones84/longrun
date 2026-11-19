@@ -339,24 +339,33 @@ tool's `counterfactual` / `model_counterfactual` actions); `backtrace.py` and
 catalogue publishes; `effect_types`, whose `escalation()` runs in
 `api_v02.tool_action` and `api_v02.gated_call` before dispatch; and
 `intent_audit`, whose objective-scoped DAG (`from_objective`) is built from the
-run goal plus the live catalog in `api_v02.tool_action`; and `effect_recovery`,
+run goal plus the live catalog in `api_v02.tool_action` (its read bypass is
+limited to LOCAL reads: an external MCP tool — `client__tool` — is an external
+read by construction, so a tainted `github__search_code` is audited, not
+bypassed); and `effect_recovery`,
 whose `adjudicate()` runs in those same two doors (`_recovery_escalation`). An
 automatic approval is upgraded to `required` for a declared `delete`, for an
 exact repeat of a non-idempotent call that already executed in the run (the
 chat path feeds the session's recent `tool_cards` in as that trace), for a
 retry of a non-idempotent call on the SAME object after an ambiguous
-(timeout/kill) outcome — unless a declared read-back of that object proves
-nothing committed — and for a declared mutating tool the objective did not
-authorize. The recovery record is built from that trace: the capability flags
+(timeout/kill) outcome — unless a declared read-back of that object reports the
+object ABSENT (a read that was refused or failed for another reason says nothing
+about the write, so the retry still asks) — and for a declared mutating tool the
+objective did not authorize. The recovery record is built from that trace: the capability flags
 come from `TOOL_EFFECTS` (`idempotent` and a derived `read_after_write`), the
 obligation is the proposed action on one object, and `retry` is the proposed
-next action. `approval_audit` also participates: the approval store itself
+next action. The exact-repeat identity is the caller's arguments: the gate's own
+workspace injection is not part of it, and a trace row is normalised the same way
+the proposed call is before either side is digested. `approval_audit` also participates: the approval store itself
 produces its four observables — `create()` records the generated call,
 `decide()` the human decision, `record_outcome()` the dispatch and the native
 effect with the tool's own evidence as witness — and `forge approvals audit`
 with no FILE audits that live store through `approvals.audit_records()`
 (refusal safety and authorization completeness are then statements about the
-running gate, not about a hand-written file). `from_objective` only withholds a tool
+running gate, not about a hand-written file). An ambiguous outcome (a
+timeout/kill, exit 124/137/143) is recorded as `applied: None` and counted as
+`approved_unknown`, not as lost approved work; only an observed non-effect is
+`applied: False`. `from_objective` only withholds a tool
 with a declared effect: untyped and read tools stay authorized, and a goal that
 names no namespace or effect verb authorizes everything, so generic prose never
 invents a restriction. These are approval gates, not denials, and
@@ -367,9 +376,13 @@ path. At write time, `memory.store()` records `origin` and `trigger` on every
 record (an older caller gets `agent`/`policy`); the `memory.store` tool binds
 origin to the CALLER — `agent` — instead of honouring the model's `origin`,
 keeps the forged claim as `origin_claim`, classifies the write as the
-explicit-instruction channel (C1), and stores the bound act class. The tool gate
-marks a write `untrusted` when the proposing context carried untrusted content,
-and its content is tracked per run. At act time, `api_v02._memory_gate` runs in
+explicit-instruction channel (C1), and stores the bound act class. The same
+binding covers `memory.set_core`, the CORE block injected into every prompt and
+a declared write in `TOOL_EFFECTS`; it used to be the one memory write with no
+provenance. The tool gate marks a write `untrusted` when the proposing context
+carried untrusted content, and its content is tracked per run (bounded per run
+and in the number of runs; a run's bucket is dropped when `RUNS` evicts it). At
+act time, `api_v02._memory_gate` runs in
 `tool_action` and `gated_call`: an automatic approval is upgraded to `required`
 when a declared mutating/external call carries content from that untrusted
 memory, because `memory_authority.gate()` denies it unless corroborated or

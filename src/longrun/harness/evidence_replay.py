@@ -113,8 +113,9 @@ def leak(rows):
         findings.append({"kind": "outcome-revealed", "rate": round(revealed / questions, 4),
                          "why": "a post-hoc search cannot stand in for a live capture"})
     undated = [r for r in data if _num(r.get("undated")) is not None]
-    if undated:
-        share = sum(_num(r["undated"]) for r in undated) / sum(_num(r["total"]) for r in undated)
+    undated_total = sum(_num(r["total"]) for r in undated)
+    if undated and undated_total:
+        share = sum(_num(r["undated"]) for r in undated) / undated_total
         if share > 0.5:
             findings.append({"kind": "undated-pages", "share": round(share, 4),
                              "why": "a date filter drops most of what it should keep"})

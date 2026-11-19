@@ -1644,6 +1644,11 @@ TOOL_EFFECTS = {
     "http.fetch": {"effect": "read", "idempotent": True, "reads": ["network"]},
     "memory.recall": {"effect": "read", "idempotent": True, "reads": ["memory"]},
     "memory.store": {"effect": "append", "idempotent": False, "writes": ["memory"]},
+    # R160 bug hunt: the CORE block is injected into every prompt, so it is the
+    # widest-blast-radius write the memory tool has; leaving it untyped is what
+    # let `memory.set_core` write with no provenance and no effect inspection.
+    "memory.set_core": {"effect": "write", "idempotent": False,
+                        "writes": ["memory"]},
     "sessions.send": {"effect": "external", "idempotent": False, "writes": ["session"]},
     "agent.delete": {"effect": "delete", "idempotent": False,
                      "reads": ["agent"], "writes": ["agent"]},
@@ -1760,6 +1765,22 @@ def canonical_name(name, args=None):
         # action executed with no approval card, on a spelling no schema
         # advertises but every handler accepts (2026-11-14).
         act = str(args.get("action") or "").strip().lower()
+        if not act:
+            # R160 bug hunt: `tools.normalize_args` lifts one extra
+            # `{"args": {...}}` layer AFTER this resolver used to run, so a call
+            # like `memory {"args":{"action":"forget"}}` was judged as the
+            # namespace default (`memory.recall`, auto) while the dispatcher ran
+            # `forget`. Read the same envelope here (outer keys win, exactly as
+            # `_unwrap_nested_args` merges) so the gate and the handler agree
+            # even when a caller canonicalises before normalising.
+            nested = args.get("args")
+            if isinstance(nested, str):
+                try:
+                    nested = json.loads(nested)
+                except (TypeError, ValueError):
+                    nested = None
+            if isinstance(nested, dict):
+                act = str(nested.get("action") or "").strip().lower()
     if act:
         act = _ACTION_ALIASES.get(n, {}).get(act, act)
         if (n, act) in _ACTION_ALIAS_TOOLS:

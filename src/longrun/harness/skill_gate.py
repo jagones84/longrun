@@ -143,6 +143,7 @@ def select(candidates):
     """
     rows = []
     unadmitted = []
+    seen = set()
     for index, item in enumerate(candidates or []):
         c = item or {}
         base = _num(c.get("gain"))
@@ -152,6 +153,13 @@ def select(candidates):
                "gain": base,
                "interactions": {str(k): _num(v) or 0.0
                                 for k, v in (c.get("interactions") or {}).items()}}
+        if row["id"] in seen:
+            # An id is a candidate's identity: a duplicate cannot be tracked as a
+            # second candidate, and the greedy removal used to drop BOTH copies
+            # silently (neither hot, rejected nor unadmitted).
+            unadmitted.append(row["id"])
+            continue
+        seen.add(row["id"])
         if critic(c).get("verdict") != "promote-warm":
             unadmitted.append(row["id"])
             continue

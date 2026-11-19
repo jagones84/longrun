@@ -131,7 +131,14 @@ def classify(record):
     if authority != expected:
         out["verdict"] = "authority-mismatch"
         out["expected_authority"] = expected
-        out["channel"] = "C1" if authority == "instruction" else ch["channel"]
+        if authority == "instruction":
+            out["channel"] = "C1"
+        elif trigger == "instruction":
+            # R160 bug hunt: the docstring says an instruction-triggered write
+            # whose content the MODEL decides is not C1, but the code kept C1.
+            out["channel"] = None
+        else:
+            out["channel"] = ch["channel"]
     else:
         out["verdict"] = "classified"
     return out

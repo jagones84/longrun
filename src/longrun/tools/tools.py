@@ -4996,6 +4996,25 @@ def _dispatch_execute_raw(tool, args, run_id=None):
                 "tool": tool, "exit_code": 127}
     args = dict(args or {})
     if injected_action is not None:
+        # R160 bug hunt: the subtool is decided by the TOOL NAME, so an explicit
+        # `action` in the arguments must agree with it. `setdefault` used to
+        # leave a conflicting value in place, and the namespace handler obeys the
+        # argument: `memory.recall {"action":"forget"}` ran a physical delete
+        # while the gate had judged a read. Fail closed instead of silently
+        # running a different subtool from the one policy approved. No explicit
+        # action is the normal shape — the name alone decides.
+        explicit = str(args.get("action") or "").strip().lower()
+        if explicit:
+            try:
+                from longrun.tools import registry as _registry
+                if _registry.canonical_name(ns, args) != tool:
+                    return {"ok": False, "exit_code": 64,
+                            "error": ("tool %r resolves to a different subtool than its "
+                                      "arguments ask for (%r); one call cannot be two "
+                                      "subtools" % (tool, args.get("action"))),
+                            "tool": tool, "args": args}
+            except Exception:  # noqa: BLE001 — a naming probe must not block a handler
+                pass
         args.setdefault("action", injected_action)
     try:
         res = fn(args, run_id)

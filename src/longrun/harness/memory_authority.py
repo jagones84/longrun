@@ -124,8 +124,14 @@ def corroborate(record):
         return {"format": FORMAT, "verdict": "invalid-threshold"}
     trusted = [v for v in vouchers
                if _origin(v.get("origin") or "trusted") == "trusted"]
-    domains = {str(v.get("domain") or v.get("principal") or i)
-               for i, v in enumerate(trusted)}
+    # R160 bug hunt: an unattributed voucher has no identity, so it cannot
+    # establish INDEPENDENCE. The old code fell back to the list index, which
+    # fabricated one distinct "domain" per anonymous voucher.
+    domains = set()
+    for v in trusted:
+        ident = v.get("domain") or v.get("principal")
+        if ident is not None and str(ident).strip():
+            domains.add(str(ident))
     out = {"format": FORMAT, "vouchers": len(vouchers), "k": k,
            "independent": len(domains), "domains": sorted(domains)}
     if len(domains) >= k:
@@ -150,13 +156,19 @@ def authorize(record):
     used = [str(u) for u in (record.get("used") or [])]
     if not token or not action:
         return {"format": FORMAT, "verdict": "insufficient-input"}
-    missing = [f for f in ("tool", "value") if token.get(f) is None]
+    # A single-use token needs an identity to spend; without a nonce the replay
+    # check cannot run at all, so an anonymous token is refused. Every field the
+    # token names must be PRESENT and equal in the action: the old code compared
+    # only fields present on both sides, so `{amount: 100}` authorized a call that
+    # omitted the amount, and `{}` authorized `{amount: 999}`.
+    missing = [f for f in ("tool", "value", "nonce")
+               if not str(token.get(f) or "").strip()]
     if missing:
         return {"format": FORMAT, "verdict": "incomplete-token",
                 "missing": missing}
     mismatched = [f for f in ("tool", "value", "amount")
-                  if f in token and f in action
-                  and str(token.get(f)) != str(action.get(f))]
+                  if f in token and (f not in action
+                                     or str(token.get(f)) != str(action.get(f)))]
     nonce = str(token.get("nonce") or "")
     if mismatched:
         return {"format": FORMAT, "verdict": "action-mismatch",

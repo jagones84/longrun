@@ -71,8 +71,9 @@ finally:
 
 with open(os.path.join(REPO, "src", "longrun", "core", "api_v02.py"), encoding="utf-8") as f:
     src = f.read()
-check("A6 both injection sites guard on it",
-      src.count("and not _workspace_is_object_field(tool)") >= 2)
+check("A6 both doors inject through the one guarded helper",
+      src.count("= _inject_workspace(tool, args, workspace)") == 2
+      and src.count("and not _workspace_is_object_field(tool)") >= 1)
 
 print("\n%d/%d PASS" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

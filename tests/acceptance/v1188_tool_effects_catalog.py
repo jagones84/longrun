@@ -164,9 +164,16 @@ check("an ambiguous call on another object does not block this one",
 check("an idempotent read ignores an ambiguous history",
       API._recovery_escalation("fs.read", {"path": "a"}, _tmo) == (None, None))
 _absent = _tmo + [{"action": "tool", "tool": "fs.read", "args": {"path": "a"},
-                   "tool_result": {"ok": False, "exit_code": 1}}]
-check("a failed read-back proves nothing committed, so the retry is safe",
+                   "tool_result": {"ok": False, "exit_code": 1,
+                                   "stderr": "no such file: a"}}]
+check("a read that reports the object ABSENT proves nothing committed, so the retry is safe",
       API._recovery_escalation("fs.write", {"path": "a"}, _absent) == (None, None))
+_refused = _tmo + [{"action": "tool", "tool": "fs.read", "args": {"path": "a"},
+                    "tool_result": {"ok": False, "exit_code": 1,
+                                    "error": "permission denied"}}]
+check("a REFUSED read proves nothing about the write, so the retry still asks",
+      API._recovery_escalation("fs.write", {"path": "a"},
+                               _refused)[0] == "recovery-retry-would-duplicate")
 _committed = _tmo + [{"action": "tool", "tool": "fs.read", "args": {"path": "a"},
                       "tool_result": {"ok": True}}]
 check("a successful read-back proves the write landed and blocks the retry",

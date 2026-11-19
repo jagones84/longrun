@@ -54,9 +54,14 @@ def classify(record):
     if parts & set(EFFECT_VERBS) or first_doc in EFFECT_VERBS:
         kind = "write"
     elif parts & set(READ_VERBS):
-        kind = ("external-read"
-                if any(h in name or h in docs for h in NETWORK_HINTS)
-                else "local-read")
+        # An external MCP tool is ALWAYS an external read: `client__tool` crosses
+        # a server boundary, so a `github__search_code` reads the network even
+        # though neither its name nor its description says "url"/"web". The
+        # harness's own audit calls extending the local-read bypass to an
+        # external read the `read_bypass_extended_to_external` misreading.
+        external = ("__" in name
+                    or any(h in name or h in docs for h in NETWORK_HINTS))
+        kind = "external-read" if external else "local-read"
     else:
         kind = "unclassified"
     roles = {}

@@ -250,11 +250,16 @@ G2 = MA.gate({"parents": [{"origin": "untrusted"}],
 check("corroboration opens the gate",
       G2["verdict"] == "allow" and G2["reason"] == "corroborated")
 G3 = MA.gate({"parents": [{"origin": "untrusted"}],
-              "action": {"tool": "pay", "value": "acct-1"},
+              "action": {"tool": "pay", "value": "acct-1", "amount": 100},
               "token": TOK, "used": []})
 check("a fresh action-bound authorization opens the gate",
       G3["verdict"] == "allow"
       and G3["reason"] == "fresh-action-bound-authorization")
+G3b = MA.gate({"parents": [{"origin": "untrusted"}],
+               "action": {"tool": "pay", "value": "acct-1"},
+               "token": TOK, "used": []})
+check("an action that omits an approved amount is not authorized",
+      G3b["verdict"] == "deny")
 G4 = MA.gate({"parents": [{"origin": "untrusted"}],
               "action": {"tool": "pay", "value": "acct-1"},
               "vouchers": [{"principal": "a", "domain": "corp"},

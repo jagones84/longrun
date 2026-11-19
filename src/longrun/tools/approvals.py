@@ -603,8 +603,11 @@ def record_outcome(aid, ok, witness="", dispatched=True):
     `decide` the human decision; this is the ONE producer of the other two
     observables, called by the tool gate right after (or instead of) dispatch.
     `witness` is the tool's own evidence payload — empty means the effect has no
-    native record, which the audit reports rather than hides. Never raises: an
-    audit bookkeeping write must not break a call.
+    native record, which the audit reports rather than hides. `ok=None` is an
+    AMBIGUOUS outcome (a timeout/kill may have completed); it is recorded as
+    `applied: None`, never coerced to False, because the audit must not report
+    unknown work as lost work. Never raises: an audit bookkeeping write must not
+    break a call.
     """
     try:
         with _lock:
@@ -612,7 +615,7 @@ def record_outcome(aid, ok, witness="", dispatched=True):
             if not rec:
                 return None
             rec["dispatched"] = bool(dispatched)
-            rec["effect"] = {"applied": bool(ok),
+            rec["effect"] = {"applied": None if ok is None else bool(ok),
                              "witness": str(witness or "")[:500]}
             _persist()
         return rec
@@ -641,13 +644,15 @@ def audit_records(limit=500):
         else:                     # expired: nobody decided
             decision = "undecided"
         effect = rec.get("effect") if isinstance(rec.get("effect"), dict) else {}
+        applied = effect.get("applied")
         rows.append({
             "id": rec.get("id"),
             "decision": decision,
             "intent": rec.get("reason") or "",
             "generated_call": rec.get("summary") or "",
             "dispatched": bool(rec.get("dispatched")),
-            "effect": {"applied": bool(effect.get("applied")),
+            # `None` = ambiguous outcome (timeout/kill), distinct from False.
+            "effect": {"applied": None if applied is None else bool(applied),
                        "witness": effect.get("witness") or ""},
         })
     return rows

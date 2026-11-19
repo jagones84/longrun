@@ -188,8 +188,10 @@ from longrun.core import api_v02                   # noqa: E402
 
 sites = (inspect.getsource(api_v02.tool_action)
          + inspect.getsource(api_v02.gated_call))
-check("G1 both workspace-injection sites skip object-field tools",
-      sites.count("_workspace_is_object_field(tool)") == 2)
+check("G1 both doors inject through the one guarded helper",
+      sites.count("_inject_workspace(tool, args, workspace)") == 2)
+check("G1 the helper skips object-field tools",
+      "_workspace_is_object_field(tool)" in inspect.getsource(api_v02._inject_workspace))
 OBJECT_TOOLS = ("agent.create", "agent.update", "session.create", "workspace.set")
 check("G2 object-field tools are recognised (target folder, not a cwd)",
       all(api_v02._workspace_is_object_field(t) for t in OBJECT_TOOLS),

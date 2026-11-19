@@ -42,7 +42,8 @@ def _row(rec):
     rec = rec or {}
     effect = rec.get("effect")
     if isinstance(effect, dict):
-        applied = bool(effect.get("applied"))
+        applied = effect.get("applied")
+        applied = None if applied is None else bool(applied)
         witness = bool(effect.get("witness"))
     else:
         applied = bool(effect)
@@ -66,6 +67,10 @@ def _first_divergence(row):
         return "model-call-selection"
     if not row["dispatched"]:
         return "harness-dispatch"
+    if row["applied"] is None:
+        # An ambiguous outcome (a timeout/kill) is not a failure: the chain was
+        # dispatched and whether the effect landed is unknown.
+        return "native-effect-unknown"
     if not row["applied"]:
         return "workflow-route-or-native-effect"
     return None
@@ -77,13 +82,16 @@ def audit(records):
     counts = {"actions": len(rows), "approved": 0, "rejected": 0, "undecided": 0,
               "refused_clean": 0, "rejected_but_executed": 0,
               "approved_complete": 0, "approved_incomplete": 0,
-              "effect_without_witness": 0}
+              "approved_unknown": 0, "effect_without_witness": 0}
     diverged = {}
     for row in rows:
         if row["decision"] == "approve":
             counts["approved"] += 1
             stage = _first_divergence(row)
-            if stage:
+            if stage == "native-effect-unknown":
+                counts["approved_unknown"] += 1
+                verdict = "approved-effect-unknown"
+            elif stage:
                 counts["approved_incomplete"] += 1
                 diverged[stage] = diverged.get(stage, 0) + 1
                 verdict = "approved-incomplete"

@@ -167,14 +167,24 @@ def snapshot(rows, now=None, max_age_ms=DEFAULT_MAX_AGE_MS, max_rows=None,
     kept = []
     dropped = []
     redacted = 0
+    now_ms = _num(now) if now is not None else None
     for row in rows or []:
         r = dict(row or {})
         unknown = [k for k in r if k not in ALLOWED_FIELDS]
         redacted += len(unknown)
         for k in unknown:
             r.pop(k, None)
-        if now is not None and r.get("observed_at") is not None:
-            age = _num(now) - _num(r.get("observed_at"))
+        if now_ms is not None and r.get("observed_at") is not None:
+            observed = _num(r.get("observed_at"))
+            if observed is None:
+                # R160 bug hunt: an ISO timestamp (the normal shape a recorded
+                # observation has) made `_num` return None and the subtraction
+                # raised TypeError. An unreadable timestamp cannot be freshness-
+                # checked; keep the row and do not claim an age.
+                r["age_ms"] = None
+                kept.append(r)
+                continue
+            age = now_ms - observed
             if age is not None and age > bound:
                 dropped.append({"route": r.get("route"), "reason": "stale",
                                 "age_ms": age})

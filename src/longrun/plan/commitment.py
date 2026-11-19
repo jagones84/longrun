@@ -93,7 +93,12 @@ def chains(actions, edges):
             x = parent[x]
         return x
 
-    for a, b in edges or []:
+    for edge in edges or []:
+        # R160 bug hunt: a malformed edge (not a 2-tuple) used to raise ValueError
+        # out of `decide()`. Ignore it, the way `_succ` already does.
+        if not (isinstance(edge, (list, tuple)) and len(edge) == 2):
+            continue
+        a, b = edge
         if a in parent and b in parent:
             ra, rb = find(a), find(b)
             if ra != rb:

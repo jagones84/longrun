@@ -208,7 +208,15 @@ def decomposition(text, expected_per_words=20, actual=None):
     if not words:
         findings.append({"kind": "no-text"})
         return {"format": FORMAT, "words": 0, "findings": findings}
-    density = 1.0 / float(expected_per_words)
+    try:
+        per_words = float(expected_per_words)
+    except (TypeError, ValueError):
+        per_words = 0.0
+    if per_words <= 0:
+        # R160 bug hunt: a zero/negative words-per-rule estimate divided by zero.
+        findings.append({"kind": "invalid-density", "value": expected_per_words})
+        return {"format": FORMAT, "words": words, "findings": findings}
+    density = 1.0 / per_words
     estimate = max(1, int(round(words * density)))
     got = actual if actual is not None else 0
     if actual is not None and got < estimate:

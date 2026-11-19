@@ -22,7 +22,6 @@ Pure: claims in, values out; nothing is fetched and nothing is invented.
 from __future__ import annotations
 
 FORMAT = "longrun-fact-ledger/1"
-MIN_TRUST = 2
 
 
 def _key(k):
@@ -42,7 +41,13 @@ class Ledger:
         key = _key(c.get("key") or c.get("subject"))
         value = str(c.get("value") or c.get("object") or "").strip()
         source = str(c.get("source") or "").strip()
-        trust = int(c.get("trust") or 0)
+        # R160 bug hunt: a non-numeric trust label used to abort the whole
+        # ingest with ValueError. An unreadable trust is the LEAST trusted value,
+        # which is the fail-closed direction for replacement.
+        try:
+            trust = int(c.get("trust") or 0)
+        except (TypeError, ValueError):
+            trust = 0
         ts = c.get("ts") or c.get("from")
         if not key or not value:
             return self._note("invalid", key, value, "key and value are required")
@@ -53,11 +58,18 @@ class Ledger:
         current = self._open(key)
         if current is not None and current["value"] == value:
             return self._note("unchanged", key, value, "same value (I4)")
-        if current is not None and trust < MIN_TRUST <= current["trust"]:
+        if current is not None and trust < current["trust"]:
+            # I5 is unconditional: it used to fire only for a new value below
+            # trust 2, so a trust-0 claim replaced a trust-1 incumbent.
             return self._note("held-untrusted", key, value,
                               "less trusted source cannot replace the current value (I5)")
         if current is not None:
             current["to"] = ts
+            # An untimestamped supersede cannot express a closed interval
+            # (`to=None` is "still open"), which used to leave BOTH values open
+            # and made verify() report a false I2 violation. The flag is the
+            # explicit "this entry is no longer current".
+            current["superseded"] = True
         self.entries.append({"key": key, "value": value, "source": source,
                              "trust": trust, "from": ts, "to": None,
                              "deleted": False, "event": event})
@@ -82,7 +94,8 @@ class Ledger:
     # -- reads ------------------------------------------------------------
     def _open(self, key):
         for e in reversed(self.entries):
-            if e["key"] == key and e["to"] is None and not e["deleted"]:
+            if (e["key"] == key and e["to"] is None and not e["deleted"]
+                    and not e.get("superseded")):
                 return e
         return None
 
@@ -103,6 +116,10 @@ class Ledger:
         for e in rows:
             start = e["from"]
             end = e["to"]
+            if e.get("superseded") and end is None:
+                # Superseded without a timestamp: the interval has no known end,
+                # so no "as of t" answer can be derived from it.
+                continue
             if start is not None and start <= as_of and (end is None or as_of < end):
                 if e["deleted"]:
                     return {"value": None, "status": "deleted-at-that-time"}
@@ -125,7 +142,8 @@ class Ledger:
         problems = []
         opens = {}
         for e in self.entries:
-            if e["to"] is None and not e["deleted"]:
+            if (e["to"] is None and not e["deleted"]
+                    and not e.get("superseded")):
                 opens[e["key"]] = opens.get(e["key"], 0) + 1
             if e["deleted"] and e["to"] is None:
                 problems.append({"invariant": "I1", "key": e["key"],
@@ -139,6 +157,20 @@ class Ledger:
                 if self.resolve(k).get("value") is not None:
                     problems.append({"invariant": "I1", "key": k,
                                      "why": "a deleted fact still resolves"})
+        # I5: the accepted lineage of a key must be non-decreasing in trust. A
+        # deletion starts a new lineage (a tombstone is not a superseded value).
+        for k in {e["key"] for e in self.entries}:
+            trusts = []
+            for e in self.entries:
+                if e["key"] != k:
+                    continue
+                if e["deleted"]:
+                    trusts = []
+                    continue
+                trusts.append(e["trust"])
+            if any(trusts[i] > trusts[i + 1] for i in range(len(trusts) - 1)):
+                problems.append({"invariant": "I5", "key": k,
+                                 "why": "a less trusted value replaced a more trusted one"})
         ids = [e["event"] for e in self.entries if e["event"]]
         if len(ids) != len(set(ids)):
             problems.append({"invariant": "I4", "why": "duplicate event ids"})
