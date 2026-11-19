@@ -411,6 +411,17 @@ committed plan) and the trust-boundary gate (no seam emits identity,
 authorization and capability evidence). A checker's verdict is evidence about
 the record it was handed, never a statement that the live system is protected.
 
+`effect_types.verify_trace` stays report-only (the live gate uses
+`escalation`), and its findings follow the declared contract: a read clears a
+prior write, an append is never a repeat, and a tool's own declared read does
+not satisfy `delete-without-read` (that rule measures the agent's trace, not the
+tool's precondition). `coverage` reports an invalid declaration as `invalid`
+instead of folding it into `untyped` and counting it twice. `tool_graph.rank`
+never recommends an edge whose only evidence is failure. `reversibility.classify`
+takes the highest matching rule, so reordering the rule list cannot lower a
+class, and `capture_override` accepts only R1 and reverts to the base class when
+the capture contract is incomplete.
+
 Promoting a checker to enforcement is deliberate work, not an implied
 consequence of the module existing. The cut points are the tool gate
 (`tools/registry.py` plus dispatch), the memory write path

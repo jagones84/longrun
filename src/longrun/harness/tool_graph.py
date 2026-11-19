@@ -138,9 +138,15 @@ def build(catalog, transitions=None, probes=None):
 
 
 def rank(graph, after=None, min_confidence=0.0):
-    """Candidate next tools by incoming confidence (optionally only after one tool)."""
+    """Candidate next tools by incoming confidence (optionally only after one tool).
+
+    An edge whose only observations are failures is never recommended back: the
+    failure penalty clamps confidence at 0.0, which the default
+    `min_confidence=0.0` would otherwise let through.
+    """
     rows = [e for e in (graph or {}).get("edges") or ()
             if e["confidence"] >= float(min_confidence)
+            and not (e["observations"] == 0 and e["failures"] > 0)
             and (after is None or e["from"] == str(after))]
     rows.sort(key=lambda e: (-e["confidence"], e["to"]))
     return [{"tool": e["to"], "confidence": round(e["confidence"], 3),

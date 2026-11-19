@@ -14,9 +14,13 @@ untyped catalog is a number instead of an assumption.
 Findings (deterministic, no model):
   undeclared-tool     a call whose tool is absent from the catalog — it does
                       not make the trace unsafe, it makes that call undecidable;
-  repeat-write        a non-idempotent write to a resource already written, with
-                      no read of that resource in between;
-  delete-without-read a delete whose target was never read earlier in the trace;
+  repeat-write        a non-idempotent OVERWRITE of a resource already written
+                      with no read of that resource in between (a read clears
+                      the prior write; an append never counts, because appending
+                      twice is the normal operation and cannot overwrite);
+  delete-without-read a delete whose target was never read earlier in the trace
+                      — the tool's own declared read is its precondition, not
+                      the agent's observation, so it does not satisfy the rule;
   redundant-read      a read of a resource nothing has written since the last read;
   program-opportunity consecutive calls where a later call's only input is the
                       previous call's write (a short program would do).
@@ -118,10 +122,21 @@ def coverage(catalog):
         histogram[effect] += 1
         if row.get("idempotent"):
             idempotent += 1
+    # An invalid declaration is neither typed nor merely absent: it is its own
+    # state, so it must not be double-counted as untyped. An invalid row also
+    # drives the verdict, which used to read `partial` for a 100%-typed catalog
+    # that carried one bad row.
+    untyped = total - typed - len(invalid)
+    if invalid:
+        verdict = "invalid"
+    elif total and typed == total:
+        verdict = "typed"
+    else:
+        verdict = "partial" if typed else "untyped"
     return {"format": FORMAT, "total": total, "typed": typed,
-            "untyped": total - typed, "idempotent": idempotent,
+            "untyped": untyped, "idempotent": idempotent,
             "effects": histogram, "invalid": invalid,
-            "verdict": "typed" if total and typed == total else ("partial" if typed else "untyped")}
+            "verdict": verdict}
 
 
 def verify_trace(trace, catalog):
@@ -144,7 +159,9 @@ def verify_trace(trace, catalog):
         effect = decl.get("effect")
         reads = [r for r in (decl.get("reads") or [])]
         writes = [r for r in (decl.get("writes") or [])]
-        if prev_writes & (set(reads) | set(writes)):
+        # A writer feeding a writer is a conflict the effect checker reports as
+        # repeat-write; this rule is only about a call CONSUMING the predecessor.
+        if prev_writes & set(reads):
             findings.append({"kind": "program-opportunity", "index": i,
                              "why": "it consumes the previous call's write; one turn would do"})
         if effect == "read":
@@ -152,21 +169,30 @@ def verify_trace(trace, catalog):
                 if read_state.get(r):
                     findings.append({"kind": "redundant-read", "index": i, "resource": r})
                 read_state[r] = True
+                written.discard(r)
             prev_writes = set()
             continue
         if effect == "delete":
             for r in writes:
                 if not read_state.get(r):
                     findings.append({"kind": "delete-without-read", "index": i, "resource": r})
-        if effect in ("write", "delete", "append", "external") and not decl.get("idempotent"):
+        # A declared read observes the resource, so an earlier write is no longer
+        # a blind repeat. `append` is excluded from the rule: appending twice is
+        # the normal operation and an append cannot overwrite.
+        for r in reads:
+            written.discard(r)
+        if effect in ("write", "delete", "external") and not decl.get("idempotent"):
             for r in writes:
                 if r in written:
                     findings.append({"kind": "repeat-write", "index": i, "resource": r})
                 written.add(r)
-        for r in writes:
-            read_state[r] = False
+        # State AFTER the call: a write invalidates freshness and a read
+        # establishes it. Writes go last so `fs.edit` (reads+writes one file)
+        # does not leave the edited resource looking freshly read.
         for r in reads:
             read_state[r] = True
+        for r in writes:
+            read_state[r] = False
         prev_writes = set(writes)
     kinds = {f["kind"] for f in findings}
     if kinds & _UNSAFE_KINDS:

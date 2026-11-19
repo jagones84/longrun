@@ -175,14 +175,19 @@ def classify(call, record=None):
         base = "R4"
     disclosure = bool(call.get("disclosure") or record.get("disclosure"))
     rules = [r for r in (record.get("rules") or []) if isinstance(r, dict)]
+    # The highest applicable effect decides the class. Every matching rule is a
+    # candidate: stopping at the first made the class depend on rule order, so a
+    # broad early rule silently lowered an irreversible action.
     chosen = None
+    cls = base
     for rule in rules:
-        if _rule_matches(rule, call):
-            chosen = rule
-            break
-    cls = str((chosen or {}).get("class") or base).upper()
-    if cls not in CLASSES:
-        cls = base
+        if not _rule_matches(rule, call):
+            continue
+        cand = str(rule.get("class") or base).upper()
+        if cand not in CLASSES:
+            cand = base
+        if chosen is None or CLASSES.index(cand) > CLASSES.index(cls):
+            chosen, cls = rule, cand
     if chosen is None and rules:
         findings.append({"kind": "unmatched-arguments-keep-base",
                          "base": base,
@@ -306,12 +311,22 @@ def capture_override(base_class, override):
         findings.append({"kind": "capture-contract-incomplete", "missing": missing,
                          "why": "a capture declares what to save, how to restore "
                                 "it and how long it is kept"})
+        # A half-specified capture cannot justify autonomy: revert like the
+        # unconfirmed and over-broad paths, instead of lowering the class anyway.
+        return {"format": FORMAT, "class": base, "capture_confirmed": True,
+                "findings": findings,
+                "why": "an incomplete capture contract reverts to the underlying "
+                       "class"}
     if not over.get("capture_ref"):
         findings.append({"kind": "capture-reference-missing",
                          "why": "each captured decision must carry its capture "
                                 "reference in the audit record"})
     cls = str(over.get("class") or "R1").upper()
-    if cls not in CLASSES:
+    # The contract is a capture-based R1 override. Any other requested class is
+    # refused, so a caller cannot declare a mutating call as R0 (no effect).
+    if cls != "R1":
+        findings.append({"kind": "capture-override-not-r1", "attempted": cls,
+                         "why": "a capture may only lower an action to R1"})
         cls = base
     return {"format": FORMAT, "class": cls, "capture_confirmed": True,
             "findings": findings,
