@@ -73,7 +73,8 @@ Usage:
                            | progjudge consensus FILE.json | reql triage FILE.json
                            | replan repair FILE.json | localcost expected FILE.json
                            | intentc validate FILE.json | warrant transport FILE.json
-                           | platformeval alpha FILE.json
+                           | platformeval alpha FILE.json | contaudit realism FILE.json
+                           | toolext admit FILE.json | fastpath calibrate FILE.json
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -3867,6 +3868,115 @@ def cmd_platformeval(args):
     sys.exit(0)
 
 
+def cmd_contaudit(args):
+    """Round 152 (arXiv:2611.24491): continue a real session, judge only what follows."""
+    from longrun.harness import continuation_audit
+    if not getattr(args, "file", None):
+        print("usage: contaudit cuts|realism|awareness|score|narrow|mandate|cover|"
+              "ablation|audit|advise FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "cuts":
+        out = continuation_audit.cuts(doc.get("rows") or [])
+    elif args.action == "realism":
+        out = continuation_audit.realism(doc.get("rows") or [])
+    elif args.action == "awareness":
+        out = continuation_audit.awareness(doc.get("rows") or [])
+    elif args.action == "score":
+        out = continuation_audit.score(doc.get("record") or doc)
+    elif args.action == "narrow":
+        out = continuation_audit.narrow(doc.get("record") or doc)
+    elif args.action == "mandate":
+        out = continuation_audit.mandate(doc.get("turns") or doc.get("rows") or [])
+    elif args.action == "cover":
+        out = continuation_audit.cover(doc.get("record") or doc)
+    elif args.action == "ablation":
+        out = continuation_audit.policy(doc.get("rows") or [])
+    elif args.action == "audit":
+        out = continuation_audit.audit(doc.get("record") or doc)
+    else:
+        out = continuation_audit.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_toolext(args):
+    """Round 152 (arXiv:2611.23810): a new tool reuses when-to-call, not which-tool."""
+    from longrun.harness import tool_extension
+    if not getattr(args, "file", None):
+        print("usage: toolext verified|retention|gain|drift|decisions|cost|admit|"
+              "audit|advise FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "verified":
+        out = tool_extension.verified(doc.get("rows") or [])
+    elif args.action == "retention":
+        out = tool_extension.retention(doc.get("record") or doc)
+    elif args.action == "gain":
+        out = tool_extension.gain(doc.get("record") or doc)
+    elif args.action == "drift":
+        out = tool_extension.drift(doc.get("record") or doc)
+    elif args.action == "decisions":
+        out = tool_extension.decisions()
+    elif args.action == "cost":
+        out = tool_extension.cost(doc.get("record") or doc)
+    elif args.action == "admit":
+        out = tool_extension.admit(doc.get("record") or doc)
+    elif args.action == "audit":
+        out = tool_extension.audit(doc.get("record") or doc)
+    else:
+        out = tool_extension.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_fastpath(args):
+    """Round 152 (arXiv:2611.23751): bounded choices in one pass, the rest to System-2."""
+    from longrun.harness import fast_path
+    if not getattr(args, "file", None):
+        print("usage: fastpath classify|program|calibrate|gate|cost|smoothed|aurc|"
+              "collapsed|audit|advise FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "classify":
+        out = fast_path.classify(doc.get("record") or doc)
+    elif args.action == "program":
+        out = fast_path.program(doc.get("rows") or [])
+    elif args.action == "calibrate":
+        out = fast_path.calibrate(doc.get("record") or doc)
+    elif args.action == "gate":
+        out = fast_path.gate(doc.get("record") or doc)
+    elif args.action == "cost":
+        out = fast_path.cost(doc.get("record") or doc)
+    elif args.action == "smoothed":
+        out = fast_path.smoothed(doc.get("probs") or [], doc.get("epsilon"))
+    elif args.action == "aurc":
+        out = fast_path.aurc(doc.get("rows") or [])
+    elif args.action == "collapsed":
+        out = fast_path.collapsed(doc.get("record") or doc)
+    elif args.action == "audit":
+        out = fast_path.audit(doc.get("record") or doc)
+    else:
+        out = fast_path.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
 def cmd_instructions(args):
     """Round 114 (arXiv:2611.13709): explicit context-file directives vs the cards."""
     from longrun.harness import instruction_audit
@@ -5884,6 +5994,24 @@ def main():
                                           "audit", "advise"]); \
         p.add_argument("file", nargs="?", help="JSON: {matrix}, {platforms...}, {record}, or {profile}"); \
         p.set_defaults(fn=cmd_platformeval)
+    p = sub.add_parser("contaudit"); \
+        p.add_argument("action", choices=["cuts", "realism", "awareness", "score",
+                                          "narrow", "mandate", "cover", "ablation",
+                                          "audit", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {rows}, {turns}, {record}, or {profile}"); \
+        p.set_defaults(fn=cmd_contaudit)
+    p = sub.add_parser("toolext"); \
+        p.add_argument("action", choices=["verified", "retention", "gain", "drift",
+                                          "decisions", "cost", "admit", "audit",
+                                          "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {rows}, {record}, or {profile}"); \
+        p.set_defaults(fn=cmd_toolext)
+    p = sub.add_parser("fastpath"); \
+        p.add_argument("action", choices=["classify", "program", "calibrate", "gate",
+                                          "cost", "smoothed", "aurc", "collapsed",
+                                          "audit", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {record}, {rows}, {probs}, or {profile}"); \
+        p.set_defaults(fn=cmd_fastpath)
     p = sub.add_parser("instructions"); p.add_argument("action", choices=["audit"]); \
         p.add_argument("file", nargs="?", help="JSON: {text, cards}"); \
         p.set_defaults(fn=cmd_instructions)
