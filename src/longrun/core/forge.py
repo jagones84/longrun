@@ -85,6 +85,8 @@ Usage:
                            | skilleve diagnose FILE.json
                            | takeover delivery FILE.json | anytime grid FILE.json
                            | longhorizon gap FILE.json
+                           | memchannel exposure FILE.json | memauthority gate FILE.json
+                           | exfild frontier FILE.json
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -4530,6 +4532,114 @@ def cmd_longhorizon(args):
     sys.exit(0)
 
 
+def cmd_memchannel(args):
+    """Round 158 (arXiv:2606.04329): a memory write is a trigger plus an authority."""
+    from longrun.harness import memory_channel
+    if not getattr(args, "file", None):
+        print("usage: memchannel channels|vulns|classify|taxonomy|exposure|"
+              "coverage|cost|audit|advise FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "channels":
+        out = memory_channel.channels()
+    elif args.action == "vulns":
+        out = memory_channel.vulnerabilities()
+    elif args.action == "classify":
+        out = memory_channel.classify(doc.get("record") or doc)
+    elif args.action == "taxonomy":
+        out = memory_channel.taxonomy(doc.get("record") or doc)
+    elif args.action == "exposure":
+        out = memory_channel.exposure(doc.get("record") or doc)
+    elif args.action == "coverage":
+        out = memory_channel.coverage(doc.get("record") or doc)
+    elif args.action == "cost":
+        out = memory_channel.cost(doc.get("record") or doc)
+    elif args.action == "audit":
+        out = memory_channel.audit_record(doc.get("record") or doc)
+    else:
+        out = memory_channel.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_memauthority(args):
+    """Round 158 (arXiv:2606.24322): authority is bound to origin, at write time."""
+    from longrun.harness import memory_authority
+    if not getattr(args, "file", None):
+        print("usage: memauthority item|derive|corroborate|authorize|gate|"
+              "weakening|separation|model_check|audit|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "item":
+        out = memory_authority.item(doc.get("record") or doc)
+    elif args.action == "derive":
+        out = memory_authority.derive(doc.get("record") or doc)
+    elif args.action == "corroborate":
+        out = memory_authority.corroborate(doc.get("record") or doc)
+    elif args.action == "authorize":
+        out = memory_authority.authorize(doc.get("record") or doc)
+    elif args.action == "gate":
+        out = memory_authority.gate(doc.get("record") or doc)
+    elif args.action == "weakening":
+        out = memory_authority.weakening(doc.get("record") or doc)
+    elif args.action == "separation":
+        out = memory_authority.separation(doc.get("record") or doc)
+    elif args.action == "model_check":
+        out = memory_authority.model_check(doc.get("record") or doc)
+    elif args.action == "audit":
+        out = memory_authority.audit_record(doc.get("record") or doc)
+    else:
+        out = memory_authority.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_exfild(args):
+    """Round 158 (arXiv:2605.01970): every defense breaks one of three steps."""
+    from longrun.harness import exfil_defense
+    if not getattr(args, "file", None):
+        print("usage: exfild points|defenses|applicability|chain|utility|"
+              "frontier|persistence|audit|advise FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "points":
+        out = exfil_defense.points()
+    elif args.action == "defenses":
+        out = exfil_defense.defenses(doc.get("record") or doc)
+    elif args.action == "applicability":
+        out = exfil_defense.applicability(doc.get("record") or doc)
+    elif args.action == "chain":
+        out = exfil_defense.chain(doc.get("record") or doc)
+    elif args.action == "utility":
+        out = exfil_defense.utility(doc.get("record") or doc)
+    elif args.action == "frontier":
+        out = exfil_defense.frontier(doc.get("record") or doc)
+    elif args.action == "persistence":
+        out = exfil_defense.persistence(doc.get("record") or doc)
+    elif args.action == "audit":
+        out = exfil_defense.audit_record(doc.get("record") or doc)
+    else:
+        out = exfil_defense.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
 def cmd_instructions(args):
     """Round 114 (arXiv:2611.13709): explicit context-file directives vs the cards."""
     from longrun.harness import instruction_audit
@@ -6650,6 +6760,24 @@ def main():
                                           "grade_quality", "audit", "advise"]); \
         p.add_argument("file", nargs="?", help="JSON: {record} or {profile}"); \
         p.set_defaults(fn=cmd_longhorizon)
+    p = sub.add_parser("memchannel"); \
+        p.add_argument("action", choices=["channels", "vulns", "classify", "taxonomy",
+                                          "exposure", "coverage", "cost", "audit",
+                                          "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {record}, {rows} or {profile}"); \
+        p.set_defaults(fn=cmd_memchannel)
+    p = sub.add_parser("memauthority"); \
+        p.add_argument("action", choices=["item", "derive", "corroborate", "authorize",
+                                          "gate", "weakening", "separation",
+                                          "model_check", "audit", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {record}, {items} or {profile}"); \
+        p.set_defaults(fn=cmd_memauthority)
+    p = sub.add_parser("exfild"); \
+        p.add_argument("action", choices=["points", "defenses", "applicability", "chain",
+                                          "utility", "frontier", "persistence", "audit",
+                                          "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {record}, {rows} or {profile}"); \
+        p.set_defaults(fn=cmd_exfild)
     p = sub.add_parser("instructions"); p.add_argument("action", choices=["audit"]); \
         p.add_argument("file", nargs="?", help="JSON: {text, cards}"); \
         p.set_defaults(fn=cmd_instructions)
