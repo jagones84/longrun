@@ -155,6 +155,9 @@ check("F5 SJ subjobs use their own marker (never focusJob's data-sub)",
 check("F6 the old ambiguous wording is gone",
       "In-session jobs" not in UI and "no subagent job" not in UI
       and "no in-chat subagent batch in this session" in UI)
+check("F7 embed mode still carries an h1 (axe page-has-heading-one)",
+      'embed-title' in UI and '<h1 class="sr-only embed-title">' in UI
+      and "html.embed .embed-title{display:block}" in UI)
 
 # ------------------------------------------------ G: counter behaviour --------
 _C = ""

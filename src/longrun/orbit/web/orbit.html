@@ -34,6 +34,11 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
      `aria-label` alone is not enough for `empty-table-header`. */
   .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
     clip:rect(0 0 0 0);white-space:nowrap;border:0}
+  /* 2026-11-20 (axe page-has-heading-one): embed mode hides the header that
+     carries the logo <h1>, so the deck had no visible heading at all. This
+     sr-only h1 exists only when embedded; the normal page keeps its logo h1. */
+  .embed-title{display:none}
+  html.embed .embed-title{display:block}
   html,body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;margin:0;height:100%;
     overflow-x:hidden}
   body{background:linear-gradient(180deg,var(--ga,#0e1116) 0%,var(--bg) 240px);
@@ -960,6 +965,7 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
 </header>
 
 <main class="wrap deck">
+  <h1 class="sr-only embed-title">Longrun Control</h1>
   <!-- v622: the rail owns single panes AND custom views (up to 6 panels side
        by side). The stacked "All panels" board is gone — a seeded "Desk" view
        replaces it. Same panels, buttons, endpoints underneath. -->
