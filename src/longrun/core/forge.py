@@ -55,6 +55,7 @@ Usage:
                            | evidence admit FILE.json | stress compare FILE.json | trial claim FILE.json
                            | scope witness FILE.json | round champion FILE.json | attest build FILE.json
                            | criteria measure FILE.json | rubric errors FILE.json | docmaint measure FILE.json
+                           | priority compare FILE.json | values compare FILE.json | crossenv measure FILE.json
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -1980,6 +1981,100 @@ def cmd_docmaint(args):
     sys.exit(0)
 
 
+def cmd_priority(args):
+    """Round 134 (arXiv:2611.22989): a priority says what to attend to, not how to judge."""
+    from longrun.harness import priority_criteria
+    if not getattr(args, "file", None):
+        print("usage: priority statement|report|trace|compare|evidence|revise|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "statement":
+        out = priority_criteria.priority(doc.get("text") or "")
+    elif args.action == "report":
+        out = priority_criteria.report(doc.get("report") or doc)
+    elif args.action == "trace":
+        out = priority_criteria.trace(doc.get("row") or doc)
+    elif args.action == "compare":
+        out = priority_criteria.compare(doc.get("runs") or [])
+    elif args.action == "evidence":
+        out = priority_criteria.evidence(doc.get("path") or doc)
+    elif args.action == "revise":
+        out = priority_criteria.revise(doc.get("interface") or doc)
+    else:
+        out = priority_criteria.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_values(args):
+    """Round 134 (arXiv:2611.23067): a value statement shapes what the agent builds."""
+    from longrun.harness import value_disposition
+    if not getattr(args, "file", None):
+        print("usage: values statement|compare|solutions|oversight|progress|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "statement":
+        out = value_disposition.statement(doc.get("text") or "",
+                                          doc.get("value") or "openness",
+                                          doc.get("fixed", True), doc.get("paired", True),
+                                          doc.get("words"))
+    elif args.action == "compare":
+        out = value_disposition.compare(doc.get("rows") or [])
+    elif args.action == "solutions":
+        out = value_disposition.solutions(doc.get("rows") or [])
+    elif args.action == "oversight":
+        out = value_disposition.oversight(doc.get("profile") or doc)
+    elif args.action == "progress":
+        out = value_disposition.progress(doc.get("rows") or [])
+    else:
+        out = value_disposition.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_crossenv(args):
+    """Round 134 (arXiv:2611.22777): a workflow that spans services needs joint verification."""
+    from longrun.harness import cross_env_tasks
+    if not getattr(args, "file", None):
+        print("usage: crossenv task|align|rules|validate|curriculum|measure|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "task":
+        out = cross_env_tasks.task(doc.get("spec") or doc)
+    elif args.action == "align":
+        out = cross_env_tasks.align(doc.get("records") or [])
+    elif args.action == "rules":
+        out = cross_env_tasks.rules(doc.get("task") or doc)
+    elif args.action == "validate":
+        out = cross_env_tasks.validate(doc.get("row") or doc)
+    elif args.action == "curriculum":
+        out = cross_env_tasks.curriculum(doc.get("levels") or [])
+    elif args.action == "measure":
+        out = cross_env_tasks.measure(doc.get("rows") or [])
+    else:
+        out = cross_env_tasks.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
 def cmd_instructions(args):
     """Round 114 (arXiv:2611.13709): explicit context-file directives vs the cards."""
     from longrun.harness import instruction_audit
@@ -3723,6 +3818,21 @@ def main():
                                           "measure", "advise"]); \
         p.add_argument("file", nargs="?", help="JSON: {ticket}, {gap}, {entries}, {draft}, {rows}, or {profile}"); \
         p.set_defaults(fn=cmd_docmaint)
+    p = sub.add_parser("priority"); \
+        p.add_argument("action", choices=["statement", "report", "trace", "compare",
+                                          "evidence", "revise", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {text}, {report}, {row}, {runs}, {path}, {interface}, or {profile}"); \
+        p.set_defaults(fn=cmd_priority)
+    p = sub.add_parser("values"); \
+        p.add_argument("action", choices=["statement", "compare", "solutions",
+                                          "oversight", "progress", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {text, value}, {rows}, {profile}, or {rows}"); \
+        p.set_defaults(fn=cmd_values)
+    p = sub.add_parser("crossenv"); \
+        p.add_argument("action", choices=["task", "align", "rules", "validate",
+                                          "curriculum", "measure", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {spec}, {records}, {task}, {row}, {levels}, {rows}, or {profile}"); \
+        p.set_defaults(fn=cmd_crossenv)
     p = sub.add_parser("instructions"); p.add_argument("action", choices=["audit"]); \
         p.add_argument("file", nargs="?", help="JSON: {text, cards}"); \
         p.set_defaults(fn=cmd_instructions)
