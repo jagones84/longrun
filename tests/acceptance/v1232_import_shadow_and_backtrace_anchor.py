@@ -27,7 +27,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 sys.path.insert(0, os.path.join(REPO, "src"))
 
 from longrun.memory import stores as S        # noqa: E402
-from longrun.harness import backtrace as BT   # noqa: E402
+from longrun.harness import backtrace as BT  # noqa: E402
 
 RESULTS = []
 

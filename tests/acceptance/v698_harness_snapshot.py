@@ -16,7 +16,7 @@ os.makedirs(os.path.join(TMP, "skills", "fixture"), exist_ok=True)
 with open(os.path.join(TMP, "skills", "fixture", "SKILL.md"), "w") as f:
     f.write("# fixture skill\n")
 sys.path.insert(0, os.path.join(REPO, "src"))
-from longrun.harness import snapshot
+from longrun.harness.execution import snapshot
 from longrun.memory import rules, skills
 from longrun.tools import sandbox
 
@@ -49,7 +49,7 @@ class SnapshotBuild(unittest.TestCase):
     def test_package_contains_matched_inputs_and_verifies(self):
         built = snapshot.build(self.base, self.config, context_length=262144)
         self.assertTrue(built["ok"], built)
-        for rel in ("src/longrun/harness/runner.py", "config/tools.yaml",
+        for rel in ("src/longrun/harness/execution/runner.py", "config/tools.yaml",
                     "config/providers.yaml", "config/routing.yaml",
                     "skills/fixture/SKILL.md", "rules/snapshot.json",
                     "workspace/input.txt", "workspace/AGENTS.md", "manifest.json"):

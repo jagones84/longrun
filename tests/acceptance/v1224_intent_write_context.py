@@ -26,9 +26,9 @@ for _key in ("CONFIG_DIR", "SESSIONS_DIR", "GRAPH_DIR", "EDITS_DIR",
 os.environ["LONGRUN_DB"] = os.path.join(TMP, "events.db")
 sys.path.insert(0, os.path.join(REPO, "src"))
 
-from longrun.harness import intent_audit as IA       # noqa: E402
-from longrun.harness import write_integrity as WI    # noqa: E402
-from longrun.harness import context_regime as CR     # noqa: E402
+from longrun.harness import intent_audit as IA  # noqa: E402
+from longrun.harness.checks import write_integrity as WI  # noqa: E402
+from longrun.harness.checks import context_regime as CR  # noqa: E402
 from longrun.tools import registry as REG            # noqa: E402
 
 RESULTS = []

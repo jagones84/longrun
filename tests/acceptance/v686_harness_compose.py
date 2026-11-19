@@ -34,7 +34,7 @@ os.environ["LONGRUN_HOOKS"] = os.path.join(TMP, "hooks.yaml")
 os.environ["LONGRUN_DB"] = os.path.join(TMP, "events.db")
 sys.path.insert(0, os.path.join(REPO, "src"))
 
-from longrun.harness import compose as C  # noqa: E402
+from longrun.harness.execution import compose as C  # noqa: E402
 from longrun.harness import library as L  # noqa: E402
 from longrun.util import improve as IMP  # noqa: E402
 

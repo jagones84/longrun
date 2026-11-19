@@ -27,9 +27,9 @@ for _key in ("CONFIG_DIR", "SESSIONS_DIR", "GRAPH_DIR", "EDITS_DIR",
 os.environ["LONGRUN_DB"] = os.path.join(TMP, "events.db")
 sys.path.insert(0, os.path.join(REPO, "src"))
 
-from longrun.harness import admission_schedule as AS  # noqa: E402
-from longrun.harness import stateful_scheduling as SS  # noqa: E402
-from longrun.harness import capacity_pools as CP       # noqa: E402
+from longrun.harness.checks import admission_schedule as AS  # noqa: E402
+from longrun.harness.checks import stateful_scheduling as SS  # noqa: E402
+from longrun.harness.checks import capacity_pools as CP  # noqa: E402
 
 RESULTS = []
 

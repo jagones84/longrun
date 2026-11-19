@@ -31,8 +31,8 @@ os.environ["LONGRUN_DB"] = os.path.join(TMP, "events.db")
 sys.path.insert(0, os.path.join(REPO, "src"))
 
 from longrun.plan import procedure as PC          # noqa: E402
-from longrun.harness import intent_journal as IJ  # noqa: E402
-from longrun.harness import handoff_audit as HA   # noqa: E402
+from longrun.harness.checks import intent_journal as IJ  # noqa: E402
+from longrun.harness.checks import handoff_audit as HA  # noqa: E402
 
 RESULTS = []
 

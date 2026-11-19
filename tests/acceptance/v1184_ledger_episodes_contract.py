@@ -29,8 +29,8 @@ os.environ["LONGRUN_DB"] = os.path.join(TMP, "events.db")
 sys.path.insert(0, os.path.join(REPO, "src"))
 
 from longrun.memory import fact_ledger as FL        # noqa: E402
-from longrun.harness import fault_episode as FE     # noqa: E402
-from longrun.harness import api_contract as AC      # noqa: E402
+from longrun.harness.checks import fault_episode as FE  # noqa: E402
+from longrun.harness.checks import api_contract as AC  # noqa: E402
 
 RESULTS = []
 

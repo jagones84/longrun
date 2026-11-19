@@ -39,9 +39,9 @@ for _key in ("CONFIG_DIR", "SESSIONS_DIR", "GRAPH_DIR", "EDITS_DIR",
 os.environ["LONGRUN_DB"] = os.path.join(TMP, "events.db")
 sys.path.insert(0, os.path.join(REPO, "src"))
 
-from longrun.harness import effect_types as ET        # noqa: E402
-from longrun.harness import reversibility as RV       # noqa: E402
-from longrun.harness import tool_graph as TG          # noqa: E402
+from longrun.harness import effect_types as ET  # noqa: E402
+from longrun.harness.checks import reversibility as RV  # noqa: E402
+from longrun.harness.checks import tool_graph as TG  # noqa: E402
 from longrun.core import api_v02 as API               # noqa: E402
 
 RESULTS = []

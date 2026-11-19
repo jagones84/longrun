@@ -3,7 +3,7 @@
 
 Source: arXiv:2611.23202, "Agent Trust Infrastructure (ATI): A Federated
 Identity, Trust, Attestation, and Accountability Architecture for
-Cross-Organization Autonomous AI Agents" (round 132). `harness/trust_boundary.py`
+Cross-Organization Autonomous AI Agents" (round 132). `harness/checks/trust_boundary.py`
 already judges identity, authorization and trust propagation of a CALL; this
 module audits the two planes it does not: what the caller is RUNNING, and what
 the allowed actions leave BEHIND.

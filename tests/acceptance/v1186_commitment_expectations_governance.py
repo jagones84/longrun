@@ -29,8 +29,8 @@ os.environ["LONGRUN_DB"] = os.path.join(TMP, "events.db")
 sys.path.insert(0, os.path.join(REPO, "src"))
 
 from longrun.plan import commitment as PC          # noqa: E402
-from longrun.harness import expectations as EX    # noqa: E402
-from longrun.harness import governance as GV      # noqa: E402
+from longrun.harness.checks import expectations as EX  # noqa: E402
+from longrun.harness.checks import governance as GV  # noqa: E402
 
 RESULTS = []
 

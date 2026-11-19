@@ -27,9 +27,9 @@ for _key in ("CONFIG_DIR", "SESSIONS_DIR", "GRAPH_DIR", "EDITS_DIR",
 os.environ["LONGRUN_DB"] = os.path.join(TMP, "events.db")
 sys.path.insert(0, os.path.join(REPO, "src"))
 
-from longrun.harness import handoff_governance as HG   # noqa: E402
-from longrun.harness import session_protocol as SP     # noqa: E402
-from longrun.harness import pipeline_traceability as PT  # noqa: E402
+from longrun.harness.checks import handoff_governance as HG  # noqa: E402
+from longrun.harness.checks import session_protocol as SP  # noqa: E402
+from longrun.harness.checks import pipeline_traceability as PT  # noqa: E402
 
 RESULTS = []
 

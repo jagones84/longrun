@@ -32,7 +32,7 @@ sys.path.insert(0, os.path.join(REPO, "src"))
 from longrun.tools import registry                # noqa: E402
 registry._external_tools = lambda: {}             # noqa: E731
 from longrun.core import server                   # noqa: E402,F401  (import order)
-from longrun.harness import observation as OBS    # noqa: E402
+from longrun.harness import observation as OBS  # noqa: E402
 from longrun.harness import verification_transport as VT  # noqa: E402
 from longrun.util import selection as SEL         # noqa: E402
 from longrun.agent import agent as A              # noqa: E402

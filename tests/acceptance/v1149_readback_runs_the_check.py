@@ -33,7 +33,7 @@ for _d in ("cfg", "data"):
 sys.path.insert(0, os.path.join(REPO, "src"))
 
 from longrun.core import server                 # noqa: E402,F401 — breaks the import cycle
-from longrun.harness import workspace_check as WC   # noqa: E402
+from longrun.harness import workspace_check as WC  # noqa: E402
 
 RESULTS = []
 

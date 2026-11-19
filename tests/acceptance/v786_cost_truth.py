@@ -32,7 +32,7 @@ os.makedirs(os.environ["LONGRUN_RUNS_DIR"], exist_ok=True)
 sys.path.insert(0, os.path.join(REPO, "src"))
 
 from longrun.core import api_v02          # noqa: E402
-from longrun.harness import record        # noqa: E402
+from longrun.harness import record  # noqa: E402
 from longrun.model import costs, runmetrics  # noqa: E402
 
 results = []

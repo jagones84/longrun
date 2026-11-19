@@ -27,9 +27,9 @@ for _key in ("CONFIG_DIR", "SESSIONS_DIR", "GRAPH_DIR", "EDITS_DIR",
 os.environ["LONGRUN_DB"] = os.path.join(TMP, "events.db")
 sys.path.insert(0, os.path.join(REPO, "src"))
 
-from longrun.harness import memory_poison as MP   # noqa: E402
-from longrun.harness import trust_boundary as TB  # noqa: E402
-from longrun.harness import gap_leak as GL        # noqa: E402
+from longrun.harness.checks import memory_poison as MP  # noqa: E402
+from longrun.harness.checks import trust_boundary as TB  # noqa: E402
+from longrun.harness.checks import gap_leak as GL  # noqa: E402
 
 RESULTS = []
 

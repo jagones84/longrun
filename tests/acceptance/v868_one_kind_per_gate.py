@@ -31,7 +31,7 @@ sys.path.insert(0, os.path.join(REPO, "src"))
 
 from longrun.core import server as _srv      # noqa: E402,F401  (import order)
 from longrun.core import events as EV        # noqa: E402
-from longrun.harness import cycle as CYCLE   # noqa: E402
+from longrun.harness import cycle as CYCLE  # noqa: E402
 
 results = []
 

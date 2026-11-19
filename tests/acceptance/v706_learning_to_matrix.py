@@ -34,7 +34,8 @@ for key in ("CONFIG_DIR", "DATA_HOME", "DATA_DIR", "SESSIONS_DIR", "SKILLS_DIR",
 sys.path.insert(0, os.path.join(REPO, "src"))
 
 from longrun.core import matrix  # noqa: E402
-from longrun.harness import cycle, editors, probe, snapshot, whole  # noqa: E402
+from longrun.harness import cycle  # noqa: E402
+from longrun.harness.execution import editors, probe, snapshot, whole  # noqa: E402
 from longrun.tools import matrix_guard, registry  # noqa: E402
 from longrun.util import improve  # noqa: E402
 

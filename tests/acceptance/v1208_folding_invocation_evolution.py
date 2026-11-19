@@ -26,9 +26,9 @@ for _key in ("CONFIG_DIR", "SESSIONS_DIR", "GRAPH_DIR", "EDITS_DIR",
 os.environ["LONGRUN_DB"] = os.path.join(TMP, "events.db")
 sys.path.insert(0, os.path.join(REPO, "src"))
 
-from longrun.harness import context_folding as CF        # noqa: E402
-from longrun.harness import invocation_reliability as IR # noqa: E402
-from longrun.harness import evolution_capabilities as EC # noqa: E402
+from longrun.harness.checks import context_folding as CF  # noqa: E402
+from longrun.harness.checks import invocation_reliability as IR  # noqa: E402
+from longrun.harness.checks import evolution_capabilities as EC  # noqa: E402
 
 RESULTS = []
 

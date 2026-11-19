@@ -36,7 +36,7 @@ sys.path.insert(0, os.path.join(REPO, "src"))
 
 from longrun.harness import cycle as CY  # noqa: E402
 from longrun.harness import library as L  # noqa: E402
-from longrun.harness import probe as P  # noqa: E402
+from longrun.harness.execution import probe as P  # noqa: E402
 from longrun.harness import record as R  # noqa: E402
 from longrun.util import improve as IMP  # noqa: E402
 

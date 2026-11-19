@@ -29,7 +29,7 @@ sys.path.insert(0, os.path.join(REPO, "src"))
 
 from longrun.memory import read_boundary as RB        # noqa: E402
 from longrun.memory import conflict_surface as CS    # noqa: E402
-from longrun.harness import instruction_audit as IA   # noqa: E402
+from longrun.harness.checks import instruction_audit as IA  # noqa: E402
 
 RESULTS = []
 

@@ -29,9 +29,9 @@ for _key in ("CONFIG_DIR", "SESSIONS_DIR", "GRAPH_DIR", "EDITS_DIR",
 os.environ["LONGRUN_DB"] = os.path.join(TMP, "events.db")
 sys.path.insert(0, os.path.join(REPO, "src"))
 
-from longrun.harness import criterion_verification as CV   # noqa: E402
-from longrun.harness import rubric_verification as RV      # noqa: E402
-from longrun.harness import doc_maintenance as DM          # noqa: E402
+from longrun.harness.checks import criterion_verification as CV  # noqa: E402
+from longrun.harness.checks import rubric_verification as RV  # noqa: E402
+from longrun.harness.checks import doc_maintenance as DM  # noqa: E402
 
 RESULTS = []
 

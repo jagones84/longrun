@@ -33,7 +33,7 @@ sys.path.insert(0, os.path.join(REPO, "src"))
 from longrun.tools import registry                # noqa: E402
 registry._external_tools = lambda: {}             # noqa: E731
 from longrun.harness import skills_maintenance as SM  # noqa: E402
-from longrun.harness import skill_value as SV     # noqa: E402
+from longrun.harness.checks import skill_value as SV  # noqa: E402
 from longrun.plan import stopping as ST           # noqa: E402
 
 RESULTS = []

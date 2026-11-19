@@ -30,9 +30,9 @@ for _key in ("CONFIG_DIR", "SESSIONS_DIR", "GRAPH_DIR", "EDITS_DIR",
 os.environ["LONGRUN_DB"] = os.path.join(TMP, "events.db")
 sys.path.insert(0, os.path.join(REPO, "src"))
 
-from longrun.harness import provider_binding as PB  # noqa: E402
-from longrun.harness import gateway_shape as GS     # noqa: E402
-from longrun.harness import scoring_mode as SM      # noqa: E402
+from longrun.harness.checks import provider_binding as PB  # noqa: E402
+from longrun.harness.checks import gateway_shape as GS  # noqa: E402
+from longrun.harness.checks import scoring_mode as SM  # noqa: E402
 
 RESULTS = []
 

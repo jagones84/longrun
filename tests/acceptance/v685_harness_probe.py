@@ -33,9 +33,9 @@ os.environ["LONGRUN_HOOKS"] = os.path.join(TMP, "hooks.yaml")
 os.environ["LONGRUN_DB"] = os.path.join(TMP, "events.db")
 sys.path.insert(0, os.path.join(REPO, "src"))
 
-from longrun.harness import probe as P  # noqa: E402
+from longrun.harness.execution import probe as P  # noqa: E402
 from longrun.harness import record as R  # noqa: E402
-from longrun.harness import runner as RUNNER  # noqa: E402
+from longrun.harness.execution import runner as RUNNER  # noqa: E402
 from longrun.memory import rules, skills  # noqa: E402
 
 results = []
@@ -263,7 +263,7 @@ check("H1 a runner with no record fails loudly (an empty record would read as "
 # H2 pins the defect found on 2026-10-28: `agent.agent_run` has no tool lane
 # (`apply_agent_action` answers "unknown action"), so a probe driven by it records
 # no tool names and no failures. The probe MUST drive the chat loop.
-_runner_src = open(os.path.join(REPO, "src", "longrun", "harness", "runner.py"),
+_runner_src = open(os.path.join(REPO, "src", "longrun", "harness", "execution", "runner.py"),
                    encoding="utf-8").read()
 check("H2 the runner drives the real chat loop, not the tool-less agent_run",
       "chat_once(" in _runner_src and "agent_run(" not in _runner_src)
@@ -283,7 +283,7 @@ check("I3 the step ceiling is the configured one (read at child import time)",
       _env.get("LONGRUN_CHAT_TOOL_STEPS") == str(ON["max_steps"]),
       _env.get("LONGRUN_CHAT_TOOL_STEPS"))
 check("I4 the runner is spawned as a module of the repo under test",
-      _plan_i["cmd"][1:3] == ["-m", "longrun.harness.runner"]
+      _plan_i["cmd"][1:3] == ["-m", "longrun.harness.execution.runner"]
       and "--max-steps" not in _plan_i["cmd"], _plan_i["cmd"])
 # I5: the chat loop's reflection pass WRITES memory + proposals; a probe must not
 # land those in the operator's live inbox, so the child gets its own DATA_DIR.

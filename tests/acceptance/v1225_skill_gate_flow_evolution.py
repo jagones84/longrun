@@ -27,9 +27,9 @@ for _key in ("CONFIG_DIR", "SESSIONS_DIR", "GRAPH_DIR", "EDITS_DIR",
 os.environ["LONGRUN_DB"] = os.path.join(TMP, "events.db")
 sys.path.insert(0, os.path.join(REPO, "src"))
 
-from longrun.harness import skill_gate as SG          # noqa: E402
-from longrun.harness import skill_flow as SF          # noqa: E402
-from longrun.harness import skill_evolution as SE     # noqa: E402
+from longrun.harness.checks import skill_gate as SG  # noqa: E402
+from longrun.harness.checks import skill_flow as SF  # noqa: E402
+from longrun.harness.checks import skill_evolution as SE  # noqa: E402
 
 RESULTS = []
 

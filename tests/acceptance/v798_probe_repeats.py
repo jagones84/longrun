@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """v798 — the matched-run probe compares TWO repeated trials by default, not one.
 
-Evidence for the need (2026-11-04): `harness/whole.py` shipped `"repeats": 1` and
+Evidence for the need (2026-11-04): `harness/execution/whole.py` shipped `"repeats": 1` and
 `compose.reflect` requires `repeats >= 2` AND two agreeing contrasts before it will
-call an attribution `repeated_matched_runs` (`harness/compose.py:92-93`). With the
+call an attribution `repeated_matched_runs` (`harness/execution/compose.py:92-93`). With the
 shipped default every experiment the engine could run was therefore labelled
 `confounded` / `insufficient` — the engine answered, but the answer could not
 support any claim. A small apparent gain between two single rollouts is noise.
@@ -34,7 +34,7 @@ for _k, _v in (("LONGRUN_DATA_DIR", "data"), ("LONGRUN_CONFIG_DIR", "cfg"),
 os.environ.pop("LONGRUN_HARNESS_REPEATS", None)
 sys.path.insert(0, os.path.join(REPO, "src"))
 
-from longrun.harness import compose, probe, whole     # noqa: E402
+from longrun.harness.execution import compose, probe, whole  # noqa: E402
 
 results = []
 
@@ -106,7 +106,7 @@ check("D5 disagreeing repeats stay confounded (never a win)",
       _three["edits"][0].get("attribution"))
 
 # ------------------------------------------------------------- E. source pins --
-_src = open(os.path.join(REPO, "src", "longrun", "harness", "whole.py"),
+_src = open(os.path.join(REPO, "src", "longrun", "harness", "execution", "whole.py"),
             encoding="utf-8").read()
 check("E1 the executor has ONE repeats reader", _src.count("def repeats_of(") == 1)
 check("E2 the executor uses it", "repeats = repeats_of(c)" in _src)

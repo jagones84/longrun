@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """v849 — an ablation removes exactly ONE layer (HA-3, lot H).
 
-`harness/contrast.py` diffs two finished runs; nothing could produce the two runs
+`harness/execution/contrast.py` diffs two finished runs; nothing could produce the two runs
 of an ablation. This instrument materialises an EMPTY scratch root for one
 file-backed layer and returns the env overlay that points the harness at it, so the
 two arms are identical except for that layer. It never starts a model call.

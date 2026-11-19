@@ -29,7 +29,7 @@ for _key in ("CONFIG_DIR", "SESSIONS_DIR", "GRAPH_DIR", "EDITS_DIR",
 os.environ["LONGRUN_DB"] = os.path.join(TMP, "events.db")
 sys.path.insert(0, os.path.join(REPO, "src"))
 
-from longrun.harness import modelcf as M   # noqa: E402
+from longrun.harness import modelcf as M  # noqa: E402
 
 RESULTS = []
 

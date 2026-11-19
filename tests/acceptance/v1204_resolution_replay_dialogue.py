@@ -26,9 +26,9 @@ for _key in ("CONFIG_DIR", "SESSIONS_DIR", "GRAPH_DIR", "EDITS_DIR",
 os.environ["LONGRUN_DB"] = os.path.join(TMP, "events.db")
 sys.path.insert(0, os.path.join(REPO, "src"))
 
-from longrun.harness import resolution_budget as RB      # noqa: E402
-from longrun.harness import replay_parity as RP          # noqa: E402
-from longrun.harness import dialogue_allocation as DA    # noqa: E402
+from longrun.harness.checks import resolution_budget as RB  # noqa: E402
+from longrun.harness.checks import replay_parity as RP  # noqa: E402
+from longrun.harness.checks import dialogue_allocation as DA  # noqa: E402
 
 RESULTS = []
 

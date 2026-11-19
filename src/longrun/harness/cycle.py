@@ -28,10 +28,10 @@ import json
 import os
 import time
 
-from longrun.harness import compose as compose_mod
-from longrun.harness import editors as editors_mod
+from longrun.harness.execution import compose as compose_mod
+from longrun.harness.execution import editors as editors_mod
 from longrun.harness import library as library_mod
-from longrun.harness import probe as probe_mod
+from longrun.harness.execution import probe as probe_mod
 from longrun.harness import record as record_mod
 from longrun.util import paths
 from longrun.util.fswrite import write_json
@@ -477,7 +477,7 @@ def _admit(group, report, kept):
             # bytes approved are the bytes the experiment ran, installed at the
             # path it was tested.
             import hashlib
-            from longrun.harness import probe as probe_mod
+            from longrun.harness.execution import probe as probe_mod
             artifacts, texts = [], []
             for c in skill_rows:
                 content = str(c.get("content") or "")

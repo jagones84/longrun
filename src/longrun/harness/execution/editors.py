@@ -25,7 +25,7 @@ Evidence rules:
 import json
 import re
 
-from longrun.harness import contrast as contrast_mod
+from longrun.harness.execution import contrast as contrast_mod
 from longrun.harness import library as library_mod
 
 MAX_CONTENT = 8000

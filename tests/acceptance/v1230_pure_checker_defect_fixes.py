@@ -39,14 +39,14 @@ sys.path.insert(0, os.path.join(REPO, "src"))
 
 from longrun.core import api_v02 as API                 # noqa: E402
 from longrun.tools import approvals                     # noqa: E402
-from longrun.harness import approval_audit as AA        # noqa: E402
-from longrun.harness import awareness as AW             # noqa: E402
-from longrun.harness import criterion_verification as CV  # noqa: E402
-from longrun.harness import effect_recovery as ER       # noqa: E402
-from longrun.harness import evidence_replay as EVR      # noqa: E402
-from longrun.harness import memory_authority as MA      # noqa: E402
-from longrun.harness import memory_channel as MC        # noqa: E402
-from longrun.harness import skill_gate as SG            # noqa: E402
+from longrun.harness.checks import approval_audit as AA  # noqa: E402
+from longrun.harness.checks import awareness as AW  # noqa: E402
+from longrun.harness.checks import criterion_verification as CV  # noqa: E402
+from longrun.harness import effect_recovery as ER  # noqa: E402
+from longrun.harness.checks import evidence_replay as EVR  # noqa: E402
+from longrun.harness import memory_authority as MA  # noqa: E402
+from longrun.harness import memory_channel as MC  # noqa: E402
+from longrun.harness.checks import skill_gate as SG  # noqa: E402
 from longrun.memory import fact_ledger as FL            # noqa: E402
 from longrun.plan import commitment as CM               # noqa: E402
 

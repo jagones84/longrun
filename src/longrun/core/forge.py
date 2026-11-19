@@ -452,7 +452,7 @@ def cmd_approvals(args):
         # gate records decision -> call -> dispatch -> effect on every approval,
         # and `approvals.audit_records()` is the one adapter to the auditor's
         # shape. A FILE is still accepted for a hand-written ledger.
-        from longrun.harness import approval_audit
+        from longrun.harness.checks import approval_audit
         from longrun.tools import approvals as _ap
         if args.value:
             try:
@@ -663,7 +663,7 @@ def _emit(mod, out, ok=None, codes=None):
 
 def cmd_episodes(args):
     """Round 115 (arXiv:2611.13254): validate a fault episode record and name controls."""
-    from longrun.harness import fault_episode
+    from longrun.harness.checks import fault_episode
     doc = _load_doc(args, "episodes audit FILE.json")
     out = fault_episode.audit(doc)
     out["controls"] = fault_episode.controls(doc)["controls"]
@@ -672,7 +672,7 @@ def cmd_episodes(args):
 
 def cmd_contract(args):
     """Round 115 (arXiv:2611.15207): a declared call-order contract vs a sequence."""
-    from longrun.harness import api_contract
+    from longrun.harness.checks import api_contract
     doc = _load_doc(args, "contract check FILE.json")
     out = api_contract.check(doc.get("contract") or {}, doc.get("sequence") or [])
     _emit(api_contract, out, lambda o: o["verdict"] == "pass")
@@ -717,7 +717,7 @@ def cmd_effects(args):
 
 def _context_cost(args):
     """Round 116 (arXiv:2611.22238): price a run, or compare two policies, in money."""
-    from longrun.harness import context_cost
+    from longrun.harness.checks import context_cost
     doc = _load_doc(args, "context cost FILE.json")
     prices = doc.get("prices")
     if "runs" in doc:
@@ -744,7 +744,7 @@ def cmd_commit(args):
 
 def cmd_expectations(args):
     """Round 117 (arXiv:2611.02438): does the batch still match its expectations?"""
-    from longrun.harness import expectations
+    from longrun.harness.checks import expectations
     doc = _load_doc(args, "expectations verify|savings FILE.json")
     steps = doc.get("steps") or []
     if args.action == "savings":
@@ -756,7 +756,7 @@ def cmd_expectations(args):
 
 def cmd_governance(args):
     """Round 117 (arXiv:2611.06682): ready, waiting or forbidden from an ontology."""
-    from longrun.harness import governance
+    from longrun.harness.checks import governance
     doc = _load_doc(args, "governance decide|check FILE.json")
     if args.action == "check":
         out = governance.check_ontology(doc.get("ontology") or {})
@@ -767,7 +767,7 @@ def cmd_governance(args):
 
 def cmd_capsule(args):
     """Round 120 (arXiv:2611.10022): compile one invocation into a replayable capsule."""
-    from longrun.harness import skill_cache
+    from longrun.harness.checks import skill_cache
     doc = _load_doc(args, "capsule compile|replay|savings FILE.json")
     if args.action == "compile":
         out = skill_cache.compile_capsule(doc.get("invocation") or doc, doc.get("skill"))
@@ -782,7 +782,7 @@ def cmd_capsule(args):
 
 def cmd_flow(args):
     """Round 120 (arXiv:2611.21520): judge a relay by behaviour and policy."""
-    from longrun.harness import flow_guard
+    from longrun.harness.checks import flow_guard
     doc = _load_doc(args, "flow judge|calibrate|evaluate FILE.json")
     if args.action == "judge":
         out = flow_guard.judge(doc.get("relay") or doc)
@@ -797,7 +797,7 @@ def cmd_flow(args):
 
 def cmd_selfdirected(args):
     """Round 120 (arXiv:2611.23219): was the improvement loop the agent's own?"""
-    from longrun.harness import self_directed
+    from longrun.harness.checks import self_directed
     doc = _load_doc(args, "selfdirected audit|transfer FILE.json")
     out = (self_directed.transfer(doc) if args.action == "transfer"
            else self_directed.audit(doc))
@@ -807,7 +807,7 @@ def cmd_selfdirected(args):
 
 def cmd_harnessevo(args):
     """Round 121 (arXiv:2611.22299): attribute a failure and gate a harness edit."""
-    from longrun.harness import harness_evolution
+    from longrun.harness.checks import harness_evolution
     doc = _load_doc(args, "harnessevo diagnose|admit|bloat FILE.json")
     if args.action == "diagnose":
         out = harness_evolution.diagnose(doc)
@@ -822,7 +822,7 @@ def cmd_harnessevo(args):
 
 def cmd_contextpipeline(args):
     """Round 121 (arXiv:2610.36114): measure what a tool result loses before delivery."""
-    from longrun.harness import context_pipeline
+    from longrun.harness.checks import context_pipeline
     if args.action == "boundaries":
         _emit(context_pipeline, context_pipeline.boundaries())
     doc = _load_doc(args, "contextpipeline boundaries | deliver|profile FILE.json")
@@ -836,7 +836,7 @@ def cmd_contextpipeline(args):
 
 def cmd_stepzero(args):
     """Round 121 (arXiv:2611.01953): gate the first processing of an opaque carrier."""
-    from longrun.harness import step_zero
+    from longrun.harness.checks import step_zero
     doc = _load_doc(args, "stepzero peek|extract|bind FILE.json")
     budget = doc.get("budget", step_zero.DEFAULT_BUDGET)
     if args.action == "peek":
@@ -854,7 +854,7 @@ def cmd_stepzero(args):
 
 def cmd_harnessrecord(args):
     """Round 122 (arXiv:2610.40917): is the harness that ran described, and did it stay in envelope?"""
-    from longrun.harness import harness_record
+    from longrun.harness.checks import harness_record
     doc = _load_doc(args, "harnessrecord audit|degradation|drift FILE.json")
     if args.action == "audit":
         out = harness_record.audit(doc)
@@ -870,7 +870,7 @@ def cmd_harnessrecord(args):
 
 def cmd_conduct(args):
     """Round 122 (arXiv:2611.06116): score the action log, then compare it with the message."""
-    from longrun.harness import conduct_audit
+    from longrun.harness.checks import conduct_audit
     doc = _load_doc(args, "conduct score|stated|matrix FILE.json")
     if args.action == "score":
         out = conduct_audit.score(doc.get("episode") or doc)
@@ -885,7 +885,7 @@ def cmd_conduct(args):
 
 def cmd_completion(args):
     """Round 122 (arXiv:2611.21407): an exit status is not a deliverable."""
-    from longrun.harness import completion_gate
+    from longrun.harness.checks import completion_gate
     doc = _load_doc(args, "completion check|ladder FILE.json")
     out = (completion_gate.ladder(doc.get("rows") or doc) if args.action == "ladder"
            else completion_gate.check(doc.get("run") or doc))
@@ -894,7 +894,7 @@ def cmd_completion(args):
 
 def cmd_skillret(args):
     """Round 123 (arXiv:2611.01115): retrieval calibrated by matched execution comparisons."""
-    from longrun.harness import skill_retrieval
+    from longrun.harness.checks import skill_retrieval
     doc = _load_doc(args, "skillret calibrate|rank|apply FILE.json")
     if args.action == "calibrate":
         out = skill_retrieval.calibrate(doc.get("pairs") or doc)
@@ -908,7 +908,7 @@ def cmd_skillret(args):
 
 def cmd_ruleret(args):
     """Round 123 (arXiv:2611.01042): closure-based rule retrieval under a context budget."""
-    from longrun.harness import rule_retrieval
+    from longrun.harness.checks import rule_retrieval
     doc = _load_doc(args, "ruleret closure|audit FILE.json")
     if args.action == "closure":
         out = rule_retrieval.closure(doc.get("rules") or [], doc.get("seeds") or [],
@@ -922,7 +922,7 @@ def cmd_ruleret(args):
 
 def cmd_skillquality(args):
     """Round 123 (arXiv:2610.38147): nine-dimension skill profile, execution-free estimate."""
-    from longrun.harness import skill_quality
+    from longrun.harness.checks import skill_quality
     doc = _load_doc(args, "skillquality profile|predict FILE.json")
     if args.action == "profile":
         out = skill_quality.profile(doc.get("skill") or doc)
@@ -935,7 +935,7 @@ def cmd_skillquality(args):
 
 def cmd_opspolicy(args):
     """Round 124 (arXiv:2611.15006): harness as an operational policy, per-model affinity."""
-    from longrun.harness import operational_policy
+    from longrun.harness.checks import operational_policy
     doc = _load_doc(args, "opspolicy realize|ground|affinity|route FILE.json")
     if args.action == "realize":
         out = operational_policy.realize(doc.get("output") or doc, doc.get("tools") or [],
@@ -954,7 +954,7 @@ def cmd_opspolicy(args):
 
 def cmd_execpolicy(args):
     """Round 124 (arXiv:2611.21688): reversal, frozen-panel replacement, amortization."""
-    from longrun.harness import execution_policy
+    from longrun.harness.checks import execution_policy
     doc = _load_doc(args, "execpolicy reversal|confirm|efficiency|amortize FILE.json")
     if args.action == "reversal":
         out = execution_policy.reversal(doc.get("declared") or {}, doc.get("measured") or {})
@@ -972,7 +972,7 @@ def cmd_execpolicy(args):
 
 def cmd_skilladapter(args):
     """Round 124 (arXiv:2611.17007): adapter binding, preload re-check, evidence expiry."""
-    from longrun.harness import skill_adapter
+    from longrun.harness.checks import skill_adapter
     doc = _load_doc(args, "skilladapter bind|recheck|expire|maintain FILE.json")
     if args.action == "bind":
         out = skill_adapter.bind(doc.get("skill") or {}, doc.get("adapters") or [],
@@ -990,7 +990,7 @@ def cmd_skilladapter(args):
 
 def cmd_intake(args):
     """Round 124 (transcript OrcsMi2-IcM): deterministic gate, mandate, shadow-first work."""
-    from longrun.harness import intake_gate
+    from longrun.harness.checks import intake_gate
     doc = _load_doc(args, "intake admit|mandate|subscribe|preset|shadow FILE.json")
     if args.action == "admit":
         out = intake_gate.admit(doc.get("trigger") or {}, doc.get("policy") or {})
@@ -1009,7 +1009,7 @@ def cmd_intake(args):
 
 def cmd_memcredit(args):
     """Round 125 (arXiv:2611.15600): memory arbitrated by decision utility, not relevance."""
-    from longrun.harness import memory_credit
+    from longrun.harness.checks import memory_credit
     doc = _load_doc(args, "memcredit credit|arbitrate|sparsity FILE.json")
     if args.action == "credit":
         out = memory_credit.credit(doc.get("candidate") or {}, doc.get("reference") or [])
@@ -1025,7 +1025,7 @@ def cmd_memcredit(args):
 
 def cmd_lessongate(args):
     """Round 125 (arXiv:2611.14326): a lesson is committed only after its probes pass."""
-    from longrun.harness import lesson_gate
+    from longrun.harness.checks import lesson_gate
     doc = _load_doc(args, "lessongate hypothesis|trial|probe FILE.json")
     if args.action == "hypothesis":
         out = lesson_gate.hypothesis(doc.get("lesson") or doc)
@@ -1041,7 +1041,7 @@ def cmd_lessongate(args):
 
 def cmd_seclattice(args):
     """Round 125 (arXiv:2611.13960): product taint lattice, attenuation, provenance ledger."""
-    from longrun.harness import security_lattice
+    from longrun.harness.checks import security_lattice
     doc = _load_doc(args, "seclattice admit|attenuate|write|read|effect FILE.json")
     if args.action == "admit":
         out = security_lattice.admit(doc.get("label") or {}, doc.get("action"))
@@ -1062,7 +1062,7 @@ def cmd_seclattice(args):
 
 def cmd_optmemory(args):
     """Round 126 (arXiv:2611.18856): the optimizer's memory of why a harness was edited."""
-    from longrun.harness import optimizer_memory
+    from longrun.harness.checks import optimizer_memory
     doc = _load_doc(args, "optmemory record|continuity|advantage FILE.json")
     if args.action == "record":
         out = optimizer_memory.record(doc.get("memory") or {}, doc.get("edit") or {})
@@ -1078,7 +1078,7 @@ def cmd_optmemory(args):
 
 def cmd_detour(args):
     """Round 126 (arXiv:2611.20844): success, attainment, residual work, detour."""
-    from longrun.harness import detour
+    from longrun.harness.checks import detour
     doc = _load_doc(args, "detour attainment|residual|progress|classify|rank FILE.json")
     if args.action == "attainment":
         out = detour.attainment(doc.get("success"), doc.get("charged"), doc.get("optimum"))
@@ -1098,7 +1098,7 @@ def cmd_detour(args):
 
 def cmd_patchprobe(args):
     """Round 126 (arXiv:2611.20514): control-gated verdicts, sibling paths, provenance."""
-    from longrun.harness import patch_probe
+    from longrun.harness.checks import patch_probe
     doc = _load_doc(args, "patchprobe verdict|compare|provenance|validate FILE.json")
     if args.action == "verdict":
         out = patch_probe.verdict(doc.get("control_ok"), doc.get("effect_seen"),
@@ -1115,7 +1115,7 @@ def cmd_patchprobe(args):
 
 def cmd_poison(args):
     """Round 127 (arXiv:2611.09721): a payload's lifecycle through agent memory."""
-    from longrun.harness import memory_poison
+    from longrun.harness.checks import memory_poison
     doc = _load_doc(args, "poison trace|descendants FILE.json")
     if args.action == "trace":
         out = memory_poison.trace(doc.get("run") or doc)
@@ -1127,7 +1127,7 @@ def cmd_poison(args):
 
 def cmd_boundary(args):
     """Round 127 (arXiv:2611.21259): identity, authorization and propagation at a seam."""
-    from longrun.harness import trust_boundary
+    from longrun.harness.checks import trust_boundary
     doc = _load_doc(args, "boundary evaluate|classify FILE.json")
     if args.action == "evaluate":
         out = trust_boundary.evaluate(doc.get("call") or doc)
@@ -1140,7 +1140,7 @@ def cmd_boundary(args):
 
 def cmd_gapleak(args):
     """Round 127 (arXiv:2611.22223): information gap, disclosure, submission-time filter."""
-    from longrun.harness import gap_leak
+    from longrun.harness.checks import gap_leak
     doc = _load_doc(args, "gapleak gap|disclosure|verify|compare FILE.json")
     if args.action == "gap":
         out = gap_leak.gap(doc.get("requested") or [], doc.get("authorized") or [],
@@ -1159,7 +1159,7 @@ def cmd_gapleak(args):
 
 def cmd_binding(args):
     """Round 128 (arXiv:2611.21577): a tool advertisement is not a provider identity."""
-    from longrun.harness import provider_binding
+    from longrun.harness.checks import provider_binding
     doc = _load_doc(args, "binding alignment|pressure|bind|resolve|outcomes|judge|sweep FILE.json")
     if args.action in ("alignment", "pressure"):
         out = getattr(provider_binding, args.action)(doc.get("advert") or {},
@@ -1180,7 +1180,7 @@ def cmd_binding(args):
 
 def cmd_gateway(args):
     """Round 128 (arXiv:2611.19123): code mode, stubs, router and fallback accounting."""
-    from longrun.harness import gateway_shape
+    from longrun.harness.checks import gateway_shape
     doc = _load_doc(args, "gateway utility|delta|holm|claim|stub|hints|fallback|advise FILE.json")
     if args.action == "utility":
         # A scalar helper: the group's own FORMAT is what makes it a group result.
@@ -1208,7 +1208,7 @@ def cmd_gateway(args):
 
 def cmd_scoring(args):
     """Round 128 (arXiv:2611.20335): pointwise, setwise or candidate attention."""
-    from longrun.harness import scoring_mode
+    from longrun.harness.checks import scoring_mode
     doc = _load_doc(args, "scoring depends|reversal|select|paired|advise|binary|learn FILE.json")
     if args.action == "depends":
         out = scoring_mode.depends_on_candidates(doc.get("mode"))
@@ -1230,7 +1230,7 @@ def cmd_scoring(args):
 
 def cmd_reversibility(args):
     """Round 129 (arXiv:2611.22075): reversibility classes and recovery claims."""
-    from longrun.harness import reversibility
+    from longrun.harness.checks import reversibility
     doc = _load_doc(args, "reversibility classify|restoration|capture|classes|recovery|replay FILE.json")
     if args.action == "classify":
         out = reversibility.classify(doc.get("call") or doc, doc.get("record"))
@@ -1249,7 +1249,7 @@ def cmd_reversibility(args):
 
 def cmd_gain(args):
     """Round 129 (arXiv:2611.20736): gain-based stopping under a quality allowance."""
-    from longrun.harness import gain_control
+    from longrun.harness.checks import gain_control
     doc = _load_doc(args, "gain vector|interpolate|reference|decide|calibrate|frontier|matched|verdict|advise FILE.json")
     if args.action == "vector":
         out = gain_control.gain_vector(doc.get("score"))
@@ -1279,7 +1279,7 @@ def cmd_gain(args):
 
 def cmd_history(args):
     """Round 129 (arXiv:2611.14654): a record edited against a live world."""
-    from longrun.harness import history_truth
+    from longrun.harness.checks import history_truth
     doc = _load_doc(args, "history agree|disclose|effect|interaction|recheck|advise FILE.json")
     if args.action == "agree":
         out = history_truth.agreement(doc.get("record") or {}, doc.get("world") or {})
@@ -1298,7 +1298,7 @@ def cmd_history(args):
 
 def cmd_composed(args):
     """Round 130 (arXiv:2611.22971): a safe screen is not a safe task."""
-    from longrun.harness import composed_harm
+    from longrun.harness.checks import composed_harm
     doc = _load_doc(args, "composed compose|screens|recognition|channel|gate|advise FILE.json")
     if args.action == "compose":
         out = composed_harm.compose(doc.get("facts") or [],
@@ -1318,7 +1318,7 @@ def cmd_composed(args):
 
 def cmd_measure(args):
     """Round 130 (arXiv:2611.21784): measurement choices decide the verdict."""
-    from longrun.harness import measurement_spec
+    from longrun.harness.checks import measurement_spec
     if args.action == "checklist":
         _emit(measurement_spec, measurement_spec.checklist())
     doc = _load_doc(
@@ -1341,7 +1341,7 @@ def cmd_measure(args):
 
 def cmd_trap(args):
     """Round 130 (arXiv:2611.19295): traps on the path, alerts that can be trusted."""
-    from longrun.harness import trap_path
+    from longrun.harness.checks import trap_path
     doc = _load_doc(args, "trap position|ablation|alert|scope|falsepositive FILE.json")
     if args.action == "position":
         out = trap_path.path_position(doc.get("bait") or {},
@@ -1364,7 +1364,7 @@ def cmd_trap(args):
 
 def cmd_evidence(args):
     """Round 131 (arXiv:2611.22169): admission is decided outside the reasoner."""
-    from longrun.harness import evidence_gate
+    from longrun.harness.checks import evidence_gate
     doc = _load_doc(args, "evidence admit|gates|firstorder|advise FILE.json")
     if args.action == "admit":
         out = evidence_gate.admit(doc.get("cards") or [], doc.get("context") or {})
@@ -1379,7 +1379,7 @@ def cmd_evidence(args):
 
 def cmd_stress(args):
     """Round 131 (arXiv:2611.22583): utility constrains parenthood, stressors evolve."""
-    from longrun.harness import stress_evolution
+    from longrun.harness.checks import stress_evolution
     doc = _load_doc(args, "stress qualify|promote|pareto|parent|compare|transfer|advise FILE.json")
     if args.action == "qualify":
         out = stress_evolution.qualify(doc.get("candidate") or doc)
@@ -1402,7 +1402,7 @@ def cmd_stress(args):
 
 def cmd_trial(args):
     """Round 131 (arXiv:2611.19359): one run is not enough."""
-    from longrun.harness import paired_trial
+    from longrun.harness.checks import paired_trial
     doc = _load_doc(args, "trial paired|noise|claim|mechanism|funnel|budget|advise FILE.json")
     if args.action == "paired":
         out = paired_trial.paired(doc.get("rows") or [])
@@ -1425,7 +1425,7 @@ def cmd_trial(args):
 
 def cmd_scope(args):
     """Round 132 (arXiv:2611.22835): a passing check is not the requested operation."""
-    from longrun.harness import evidence_scope
+    from longrun.harness.checks import evidence_scope
     doc = _load_doc(args, "scope item|claim|witness|obligation|reach|classify|explain|advise FILE.json")
     if args.action == "item":
         out = evidence_scope.item(doc.get("source"), doc.get("check"), doc.get("phase"),
@@ -1449,7 +1449,7 @@ def cmd_scope(args):
 
 def cmd_round(args):
     """Round 132 (arXiv:2611.22661): the between-round decision is an object."""
-    from longrun.harness import round_controller
+    from longrun.harness.checks import round_controller
     doc = _load_doc(args, "round champion|decision|lesson|guardrails|ladder|progress|frontier|advise FILE.json")
     if args.action == "champion":
         out = round_controller.champion(doc.get("rounds") or [])
@@ -1472,7 +1472,7 @@ def cmd_round(args):
 
 def cmd_attest(args):
     """Round 132 (arXiv:2611.23202): trust in the build and in the record."""
-    from longrun.harness import attestation_trust
+    from longrun.harness.checks import attestation_trust
     doc = _load_doc(args, "attest identity|certificate|build|calls|accountability|measure|advise FILE.json")
     if args.action == "identity":
         out = attestation_trust.identity(doc.get("request") or doc)
@@ -1493,7 +1493,7 @@ def cmd_attest(args):
 
 def cmd_criteria(args):
     """Round 133 (arXiv:2611.23074): per-criterion ternary verdicts at runtime."""
-    from longrun.harness import criterion_verification
+    from longrun.harness.checks import criterion_verification
     doc = _load_doc(args, "criteria criterion|verdict|coverage|escalate|measure|decompose|advise FILE.json")
     if args.action == "criterion":
         out = criterion_verification.criterion(
@@ -1519,7 +1519,7 @@ def cmd_criteria(args):
 
 def cmd_rubric(args):
     """Round 133 (arXiv:2611.22841): the verifier is the object."""
-    from longrun.harness import rubric_verification
+    from longrun.harness.checks import rubric_verification
     doc = _load_doc(args, "rubric capability|verifier|errors|batch|ablation|agreement|advise FILE.json")
     if args.action == "capability":
         out = rubric_verification.capability(doc.get("name"), doc.get("description") or "")
@@ -1540,7 +1540,7 @@ def cmd_rubric(args):
 
 def cmd_docmaint(args):
     """Round 133 (arXiv:2611.23142): a human correction is a gap signal."""
-    from longrun.harness import doc_maintenance
+    from longrun.harness.checks import doc_maintenance
     doc = _load_doc(args, "docmaint signal|gap|tracker|pipeline|measure|advise FILE.json")
     if args.action == "signal":
         out = doc_maintenance.signal(doc.get("ticket") or doc)
@@ -1559,7 +1559,7 @@ def cmd_docmaint(args):
 
 def cmd_priority(args):
     """Round 134 (arXiv:2611.22989): a priority says what to attend to, not how to judge."""
-    from longrun.harness import priority_criteria
+    from longrun.harness.checks import priority_criteria
     doc = _load_doc(args, "priority statement|report|trace|compare|evidence|revise|advise FILE.json")
     if args.action == "statement":
         out = priority_criteria.priority(doc.get("text") or "")
@@ -1580,7 +1580,7 @@ def cmd_priority(args):
 
 def cmd_values(args):
     """Round 134 (arXiv:2611.23067): a value statement shapes what the agent builds."""
-    from longrun.harness import value_disposition
+    from longrun.harness.checks import value_disposition
     doc = _load_doc(args, "values statement|compare|solutions|oversight|progress|advise FILE.json")
     if args.action == "statement":
         out = value_disposition.statement(doc.get("text") or "",
@@ -1602,7 +1602,7 @@ def cmd_values(args):
 
 def cmd_crossenv(args):
     """Round 134 (arXiv:2611.22777): a workflow that spans services needs joint verification."""
-    from longrun.harness import cross_env_tasks
+    from longrun.harness.checks import cross_env_tasks
     doc = _load_doc(args, "crossenv task|align|rules|validate|curriculum|measure|advise FILE.json")
     if args.action == "task":
         out = cross_env_tasks.task(doc.get("spec") or doc)
@@ -1623,7 +1623,7 @@ def cmd_crossenv(args):
 
 def cmd_resolution(args):
     """Round 135 (arXiv:2611.23068): evolution stalls because improvements go unidentified."""
-    from longrun.harness import resolution_budget
+    from longrun.harness.checks import resolution_budget
     doc = _load_doc(
         args, "resolution runs|decompose|verdict|select|quality|advantage|advise FILE.json")
     if args.action == "runs":
@@ -1652,7 +1652,7 @@ def cmd_resolution(args):
 
 def cmd_replay(args):
     """Round 135 (arXiv:2611.23151): a faster environment is admissible only if it replays."""
-    from longrun.harness import replay_parity
+    from longrun.harness.checks import replay_parity
     doc = _load_doc(args, "replay trace|replay|variation|parity|render|timing|audit|advise FILE.json")
     if args.action == "trace":
         out = replay_parity.trace(doc.get("states") or doc.get("rollout") or [])
@@ -1677,7 +1677,7 @@ def cmd_replay(args):
 
 def cmd_dialogue(args):
     """Round 135 (arXiv:2611.23119): what a teammate says is evidence about hidden state."""
-    from longrun.harness import dialogue_allocation
+    from longrun.harness.checks import dialogue_allocation
     doc = _load_doc(args, "dialogue posterior|entropy|speak|evidence|propositions|schedule|compare|audit|advise FILE.json")
     if args.action == "posterior":
         out = dialogue_allocation.posterior(doc.get("prior") or {}, doc.get("action"),
@@ -1706,7 +1706,7 @@ def cmd_dialogue(args):
 
 def cmd_selective(args):
     """Round 136 (arXiv:2611.23174): an agent that picks the analysis pays for picking it."""
-    from longrun.harness import selective_replay
+    from longrun.harness.checks import selective_replay
     doc = _load_doc(
         args, "selective correct|multiplier|gate|allocate|resample|audit|selfcorrect|detect|advise FILE.json")
     if args.action == "multiplier":
@@ -1740,7 +1740,7 @@ def cmd_selective(args):
 
 def cmd_continuation(args):
     """Round 136 (arXiv:2611.22888): a stop is not the limit; a burst is the signal."""
-    from longrun.harness import continuation_policy
+    from longrun.harness.checks import continuation_policy
     doc = _load_doc(args, "continuation rate|burst|gains|judgment|relabel|summary|rules|compare|methods|advise FILE.json")
     if args.action == "rate":
         out = continuation_policy.stop_rate(doc.get("turns") or [], doc.get("window"))
@@ -1768,7 +1768,7 @@ def cmd_continuation(args):
 
 def cmd_bench(args):
     """Round 136 (arXiv:2611.23045): the evidence is an experimental variable."""
-    from longrun.harness import evidence_replay
+    from longrun.harness.checks import evidence_replay
     doc = _load_doc(args, "bench state|freeze|leak|score|trajectory|paired|sources|memory|advise FILE.json")
     if args.action == "state":
         out = evidence_replay.state(doc.get("record") or doc)
@@ -1793,7 +1793,7 @@ def cmd_bench(args):
 
 def cmd_deliberation(args):
     """Round 137 (arXiv:2611.22905): a generic summary can hide a missing design judgement."""
-    from longrun.harness import deliberation_audit
+    from longrun.harness.checks import deliberation_audit
     doc = _load_doc(args, "deliberation type|match|tags|metadata|summary|ablation|audit|advise FILE.json")
     if args.action == "type":
         out = deliberation_audit.artifact(doc.get("artifact") or doc)
@@ -1817,7 +1817,7 @@ def cmd_deliberation(args):
 
 def cmd_frontier(args):
     """Round 137 (arXiv:2611.23080): a bracket says what is known and where the gap is."""
-    from longrun.harness import complexity_frontier
+    from longrun.harness.checks import complexity_frontier
     doc = _load_doc(args, "frontier bracket|open|coascent|evidence|memory|round|advise FILE.json")
     if args.action == "bracket":
         out = complexity_frontier.bracket(doc.get("regimes") or [])
@@ -1838,7 +1838,7 @@ def cmd_frontier(args):
 
 def cmd_transfer(args):
     """Round 137 (arXiv:2611.23216): a benchmark gain is not yet work done."""
-    from longrun.harness import work_transfer
+    from longrun.harness.checks import work_transfer
     doc = _load_doc(args, "transfer check|pool|ceiling|design|reversal|pooled|power|advise FILE.json")
     if args.action == "check":
         out = work_transfer.transfer(doc.get("rows") or doc.get("upgrades") or [])
@@ -1862,7 +1862,7 @@ def cmd_transfer(args):
 
 def cmd_repair(args):
     """Round 138 (arXiv:2611.22991): accuracy hides repairs cancelled by regressions."""
-    from longrun.harness import repair_audit
+    from longrun.harness.checks import repair_audit
     doc = _load_doc(args, "repair churn|reach|failure|capability|flags|provenance|veto|advise FILE.json")
     if args.action == "churn":
         out = repair_audit.churn(doc.get("rows") or doc.get("executions") or [])
@@ -1885,7 +1885,7 @@ def cmd_repair(args):
 
 def cmd_validation(args):
     """Round 138 (arXiv:2611.22973): risk decides the evidence, and oversight must be real."""
-    from longrun.harness import validation_ladder
+    from longrun.harness.checks import validation_ladder
     doc = _load_doc(args, "validation risk|autonomy|controls|domains|evidence|calibrate|advise FILE.json")
     if args.action == "risk":
         out = validation_ladder.risk(doc.get("row") or doc)
@@ -1906,7 +1906,7 @@ def cmd_validation(args):
 
 def cmd_grounding(args):
     """Round 138 (arXiv:2611.23203): knowledge widens the search, a verifier keeps it honest."""
-    from longrun.harness import skill_grounding
+    from longrun.harness.checks import skill_grounding
     doc = _load_doc(args, "grounding skill|equivalence|verdict|session|layers|advise FILE.json")
     if args.action == "skill":
         out = skill_grounding.skill(doc.get("spec") or doc)
@@ -1925,7 +1925,7 @@ def cmd_grounding(args):
 
 def cmd_folding(args):
     """Round 139 (arXiv:2611.16627): the reduced view is a selection, not a rewrite."""
-    from longrun.harness import context_folding
+    from longrun.harness.checks import context_folding
     doc = _load_doc(args, "folding levels|contract|fold|trigger|cost|recover|advise FILE.json")
     if args.action == "levels":
         out = context_folding.levels(doc.get("record") or doc)
@@ -1949,7 +1949,7 @@ def cmd_folding(args):
 
 def cmd_invocation(args):
     """Round 139 (arXiv:2608.26189): a wrong call poisons every step that follows."""
-    from longrun.harness import invocation_reliability
+    from longrun.harness.checks import invocation_reliability
     doc = _load_doc(args, "invocation rates|wiring|severity|recovery|scoring|terminal|discrimination|advise FILE.json")
     if args.action == "rates":
         out = invocation_reliability.rates(doc.get("rows") or [], doc.get("depth"))
@@ -1972,7 +1972,7 @@ def cmd_invocation(args):
 
 def cmd_capabilities(args):
     """Round 139 (arXiv:2605.30621): updating a harness and benefiting from it differ."""
-    from longrun.harness import evolution_capabilities
+    from longrun.harness.checks import evolution_capabilities
     doc = _load_doc(args, "capabilities updating|benefit|activation|adherence|budget|pairing|insitu|advise FILE.json")
     if args.action == "updating":
         out = evolution_capabilities.updating(doc.get("rows") or [])
@@ -1995,7 +1995,7 @@ def cmd_capabilities(args):
 
 def cmd_govern(args):
     """Round 140 (arXiv:2609.34017): a deterministic gate, and the halt it earns."""
-    from longrun.harness import handoff_governance
+    from longrun.harness.checks import handoff_governance
     doc = _load_doc(args, "govern anchor|validate|attribute|compare|coverage|posture|advise FILE.json")
     if args.action == "anchor":
         out = handoff_governance.anchor(doc.get("rules") or [], doc.get("version", 1))
@@ -2019,7 +2019,7 @@ def cmd_govern(args):
 
 def cmd_typed(args):
     """Round 140 (arXiv:2610.37461): withhold the tool, do not ask the model."""
-    from longrun.harness import session_protocol
+    from longrun.harness.checks import session_protocol
     doc = _load_doc(
         args, "typed build|allowed|tick|refines|split|charge|compliance|pressure|advise FILE.json")
     if args.action == "build":
@@ -2056,7 +2056,7 @@ def cmd_typed(args):
 
 def cmd_pipeline(args):
     """Round 140 (arXiv:2510.07614): blame is a computation over stages."""
-    from longrun.harness import pipeline_traceability
+    from longrun.harness.checks import pipeline_traceability
     doc = _load_doc(
         args, "pipeline final|blame|handoff|rates|origins|pareto|casting|gain|advise FILE.json")
     if args.action == "final":
@@ -2085,7 +2085,7 @@ def cmd_pipeline(args):
 
 def cmd_envelope(args):
     """Round 141 (arXiv:2611.23844): an envelope label is a weight, not a switch."""
-    from longrun.harness import defense_envelope
+    from longrun.harness.checks import defense_envelope
     doc = _load_doc(args, "envelope outcomes|weight|arbitration|content|dose|roles|stack|audit|advise FILE.json")
     if args.action == "outcomes":
         out = defense_envelope.outcomes(doc.get("rows") or [])
@@ -2110,7 +2110,7 @@ def cmd_envelope(args):
 
 def cmd_tracefp(args):
     """Round 141 (arXiv:2610.32092): the repair trajectory is the fingerprint."""
-    from longrun.harness import execution_fingerprint
+    from longrun.harness.checks import execution_fingerprint
     doc = _load_doc(args, "tracefp trace|profile|attribute|separation|budget|robustness|probes|audit|advise FILE.json")
     if args.action == "trace":
         out = execution_fingerprint.trace(doc.get("steps") or [])
@@ -2136,7 +2136,7 @@ def cmd_tracefp(args):
 
 def cmd_modelhandoff(args):
     """Round 141 (arXiv:2610.07816): route the step, not the query."""
-    from longrun.harness import model_handoff
+    from longrun.harness.checks import model_handoff
     doc = _load_doc(args, "modelhandoff gate|signals|calibration|budget|pareto|handoff|recovery|saturate|audit|advise FILE.json")
     if args.action == "gate":
         out = model_handoff.gate(doc.get("features") or doc)
@@ -2163,7 +2163,7 @@ def cmd_modelhandoff(args):
 
 def cmd_admission(args):
     """Round 143 (arXiv:2604.17111): the API is a shared resource, so schedule it."""
-    from longrun.harness import admission_schedule
+    from longrun.harness.checks import admission_schedule
     doc = _load_doc(args, "admission provider|slot|aimd|circuit|backoff|budget|order|ablate|pressure|advise FILE.json")
     if args.action == "provider":
         out = admission_schedule.provider(doc.get("profile") or doc)
@@ -2195,7 +2195,7 @@ def cmd_admission(args):
 
 def cmd_statesched(args):
     """Round 143 (arXiv:2512.14142): optimize the request lifecycle, not the segment."""
-    from longrun.harness import stateful_scheduling
+    from longrun.harness.checks import stateful_scheduling
     doc = _load_doc(
         args, "statesched hrrn|queue|aging|batch|kv|predict|jct|compare|stability|advise FILE.json")
     if args.action == "hrrn":
@@ -2226,7 +2226,7 @@ def cmd_statesched(args):
 
 def cmd_capacity(args):
     """Round 143 (arXiv:2603.00356): admission at the gateway, priced in inference units."""
-    from longrun.harness import capacity_pools
+    from longrun.harness.checks import capacity_pools
     doc = _load_doc(
         args, "capacity classes|classify|priority|debt|burst|resources|admission|reclaim|protect|fairshare|advise FILE.json")
     if args.action == "classes":
@@ -2256,7 +2256,7 @@ def cmd_capacity(args):
 
 def cmd_slots(args):
     """Round 144 (arXiv:2607.17147): hide the value, keep the structure."""
-    from longrun.harness import transcript_privacy
+    from longrun.harness.checks import transcript_privacy
     doc = _load_doc(args, "slots suffix|slot|bind|rebind|graph|leak|compatibility|overhead|audit|advise FILE.json")
     if args.action == "suffix":
         out = transcript_privacy.suffix(doc.get("path"), doc.get("roots") or [])
@@ -2286,7 +2286,7 @@ def cmd_slots(args):
 
 def cmd_privmem(args):
     """Round 144 (arXiv:2605.09530): a typed placeholder, not an asterisk."""
-    from longrun.harness import privacy_memory
+    from longrun.harness.checks import privacy_memory
     doc = _load_doc(
         args, "privmem levels|classify|sanitize|restore|extraction|utility|leakage|threshold|audit|advise FILE.json")
     if args.action == "levels":
@@ -2316,7 +2316,7 @@ def cmd_privmem(args):
 
 def cmd_privaudit(args):
     """Round 144 (arXiv:2610.06454): gate the outbound write."""
-    from longrun.harness import privacy_audit
+    from longrun.harness.checks import privacy_audit
     doc = _load_doc(args, "privaudit flow|disposition|inventory|compare|criteria|auditor|audit|advise FILE.json")
     if args.action == "flow":
         out = privacy_audit.flow(doc.get("row") or doc)
@@ -2339,7 +2339,7 @@ def cmd_privaudit(args):
 
 def cmd_updategate(args):
     """Round 145 (arXiv:2611.23651): admit a self-improvement, or keep the parent."""
-    from longrun.harness import harness_update_gate
+    from longrun.harness.checks import harness_update_gate
     doc = _load_doc(args, "updategate blocks|differential|confirm|localize|verify|risk|utility|admit|transfer|audit|advise FILE.json")
     if args.action == "blocks":
         out = harness_update_gate.blocks(doc.get("items") or [])
@@ -2369,7 +2369,7 @@ def cmd_updategate(args):
 
 def cmd_expledger(args):
     """Round 145 (arXiv:2611.23678): judge the process, not only the best score."""
-    from longrun.harness import experiment_ledger
+    from longrun.harness.checks import experiment_ledger
     doc = _load_doc(args, "expledger scope|noop|precondition|decide|ledger|metrics|repeated|counterfactual|relabel|taxonomy|audit|advise FILE.json")
     if args.action == "scope":
         out = experiment_ledger.scope(doc.get("row") or doc)
@@ -2401,7 +2401,7 @@ def cmd_expledger(args):
 
 def cmd_prefetch(args):
     """Round 145 (arXiv:2611.23857): predict the next recall before the demand."""
-    from longrun.harness import context_prefetch
+    from longrun.harness.checks import context_prefetch
     doc = _load_doc(args, "prefetch window|encode|decode|contract|prefetch|benefit|degrade|warmup|audit|advise FILE.json")
     if args.action == "window":
         out = context_prefetch.window(doc.get("events") or [],
@@ -2431,7 +2431,7 @@ def cmd_prefetch(args):
 
 def cmd_coverage(args):
     """Round 146 (arXiv:2611.24313): count the ways in, not only how often."""
-    from longrun.harness import redteam_coverage
+    from longrun.harness.checks import redteam_coverage
     doc = _load_doc(args, "coverage taxonomy|coverage|concentration|jaccard|asr|equal-sample|equal-cost|labels|audit|advise FILE.json")
     if args.action == "taxonomy":
         out = redteam_coverage.taxonomy(doc.get("units") or [])
@@ -2464,7 +2464,7 @@ def cmd_coverage(args):
 
 def cmd_purpleloop(args):
     """Round 146 (arXiv:2611.24362): discoveries into robustness, not volume."""
-    from longrun.harness import purple_loop
+    from longrun.harness.checks import purple_loop
     doc = _load_doc(args, "purpleloop primitives|explainability|reward|collapse|rewards|requirements|compare|ablate|audit|advise FILE.json")
     if args.action == "primitives":
         out = purple_loop.primitives(doc.get("records") or [],
@@ -2492,7 +2492,7 @@ def cmd_purpleloop(args):
 
 def cmd_renderdef(args):
     """Round 146 (arXiv:2611.24231): protection that depends on the operation."""
-    from longrun.harness import render_defense
+    from longrun.harness.checks import render_defense
     doc = _load_doc(args, "renderdef operations|modality|aggregate|utility|presentation|candidates|dissociation|authorization|audit|advise FILE.json")
     if args.action == "operations":
         out = render_defense.operations()
@@ -2519,7 +2519,7 @@ def cmd_renderdef(args):
 
 def cmd_stateev(args):
     """Round 147 (arXiv:2611.24357): carry the interpretation, keep the proof."""
-    from longrun.harness import state_evidence
+    from longrun.harness.checks import state_evidence
     doc = _load_doc(args, "stateev state|delta|ack|recover|locality|budget|paired|benefit|audit|advise FILE.json")
     if args.action == "state":
         out = state_evidence.state(doc.get("entries") or [])
@@ -2546,7 +2546,7 @@ def cmd_stateev(args):
 
 def cmd_evidenceview(args):
     """Round 147 (arXiv:2611.24353): mentioning a figure is not checking it."""
-    from longrun.harness import evidence_review
+    from longrun.harness.checks import evidence_review
     doc = _load_doc(args, "evidenceview outcomes|rates|aided|shortlist|evidence-type|assertion|instrument|near-miss|noise|audit|advise FILE.json")
     if args.action == "outcomes":
         out = evidence_review.outcomes()
@@ -2575,7 +2575,7 @@ def cmd_evidenceview(args):
 
 def cmd_uncert(args):
     """Round 147 (arXiv:2611.24351): say how sure the evidence is."""
-    from longrun.harness import uncertainty_context
+    from longrun.harness.checks import uncertainty_context
     doc = _load_doc(args, "uncert paired|alignment|subset|flips|correctness|entropy|sensitivity|audit|advise FILE.json")
     if args.action == "paired":
         out = uncertainty_context.paired(doc.get("row") or doc)
@@ -2600,7 +2600,7 @@ def cmd_uncert(args):
 
 def cmd_skillcfi(args):
     """Round 148 (arXiv:2611.24185): hold a skill to its control skeleton."""
-    from longrun.harness import skill_cfi
+    from longrun.harness.checks import skill_cfi
     doc = _load_doc(args, "skillcfi skeleton|enforceable|dispositions|admit|result|violation|refusal|recovery|audit|advise FILE.json")
     if args.action == "skeleton":
         out = skill_cfi.skeleton(doc.get("row") or doc)
@@ -2627,7 +2627,7 @@ def cmd_skillcfi(args):
 
 def cmd_memcomm(args):
     """Round 148 (arXiv:2611.24165): memory as a shared, operable object."""
-    from longrun.harness import memory_commune
+    from longrun.harness.checks import memory_commune
     doc = _load_doc(args, "memcomm entry|scope|proposals|transfer|selection|citation|audit|alignment|gap|activity|audit-record|advise FILE.json")
     if args.action == "entry":
         out = memory_commune.entry(doc.get("row") or doc)
@@ -2658,7 +2658,7 @@ def cmd_memcomm(args):
 
 def cmd_sparseval(args):
     """Round 148 (arXiv:2611.24159): a weak prior and an exact update."""
-    from longrun.harness import sparse_eval
+    from longrun.harness.checks import sparse_eval
     doc = _load_doc(args, "sparseval prior|posterior|sensitivity|value|brier|alc|calibration|audit|advise FILE.json")
     if args.action == "prior":
         out = sparse_eval.prior(doc.get("rows") or [])
@@ -2683,7 +2683,7 @@ def cmd_sparseval(args):
 
 def cmd_budgetaudit(args):
     """Round 149 (arXiv:2611.24867): what the looks cost, per step."""
-    from longrun.harness import budget_audit
+    from longrun.harness.checks import budget_audit
     doc = _load_doc(
         args, "budgetaudit belief|value|observe|qvalue|solve|decompose|anchors|"
               "staged|routing|bound|audit|advise FILE.json")
@@ -2722,7 +2722,7 @@ def cmd_budgetaudit(args):
 
 def cmd_simaudit(args):
     """Round 149 (arXiv:2611.24892): does the metric notice the injected failure?"""
-    from longrun.harness import simulator_audit
+    from longrun.harness.checks import simulator_audit
     doc = _load_doc(args, "simaudit paired|population|coverage|auroc|retention|levels|simulators|evidence|audit|advise FILE.json")
     if args.action == "paired":
         out = simulator_audit.paired(doc.get("rows") or [])
@@ -2750,7 +2750,7 @@ def cmd_simaudit(args):
 
 def cmd_progjudge(args):
     """Round 149 (arXiv:2611.24849): one program per topic instead of a call per document."""
-    from longrun.harness import program_judge
+    from longrun.harness.checks import program_judge
     doc = _load_doc(args, "progjudge answers|consensus|single|rubric|errors|kendall|labelgain|breakeven|sandbox|audit|advise FILE.json")
     if args.action == "answers":
         out = program_judge.answers(doc.get("answers") or doc)
@@ -2779,7 +2779,7 @@ def cmd_progjudge(args):
 
 def cmd_reql(args):
     """Round 150 (arXiv:2611.24924): a change lands because a requirement says so."""
-    from longrun.harness import requirement_loop
+    from longrun.harness.checks import requirement_loop
     doc = _load_doc(args, "reql issue|triage|consolidate|admission|review|rounds|delivery|generalisation|audit|advise FILE.json")
     if args.action == "issue":
         out = requirement_loop.issue(doc.get("report") or doc)
@@ -2806,7 +2806,7 @@ def cmd_reql(args):
 
 def cmd_replan(args):
     """Round 150 (arXiv:2611.24839): templates in, validated repairs out."""
-    from longrun.harness import secure_replan
+    from longrun.harness.checks import secure_replan
     doc = _load_doc(args, "replan apply|validate|templates|repair|closeout|exposure|validation|audit|advise FILE.json")
     if args.action == "apply":
         out = secure_replan.apply(doc.get("plan") or {},
@@ -2832,7 +2832,7 @@ def cmd_replan(args):
 
 def cmd_localcost(args):
     """Round 150 (arXiv:2611.24880): what a solved task costs on your own device."""
-    from longrun.harness import local_cost
+    from longrun.harness.checks import local_cost
     doc = _load_doc(args, "localcost expected|energy|capacity|rate|required|computed|notice|compare|audit|advise FILE.json")
     if args.action == "expected":
         out = local_cost.expected(doc.get("record") or doc)
@@ -2859,7 +2859,7 @@ def cmd_localcost(args):
 
 def cmd_intentc(args):
     """Round 151 (arXiv:2611.24025): a contract the trusted side can check and execute."""
-    from longrun.harness import intent_contract
+    from longrun.harness.checks import intent_contract
     doc = _load_doc(args, "intentc validate|coverage|mcnemar|outcomes|bundling|targets|properties|audit|advise FILE.json")
     if args.action == "validate":
         out = intent_contract.validate(doc.get("record") or doc)
@@ -2884,7 +2884,7 @@ def cmd_intentc(args):
 
 def cmd_warrant(args):
     """Round 151 (arXiv:2611.23990): which old evidence is admissible in the new context."""
-    from longrun.harness import evidence_warrant
+    from longrun.harness.checks import evidence_warrant
     doc = _load_doc(args, "warrant wrc|admissibility|transport|authorize|provenance|composition|selective|audit|advise FILE.json")
     if args.action == "wrc":
         out = evidence_warrant.wrc(doc.get("record") or doc)
@@ -2909,7 +2909,7 @@ def cmd_warrant(args):
 
 def cmd_platformeval(args):
     """Round 151 (arXiv:2611.24039): gates before scores, with the halo reported."""
-    from longrun.harness import platform_eval
+    from longrun.harness.checks import platform_eval
     doc = _load_doc(args, "platformeval score|alpha|tiers|gates|reliability|cost|value|audit|advise FILE.json")
     if args.action == "score":
         out = platform_eval.score(doc.get("matrix") or doc.get("rows") or [])
@@ -2935,7 +2935,7 @@ def cmd_platformeval(args):
 
 def cmd_contaudit(args):
     """Round 152 (arXiv:2611.24491): continue a real session, judge only what follows."""
-    from longrun.harness import continuation_audit
+    from longrun.harness.checks import continuation_audit
     doc = _load_doc(args, "contaudit cuts|realism|awareness|score|narrow|mandate|cover|ablation|audit|advise FILE.json")
     if args.action == "cuts":
         out = continuation_audit.cuts(doc.get("rows") or [])
@@ -2962,7 +2962,7 @@ def cmd_contaudit(args):
 
 def cmd_toolext(args):
     """Round 152 (arXiv:2611.23810): a new tool reuses when-to-call, not which-tool."""
-    from longrun.harness import tool_extension
+    from longrun.harness.checks import tool_extension
     doc = _load_doc(args, "toolext verified|retention|gain|drift|decisions|cost|admit|audit|advise FILE.json")
     if args.action == "verified":
         out = tool_extension.verified(doc.get("rows") or [])
@@ -2987,7 +2987,7 @@ def cmd_toolext(args):
 
 def cmd_fastpath(args):
     """Round 152 (arXiv:2611.23751): bounded choices in one pass, the rest to System-2."""
-    from longrun.harness import fast_path
+    from longrun.harness.checks import fast_path
     doc = _load_doc(args, "fastpath classify|program|calibrate|gate|cost|smoothed|aurc|collapsed|audit|advise FILE.json")
     if args.action == "classify":
         out = fast_path.classify(doc.get("record") or doc)
@@ -3014,7 +3014,7 @@ def cmd_fastpath(args):
 
 def cmd_tariff(args):
     """Round 153 (arXiv:2611.24071): what a retained token is charged, and which bound holds."""
-    from longrun.harness import context_tariff
+    from longrun.harness.checks import context_tariff
     doc = _load_doc(args, "tariff charge|lifetime|coverage|bounds|quality|fairness|audit|advise FILE.json")
     if args.action == "charge":
         out = context_tariff.charge(doc.get("record") or doc)
@@ -3037,7 +3037,7 @@ def cmd_tariff(args):
 
 def cmd_hyperke(args):
     """Round 153 (arXiv:2611.24294): a typed store kept sound under edits."""
-    from longrun.harness import hypergraph_ke
+    from longrun.harness.checks import hypergraph_ke
     doc = _load_doc(args, "hyperke ingest|join|edit|route|evidence|oke|audit|advise FILE.json")
     if args.action == "ingest":
         out = hypergraph_ke.ingest(doc.get("rows") or [])
@@ -3060,7 +3060,7 @@ def cmd_hyperke(args):
 
 def cmd_beliefprobe(args):
     """Round 153 (arXiv:2611.23938): did the fact go in, and does the metric still mean anything?"""
-    from longrun.harness import belief_probe
+    from longrun.harness.checks import belief_probe
     doc = _load_doc(args, "beliefprobe belief|categories|scaling|depth|judge|independence|reality|audit|advise FILE.json")
     if args.action == "belief":
         out = belief_probe.belief_rate(doc.get("rows") or [])
@@ -3085,7 +3085,7 @@ def cmd_beliefprobe(args):
 
 def cmd_awareness(args):
     """Round 154 (arXiv:2611.05391): verified host state as a bounded decision input."""
-    from longrun.harness import awareness
+    from longrun.harness.checks import awareness
     doc = _load_doc(args, "awareness reduce|cost|best|regret|snapshot|choose|ablate|wilson|authority|audit|advise FILE.json")
     if args.action == "reduce":
         out = awareness.reduce(doc.get("observations") or [], doc.get("window"))
@@ -3120,7 +3120,7 @@ def cmd_awareness(args):
 
 def cmd_diagnostics(args):
     """Round 154 (arXiv:2611.04507): findings, Signals, severity and remediation."""
-    from longrun.harness import diagnostics
+    from longrun.harness.checks import diagnostics
     doc = _load_doc(args, "diagnostics taxonomy|finding|scope|severity|group|update|match|coverage|audit|advise FILE.json")
     if args.action == "taxonomy":
         out = diagnostics.taxonomy()
@@ -3148,7 +3148,7 @@ def cmd_diagnostics(args):
 
 def cmd_orchcredit(args):
     """Round 154 (arXiv:2611.07495): interaction-aware credit and certified updates."""
-    from longrun.harness import orchestration_credit
+    from longrun.harness.checks import orchestration_credit
     doc = _load_doc(args, "orchcredit orders|bound|z2|certify|select|detect|leaps|complementarity|controlled|audit|advise FILE.json")
     if args.action == "orders":
         out = orchestration_credit.orders(doc.get("record") or doc)
@@ -3237,7 +3237,7 @@ def cmd_intentgraph(args):
 
 def cmd_writeguard(args):
     """Round 155 (arXiv:2611.17115): schema-derived policy and exact grounding."""
-    from longrun.harness import write_integrity
+    from longrun.harness.checks import write_integrity
     doc = _load_doc(args, "writeguard classify|grounding|commit|mediate|integrity|ablate|audit|advise FILE.json")
     if args.action == "classify":
         out = write_integrity.policy(_schema_record(doc))
@@ -3262,7 +3262,7 @@ def cmd_writeguard(args):
 
 def cmd_ctxregime(args):
     """Round 155 (arXiv:2611.05306): short working context and disciplined state."""
-    from longrun.harness import context_regime
+    from longrun.harness.checks import context_regime
     doc = _load_doc(args, "ctxregime length|charge|savings|compaction|regimes|selective|sac|history|audit|advise FILE.json")
     if args.action == "length":
         out = context_regime.length(doc.get("record") or doc)
@@ -3289,7 +3289,7 @@ def cmd_ctxregime(args):
 
 def cmd_skillgate(args):
     """Round 156 (arXiv:2608.05810): admission before the pool."""
-    from longrun.harness import skill_gate
+    from longrun.harness.checks import skill_gate
     usage = ("skillgate tiers|critic|gain|taxonomy|curve|select|"
              "irreversibility|rollback|audit|advise [FILE.json]")
     if not getattr(args, "file", None) and args.action != "tiers":
@@ -3321,7 +3321,7 @@ def cmd_skillgate(args):
 
 def cmd_skillflow(args):
     """Round 156 (arXiv:2611.20584): the plugin population as a gas."""
-    from longrun.harness import skill_flow
+    from longrun.harness.checks import skill_flow
     doc = _load_doc(args, "skillflow ledger|project|regime|sound|shock|instruments|diagnose|audit|advise FILE.json")
     if args.action == "ledger":
         out = skill_flow.ledger(doc.get("events") or [])
@@ -3346,7 +3346,7 @@ def cmd_skillflow(args):
 
 def cmd_skilleve(args):
     """Round 156 (arXiv:2611.03238): evidence-grounded skill evolution."""
-    from longrun.harness import skill_evolution
+    from longrun.harness.checks import skill_evolution
     doc = _load_doc(args, "skilleve entry|evidence|diagnose|candidate|validate|consolidate|budget|audit|advise FILE.json")
     if args.action == "entry":
         out = skill_evolution.entry(doc.get("record") or doc)
@@ -3371,7 +3371,7 @@ def cmd_skilleve(args):
 
 def cmd_takeover(args):
     """Round 157 (arXiv:2611.07307): requirements recovered, then delivered."""
-    from longrun.harness import takeover_eval
+    from longrun.harness.checks import takeover_eval
     doc = _load_doc(args, "takeover atom|update|delivery|rq1|rq2|decision|poststate|clarify|audit|advise FILE.json")
     if args.action == "atom":
         out = takeover_eval.atom(doc.get("record") or doc)
@@ -3400,7 +3400,7 @@ def cmd_takeover(args):
 
 def cmd_anytime(args):
     """Round 157 (arXiv:2611.21241): certificates after an adaptive sweep."""
-    from longrun.harness import anytime_cert
+    from longrun.harness.checks import anytime_cert
     doc = _load_doc(args, "anytime certificate|grid|structured|margin|allocate|optimism|audit|advise FILE.json")
     if args.action == "certificate":
         out = anytime_cert.certificate(doc.get("record") or doc)
@@ -3423,7 +3423,7 @@ def cmd_anytime(args):
 
 def cmd_longhorizon(args):
     """Round 157 (arXiv:2611.05620): all-or-nothing delivery over many requests."""
-    from longrun.harness import longhorizon_eval
+    from longrun.harness.checks import longhorizon_eval
     doc = _load_doc(args, "longhorizon plan|grade|gap|horizon|split|grade_quality|audit|advise FILE.json")
     if args.action == "plan":
         out = longhorizon_eval.plan(doc.get("record") or doc)
@@ -3498,7 +3498,7 @@ def cmd_memauthority(args):
 
 def cmd_exfild(args):
     """Round 158 (arXiv:2605.01970): every defense breaks one of three steps."""
-    from longrun.harness import exfil_defense
+    from longrun.harness.checks import exfil_defense
     doc = _load_doc(args, "exfild points|defenses|applicability|chain|utility|frontier|persistence|audit|advise FILE.json")
     if args.action == "points":
         out = exfil_defense.points()
@@ -3523,7 +3523,7 @@ def cmd_exfild(args):
 
 def cmd_formation(args):
     """Round 159 (arXiv:2610.00583): a team of separate agents against one coordinator."""
-    from longrun.harness import multiagent_formation
+    from longrun.harness.checks import multiagent_formation
     doc = _load_doc(args, "formation formations|outcome|participation|fairness|interference|mitigation|failure|audit|advise FILE.json")
     if args.action == "formations":
         out = multiagent_formation.formations()
@@ -3548,7 +3548,7 @@ def cmd_formation(args):
 
 def cmd_teammate(args):
     """Round 159 (arXiv:2611.02633): collaboration as one model's capability."""
-    from longrun.harness import teammate_eval
+    from longrun.harness.checks import teammate_eval
     doc = _load_doc(args, "teammate dimensions|score|gate|drop|conflict|failure_mode|inheritance|audit|advise FILE.json")
     if args.action == "dimensions":
         out = teammate_eval.dimensions()
@@ -3573,7 +3573,7 @@ def cmd_teammate(args):
 
 def cmd_museprincipals(args):
     """Round 159 (arXiv:2604.08567): one context, many principals, explicit rules."""
-    from longrun.harness import principal_policy
+    from longrun.harness.checks import principal_policy
     doc = _load_doc(args, "museprincipals principals|precedence|access|selection|privacy_utility|meeting|conflict_effect|audit|advise FILE.json")
     if args.action == "principals":
         out = principal_policy.principals(doc.get("record") or doc)
@@ -3598,7 +3598,7 @@ def cmd_museprincipals(args):
 
 def cmd_instructions(args):
     """Round 114 (arXiv:2611.13709): explicit context-file directives vs the cards."""
-    from longrun.harness import instruction_audit
+    from longrun.harness.checks import instruction_audit
     doc = _load_doc(args, "instructions audit FILE.json")
     out = instruction_audit.audit(doc.get("text") or "", doc.get("cards") or [])
     _emit(instruction_audit, out, lambda o: o["verdict"] == "clean")
@@ -3606,7 +3606,7 @@ def cmd_instructions(args):
 
 def cmd_teams(args):
     """Round 113 (arXiv:2611.17820): the safety lead + published safety specs audit."""
-    from longrun.harness import team_safety
+    from longrun.harness.checks import team_safety
     doc = _load_doc(args, "teams audit FILE.json")
     out = team_safety.audit(doc)
     out["brief"] = team_safety.brief(doc)
@@ -3615,7 +3615,7 @@ def cmd_teams(args):
 
 def cmd_toolgraph(args):
     """Round 113 (arXiv:2611.20569): compile the tool dependency graph, or ask it."""
-    from longrun.harness import tool_graph
+    from longrun.harness.checks import tool_graph
     doc = _load_doc(args, "toolgraph %s FILE.json" % args.action)
     graph = tool_graph.build(doc.get("catalog") or [], doc.get("transitions") or [],
                              doc.get("probes") or [])
@@ -4527,7 +4527,7 @@ def cmd_routing(args):
 def cmd_setup(args):
     """Semantic setup blocks (round 106, arXiv:2611.18443). Runs LOCALLY: the
     workspace being set up is the caller's, not necessarily the server's."""
-    from longrun.harness import setup_blocks
+    from longrun.harness.checks import setup_blocks
     from longrun.util import paths
     if args.action == "run":
         if not args.plan:
@@ -4556,11 +4556,12 @@ def cmd_setup(args):
 
 def cmd_skills(args):
     """Round 109: skill staleness, paired value, explicit repair (arXiv:2611.22525, -22017)."""
-    from longrun.harness import skills_maintenance, skill_value
+    from longrun.harness import skills_maintenance
+    from longrun.harness.checks import skill_value
     if args.action in ("compile", "optimize", "conflict"):
         # Round 118: verified-trace compilation (2611.01386), SkIR repair (2611.20856),
         # cross-skill conflict (2610.35082).
-        from longrun.harness import skill_compiler, skill_repair, skill_conflict
+        from longrun.harness.checks import skill_compiler, skill_repair, skill_conflict
         doc = _load_doc(args, "skills %s FILE.json" % args.action)
         if args.action == "compile":
             out = skill_compiler.compile_skill(doc.get("trace") or doc,
@@ -4573,7 +4574,7 @@ def cmd_skills(args):
         _emit(skill_conflict, out, lambda o: o["verdict"] == "clean")
     if args.action == "prune":
         # Round 112 (arXiv:2611.19823): compact a skill without touching contract lines.
-        from longrun.harness import skill_prune
+        from longrun.harness.checks import skill_prune
         doc = _load_doc(args, "skills prune FILE.json [--budget N] [--write]",
                         allow_list=False)
         text = doc.get("text") if isinstance(doc, dict) else doc
@@ -4618,7 +4619,7 @@ def cmd_skills(args):
 
 def cmd_autonomy(args):
     """Round 112 (arXiv:2611.10058): bounded/observable/reversible autonomy scorecard."""
-    from longrun.harness import autonomy
+    from longrun.harness.checks import autonomy
     doc = _load_doc(args, "autonomy check FILE.json", allow_list=True)
     rows = doc.get("actions") if isinstance(doc, dict) else doc
     out = autonomy.scoreboard(rows or [])
@@ -4639,7 +4640,7 @@ def cmd_reuse(args):
 
 def cmd_principals(args):
     """Round 110 (arXiv:2611.08768): principal-context authorization + laundering."""
-    from longrun.harness import principals
+    from longrun.harness.checks import principals
     doc = _load_doc(args, "principals check FILE.json")
     out = principals.check(doc)
     _emit(principals, out, lambda o: o.get("allow"))
@@ -4666,7 +4667,7 @@ def cmd_procedure(args):
 
 def cmd_intent(args):
     """Round 111 (arXiv:2611.06563): declarations against observed effects."""
-    from longrun.harness import intent_journal
+    from longrun.harness.checks import intent_journal
     doc = _load_doc(args, "intent %s FILE.json" % args.action, allow_list=True)
     if args.action == "check":
         out = intent_journal.check(doc.get("declaration") or {},
@@ -4680,7 +4681,7 @@ def cmd_intent(args):
 
 def cmd_handoff(args):
     """Round 111 (arXiv:2611.06545): policy sentences vs the permission ledger."""
-    from longrun.harness import handoff_audit
+    from longrun.harness.checks import handoff_audit
     doc = _load_doc(args, "handoff audit FILE.json")
     out = handoff_audit.audit(doc.get("text") or "", doc.get("ledger") or [])
     _emit(handoff_audit, out, lambda o: o.get("verdict") == "clean")

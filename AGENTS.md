@@ -61,3 +61,22 @@ bash tests/battery.sh     # FAST deterministic gate; trust its reported count
   `{"running": []}`) are empty — never chained with `&&`, then announce the restart and
   read the `service.resume` event afterwards. Full runbook: `docs/OPERATIONS.md`.
 - **Reports to the operator** (proposals, rankings, diagrams) follow `docs/REPORTING.md`.
+
+## Source layout — place by runtime role, not by subject (2026-11-20)
+
+A new module goes where its ROLE lives; the folder answers "who may import it, and what can start it?".
+Place it by these three questions, in order:
+
+1. **Imported by the running app** (agent loop, HTTP route, tool dispatch, memory/model/plan
+   machinery) → the owning package: `agent/`, `core/`, `tools/`, `memory/`, `model/`, `plan/`,
+   `orchestrate/`, `evolve/`, `orbit/`, `research/`, `interop/`, `util/`.
+2. **Pure — data in, verdict out, no app imports — reachable only from the CLI** →
+   `src/longrun/harness/checks/`. Report-only; `core/forge.py` is the only adapter.
+3. **Executes a run, spawns a process or spends model tokens** →
+   `src/longrun/harness/execution/`. Gated; never reachable from a chat turn.
+
+Anything the app imports from `harness/` stays at the `harness/` root. No new top-level package for one
+subject; no round/paper names in paths (the reference goes in the docstring); a module only tests import
+belongs in `checks/` (or it is dead — say so). A move updates every importer, `core/forge.py`, tests and
+docs in the same commit, and is proven by the import audit + `python3 forge.py harness` + the battery.
+

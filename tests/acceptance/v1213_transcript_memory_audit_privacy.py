@@ -29,9 +29,9 @@ for _key in ("CONFIG_DIR", "SESSIONS_DIR", "GRAPH_DIR", "EDITS_DIR",
 os.environ["LONGRUN_DB"] = os.path.join(TMP, "events.db")
 sys.path.insert(0, os.path.join(REPO, "src"))
 
-from longrun.harness import transcript_privacy as TP   # noqa: E402
-from longrun.harness import privacy_memory as PM       # noqa: E402
-from longrun.harness import privacy_audit as PA        # noqa: E402
+from longrun.harness.checks import transcript_privacy as TP  # noqa: E402
+from longrun.harness.checks import privacy_memory as PM  # noqa: E402
+from longrun.harness.checks import privacy_audit as PA  # noqa: E402
 
 RESULTS = []
 

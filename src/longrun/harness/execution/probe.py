@@ -33,7 +33,7 @@ import os
 import shutil
 import uuid
 
-from longrun.harness import contrast as contrast_mod
+from longrun.harness.execution import contrast as contrast_mod
 from longrun.harness import record as record_mod
 from longrun.util.fswrite import write_json
 
@@ -54,7 +54,7 @@ def _defaults():
     The launch knobs (model, image, gateway budgets, timeouts, repeats) have ONE
     owner — `whole.DEFAULTS` — so a change there cannot leave a stale copy here.
     """
-    from longrun.harness import whole
+    from longrun.harness.execution import whole
     return dict(DEFAULTS, **whole.DEFAULTS)
 
 
@@ -68,7 +68,7 @@ KINDS = ("skill", "guardrail")
 def whole_cfg(c=None):
     """The subset of effective config the matched-run executor consumes."""
     c = c or cfg()
-    from longrun.harness import whole
+    from longrun.harness.execution import whole
     return {key: c.get(key, value) for key, value in whole.DEFAULTS.items()}
 
 
@@ -79,7 +79,7 @@ def isolation_status(c=None):
     tools, descendants or networking; this reports whether the matched-run
     launcher (pinned image + socket-only model channel) can actually start.
     """
-    from longrun.harness import whole
+    from longrun.harness.execution import whole
     return whole.readiness(whole_cfg(c))
 
 
@@ -415,14 +415,15 @@ def _prepare_plan(base, candidates, c=None, probe_id=None):
     # `agent.CHAT_TOOL_MAX_STEPS` is read at import time from this var — the step
     # ceiling is a budget, so the child gets it before the module is imported.
     env["LONGRUN_CHAT_TOOL_STEPS"] = str(int(c.get("max_steps") or DEFAULTS["max_steps"]))
-    # The probe runs `-m longrun.harness.runner` in a child process: the package
+    # The probe runs `-m longrun.harness.execution.runner` in a child process: the package
     # must be importable there even when the service was started from `server.py`
     # (which puts `src` on sys.path only inside its own process).
+    # `execution/` adds one level: src/longrun/harness/execution/probe.py -> src.
     src = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
-        os.path.abspath(__file__)))))
+        os.path.dirname(os.path.abspath(__file__))))))
     env["PYTHONPATH"] = os.pathsep.join(
         [src] + ([env["PYTHONPATH"]] if env.get("PYTHONPATH") else []))
-    cmd = [os.environ.get("LONGRUN_PYTHON") or "python3", "-m", "longrun.harness.runner",
+    cmd = [os.environ.get("LONGRUN_PYTHON") or "python3", "-m", "longrun.harness.execution.runner",
            "--goal", str(base.get("goal") or ""),
            "--model", str(base.get("model") or ""),
            "--rules", rules_file, "--out", os.path.join(base_dir, "result.json")]
@@ -469,7 +470,7 @@ def trials(base, candidates, runner=None, c=None, budget=None):
         if not the_status["available"]:
             return {"status": "refused", "reason": the_status["reason"],
                     "isolation": the_status}
-        from longrun.harness import whole
+        from longrun.harness.execution import whole
         return whole.run_group(base, candidates, c=whole_cfg(c))
     rows = []
     for candidate in candidates:
@@ -494,7 +495,7 @@ def successor(base, candidates, runner=None, c=None, budget=None):
         if not the_status["available"]:
             return {"status": "refused", "reason": the_status["reason"],
                     "isolation": the_status}
-        from longrun.harness import whole
+        from longrun.harness.execution import whole
         return whole.run_group(base, candidates, c=whole_cfg(c), combine=True)
     got = run(base, candidates, runner=runner, c=c)
     return {"status": got.get("status"), "reference": base,

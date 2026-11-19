@@ -12,7 +12,7 @@ TMP = tempfile.mkdtemp(prefix="longrun-v701-")
 for key in ("CONFIG_DIR", "DATA_HOME", "DATA_DIR", "SESSIONS_DIR"):
     os.environ["LONGRUN_" + key] = os.path.join(TMP, key)
 sys.path.insert(0, os.path.join(REPO, "src"))
-from longrun.harness import compose, whole
+from longrun.harness.execution import compose, whole
 
 
 def record(run_id, steps):

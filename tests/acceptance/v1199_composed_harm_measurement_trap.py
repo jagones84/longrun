@@ -34,9 +34,9 @@ for _key in ("CONFIG_DIR", "SESSIONS_DIR", "GRAPH_DIR", "EDITS_DIR",
 os.environ["LONGRUN_DB"] = os.path.join(TMP, "events.db")
 sys.path.insert(0, os.path.join(REPO, "src"))
 
-from longrun.harness import composed_harm as CH     # noqa: E402
-from longrun.harness import measurement_spec as MS   # noqa: E402
-from longrun.harness import trap_path as TP          # noqa: E402
+from longrun.harness.checks import composed_harm as CH  # noqa: E402
+from longrun.harness.checks import measurement_spec as MS  # noqa: E402
+from longrun.harness.checks import trap_path as TP  # noqa: E402
 
 RESULTS = []
 

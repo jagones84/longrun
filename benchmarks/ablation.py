@@ -4,7 +4,7 @@
 Every rule, skill and hook is a hypothesis about what the model cannot do alone,
 and the hypothesis expires with each model change — the talk behind lot H reports
 Anthropic removing >80% of Claude Code's base instructions for one model release
-with no regression. Longrun can compare two RUNS (`harness/contrast.py`) but has no
+with no regression. Longrun can compare two RUNS (`harness/execution/contrast.py`) but has no
 way to say "run this task set WITH and WITHOUT this layer", so nothing ever gets
 removed.
 

@@ -30,9 +30,9 @@ for _key in ("CONFIG_DIR", "SESSIONS_DIR", "GRAPH_DIR", "EDITS_DIR",
 os.environ["LONGRUN_DB"] = os.path.join(TMP, "events.db")
 sys.path.insert(0, os.path.join(REPO, "src"))
 
-from longrun.harness import continuation_audit as CA   # noqa: E402
-from longrun.harness import tool_extension as TE       # noqa: E402
-from longrun.harness import fast_path as FP            # noqa: E402
+from longrun.harness.checks import continuation_audit as CA  # noqa: E402
+from longrun.harness.checks import tool_extension as TE  # noqa: E402
+from longrun.harness.checks import fast_path as FP  # noqa: E402
 
 RESULTS = []
 

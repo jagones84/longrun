@@ -26,7 +26,7 @@ import tempfile
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(REPO, "src"))
 
-from longrun.harness import setup_blocks as SB     # noqa: E402
+from longrun.harness.checks import setup_blocks as SB  # noqa: E402
 
 RESULTS = []
 

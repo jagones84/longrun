@@ -30,8 +30,8 @@ os.environ["LONGRUN_DB"] = os.path.join(TMP, "events.db")
 sys.path.insert(0, os.path.join(REPO, "src"))
 
 from longrun.memory import rule_surface as RS     # noqa: E402
-from longrun.harness import team_safety as TS     # noqa: E402
-from longrun.harness import tool_graph as TG      # noqa: E402
+from longrun.harness.checks import team_safety as TS  # noqa: E402
+from longrun.harness.checks import tool_graph as TG  # noqa: E402
 
 RESULTS = []
 

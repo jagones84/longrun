@@ -172,7 +172,9 @@ def build(base, c=None, model=None, port=None, context_length=32768):
     path = sandbox.reserve_whole_run()
     budget = _Budget(c.get("max_mb") or DEFAULTS["max_mb"])
     try:
-        module = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        # execution/ adds one level: .../harness/execution/snapshot.py -> .../longrun.
+        module = os.path.dirname(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))))
         src = os.path.dirname(module)
         repo = os.path.dirname(src)
         if not _copy_tree(os.path.join(repo, "src"), os.path.join(path, "src"), budget):

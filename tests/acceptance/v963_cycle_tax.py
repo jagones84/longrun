@@ -19,7 +19,8 @@ TMP = tempfile.mkdtemp(prefix="longrun-v963-")
 for key in ("CONFIG_DIR", "DATA_HOME", "DATA_DIR", "HARNESS_DIR", "SESSIONS_DIR"):
     os.environ["LONGRUN_" + key] = os.path.join(TMP, key)
 sys.path.insert(0, os.path.join(REPO, "src"))
-from longrun.harness import cycle, probe
+from longrun.harness import cycle
+from longrun.harness.execution import probe
 from longrun.util import improve
 
 

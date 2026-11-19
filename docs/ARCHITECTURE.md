@@ -322,6 +322,17 @@ This is Longrun's own `src/longrun/harness/` package. It is not the external
 Harness² upstream (arXiv:2610.14224): that is only a comparison arm in
 `benchmarks/jobbench_compare.py`, and none of its code runs here.
 
+Layout (2026-11-20), by runtime role:
+
+* `harness/checks/` — the 134 report-only per-paper checkers. Pure data in,
+  verdict out; only `core/forge.py` imports them.
+* `harness/execution/` — the 9 gated executors (`probe`, `runner`, `editors`,
+  `compose`, `contrast`, `whole`, `snapshot`, `gateway`, `unixshim`). Only
+  `cycle` (with `dry_run=False`) reaches them, and only after
+  `whole.readiness()` passes; tests inject a fake runner.
+* `harness/` root — the 20 modules the running app imports (live turn seams,
+  read-only HTTP surfaces and their support).
+
 ### Wired vs report-only
 
 The package is a measurement and verification library, not a set of runtime
@@ -435,20 +446,20 @@ workspace deliverables, then list relevant library entries. It calls no model.
 
 Editors generate ephemeral skill/guardrail candidates, reusing complete bounded
 library files with hash provenance. A cycle now freezes ONE matched input package
-(`harness/snapshot.py`: code, config, skills, rules, workspace, per-file SHA256),
+(`harness/execution/snapshot.py`: code, config, skills, rules, workspace, per-file SHA256),
 executes a **reference run**, then each candidate as a hardlinked variant that
 differs only by the declared component. `repeats` (1–3) executes paired
 reference/candidate runs; reflection raises confidence only when every repeat
 agrees and still returns `NO_ENTRY` for durable library writes.
 
-Production execution is confined by `harness/whole.py` through the existing
+Production execution is confined by `harness/execution/whole.py` through the existing
 `sandbox` launcher: pinned image digest (`deploy/harness-runtime.Dockerfile`),
 `--network none`, read-only `/input`, bounded tmpfs writes, dropped
 capabilities, non-root, resource limits, and verified container removal. Model
-access is the ONLY channel: a Unix socket serves `harness/gateway.py`, which
+access is the ONLY channel: a Unix socket serves `harness/execution/gateway.py`, which
 forwards to one fixed loopback upstream and one allowlisted model under request,
 body, token and time budgets. The container's loopback TCP is bridged by
-`harness/unixshim.py`; the gateway remains the policy owner.
+`harness/execution/unixshim.py`; the gateway remains the policy owner.
 
 Readiness is reported by real checks (`readiness()` in `whole.py`): POSIX,
 non-root, pinned image present with matching identity, configured model,
@@ -648,7 +659,7 @@ LONGRUN_HARNESS_IMAGE=sha256:<the 64-hex id printed above>
 LONGRUN_HARNESS_MODEL=<exact model id the loopback router serves>
 ```
 
-Optional knobs (all owned by `harness/whole.py:DEFAULTS`): `LONGRUN_HARNESS_REPEATS`
+Optional knobs (all owned by `harness/execution/whole.py:DEFAULTS`): `LONGRUN_HARNESS_REPEATS`
 (1–3), `LONGRUN_HARNESS_RUN_TIMEOUT`, `LONGRUN_HARNESS_PORT`,
 `LONGRUN_HARNESS_CONTEXT`, `LONGRUN_HARNESS_SNAPSHOT_MB`,
 `LONGRUN_HARNESS_MAX_CANDIDATES`, `LONGRUN_HARNESS_MAX_CYCLE_SECONDS`,

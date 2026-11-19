@@ -27,9 +27,9 @@ for _key in ("CONFIG_DIR", "SESSIONS_DIR", "GRAPH_DIR", "EDITS_DIR",
 os.environ["LONGRUN_DB"] = os.path.join(TMP, "events.db")
 sys.path.insert(0, os.path.join(REPO, "src"))
 
-from longrun.harness import defense_envelope as DE    # noqa: E402
-from longrun.harness import execution_fingerprint as EF  # noqa: E402
-from longrun.harness import model_handoff as MH       # noqa: E402
+from longrun.harness.checks import defense_envelope as DE  # noqa: E402
+from longrun.harness.checks import execution_fingerprint as EF  # noqa: E402
+from longrun.harness.checks import model_handoff as MH  # noqa: E402
 
 RESULTS = []
 

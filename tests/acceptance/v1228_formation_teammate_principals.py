@@ -29,9 +29,9 @@ for _key in ("CONFIG_DIR", "SESSIONS_DIR", "GRAPH_DIR", "EDITS_DIR",
 os.environ["LONGRUN_DB"] = os.path.join(TMP, "events.db")
 sys.path.insert(0, os.path.join(REPO, "src"))
 
-from longrun.harness import multiagent_formation as MF   # noqa: E402
-from longrun.harness import teammate_eval as TE          # noqa: E402
-from longrun.harness import principal_policy as PP       # noqa: E402
+from longrun.harness.checks import multiagent_formation as MF  # noqa: E402
+from longrun.harness.checks import teammate_eval as TE  # noqa: E402
+from longrun.harness.checks import principal_policy as PP  # noqa: E402
 
 RESULTS = []
 
@@ -321,7 +321,7 @@ check("the principal policy is the `museprincipals` subcommand",
       'sub.add_parser("museprincipals")' in _FORGE
       and "fn=cmd_museprincipals" in _FORGE)
 check("each command imports its module",
-      all(("from longrun.harness import " + m) in _FORGE
+      all(("from longrun.harness.checks import " + m) in _FORGE
           for m in ("multiagent_formation", "teammate_eval", "principal_policy")))
 
 _empty = os.path.join(TMP, "empty.json")

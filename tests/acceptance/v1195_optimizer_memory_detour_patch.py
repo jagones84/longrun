@@ -28,9 +28,9 @@ for _key in ("CONFIG_DIR", "SESSIONS_DIR", "GRAPH_DIR", "EDITS_DIR",
 os.environ["LONGRUN_DB"] = os.path.join(TMP, "events.db")
 sys.path.insert(0, os.path.join(REPO, "src"))
 
-from longrun.harness import optimizer_memory as OM  # noqa: E402
-from longrun.harness import detour as DT            # noqa: E402
-from longrun.harness import patch_probe as PP       # noqa: E402
+from longrun.harness.checks import optimizer_memory as OM  # noqa: E402
+from longrun.harness.checks import detour as DT  # noqa: E402
+from longrun.harness.checks import patch_probe as PP  # noqa: E402
 
 RESULTS = []
 

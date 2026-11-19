@@ -33,9 +33,9 @@ for _key in ("CONFIG_DIR", "SESSIONS_DIR", "GRAPH_DIR", "EDITS_DIR",
 os.environ["LONGRUN_DB"] = os.path.join(TMP, "events.db")
 sys.path.insert(0, os.path.join(REPO, "src"))
 
-from longrun.harness import evidence_gate as EG   # noqa: E402
-from longrun.harness import stress_evolution as SE  # noqa: E402
-from longrun.harness import paired_trial as PT   # noqa: E402
+from longrun.harness.checks import evidence_gate as EG  # noqa: E402
+from longrun.harness.checks import stress_evolution as SE  # noqa: E402
+from longrun.harness.checks import paired_trial as PT  # noqa: E402
 
 RESULTS = []
 

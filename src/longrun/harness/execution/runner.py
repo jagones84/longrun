@@ -5,7 +5,7 @@ A probe must not run inside the server process: the candidate skills root and th
 scratch workspace are per-process environment variables, and a crash must not take
 the operator's service down. So the probe spawns this module in the scratch copy:
 
-    python3 -m longrun.harness.runner --goal "<the task>" --out result.json
+    python3 -m longrun.harness.execution.runner --goal "<the task>" --out result.json
 
 **It runs the REAL chat loop** (`agent.chat_once`, the same one the operator's
 chat uses), in a scratch session, and writes the resulting execution record:
@@ -75,14 +75,14 @@ def prepare_rules(workspace, snapshot, guardrail=None):
 def _src_root():
     """`<repo>/src` — the package must be importable from the scratch copy."""
     here = os.path.abspath(__file__)
-    for _ in range(4):
+    for _ in range(5):   # exec/runner.py -> harness -> longrun -> src -> repo
         here = os.path.dirname(here)
     return os.path.join(here, "src")
 
 
 def main(argv=None):
     """Run one goal in the current directory and write the result JSON."""
-    ap = argparse.ArgumentParser(prog="longrun.harness.runner")
+    ap = argparse.ArgumentParser(prog="longrun.harness.execution.runner")
     ap.add_argument("--goal", required=True)
     ap.add_argument("--model", default=None)
     ap.add_argument("--rules")
@@ -103,7 +103,7 @@ def main(argv=None):
         if args.workspace_from:
             _copy_workspace(args.workspace_from)
         if args.gateway_socket:
-            from longrun.harness import unixshim
+            from longrun.harness.execution import unixshim
             shim = unixshim.Shim(args.gateway_socket)
             started_relay = shim.start(port=args.gateway_port)
             if not started_relay.get("ok"):

@@ -15,8 +15,8 @@ TMP = tempfile.mkdtemp(prefix="longrun-v697-")
 for key in ("CONFIG_DIR", "DATA_HOME", "DATA_DIR", "SESSIONS_DIR"):
     os.environ["LONGRUN_" + key] = os.path.join(TMP, key)
 sys.path.insert(0, os.path.join(REPO, "src"))
-from longrun.harness import gateway as gateway_mod
-from longrun.harness import unixshim
+from longrun.harness.execution import gateway as gateway_mod
+from longrun.harness.execution import unixshim
 
 MODEL = "fixture-model"
 

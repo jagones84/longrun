@@ -17,10 +17,10 @@ import shutil
 import uuid
 from urllib.parse import urlsplit
 
-from longrun.harness import compose as compose_mod
-from longrun.harness import contrast as contrast_mod
-from longrun.harness import gateway as gateway_mod
-from longrun.harness import snapshot as snapshot_mod
+from longrun.harness.execution import compose as compose_mod
+from longrun.harness.execution import contrast as contrast_mod
+from longrun.harness.execution import gateway as gateway_mod
+from longrun.harness.execution import snapshot as snapshot_mod
 from longrun.tools import sandbox
 
 DEFAULTS = {
@@ -111,7 +111,7 @@ def _run_id(tag):
 
 def _delta_for(candidate):
     """Container-relative delta path for a supported candidate kind."""
-    from longrun.harness import probe as probe_mod
+    from longrun.harness.execution import probe as probe_mod
     target, why = probe_mod._target(str(candidate.get("kind") or ""),
                                     candidate.get("name"))
     if not target:
@@ -126,7 +126,7 @@ def _delta_for(candidate):
 
 
 def _container_args(goal, model, port, guardrail=False):
-    args = ["-m", "longrun.harness.runner", "--goal", goal,
+    args = ["-m", "longrun.harness.execution.runner", "--goal", goal,
             "--model", "h2:" + model,
             "--rules", "/input/rules/snapshot.json",
             "--workspace-from", "/input/workspace",

@@ -15,7 +15,8 @@ TMP = tempfile.mkdtemp(prefix="longrun-v695-")
 for key in ("CONFIG_DIR", "DATA_HOME", "DATA_DIR", "HARNESS_DIR", "SESSIONS_DIR"):
     os.environ["LONGRUN_" + key] = os.path.join(TMP, key)
 sys.path.insert(0, os.path.join(REPO, "src"))
-from longrun.harness import cycle, probe, whole
+from longrun.harness import cycle
+from longrun.harness.execution import probe, whole
 
 
 class Readiness(unittest.TestCase):

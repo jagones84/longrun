@@ -26,9 +26,9 @@ for _key in ("CONFIG_DIR", "SESSIONS_DIR", "GRAPH_DIR", "EDITS_DIR",
 os.environ["LONGRUN_DB"] = os.path.join(TMP, "events.db")
 sys.path.insert(0, os.path.join(REPO, "src"))
 
-from longrun.harness import priority_criteria as PC   # noqa: E402
-from longrun.harness import value_disposition as VD   # noqa: E402
-from longrun.harness import cross_env_tasks as CE     # noqa: E402
+from longrun.harness.checks import priority_criteria as PC  # noqa: E402
+from longrun.harness.checks import value_disposition as VD  # noqa: E402
+from longrun.harness.checks import cross_env_tasks as CE  # noqa: E402
 
 RESULTS = []
 

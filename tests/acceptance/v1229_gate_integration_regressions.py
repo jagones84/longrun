@@ -35,8 +35,8 @@ from longrun.core import api_v02 as API          # noqa: E402
 from longrun.tools import registry as REG        # noqa: E402
 from longrun.tools import tools as TOOLS         # noqa: E402
 from longrun.tools import approvals              # noqa: E402
-from longrun.harness import tool_policy          # noqa: E402
-from longrun.harness import intent_audit as IA   # noqa: E402
+from longrun.harness import tool_policy  # noqa: E402
+from longrun.harness import intent_audit as IA  # noqa: E402
 from longrun.memory import memory as MEM         # noqa: E402
 
 RESULTS = []

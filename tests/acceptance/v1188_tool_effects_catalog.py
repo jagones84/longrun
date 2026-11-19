@@ -24,7 +24,7 @@ os.environ["LONGRUN_DB"] = os.path.join(TMP, "events.db")
 sys.path.insert(0, os.path.join(REPO, "src"))
 
 from longrun.tools import registry as REG            # noqa: E402
-from longrun.harness import effect_types as ET        # noqa: E402
+from longrun.harness import effect_types as ET  # noqa: E402
 
 RESULTS = []
 
@@ -194,7 +194,7 @@ check("atomic_abort is never assumed",
       not any(c["atomic_abort"] for c in _caps.values()), _caps)
 
 # ---- 4. the declarations feed the tool graph (round 121) --------------------
-from longrun.harness import tool_graph as TG          # noqa: E402
+from longrun.harness.checks import tool_graph as TG  # noqa: E402
 lg = TG.build(list(rows.values()))
 ledges = {(e["from"], e["to"]): e for e in lg["edges"]}
 check("the live catalog yields a typed writer->reader edge",

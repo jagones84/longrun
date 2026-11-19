@@ -31,9 +31,9 @@ for _key in ("CONFIG_DIR", "SESSIONS_DIR", "GRAPH_DIR", "EDITS_DIR",
 os.environ["LONGRUN_DB"] = os.path.join(TMP, "events.db")
 sys.path.insert(0, os.path.join(REPO, "src"))
 
-from longrun.harness import redteam_coverage as RC   # noqa: E402
-from longrun.harness import purple_loop as PL        # noqa: E402
-from longrun.harness import render_defense as RD     # noqa: E402
+from longrun.harness.checks import redteam_coverage as RC  # noqa: E402
+from longrun.harness.checks import purple_loop as PL  # noqa: E402
+from longrun.harness.checks import render_defense as RD  # noqa: E402
 
 RESULTS = []
 
