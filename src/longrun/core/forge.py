@@ -63,6 +63,7 @@ Usage:
                            | folding trigger FILE.json | invocation rates FILE.json | capabilities updating FILE.json
                            | govern validate FILE.json | typed build FILE.json | pipeline blame FILE.json
                            | envelope weight FILE.json | tracefp attribute FILE.json | modelhandoff gate FILE.json
+                           | admission aimd FILE.json | statesched kv FILE.json | capacity priority FILE.json
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -2820,6 +2821,126 @@ def cmd_modelhandoff(args):
     sys.exit(0)
 
 
+def cmd_admission(args):
+    """Round 143 (arXiv:2604.17111): the API is a shared resource, so schedule it."""
+    from longrun.harness import admission_schedule
+    if not getattr(args, "file", None):
+        print("usage: admission provider|slot|aimd|circuit|backoff|budget|order|ablate|pressure|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "provider":
+        out = admission_schedule.provider(doc.get("profile") or doc)
+    elif args.action == "slot":
+        out = admission_schedule.slot(doc.get("active"), doc.get("cmax"),
+                                      doc.get("waiting", 0))
+    elif args.action == "aimd":
+        out = admission_schedule.aimd(doc.get("state") or doc)
+    elif args.action == "circuit":
+        out = admission_schedule.circuit(doc.get("state") or doc)
+    elif args.action == "backoff":
+        out = admission_schedule.backoff(
+            doc.get("attempt", 0), doc.get("retry_after"), doc.get("base", 1.0),
+            doc.get("cap", 30.0), doc.get("jitter", 0.0))
+    elif args.action == "budget":
+        out = admission_schedule.budget(doc.get("ceiling"), doc.get("used"),
+                                        doc.get("warn_at", 0.85))
+    elif args.action == "order":
+        out = admission_schedule.order(doc.get("tasks") or [],
+                                       doc.get("completed") or [])
+    elif args.action == "ablate":
+        out = admission_schedule.ablate(doc.get("rows") or [])
+    elif args.action == "pressure":
+        out = admission_schedule.pressure(doc.get("rows") or [])
+    else:
+        out = admission_schedule.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_statesched(args):
+    """Round 143 (arXiv:2512.14142): optimize the request lifecycle, not the segment."""
+    from longrun.harness import stateful_scheduling
+    if not getattr(args, "file", None):
+        print("usage: statesched hrrn|queue|aging|batch|kv|predict|jct|compare|stability|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "hrrn":
+        out = {"score": stateful_scheduling.hrrn(doc.get("wait"),
+                                                 doc.get("proc"))}
+    elif args.action == "queue":
+        out = stateful_scheduling.queue_event(doc.get("row") or doc)
+    elif args.action == "aging":
+        out = stateful_scheduling.aging(doc.get("row") or doc)
+    elif args.action == "batch":
+        out = stateful_scheduling.batch(doc.get("segments") or [],
+                                        doc.get("capacity"))
+    elif args.action == "kv":
+        out = stateful_scheduling.kv_policy(doc.get("row") or doc)
+    elif args.action == "predict":
+        out = stateful_scheduling.predict(doc.get("row") or doc)
+    elif args.action == "jct":
+        out = stateful_scheduling.jct(doc.get("segments") or [])
+    elif args.action == "compare":
+        out = stateful_scheduling.compare(doc.get("rows") or [])
+    elif args.action == "stability":
+        out = stateful_scheduling.stability(doc.get("rows") or [])
+    else:
+        out = stateful_scheduling.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_capacity(args):
+    """Round 143 (arXiv:2603.00356): admission at the gateway, priced in inference units."""
+    from longrun.harness import capacity_pools
+    if not getattr(args, "file", None):
+        print("usage: capacity classes|classify|priority|debt|burst|resources|admission|reclaim|protect|fairshare|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "classes":
+        out = {"classes": capacity_pools.classes()}
+    elif args.action == "classify":
+        out = capacity_pools.classify(doc.get("name"))
+    elif args.action == "priority":
+        out = capacity_pools.priority(doc.get("row") or doc)
+    elif args.action == "debt":
+        out = capacity_pools.debt(doc.get("row") or doc)
+    elif args.action == "burst":
+        out = capacity_pools.burst(doc.get("row") or doc)
+    elif args.action == "resources":
+        out = capacity_pools.resources(doc.get("row") or doc)
+    elif args.action == "admission":
+        out = capacity_pools.admission(doc.get("row") or doc)
+    elif args.action == "reclaim":
+        out = capacity_pools.reclaim(doc.get("items") or [])
+    elif args.action == "protect":
+        out = capacity_pools.protect(doc.get("rows") or [])
+    elif args.action == "fairshare":
+        out = capacity_pools.fairshare(doc.get("row") or doc)
+    else:
+        out = capacity_pools.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
 def cmd_instructions(args):
     """Round 114 (arXiv:2611.13709): explicit context-file directives vs the cards."""
     from longrun.harness import instruction_audit
@@ -4686,6 +4807,22 @@ def main():
                                           "handoff", "recovery", "saturate", "audit", "advise"]); \
         p.add_argument("file", nargs="?", help="JSON: {features}, {rows}, {packet}, {record}, or {profile}"); \
         p.set_defaults(fn=cmd_modelhandoff)
+    p = sub.add_parser("admission"); \
+        p.add_argument("action", choices=["provider", "slot", "aimd", "circuit", "backoff",
+                                          "budget", "order", "ablate", "pressure", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {profile}, {state}, {tasks}, {rows}, or {profile}"); \
+        p.set_defaults(fn=cmd_admission)
+    p = sub.add_parser("statesched"); \
+        p.add_argument("action", choices=["hrrn", "queue", "aging", "batch", "kv", "predict",
+                                          "jct", "compare", "stability", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {wait, proc}, {row}, {segments}, {rows}, or {profile}"); \
+        p.set_defaults(fn=cmd_statesched)
+    p = sub.add_parser("capacity"); \
+        p.add_argument("action", choices=["classes", "classify", "priority", "debt", "burst",
+                                          "resources", "admission", "reclaim", "protect",
+                                          "fairshare", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {name}, {row}, {items}, {rows}, or {profile}"); \
+        p.set_defaults(fn=cmd_capacity)
     p = sub.add_parser("instructions"); p.add_argument("action", choices=["audit"]); \
         p.add_argument("file", nargs="?", help="JSON: {text, cards}"); \
         p.set_defaults(fn=cmd_instructions)
