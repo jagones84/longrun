@@ -54,6 +54,7 @@ Usage:
                           | composed compose FILE.json | measure specs FILE.json | trap position FILE.json
                            | evidence admit FILE.json | stress compare FILE.json | trial claim FILE.json
                            | scope witness FILE.json | round champion FILE.json | attest build FILE.json
+                           | criteria measure FILE.json | rubric errors FILE.json | docmaint measure FILE.json
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -1883,6 +1884,102 @@ def cmd_attest(args):
     sys.exit(0)
 
 
+def cmd_criteria(args):
+    """Round 133 (arXiv:2611.23074): per-criterion ternary verdicts at runtime."""
+    from longrun.harness import criterion_verification
+    if not getattr(args, "file", None):
+        print("usage: criteria criterion|verdict|coverage|escalate|measure|decompose|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "criterion":
+        out = criterion_verification.criterion(
+            doc.get("text"), doc.get("source") or "developer",
+            doc.get("polarity") or "positive", doc.get("precondition"),
+            doc.get("trace_decidable", True), doc.get("compounds") or 0)
+    elif args.action == "verdict":
+        out = criterion_verification.verdict(doc.get("record") or doc)
+    elif args.action == "coverage":
+        out = criterion_verification.coverage(doc.get("criteria") or [],
+                                              doc.get("trace") or {})
+    elif args.action == "escalate":
+        out = criterion_verification.escalate(doc.get("rows") or [])
+    elif args.action == "measure":
+        out = criterion_verification.measure(doc.get("rows") or [])
+    elif args.action == "decompose":
+        out = criterion_verification.decomposition(
+            doc.get("text") or "", doc.get("expected_per_words") or 20, doc.get("actual"))
+    else:
+        out = criterion_verification.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_rubric(args):
+    """Round 133 (arXiv:2611.22841): the verifier is the object."""
+    from longrun.harness import rubric_verification
+    if not getattr(args, "file", None):
+        print("usage: rubric capability|verifier|errors|batch|ablation|agreement|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "capability":
+        out = rubric_verification.capability(doc.get("name"), doc.get("description") or "")
+    elif args.action == "verifier":
+        out = rubric_verification.verifier(doc.get("config") or doc)
+    elif args.action == "errors":
+        out = rubric_verification.errors(doc.get("rows") or [])
+    elif args.action == "batch":
+        out = rubric_verification.batch(doc.get("rows") or [])
+    elif args.action == "ablation":
+        out = rubric_verification.ablation(doc.get("rows") or [])
+    elif args.action == "agreement":
+        out = rubric_verification.agreement(doc.get("rows") or [])
+    else:
+        out = rubric_verification.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_docmaint(args):
+    """Round 133 (arXiv:2611.23142): a human correction is a gap signal."""
+    from longrun.harness import doc_maintenance
+    if not getattr(args, "file", None):
+        print("usage: docmaint signal|gap|tracker|pipeline|measure|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "signal":
+        out = doc_maintenance.signal(doc.get("ticket") or doc)
+    elif args.action == "gap":
+        out = doc_maintenance.gap(doc.get("gap") or doc)
+    elif args.action == "tracker":
+        out = doc_maintenance.tracker(doc.get("entries") or [])
+    elif args.action == "pipeline":
+        out = doc_maintenance.pipeline(doc.get("draft") or doc)
+    elif args.action == "measure":
+        out = doc_maintenance.measure(doc.get("rows") or [])
+    else:
+        out = doc_maintenance.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
 def cmd_instructions(args):
     """Round 114 (arXiv:2611.13709): explicit context-file directives vs the cards."""
     from longrun.harness import instruction_audit
@@ -3611,6 +3708,21 @@ def main():
                                           "accountability", "measure", "advise"]); \
         p.add_argument("file", nargs="?", help="JSON: {request}, {cert, federation}, {build, approved}, {call}, {entries}, {rows}, or {profile}"); \
         p.set_defaults(fn=cmd_attest)
+    p = sub.add_parser("criteria"); \
+        p.add_argument("action", choices=["criterion", "verdict", "coverage", "escalate",
+                                          "measure", "decompose", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {text, source, polarity, compounds}, {record}, {criteria, trace}, {rows}, {text, actual}, or {profile}"); \
+        p.set_defaults(fn=cmd_criteria)
+    p = sub.add_parser("rubric"); \
+        p.add_argument("action", choices=["capability", "verifier", "errors", "batch",
+                                          "ablation", "agreement", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {name, description}, {config}, {rows}, or {profile}"); \
+        p.set_defaults(fn=cmd_rubric)
+    p = sub.add_parser("docmaint"); \
+        p.add_argument("action", choices=["signal", "gap", "tracker", "pipeline",
+                                          "measure", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {ticket}, {gap}, {entries}, {draft}, {rows}, or {profile}"); \
+        p.set_defaults(fn=cmd_docmaint)
     p = sub.add_parser("instructions"); p.add_argument("action", choices=["audit"]); \
         p.add_argument("file", nargs="?", help="JSON: {text, cards}"); \
         p.set_defaults(fn=cmd_instructions)
