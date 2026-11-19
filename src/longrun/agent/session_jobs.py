@@ -167,7 +167,8 @@ def create(sid, goal, subjobs, mode="parallel"):
         _save(sid, doc)
         job = doc["jobs"][jid]
     _publish("sj.created", session=sid, job=jid, subjobs=order)
-    return {"ok": True, "job": jid, "session": sid, "subjobs": order,
+    return {"ok": True, "kind": "session", "job": jid, "session": sid,
+            "subjobs": order,
             "labels": {v: k for k, v in ids.items()}, "record": job}
 
 
@@ -240,7 +241,9 @@ def run(sid, job_id=None, hook=None, spawn_fn=None, collect_fn=None,
         doc = _load(sid)
         job = _pick(doc, job_id)
         if not job:
-            return {"ok": False, "error": "no SJ to run in this session"}
+            return {"ok": False, "kind": "session",
+                    "error": ("no such SJ: %s" % job_id) if job_id
+                             else "no SJ to run in this session"}
         job_id = job["id"]
         # v948: reap the subjobs a DEAD process left `running`. They cannot have a
         # worker here (nothing re-spawns a non-pending row), so mark them failed
@@ -408,7 +411,8 @@ def run(sid, job_id=None, hook=None, spawn_fn=None, collect_fn=None,
         view = describe(sid, job_id)
     _publish("sj.done", session=sid, job=job_id, status=final)
     text = _render_text(view)
-    return {"ok": final == "done", "job": job_id, "status": final,
+    return {"ok": final == "done", "kind": "session", "job": job_id,
+            "status": final,
             "subjobs": view.get("jobs", [{}])[0].get("subjobs", []) if view.get("jobs") else [],
             "text": text}
 
@@ -417,6 +421,14 @@ def _pick(doc, job_id):
     jobs = doc.get("jobs") or {}
     if job_id and job_id in jobs:
         return jobs[job_id]
+    if job_id and not str(job_id).strip().upper().startswith("SJ"):
+        # 2026-11-20: an explicit NON-SJ id (a team job `J<n>`, a team subjob
+        # `J<n>.<k>`, or garbage) must never be answered with the newest Session
+        # Job. The same `"job"` key exists in both layers, so silently resolving
+        # a foreign id here made `self.sj {job:"J21"}` impersonate unrelated
+        # in-chat work. SJ-shaped unknown ids keep the legacy fallback (v611 T11,
+        # v613 T4); anything else means "no such SJ".
+        return None
     open_jobs = [j for j in jobs.values()
                  if j.get("status") not in ("done", "error", "partial")]
     if open_jobs:
@@ -466,10 +478,15 @@ def describe(sid, job_id=None, max_result=600):
                            if s.get("result") else None),
                 "error": s.get("error"),
             })
-        out.append({"id": job.get("id"), "goal": job.get("goal"),
+        out.append({"kind": "session", "id": job.get("id"), "goal": job.get("goal"),
                     "status": job.get("status"), "created": job.get("created"),
                     "ended": job.get("ended"), "subjobs": subs})
-    return {"ok": True, "session": sid, "jobs": out, "file": _rel(path_for(sid))}
+    # 2026-11-20: self-describing payload. SJ is the in-chat subagent ledger —
+    # NOT a team job (J<n>, /api/jobs); it is never dispatched and is read-only
+    # from every surface. `read_only` is stated here so a consumer cannot
+    # mistake the route for a control door.
+    return {"ok": True, "kind": "session", "read_only": True, "session": sid,
+            "jobs": out, "file": _rel(path_for(sid))}
 
 
 def _rel(path):

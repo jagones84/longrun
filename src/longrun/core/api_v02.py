@@ -1285,8 +1285,8 @@ def tool_context():
         "Never "
         "batch an approval-gated mutation with a read that depends on it.",
         "A SUBAGENT item may declare ORDER over other subagent items of the same "
-        "batch, and the whole batch becomes one Session Job (SJ) you can inspect "
-        "with `self.sj`:",
+        "batch, and the whole batch becomes one in-chat Session Job (SJ) — never "
+        "dispatched, never a team job (J<n>) — inspectable with `self.sj`:",
         '  {"action":"batch","calls":['
         '{"action":"subagent","label":"data","goal":"collect the numbers"},'
         '{"action":"subagent","label":"report","goal":"write the summary",'

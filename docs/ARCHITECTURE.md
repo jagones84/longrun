@@ -39,6 +39,19 @@ Team  TN      a symbol + a roster (owns its members)
 Membership is owned by the **team** (`teams.py`); `agents.py` only reads it, so the two
 stores can never drift. Todo ids are `AX.nY` — the `T` namespace belongs to teams.
 
+### Team jobs vs Session Jobs (the two "job" words)
+
+| | Team job `J<n>` | Session Job `SJ<n>` |
+|---|---|---|
+| What | durable work between agents of a team | a `batch` of subagents inside ONE chat |
+| Store | `data/jobs.json`, `/api/jobs` | `data/session_jobs/<sid>.json`, `/api/sessions/<sid>/sj` |
+| Executor | coordinator + team, dependency waves in each agent's own session | `subagent.spawn` children of the current session |
+| Lifecycle | survives restarts; deleted explicitly | read-only, never dispatched; dies with the session, `/clear` or delete |
+| Panel | Jobs panel (team section) | Jobs panel (in-chat subagents section, session scope only) |
+
+They share only the pure graph helpers (`util/dag.py`); no code path moves an SJ into
+`jobs.json` or a J into a session ledger.
+
 ### Todo lifecycle (the checklist item)
 
 ```
@@ -728,6 +741,7 @@ inside a workspace) ·
 `codebase/` (per-workspace FTS+vector index) · `knowledge/` + `embedding/` (global
 notebook index + its cost log) · `costs/` (per-session model-call ledger) · `prices.json` ·
 `tls/` (auto self-signed cert for HTTPS) · `agents.json` · `teams.json` · `jobs.json` ·
+`session_jobs/` (one in-chat SJ ledger per session) ·
 `events.db` (durable SSE feed) · `projects/` (per-workspace Project_rules.md, rules/,
 prompt.d/). Writes are atomic (`tmp` + `os.replace`). The root is resolved by
 `util/paths.py` (`LONGRUN_DATA_HOME` → `data_home` in `~/.longrun/config/config.json`
@@ -767,7 +781,8 @@ Lifecycle and retention — every store has an owner and an end:
 | Run | finish / abort | its metrics live and die with the session |
 | Graph | the owner's delete, or the startup orphan sweep | owner-less graphs older than 14 days move to `trash/` |
 | Goal | delete (the record is removed, so a stale client cannot resume it) | per session |
-| Job / subjob | manual `job rm` | `jobs.json` has NO automatic retention |
+| Team job / subjob (J<n>) | `DELETE /api/jobs/<id>` / the `job.delete` tool | `jobs.json` has NO automatic retention |
+| Session Job (SJ<n>) | dies with its session: `/clear` or `DELETE /api/sessions/<id>` (same cascade) | in-chat ledger only, read-only, no retention |
 | Approval | decided, or expired by `approvals.timeout_secs` | newest `approvals.max_records` DECIDED rows; a PENDING request is never evicted (`v909`) |
 | Checkpoint | manual delete / prune | 100 snapshots + 30 turn anchors per session, and the dropped index entry takes its payload (`v973`) |
 | Offload file | `prune_offload` on write + once per boot | newest `offload_keep_files` (200) per session, nothing older than `offload_keep_days` (30) |

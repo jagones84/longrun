@@ -9,7 +9,7 @@
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776ab.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![deps](https://img.shields.io/badge/deps-stdlib%20%2B%20PyYAML-brightgreen.svg)](#quick-start-windows)
-[![tests](https://img.shields.io/badge/battery-918%2F918%20tests-blue.svg)](#tests)
+[![tests](https://img.shields.io/badge/battery-919%2F919%20tests-blue.svg)](#tests)
 
 **Longrun is the self-hosted AI agent harness that drives the LLM — teams of
 agents, real tools, and verification, on your own machine.** One Python process
@@ -484,6 +484,10 @@ Orchestration has three native shapes — pick the cheapest that fits:
   {"action": "dispatch", "agent": "A49", "goal": "read docs/CLI.md"} ]}
 // a durable job with dependency waves, observable via /api/jobs
 {"tool": "job.dispatch", "args": {"job": "J22"}}
+// in-chat ordered subagents (Session Job SJ<n>; never dispatched, dies with the chat)
+{"action": "batch", "calls": [
+  {"action": "subagent", "label": "data", "goal": "collect the numbers"},
+  {"action": "subagent", "label": "report", "goal": "write the summary", "deps": ["data"]} ]}
 ```
 
 ---

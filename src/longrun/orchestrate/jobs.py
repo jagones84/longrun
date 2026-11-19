@@ -508,6 +508,11 @@ def readable_job(job):
     if not isinstance(job, dict):
         return job
     out = dict(job)
+    # 2026-11-20: every read model says WHICH kind of work this is. Team jobs
+    # (J<n>, data/jobs.json) and in-chat Session Jobs (SJ<n>, session_jobs.py)
+    # are different objects; a consumer must never infer the kind from a
+    # container it happens to be listed in.
+    out["kind"] = "team"
     runs = job.get("runs")
     if isinstance(runs, dict):
         out["runs"] = {k: (dict(v, result=readable_text(v.get("result")))
@@ -534,7 +539,7 @@ class JobRegistry:
         # 2026-11-08: what every UI prints is `readable_job`, so a brief recorded
         # as raw tool markup (legacy rows) never reaches the operator verbatim.
         jobs = [readable_job(j) for j in jobs]
-        out = {"jobs": jobs, "seq": d["seq"], "count": len(jobs)}
+        out = {"kind": "team", "jobs": jobs, "seq": d["seq"], "count": len(jobs)}
         try:
             from longrun.core import matrix as _mtx
             _mtx.call_hook("orchestrate", "on_job_change", out, "list", default=None)
@@ -635,7 +640,9 @@ class JobRegistry:
                    "created": round(time.time(), 3), "runs": {}}
             d["jobs"][jid] = job
             _save(d)
-        return {"ok": True, "job": job}
+        # 2026-11-20: the write response is a READ model too — it must say which
+        # kind it is (`J<n>`, team job), like list/detail. Additive field only.
+        return {"ok": True, "job": readable_job(job)}
 
     def update(self, jid, goal=None, coordinator=None, agents=None, deps=None,
                mode=None, blocked_by=None):
@@ -684,7 +691,7 @@ class JobRegistry:
                 elif job.get("status") == "blocked":
                     job["status"] = "created"
             _save(d)
-        return {"ok": True, "job": job}
+        return {"ok": True, "job": readable_job(job)}
 
     @staticmethod
     def _clean_blockers(d, jid, blocked_by):
@@ -775,7 +782,7 @@ class JobRegistry:
                           "error": "", "ended": None})
             _save(d)
         threading.Thread(target=self._run, args=(jid,), name="job-" + str(jid), daemon=True).start()
-        return {"ok": True, "job": jid, "status": "running"}
+        return {"ok": True, "kind": "team", "job": jid, "status": "running"}
 
     def _release(self, jid):
         """Atomically flip a `blocked` job to `created`; False when beaten to it.

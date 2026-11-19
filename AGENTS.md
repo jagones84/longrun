@@ -26,9 +26,13 @@ that built this.
   (AX.nY)`. A **team** owns its roster; an **agent IS a session**
   (`agent["session"] == sid`). A **job** runs a coordinator + its team in dependency
   waves — the coordinator's PLAN turn is plan-only and read-only, the workers execute.
+  An in-chat `batch` of subagents is a **Session Job (SJ<n>)**, not a team job: it is
+  never dispatched, lives in the session's own ledger, and dies with the chat.
 - **Everything is gated** behind `Authorization: Bearer <token>` (or `?token=`);
   the token lives in the service `EnvironmentFile`, never in the repo.
-- State is files under `data/` (sessions, graphs, runs, edits, events.db, jobs).
+- State is files under `data/` (sessions, graphs, runs, edits, events.db, jobs,
+  session_jobs). Team jobs live in `jobs.json`; in-chat Session Jobs live in
+  `session_jobs/<sid>.json` and die with the chat.
 - The **harness is the model's secretary**: it injects synthetic turns tagged
   `nudge` / `observation` / `continue`, persisted so the chat rebuilds them on reload.
 

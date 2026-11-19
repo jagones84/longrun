@@ -162,7 +162,7 @@ def _constellation(team=None):
         "agents": [{"id": a.get("id"), "session": a.get("session"), "name": a.get("name"),
                     "role": a.get("role"), "reports_to": a.get("reports_to"),
                     "model": a.get("model"), "teams": a.get("teams") or []} for a in ags],
-        "jobs": [{"id": j.get("id"), "status": j.get("status"),
+        "jobs": [{"kind": "team", "id": j.get("id"), "status": j.get("status"),
                   "coordinator": j.get("coordinator"), "agents": j.get("agents") or [],
                   "blocked_by": j.get("blocked_by") or [], "goal": j.get("goal"),
                   # I-7: the paths two of this job's agents both wrote.

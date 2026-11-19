@@ -2321,9 +2321,9 @@ def _self(args, run_id):
             info["failure_lines"] = lines
         elif action in ("sj", "session-jobs", "sessionjobs", "subjobs"):
             # JAG-533/SJ: the SESSION-scoped job graph (the dependency-ordered
-            # subagents of this chat). Not the multi-session Orbit jobs (those
-            # are `J<n>` and live in /api/orbit/jobs) — SJ is `SJ<n>` / `SJ<n>.<k>`
-            # and dies with its session.
+            # subagents of this chat). NOT a team job: team jobs are `J<n>` in
+            # /api/jobs (data/jobs.json) and are dispatched between agents; SJ is
+            # `SJ<n>` / `SJ<n>.<k>`, stored per session and dies with it.
             from longrun.agent import session_jobs as _sj
             info["sj"] = _sj.describe((args or {}).get("session") or run_id,
                                       (args or {}).get("job"))

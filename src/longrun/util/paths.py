@@ -192,7 +192,8 @@ TARGET_DATA_DIR = os.path.join(HOME_DIR, "data")
 # Session store. Overridable so tests/CI can run against a scratch directory
 # (`LONGRUN_SESSIONS_DIR`) without touching the live transcripts.
 SESSIONS_DIR = os.environ.get("LONGRUN_SESSIONS_DIR") or os.path.join(DATA_DIR, "sessions")
-# JAG-316: persisted high-water mark for session job labels (monotonic counter).
+# JAG-316: persisted high-water mark for the retired per-session `J<n>` numbering
+# (not a Session Job — SJ ids live in data/session_jobs/).
 _JOBSEQ_FILE = os.path.join(SESSIONS_DIR, ".jobseq")
 # JAG-400: two SEPARATE index stores, kept OUTSIDE the user's project in the app
 # data dir (the VS Code/Cursor `workspaceStorage`/`globalStorage` convention).

@@ -158,7 +158,7 @@ check("F1 Jobs has the session/all scope control",
       and 'this.scope = v === "all" ? "all" : "session"' in ORBIT)
 check("F2 the deck reads the existing in-session SJ ledger",
       '"/api/sessions/" + encodeURIComponent(this.scopeSession) + "/sj"' in ORBIT
-      and "In-session jobs" in ORBIT and 'data-sj="' in ORBIT)
+      and "In-chat subagents" in ORBIT and 'data-sj="' in ORBIT)
 check("F3 the session slice uses the agent's jobs and keeps a settled toggle",
       "j.agents || []).includes(this.scopeAgent)" in ORBIT
       and "else if (changed) this.scope = \"session\";" in ORBIT)
@@ -173,7 +173,8 @@ check("F4 a job outside the slice widens to ALL before focusing",
 check("F5 the header counts EVERY state present, never a hardcoded list",
       "_countText(rows)" in ORBIT
       and '["running", "blocked", "pending"].filter(s => _n(s))' not in ORBIT
-      and "this._countText(this.jobs.concat(_sjJobs))" in ORBIT)
+      and "this._countText(this.jobs)" in ORBIT
+      and "this._countText(this.jobs.concat(_sjJobs))" not in ORBIT)
 
 _C5 = ""
 _i5 = ORBIT.find("  _countText(rows){")
@@ -210,9 +211,10 @@ t("D", [{status:"error"},{status:"error"},{status:"done"}]);   // A54's live sha
           _got.get("B") == "2 done / 2" and _got.get("D") == "2 error \u00b7 1 done / 3",
           (_got.get("B"), _got.get("D")))
     check("F5e an empty panel still shows a dash", _got.get("C") == "\u2014", _got.get("C"))
-check("F6 the empty in-session separator names the team jobs below it",
-      "no subagent job \u00b7 " in ORBIT and "team job" in ORBIT
-      and "This is empty (the in-session ledger)" not in ORBIT)
+check("F6 the in-chat section is labelled and never merged into team jobs",
+      "In-chat subagents" in ORBIT and "not dispatched \u00b7 read-only" in ORBIT
+      and "no in-chat subagent batch in this session" in ORBIT
+      and "In-session jobs" not in ORBIT)
 check("F7 a finished job no longer wears a `blocked by` chip",
       '["pending", "queued", "blocked"].indexOf(j.status) >= 0' in ORBIT)
 

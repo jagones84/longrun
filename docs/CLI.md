@@ -44,8 +44,10 @@ send from here appears in that agent's chat, with its tool cards, on reload.
 
 1. **A turn**: `chat` writes to the session you named; open that agent's chat and
    reload — the transcript is the same file the WebUI reads.
-2. **A job**: `jobs new` + `jobs run` create the job row the Control deck's Jobs
-   panel lists (scoped to the session by `agents`/`coordinator`).
+2. **A team job**: `jobs new` + `jobs run` create the `J<n>` row the Control deck's
+   Jobs panel lists (scoped to the session by `agents`/`coordinator`). In-chat Session
+   Jobs (`SJ<n>`) are a different object: they never appear as team rows and are read
+   with `self.sj` / `GET /api/sessions/<sid>/sj`.
 3. **A document**: `docs plan|spec` write under the session's workspace and lock
    the session; `docs approve` / `docs implement` are the two decisions the
    composer bar shows.
@@ -497,6 +499,10 @@ The orchestration layer: designate sessions as **agents**, organise them into an
 | `roles set --session SID [--text T]` | `POST /api/roles` (no `--text` reads stdin) |
 | `roles clear --session SID` | `POST /api/roles {text:""}` |
 | `roles reset --session SID` | `DELETE /api/roles?session=` |
+
+`jobs …` is the **team-job** surface (`J<n>`, `data/jobs.json`). In-chat Session Jobs
+(`SJ<n>`) are a different object: read them with `self.sj` or
+`GET /api/sessions/<sid>/sj`; they are never dispatched and die with the session.
 
 ```bash
 python3 forge.py agents ls

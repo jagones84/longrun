@@ -213,7 +213,7 @@ SECTIONS = [
     {
         "file": "jobs.yaml", "id": "jobs", "panel": "harness",
         "title": "Team jobs \u00b7 org depth",
-        "help": ("A job is goal + who you give it to. The assignee's ORG SUBTREE "
+        "help": ("A team job is goal + who you give it to. The assignee's ORG SUBTREE "
                  "becomes the team and every member becomes a numbered subjob "
                  "(J8.1, J8.2 \u2026); a member who reports to another member nests "
                  "under that lead (J8.1.1), so the ids mirror the organigram. "

@@ -2924,6 +2924,11 @@ class Handler(BaseHTTPRequestHandler):
             sid = path[len("/api/sessions/"):-len("/sj")].strip("/")
             if not sid or "/" in sid or ".." in sid:
                 return self._send(404, {"error": "session not found"})
+            # 2026-11-20: an unknown/deleted sid must not answer with an empty
+            # ledger (200 "ok") — that made a deleted session look alive and
+            # gave the panel a phantom SJ section.
+            if not load_session(sid):
+                return self._send(404, {"error": "session not found"})
             from longrun.agent import session_jobs as _sj
             return self._send(200, _sj.describe(sid, (qs or {}).get("job")))
         if path.startswith("/api/sessions/") and path.endswith("/stopping"):

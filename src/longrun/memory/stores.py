@@ -660,6 +660,20 @@ def _clear_now(sid):
     except Exception:  # noqa: BLE001 — a missing graph must not block the clear
         pass
     threads_mod.clear(sid)   # JAG-431j: the thread ledger describes this session
+    # 2026-11-20: a clear is a NEW cognition, so the in-chat subagent work dies
+    # with the transcript it belonged to — the same rule DELETE applies. Without
+    # this the model kept reading an SJ ledger from before the reset and the next
+    # batch minted SJ2 above stale results (v1233 D).
+    try:
+        from longrun.agent import session_jobs as _sj_mod
+        _sj_mod.delete(sid)
+    except Exception:  # noqa: BLE001 — a missing ledger must not block a clear
+        pass
+    try:
+        from longrun.agent import subagent as _subagent_mod
+        _subagent_mod.purge_parent(sid)
+    except Exception:  # noqa: BLE001 — durable children must not outlive the chat
+        pass
     _forget_session_runtime(sid)
     publish("session.cleared", session=sid)
     return sess

@@ -586,13 +586,15 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   .job .st.blocked{color:var(--ice);border-color:rgba(124,196,255,.5)}
   .runrow{display:flex;gap:8px;padding:5px 12px;font-size:11px;color:var(--dim);border-bottom:1px solid var(--line)}
   .runrow .st{color:var(--ice)}
-  /* session-scoped Jobs: the in-session subagent ledger (SJ<n>) sits above the
-     team jobs, visually separated but with the SAME row grammar. */
+  /* session-scoped Jobs: the in-chat subagent ledger (SJ<n>) is a DIFFERENT
+     object from a team job (J<n>) — separate store, separate lifecycle, never
+     dispatched. It sits BELOW the team rows under its own header and never
+     shares their counter. */
   .sj-sep{display:flex;align-items:center;gap:6px;padding:5px 8px;font-size:10px;
     letter-spacing:.04em;text-transform:uppercase;color:var(--dim);
     background:var(--brief);border-bottom:1px solid var(--line)}
   .sj-sep b{color:var(--txt);font-weight:600}
-  .sj-item .job{cursor:pointer}
+  .sj-item .job{cursor:pointer;border-left:2px solid var(--ice)}
   .orgrow{display:flex;align-items:center;gap:8px;padding:5px 10px;border-bottom:1px solid var(--line)}
   .orgrow .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   #feed{font-family:ui-monospace,monospace;font-size:11px;color:var(--dim);padding:8px 12px;max-height:24vh;overflow:auto}
@@ -1118,7 +1120,7 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
       <h2>Jobs <span class="n" id="jobsCount">—</span>
         <span class="ctools" id="jobScopeTools" hidden>
           <select class="inp mini" id="jobScope" aria-label="jobs scope"
-                  title="this session = the jobs this agent participates in + its in-session subagent jobs">
+                  title="this session = the team jobs this agent participates in; the in-chat subagents section below is this chat's read-only SJ ledger">
             <option value="session">this session</option>
             <option value="all">all jobs</option>
           </select>
@@ -3454,17 +3456,16 @@ class JobsView {
   _sjHtml(){
     if (this.scope !== "session") return "";
     const jobs = (this.sj && this.sj.jobs) || [];
-    if (!jobs.length){
-      // 2026-11-18 (operator: "the chat session jobs number is not synced in the job
-      // panel"): the bare sentence sat DIRECTLY above the team jobs this agent owns,
-      // so the panel read "no subagent job in this chat" next to nine real rows.
-      // Say what is empty (the in-session ledger) and name what is below.
-      const team = (this.jobs || []).length;
-      return '<div class="sj-sep"><b>In-session jobs</b><span>' + (team
-        ? ('no subagent job · ' + team + ' team job' + (team === 1 ? '' : 's') +
-           (this.scopeAgent ? ' for ' + esc(this.scopeAgent) : '') + ' below')
-        : 'no subagent job in this chat') + '</span></div>';
-    }
+    /* 2026-11-20: SJ is the in-chat subagent ledger, NOT a team job. The header
+       says so, carries its OWN count, and states that nothing here is
+       dispatched (no run/delete door; the SJ life belongs to the agent). */
+    const nSubs = jobs.reduce((n, j) => n + ((j.subjobs || []).length), 0);
+    const head = '<div class="sj-sep"><b>In-chat subagents</b><span>' + (jobs.length
+      ? (jobs.length + ' batch' + (jobs.length === 1 ? '' : 'es') + ' · ' +
+         nSubs + ' in-chat subjob' + (nSubs === 1 ? '' : 's') + ' · ' +
+         this._countText(jobs) + ' · not dispatched · read-only')
+      : '0 · no in-chat subagent batch in this session') + '</span></div>';
+    if (!jobs.length) return head;
     const rows = jobs.map(j => {
       const subs = j.subjobs || [];
       const key = "sj:" + String(j.id);
@@ -3475,21 +3476,23 @@ class JobsView {
           (s.deps && s.deps.length) ? ("deps " + s.deps.join(", ")) : "",
           s.error ? ("error: " + s.error) : (s.result ? ("result: " + String(s.result).slice(0, 240)) : "")
         ].filter(Boolean).join(" · ");
-        return '<div class="runrow" style="padding-left:24px" title="' + esc(bits) + '">' +
+        /* `data-sjsub`, never `data-sub`: that marker belongs to team subjobs
+           and `focusJob()` rings `.runrow[data-sub=…]`. Two id spaces must not
+           share one selector. */
+        return '<div class="runrow" data-sjsub="' + esc(s.id) + '" style="padding-left:24px" title="' + esc(bits) + '">' +
           '<span class="st">' + esc(s.id) + (s.label ? (" " + esc(s.label)) : "") + '</span>' +
           '<span>' + esc(s.status || "pending") + '</span>' +
           '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
           esc(short(bits, 120)) + '</span></div>';
       }).join("") : "";
-      return '<div class="job-item sj-item"><div class="job" data-sj="' + esc(j.id) + '">' +
+      return '<div class="job-item sj-item"><div class="job" data-sj="' + esc(j.id) + '" data-kind="session">' +
         '<span class="jstack"><span class="st ' + esc(j.status || "") + '">' + esc(j.status || "—") + '</span>' +
         '<span class="aid">' + esc(j.id) + '</span></span>' +
         '<span class="muted job-goal" title="' + esc(j.goal || "") + '">' + esc(j.goal || "(no goal)") + '</span>' +
-        '<span class="rl">' + subs.length + ' subjob' + (subs.length === 1 ? "" : "s") + '</span></div>' +
+        '<span class="rl">' + subs.length + ' in-chat subjob' + (subs.length === 1 ? "" : "s") + '</span></div>' +
         subHtml + '</div>';
     }).join("");
-    return '<div class="sj-sep"><b>In-session jobs</b><span>' + jobs.length +
-      ' subagent job' + (jobs.length === 1 ? "" : "s") + ' · read-only</span></div>' + rows;
+    return head + rows;
   }
   _coord(jid){ const j = this.jobs.find(x => x.id === jid); return (j && j.coordinator) || ""; }
   /* 2026-11-16 (operator): ONE job menu — the row's ⋮ and a right-click open the same
@@ -3520,14 +3523,13 @@ class JobsView {
     this.sj = sj || this.sj || [];
     this._paintScope();
     this.jobs = this.allJobs.filter(j => this._inScope(j));
-    /* 2026-11-18 (operator: "the chat session jobs number is not synced in the job
-       panel"): the header counted only RUNNING and TOTAL, so a BLOCKED job (live:
-       J37) was invisible in the summary, and the in-session ledger was not counted
-       at all though its rows are listed right below. The count now describes the
-       ROWS THIS PANEL SHOWS, and every state that is present (see `_countText`). */
-    const _sjJobs = (this.scope === "session" && this.sj) ? (this.sj.jobs || []) : [];
-    $("jobsCount").textContent = this._countText(this.jobs.concat(_sjJobs));
-    $("jobs").innerHTML = this._sjHtml() + (this.jobs.map(j => {
+    /* 2026-11-20 (operator: "SJ are the subagents inline in the chat, jobs are
+       between the agents of the team"): the two ledgers are DIFFERENT objects and
+       never share a counter. The header describes the TEAM jobs this panel is
+       about; the in-chat SJ ledger below carries its own count and says it is not
+       dispatched. Team rows come first so the panel opens on its subject. */
+    $("jobsCount").textContent = this._countText(this.jobs);
+    const _teamHtml = this.jobs.map(j => {
       const subs = j.subjobs || {};
       // JAG-322/335/484: the job's SUBJOBS (J8.1, J8.1.1 …) — who was assigned what,
       // tracked and timed. Each row is INDENTED by its org depth and carries an
@@ -3572,19 +3574,24 @@ class JobsView {
           ? '<span class="rl bad" title="written by more than one agent of this job — one write may have overwritten the other">⚠ ' +
             esc(j.conflicts.map(c => c.path + " (" + (c.agents || []).join(", ") + ")").join("; ")) + '</span>' : "");
       const relationHtml = relHtml ? '<div class="job-meta">' + relHtml + '</div>' : "";
-      return '<div class="job-item"><div class="job" data-id="' + esc(j.id) + '">' +
+      return '<div class="job-item"><div class="job" data-id="' + esc(j.id) + '" data-kind="team">' +
         '<span class="jstack"><span class="st ' + esc(j.status) + '">' + esc(j.status) + '</span>' +
         '<span class="aid">' + esc(j.id) + '</span></span>' +
         '<span class="muted job-goal" title="' + esc(j.goal) + '">' + esc(j.goal) + '</span>' +
         /* v891: run/delete are ONE vertical menu, so the goal keeps the row's width. */
         '<button class="btn ghost mini icon-action dots" data-jmore="' + esc(j.id) + '" data-canrun="' + (canRun ? "1" : "0") + '"' +
         ' aria-haspopup="menu" aria-label="job actions for ' + esc(j.id) + '" title="job actions for ' + esc(j.id) + '">⋮</button></div>' +
-        relationHtml + runHtml + '</div>'; }).join("") ||
+        relationHtml + runHtml + '</div>'; }).join("");
+    const _teamSep = this.jobs.length
+      ? '<div class="sj-sep"><b>Team jobs</b><span>coordinator + org team \u00b7 dependency waves</span></div>'
+      : "";
+    $("jobs").innerHTML = _teamSep + (_teamHtml ||
       '<div class="empty">' + (this.scope === "session"
         ? (this.scopeAgent
             ? "no team job names this agent yet — switch to all jobs to see every job."
             : "this session has no agent id yet — no team jobs.")
-        : "no jobs yet — write a goal and pick who to give it to.") + '</div>');
+        : "no team jobs yet — write a goal and pick who to give it to.") + '</div>') +
+      this._sjHtml();
     $("jobs").querySelectorAll("[data-jmore]").forEach(b => { b.onclick = (e) => {
       e.stopPropagation();
       this.openJobMenu(e, b.dataset.jmore, b.dataset.canrun === "1");

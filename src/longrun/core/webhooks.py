@@ -421,6 +421,7 @@ def receive(hook_id: str, headers, raw: bytes) -> tuple[int, dict]:
     job_id = ""
     try:
         from longrun.orchestrate import jobs as jobs_mod
+        # A webhook event becomes ONE team job (J<n>), never an in-chat Session Job.
         created = jobs_mod.JOBS.create(
             text, coordinator=hook.get("agent"), agents=[hook.get("agent")],
             mode="run")

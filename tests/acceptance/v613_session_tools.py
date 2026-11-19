@@ -54,8 +54,10 @@ for alias in ("session-jobs", "sessionjobs", "subjobs"):
 r9 = T._self({"action": "sj", "session": SID, "job": "SJ99"}, SID)
 check("T4 unknown SJ id falls back to latest open (never a traceback)",
       r9.get("ok") and len(r9["sj"]["jobs"]) == 1 and r9["sj"]["jobs"][0]["id"] == "SJ1", "")
-check("T5 SJ payload carries no team-job keys (segregated layers)",
-      set(r["sj"]["jobs"][0].keys()) == {"id", "goal", "status", "created", "ended", "subjobs"},
+check("T5 SJ payload is self-describing and carries no team-job keys",
+      set(r["sj"]["jobs"][0].keys()) == {"kind", "id", "goal", "status", "created", "ended", "subjobs"}
+      and r["sj"]["jobs"][0]["kind"] == "session"
+      and r["sj"].get("kind") == "session" and r["sj"].get("read_only") is True,
       sorted(r["sj"]["jobs"][0].keys()))
 # S4 (2026-11-01): measured on the live harness, `self.sj {"job":"SJ13"}` answered 7 587
 # chars, ~85% of it the static paths/config/recipe block that the SYSTEM PROMPT already

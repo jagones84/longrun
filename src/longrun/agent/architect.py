@@ -391,7 +391,8 @@ TOOL_SCHEMAS = {
     },
     "job.create": {
         "description": (
-            "job.create — Create a job: a goal assigned to a coordinator agent and "
+            "job.create — Create a team job (J<n>; not an in-chat Session Job SJ<n>): "
+            "a goal assigned to a coordinator agent and "
             "optional workers, with optional dependencies. It is created NOT dispatched; use "
             "`job.dispatch` to run it. Scope: your own subtree; the one exception is "
             "naming another team's LEAD as `coordinator` with every worker inside that "

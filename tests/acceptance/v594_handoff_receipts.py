@@ -107,25 +107,25 @@ if callable(rh):
             sid = J._live_sessions if False else None
             J.JOBS._update(jid, lambda j: j.update({"agents": ["A1"]}))
             J.JOBS._update(jid, lambda j: j.setdefault("subjobs", {}).update(
-                {"SJ1": {"id": "SJ1", "status": "running"}}))
-            rec = J.record_handoff(jid, "SJ1", "S9", "hello worker", "delegation")
+                {"J1.1": {"id": "J1.1", "status": "running"}}))
+            rec = J.record_handoff(jid, "J1.1", "S9", "hello worker", "delegation")
             check("C1 receipt recorded with after-boundary",
                   isinstance(rec, dict) and rec.get("to") == "S9"
                   and rec.get("after") == 0 and rec.get("kind") == "delegation",
                   repr(rec))
             check("C2 inject landed in the target session",
                   len(fake.sessions["S9"]["injects"]) == 1)
-            st = J.handoff_status(jid, "SJ1")
+            st = J.handoff_status(jid, "J1.1")
             check("C3 quiet target -> stored",
                   st and st[0][1] == "stored", repr(st))
             fake.sessions["S9"]["messages"].append({"role": "user",
                                                     "content": "ack"})
-            st = J.handoff_status(jid, "SJ1")
+            st = J.handoff_status(jid, "J1.1")
             check("C4 advanced target -> delivered",
                   st and st[0][1] == "delivered", repr(st))
-            J.JOBS._update(jid, lambda j: j["subjobs"]["SJ1"].update(
+            J.JOBS._update(jid, lambda j: j["subjobs"]["J1.1"].update(
                 {"status": "done", "result": "did it"}))
-            st = J.handoff_status(jid, "SJ1")
+            st = J.handoff_status(jid, "J1.1")
             check("C5 finished subjob -> replied",
                   st and st[0][1] == "replied", repr(st))
     finally:
