@@ -3471,9 +3471,8 @@ def cmd_sessions(args):
     elif args.action == "counterfactual":
         # HD-1: change ONE argument of a recorded read-only call, re-execute it
         # and report whether the observation moved (CausalFlow, 2605.25338).
-        ref = _current_session()
-        if not ref:
-            _no_current_session()
+        # Args are validated BEFORE the session is resolved: a usage error must
+        # read as a usage error even when no session is current.
         h = str(args.value or "").strip()
         if not h:
             print("usage: sessions counterfactual HANDLE --arg key=value [--arg k=v]",
@@ -3493,6 +3492,9 @@ def cmd_sessions(args):
             print("at least one --arg is required: the ONE fact to change",
                   file=sys.stderr)
             sys.exit(2)
+        ref = _current_session()
+        if not ref:
+            _no_current_session()
         out = req("POST", "/api/sessions/%s/counterfactual" % ref,
                   {"handle": h, "change": change})
         if out.get("error"):
@@ -3507,15 +3509,13 @@ def cmd_sessions(args):
         # HD-1 model branch (2026-11-18): replace the CONTENT of ONE stored message
         # and re-ask the model, so the operator obtains the verdict from the shell.
         # Nothing executes; it costs one model call on the session's own model.
-        ref = _current_session()
-        if not ref:
-            _no_current_session()
+        # Args are validated BEFORE the session is resolved (same rule as above).
         idx = str(args.value or "").strip()
         content = getattr(args, "content", None)
         if idx == "" or not str(content or "").strip():
             print('usage: sessions model-counterfactual INDEX --content "new text"'
-                  "   (INDEX = the #N from sessions history; -1 = last message)",
-                  file=sys.stderr)
+                  "   (INDEX = the #N from sessions history; -1 = the last"
+                  " intervenable message)", file=sys.stderr)
             sys.exit(2)
         try:
             idx = int(idx)
@@ -3523,6 +3523,9 @@ def cmd_sessions(args):
             print("INDEX must be an integer (the #N of the message): %r" % idx,
                   file=sys.stderr)
             sys.exit(2)
+        ref = _current_session()
+        if not ref:
+            _no_current_session()
         out = req("POST", "/api/sessions/%s/counterfactual/model" % ref,
                   {"index": idx, "change": {"content": content}})
         if out.get("error"):

@@ -180,7 +180,7 @@ See `integrations/paperclip/README.md` for the adapter install and configuration
 | `sessions history [ID|AX] [--full]` | `GET /api/history?session=ID` (ID omitted → current; `--full` = every message untruncated + every tool card with args/exit/result/thought) |
 | `sessions card HANDLE` | `GET /api/history?session=<current>&card=<handle>` (ONE tool card by the handle the compacted manifest prints: `#id`, or `t<ms>` for a card persisted before ids) |
 | `sessions counterfactual HANDLE --arg k=v` | `POST /api/sessions/<id>/counterfactual` (change ONE argument of a recorded **read-only** call, re-execute it through the same gate, report `same-observation` / `different-observation`; a mutating card is refused) |
-| `sessions model-counterfactual INDEX --content "text"` | `POST /api/sessions/<id>/counterfactual/model` (replace ONE stored message's CONTENT, re-ask the session's model, report `same-action` / `different-action`; nothing executes, one model call; INDEX is the `#N` from `sessions history`, `-1` = last) |
+| `sessions model-counterfactual INDEX --content "text"` | `POST /api/sessions/<id>/counterfactual/model` (replace ONE stored message's CONTENT, re-ask the session's model, report `same-action` / `different-action` / `no-action`; nothing executes, one model call; INDEX is the `#N` from `sessions history` or a negative offset, `-1` = the last intervenable message — see below) |
 | `sessions graph [ID]` | `GET /api/sessions/<id>/graph` |
 | `sessions tree [ID]` | `GET /api/sessions/<id>/trace-tree` |
 | `sessions reset ID` | `POST /api/sessions/<id>/graph/reset` |
@@ -199,6 +199,27 @@ python3 forge.py sessions tree                 # stage→step tree + the first f
 python3 forge.py sessions rm 4f503dc92a29
 python3 forge.py sessions reset my-session      # clears the persistent task list
 ```
+
+**`model-counterfactual`: what INDEX means, and what comes back.** A positive
+INDEX is the 0-based position printed by `sessions history`. A negative INDEX
+is an offset from the end (`-1` = the final position), and if that position is
+not itself intervenable the nearest earlier intervenable message is used. An
+intervenable message is a text USER message — an observation or a nudge — whose
+successor is the assistant's recorded reply; so `-1` always addresses the last
+message that can be intervened on. The final message, and any message without a
+recorded assistant successor, is refused, because there is nothing to compare
+the replayed action against; so is an assistant message (editing the model's own
+reply is history editing, not an intervention on its input), a structured-content
+message, and an unchanged replacement.
+
+Three verdicts: `same-action` (same tool and arguments), `different-action`
+(named in `moved`) and `no-action` (neither reply carried a tool action — a plain
+answer on both sides). The JSON body carries: `ok`, `status`, `session`, `index`,
+`model`, `fidelity` (`transcript+live-system` or `transcript-window+live-system`),
+`caveat`, `dropped`, `first`, `original`, `replacement`, `recorded_action`,
+`replayed_action`, `compare`, `usage`, `recorded_reply`, `replayed_reply`, `think`.
+A refused plan returns `ok: false` with `status`, `error` and, when a plan was
+built, `plan`. A provider failure is `status: 502` with `error` and `model`.
 
 ### Documents (`/plan` and `/spec`)
 
@@ -613,7 +634,7 @@ are aliases of the same verbs.
 | POST | `/api/sessions` | `sessions new` |
 | POST | `/api/sessions/<id>/fork` | `sessions fork` |
 | POST | `/api/sessions/<id>/counterfactual` | `sessions counterfactual HANDLE --arg k=v` (one read-only call re-executed with one fact changed) |
-| POST | `/api/sessions/<id>/counterfactual/model` | `sessions model-counterfactual INDEX --content "text"` (one stored message replaced; the model re-asked, nothing executed) |
+| POST | `/api/sessions/<id>/counterfactual/model` | `sessions model-counterfactual INDEX --content "text"` (one stored message replaced; the model re-asked, nothing executed; `-1` = last intervenable message; verdict `same-action`/`different-action`/`no-action`) |
 | POST | `/api/docs/plan` | `docs plan` |
 | POST | `/api/docs/spec` | `docs spec` |
 | POST | `/api/docs/approve` | `docs approve [--implement]` |

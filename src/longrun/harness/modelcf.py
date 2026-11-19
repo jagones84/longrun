@@ -30,17 +30,43 @@ def _messages(sess):
     return [m for m in (sess.get("messages") or []) if isinstance(m, dict)]
 
 
-def _index(value, n):
-    """(index, reason). Accepts a 0-based position or a negative offset."""
+def _intervenable(msgs, i):
+    """A message an intervention can target: a text USER message with a successor."""
+    msg = msgs[i]
+    return (i < len(msgs) - 1
+            and str(msg.get("role") or "") == USER
+            and isinstance(msg.get("content"), str))
+
+
+def _resolve(msgs, value):
+    """(index, reason) — 0-based position, or an offset from the end.
+
+    A positive value is used as is. A negative value is an offset from the end
+    (``n + value``); if that position is not itself intervenable — an assistant
+    message, structured content, or the final message with no recorded successor
+    — the nearest EARLIER intervenable message is used. So `-1` always addresses
+    the last message that can be intervened on, which is what the CLI promises;
+    resolving `-1` to the raw final message made it impossible by construction.
+    """
     try:
-        i = int(value)
+        raw = int(value)
     except (TypeError, ValueError):
-        return None, "index must be an integer (a message position, -1 = the last)"
-    if i < 0:
-        i = n + i
-    if i < 0 or i >= n:
+        return None, ("index must be an integer (a message position; "
+                      "-1 = the last intervenable message)")
+    n = len(msgs)
+    if raw >= 0:
+        if raw >= n:
+            return None, "index %r is outside the transcript (0..%d)" % (value, n - 1)
+        return raw, ""
+    start = n + raw
+    if start < 0:
         return None, "index %r is outside the transcript (0..%d)" % (value, n - 1)
-    return i, ""
+    for i in range(start, -1, -1):
+        if _intervenable(msgs, i):
+            return i, ""
+    return None, ("no intervenable message at or before position %d: a target "
+                  "must be a text USER message followed by the assistant's reply"
+                  % start)
 
 
 def window(messages, index, budget_chars):
@@ -73,7 +99,7 @@ def plan(sess, index, change, budget_chars=None):
     msgs = _messages(sess)
     if not msgs:
         return {}, "the session has no stored messages"
-    i, why = _index(index, len(msgs))
+    i, why = _resolve(msgs, index)
     if why:
         return {}, why
     if i >= len(msgs) - 1:
