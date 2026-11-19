@@ -68,6 +68,7 @@ Usage:
                            | updategate admit FILE.json | expledger ledger FILE.json | prefetch benefit FILE.json
                            | coverage coverage FILE.json | purpleloop collapse FILE.json | renderdef modality FILE.json
                            | stateev recover FILE.json | evidenceview rates FILE.json | uncert paired FILE.json
+                           | skillcfi admit FILE.json | memcomm selection FILE.json | sparseval alc FILE.json
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -3408,6 +3409,119 @@ def cmd_uncert(args):
     sys.exit(0)
 
 
+def cmd_skillcfi(args):
+    """Round 148 (arXiv:2611.24185): hold a skill to its control skeleton."""
+    from longrun.harness import skill_cfi
+    if not getattr(args, "file", None):
+        print("usage: skillcfi skeleton|enforceable|dispositions|admit|result|violation|refusal|recovery|audit|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "skeleton":
+        out = skill_cfi.skeleton(doc.get("row") or doc)
+    elif args.action == "enforceable":
+        out = skill_cfi.enforceable(doc.get("row") or doc)
+    elif args.action == "dispositions":
+        out = skill_cfi.dispositions(doc.get("rows") or [])
+    elif args.action == "admit":
+        out = skill_cfi.admit(doc.get("row") or doc)
+    elif args.action == "result":
+        out = skill_cfi.result(doc.get("row") or doc)
+    elif args.action == "violation":
+        out = skill_cfi.violation(doc.get("row") or doc)
+    elif args.action == "refusal":
+        out = skill_cfi.refusal(doc.get("row") or doc)
+    elif args.action == "recovery":
+        out = skill_cfi.recovery(doc.get("rows") or [])
+    elif args.action == "audit":
+        out = skill_cfi.audit(doc.get("record") or doc)
+    else:
+        out = skill_cfi.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_memcomm(args):
+    """Round 148 (arXiv:2611.24165): memory as a shared, operable object."""
+    from longrun.harness import memory_commune
+    if not getattr(args, "file", None):
+        print("usage: memcomm entry|scope|proposals|transfer|selection|citation|audit|alignment|gap|activity|audit-record|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "entry":
+        out = memory_commune.entry(doc.get("row") or doc)
+    elif args.action == "scope":
+        out = memory_commune.scope_ok(doc.get("row") or doc)
+    elif args.action == "proposals":
+        out = memory_commune.proposals(doc.get("row") or doc)
+    elif args.action == "transfer":
+        out = memory_commune.transfer(doc.get("row") or doc)
+    elif args.action == "selection":
+        out = memory_commune.selection(doc.get("row") or doc)
+    elif args.action == "citation":
+        out = memory_commune.citation(doc.get("row") or doc)
+    elif args.action == "audit":
+        out = memory_commune.audit(doc.get("row") or doc)
+    elif args.action == "alignment":
+        out = memory_commune.alignment(doc.get("rows") or [])
+    elif args.action == "gap":
+        out = memory_commune.gap(doc.get("rows") or [])
+    elif args.action == "activity":
+        out = memory_commune.activity(doc.get("rows") or [])
+    elif args.action == "audit-record":
+        out = memory_commune.audit_record(doc.get("record") or doc)
+    else:
+        out = memory_commune.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_sparseval(args):
+    """Round 148 (arXiv:2611.24159): a weak prior and an exact update."""
+    from longrun.harness import sparse_eval
+    if not getattr(args, "file", None):
+        print("usage: sparseval prior|posterior|sensitivity|value|brier|alc|calibration|audit|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "prior":
+        out = sparse_eval.prior(doc.get("rows") or [])
+    elif args.action == "posterior":
+        out = sparse_eval.posterior(doc.get("row") or doc)
+    elif args.action == "sensitivity":
+        out = sparse_eval.sensitivity(doc.get("row") or doc)
+    elif args.action == "value":
+        out = sparse_eval.value(doc.get("row") or doc)
+    elif args.action == "brier":
+        out = sparse_eval.brier(doc.get("rows") or [])
+    elif args.action == "alc":
+        out = sparse_eval.alc(doc.get("rows") or [])
+    elif args.action == "calibration":
+        out = sparse_eval.calibration(doc.get("rows") or [])
+    elif args.action == "audit":
+        out = sparse_eval.audit_record(doc.get("record") or doc)
+    else:
+        out = sparse_eval.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
 def cmd_instructions(args):
     """Round 114 (arXiv:2611.13709): explicit context-file directives vs the cards."""
     from longrun.harness import instruction_audit
@@ -5354,6 +5468,23 @@ def main():
                                           "entropy", "sensitivity", "audit", "advise"]); \
         p.add_argument("file", nargs="?", help="JSON: {row}, {rows}, {record}, or {profile}"); \
         p.set_defaults(fn=cmd_uncert)
+    p = sub.add_parser("skillcfi"); \
+        p.add_argument("action", choices=["skeleton", "enforceable", "dispositions", "admit",
+                                          "result", "violation", "refusal", "recovery",
+                                          "audit", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {row}, {rows}, {record}, or {profile}"); \
+        p.set_defaults(fn=cmd_skillcfi)
+    p = sub.add_parser("memcomm"); \
+        p.add_argument("action", choices=["entry", "scope", "proposals", "transfer", "selection",
+                                          "citation", "audit", "alignment", "gap", "activity",
+                                          "audit-record", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {row}, {rows}, {record}, or {profile}"); \
+        p.set_defaults(fn=cmd_memcomm)
+    p = sub.add_parser("sparseval"); \
+        p.add_argument("action", choices=["prior", "posterior", "sensitivity", "value", "brier",
+                                          "alc", "calibration", "audit", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {rows}, {row}, {record}, or {profile}"); \
+        p.set_defaults(fn=cmd_sparseval)
     p = sub.add_parser("instructions"); p.add_argument("action", choices=["audit"]); \
         p.add_argument("file", nargs="?", help="JSON: {text, cards}"); \
         p.set_defaults(fn=cmd_instructions)
