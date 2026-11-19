@@ -72,6 +72,8 @@ Usage:
                            | budgetaudit solve FILE.json | simaudit coverage FILE.json
                            | progjudge consensus FILE.json | reql triage FILE.json
                            | replan repair FILE.json | localcost expected FILE.json
+                           | intentc validate FILE.json | warrant transport FILE.json
+                           | platformeval alpha FILE.json
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -3759,6 +3761,112 @@ def cmd_localcost(args):
     sys.exit(0)
 
 
+def cmd_intentc(args):
+    """Round 151 (arXiv:2611.24025): a contract the trusted side can check and execute."""
+    from longrun.harness import intent_contract
+    if not getattr(args, "file", None):
+        print("usage: intentc validate|coverage|mcnemar|outcomes|bundling|targets|"
+              "properties|audit|advise FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "validate":
+        out = intent_contract.validate(doc.get("record") or doc)
+    elif args.action == "coverage":
+        out = intent_contract.coverage(doc.get("rows") or [])
+    elif args.action == "mcnemar":
+        out = intent_contract.mcnemar(doc.get("b"), doc.get("c"))
+    elif args.action == "outcomes":
+        out = intent_contract.outcomes(doc.get("record") or doc)
+    elif args.action == "bundling":
+        out = intent_contract.bundling(doc.get("rows") or [])
+    elif args.action == "targets":
+        out = intent_contract.targets(doc.get("rows") or [])
+    elif args.action == "properties":
+        out = intent_contract.fixed_properties()
+    elif args.action == "audit":
+        out = intent_contract.audit(doc.get("record") or doc)
+    else:
+        out = intent_contract.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_warrant(args):
+    """Round 151 (arXiv:2611.23990): which old evidence is admissible in the new context."""
+    from longrun.harness import evidence_warrant
+    if not getattr(args, "file", None):
+        print("usage: warrant wrc|admissibility|transport|authorize|provenance|"
+              "composition|selective|audit|advise FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "wrc":
+        out = evidence_warrant.wrc(doc.get("record") or doc)
+    elif args.action == "admissibility":
+        out = evidence_warrant.admissibility(doc.get("items") or doc.get("rows") or [])
+    elif args.action == "transport":
+        out = evidence_warrant.transport(doc.get("items") or doc.get("rows") or [])
+    elif args.action == "authorize":
+        out = evidence_warrant.authorize(doc.get("record") or doc)
+    elif args.action == "provenance":
+        out = evidence_warrant.provenance(doc.get("record") or doc)
+    elif args.action == "composition":
+        out = evidence_warrant.composition(doc.get("record") or doc)
+    elif args.action == "selective":
+        out = evidence_warrant.selective(doc.get("record") or doc)
+    elif args.action == "audit":
+        out = evidence_warrant.audit(doc.get("record") or doc)
+    else:
+        out = evidence_warrant.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_platformeval(args):
+    """Round 151 (arXiv:2611.24039): gates before scores, with the halo reported."""
+    from longrun.harness import platform_eval
+    if not getattr(args, "file", None):
+        print("usage: platformeval score|alpha|tiers|gates|reliability|cost|value|"
+              "audit|advise FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "score":
+        out = platform_eval.score(doc.get("matrix") or doc.get("rows") or [])
+    elif args.action == "alpha":
+        out = platform_eval.alpha(doc.get("matrix") or doc.get("rows") or [])
+    elif args.action == "tiers":
+        scores = platform_eval.score(doc.get("matrix") or doc.get("rows") or [])
+        out = platform_eval.tiers(doc.get("totals") or scores.get("totals") or {})
+    elif args.action == "gates":
+        out = platform_eval.gates(doc.get("record") or doc)
+    elif args.action == "reliability":
+        out = platform_eval.reliability(doc.get("record") or doc)
+    elif args.action == "cost":
+        out = platform_eval.cost_of_pass(doc.get("record") or doc)
+    elif args.action == "value":
+        out = platform_eval.business_value(doc.get("record") or doc)
+    elif args.action == "audit":
+        out = platform_eval.audit(doc.get("record") or doc)
+    else:
+        out = platform_eval.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
 def cmd_instructions(args):
     """Round 114 (arXiv:2611.13709): explicit context-file directives vs the cards."""
     from longrun.harness import instruction_audit
@@ -5758,6 +5866,24 @@ def main():
                                           "audit", "advise"]); \
         p.add_argument("file", nargs="?", help="JSON: {record}, {local,cloud}, or {profile}"); \
         p.set_defaults(fn=cmd_localcost)
+    p = sub.add_parser("intentc"); \
+        p.add_argument("action", choices=["validate", "coverage", "mcnemar", "outcomes",
+                                          "bundling", "targets", "properties",
+                                          "audit", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {record}, {rows}, {b,c}, or {profile}"); \
+        p.set_defaults(fn=cmd_intentc)
+    p = sub.add_parser("warrant"); \
+        p.add_argument("action", choices=["wrc", "admissibility", "transport", "authorize",
+                                          "provenance", "composition", "selective",
+                                          "audit", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {record}, {items}, or {profile}"); \
+        p.set_defaults(fn=cmd_warrant)
+    p = sub.add_parser("platformeval"); \
+        p.add_argument("action", choices=["score", "alpha", "tiers", "gates",
+                                          "reliability", "cost", "value",
+                                          "audit", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {matrix}, {platforms...}, {record}, or {profile}"); \
+        p.set_defaults(fn=cmd_platformeval)
     p = sub.add_parser("instructions"); p.add_argument("action", choices=["audit"]); \
         p.add_argument("file", nargs="?", help="JSON: {text, cards}"); \
         p.set_defaults(fn=cmd_instructions)
