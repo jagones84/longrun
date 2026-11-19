@@ -69,6 +69,8 @@ Usage:
                            | coverage coverage FILE.json | purpleloop collapse FILE.json | renderdef modality FILE.json
                            | stateev recover FILE.json | evidenceview rates FILE.json | uncert paired FILE.json
                            | skillcfi admit FILE.json | memcomm selection FILE.json | sparseval alc FILE.json
+                           | budgetaudit solve FILE.json | simaudit coverage FILE.json
+                           | progjudge consensus FILE.json
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -3522,6 +3524,130 @@ def cmd_sparseval(args):
     sys.exit(0)
 
 
+def cmd_budgetaudit(args):
+    """Round 149 (arXiv:2611.24867): what the looks cost, per step."""
+    from longrun.harness import budget_audit
+    if not getattr(args, "file", None):
+        print("usage: budgetaudit belief|value|observe|qvalue|solve|decompose|anchors|"
+              "staged|routing|bound|audit|advise FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "belief":
+        out = budget_audit.belief(doc.get("state") or doc)
+    elif args.action == "value":
+        out = budget_audit.value(doc.get("state") or doc)
+    elif args.action == "observe":
+        out = {"outcomes": [
+            {"p": prob, "state": child}
+            for prob, child in budget_audit.observe(
+                doc.get("state") or {}, doc.get("reads") or 0)]}
+    elif args.action == "qvalue":
+        out = budget_audit.q_value(doc.get("state") or {},
+                                   doc.get("action") or {},
+                                   doc.get("budget") or 0)
+    elif args.action == "solve":
+        out = budget_audit.solve(doc.get("state") or {}, doc.get("budget") or 0,
+                                 doc.get("actions"))
+    elif args.action == "decompose":
+        out = budget_audit.decompose(doc)
+    elif args.action == "anchors":
+        out = budget_audit.anchors(doc.get("rows") or [])
+    elif args.action == "staged":
+        out = budget_audit.staged(doc.get("stages") or doc.get("rows") or [])
+    elif args.action == "routing":
+        out = budget_audit.routing_gain(doc.get("rho"), doc.get("r"))
+    elif args.action == "bound":
+        out = budget_audit.bound(doc.get("eps"), doc.get("budget"))
+    elif args.action == "audit":
+        out = budget_audit.audit(doc.get("record") or doc)
+    else:
+        out = budget_audit.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_simaudit(args):
+    """Round 149 (arXiv:2611.24892): does the metric notice the injected failure?"""
+    from longrun.harness import simulator_audit
+    if not getattr(args, "file", None):
+        print("usage: simaudit paired|population|coverage|auroc|retention|levels|"
+              "simulators|evidence|audit|advise FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "paired":
+        out = simulator_audit.paired(doc.get("rows") or [])
+    elif args.action == "population":
+        out = simulator_audit.population(doc.get("draws") or doc.get("rows") or [])
+    elif args.action == "coverage":
+        out = simulator_audit.coverage(doc.get("results") or doc.get("rows") or [])
+    elif args.action == "auroc":
+        out = simulator_audit.auroc(doc.get("rows") or [])
+    elif args.action == "retention":
+        out = simulator_audit.retention(doc.get("rows") or [],
+                                        doc.get("admitted") or 0.05)
+    elif args.action == "levels":
+        out = simulator_audit.levels(doc.get("scores") or doc)
+    elif args.action == "simulators":
+        out = simulator_audit.simulators(doc.get("rows") or [])
+    elif args.action == "evidence":
+        out = simulator_audit.evidence(doc.get("entry") or doc)
+    elif args.action == "audit":
+        out = simulator_audit.audit(doc.get("record") or doc)
+    else:
+        out = simulator_audit.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_progjudge(args):
+    """Round 149 (arXiv:2611.24849): one program per topic instead of a call per document."""
+    from longrun.harness import program_judge
+    if not getattr(args, "file", None):
+        print("usage: progjudge answers|consensus|single|rubric|errors|kendall|"
+              "labelgain|breakeven|sandbox|audit|advise FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "answers":
+        out = program_judge.answers(doc.get("answers") or doc)
+    elif args.action == "consensus":
+        out = program_judge.consensus(doc.get("grades") or [])
+    elif args.action == "single":
+        out = program_judge.single(doc.get("grades") or [])
+    elif args.action == "rubric":
+        out = program_judge.rubric(doc.get("criteria") or doc.get("rows") or [])
+    elif args.action == "errors":
+        out = program_judge.errors(doc.get("rows") or [])
+    elif args.action == "kendall":
+        out = program_judge.kendall(doc.get("rows") or [])
+    elif args.action == "labelgain":
+        out = program_judge.label_gain(doc.get("rows") or doc.get("curve") or [])
+    elif args.action == "breakeven":
+        out = program_judge.break_even(doc.get("write_cost"), doc.get("per_doc_cost"))
+    elif args.action == "sandbox":
+        out = program_judge.policy(doc.get("source") or doc.get("text") or "")
+    elif args.action == "audit":
+        out = program_judge.audit(doc.get("record") or doc)
+    else:
+        out = program_judge.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
 def cmd_instructions(args):
     """Round 114 (arXiv:2611.13709): explicit context-file directives vs the cards."""
     from longrun.harness import instruction_audit
@@ -5485,6 +5611,24 @@ def main():
                                           "alc", "calibration", "audit", "advise"]); \
         p.add_argument("file", nargs="?", help="JSON: {rows}, {row}, {record}, or {profile}"); \
         p.set_defaults(fn=cmd_sparseval)
+    p = sub.add_parser("budgetaudit"); \
+        p.add_argument("action", choices=["belief", "value", "observe", "qvalue", "solve",
+                                          "decompose", "anchors", "staged", "routing",
+                                          "bound", "audit", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {state,budget,policy}, {rows}, {record}, or {profile}"); \
+        p.set_defaults(fn=cmd_budgetaudit)
+    p = sub.add_parser("simaudit"); \
+        p.add_argument("action", choices=["paired", "population", "coverage", "auroc",
+                                          "retention", "levels", "simulators", "evidence",
+                                          "audit", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {rows}, {draws}, {scores}, {record}, or {profile}"); \
+        p.set_defaults(fn=cmd_simaudit)
+    p = sub.add_parser("progjudge"); \
+        p.add_argument("action", choices=["answers", "consensus", "single", "rubric", "errors",
+                                          "kendall", "labelgain", "breakeven", "sandbox",
+                                          "audit", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {answers}, {grades}, {rows}, {record}, or {profile}"); \
+        p.set_defaults(fn=cmd_progjudge)
     p = sub.add_parser("instructions"); p.add_argument("action", choices=["audit"]); \
         p.add_argument("file", nargs="?", help="JSON: {text, cards}"); \
         p.set_defaults(fn=cmd_instructions)
