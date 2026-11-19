@@ -75,6 +75,8 @@ Usage:
                            | intentc validate FILE.json | warrant transport FILE.json
                            | platformeval alpha FILE.json | contaudit realism FILE.json
                            | toolext admit FILE.json | fastpath calibrate FILE.json
+                           | tariff coverage FILE.json | hyperke oke FILE.json
+                           | beliefprobe scaling FILE.json
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -3977,6 +3979,107 @@ def cmd_fastpath(args):
     sys.exit(0)
 
 
+def cmd_tariff(args):
+    """Round 153 (arXiv:2611.24071): what a retained token is charged, and which bound holds."""
+    from longrun.harness import context_tariff
+    if not getattr(args, "file", None):
+        print("usage: tariff charge|lifetime|coverage|bounds|quality|fairness|audit|"
+              "advise FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "charge":
+        out = context_tariff.charge(doc.get("record") or doc)
+    elif args.action == "lifetime":
+        out = context_tariff.lifetime(doc.get("record") or doc)
+    elif args.action == "coverage":
+        out = context_tariff.coverage(doc.get("record") or doc)
+    elif args.action == "bounds":
+        out = context_tariff.bounds(doc.get("record") or doc)
+    elif args.action == "quality":
+        out = context_tariff.quality(doc.get("rows") or [])
+    elif args.action == "fairness":
+        out = context_tariff.fairness(doc.get("record") or doc)
+    elif args.action == "audit":
+        out = context_tariff.audit(doc.get("record") or doc)
+    else:
+        out = context_tariff.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_hyperke(args):
+    """Round 153 (arXiv:2611.24294): a typed store kept sound under edits."""
+    from longrun.harness import hypergraph_ke
+    if not getattr(args, "file", None):
+        print("usage: hyperke ingest|join|edit|route|evidence|oke|audit|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "ingest":
+        out = hypergraph_ke.ingest(doc.get("rows") or [])
+    elif args.action == "join":
+        out = hypergraph_ke.join(doc.get("rows") or [])
+    elif args.action == "edit":
+        out = hypergraph_ke.edit(doc.get("record") or doc)
+    elif args.action == "route":
+        out = hypergraph_ke.route(doc.get("record") or doc)
+    elif args.action == "evidence":
+        out = hypergraph_ke.evidence(doc.get("record") or doc)
+    elif args.action == "oke":
+        out = hypergraph_ke.oke(doc.get("rows") or [])
+    elif args.action == "audit":
+        out = hypergraph_ke.audit(doc.get("record") or doc)
+    else:
+        out = hypergraph_ke.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_beliefprobe(args):
+    """Round 153 (arXiv:2611.23938): did the fact go in, and does the metric still mean anything?"""
+    from longrun.harness import belief_probe
+    if not getattr(args, "file", None):
+        print("usage: beliefprobe belief|categories|scaling|depth|judge|independence|"
+              "reality|audit|advise FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "belief":
+        out = belief_probe.belief_rate(doc.get("rows") or [])
+    elif args.action == "categories":
+        out = belief_probe.categories(doc.get("rows") or [])
+    elif args.action == "scaling":
+        out = belief_probe.scaling(doc.get("rows") or [])
+    elif args.action == "depth":
+        out = belief_probe.depth(doc.get("rows") or [])
+    elif args.action == "judge":
+        out = belief_probe.judge(doc.get("record") or doc)
+    elif args.action == "independence":
+        out = belief_probe.independence(doc.get("record") or doc)
+    elif args.action == "reality":
+        out = belief_probe.reality(doc.get("record") or doc)
+    elif args.action == "audit":
+        out = belief_probe.audit(doc.get("record") or doc)
+    else:
+        out = belief_probe.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
 def cmd_instructions(args):
     """Round 114 (arXiv:2611.13709): explicit context-file directives vs the cards."""
     from longrun.harness import instruction_audit
@@ -6012,6 +6115,22 @@ def main():
                                           "audit", "advise"]); \
         p.add_argument("file", nargs="?", help="JSON: {record}, {rows}, {probs}, or {profile}"); \
         p.set_defaults(fn=cmd_fastpath)
+    p = sub.add_parser("tariff"); \
+        p.add_argument("action", choices=["charge", "lifetime", "coverage", "bounds",
+                                          "quality", "fairness", "audit", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {record}, {rows}, or {profile}"); \
+        p.set_defaults(fn=cmd_tariff)
+    p = sub.add_parser("hyperke"); \
+        p.add_argument("action", choices=["ingest", "join", "edit", "route", "evidence",
+                                          "oke", "audit", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {rows}, {record}, or {profile}"); \
+        p.set_defaults(fn=cmd_hyperke)
+    p = sub.add_parser("beliefprobe"); \
+        p.add_argument("action", choices=["belief", "categories", "scaling", "depth",
+                                          "judge", "independence", "reality", "audit",
+                                          "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {rows}, {record}, or {profile}"); \
+        p.set_defaults(fn=cmd_beliefprobe)
     p = sub.add_parser("instructions"); p.add_argument("action", choices=["audit"]); \
         p.add_argument("file", nargs="?", help="JSON: {text, cards}"); \
         p.set_defaults(fn=cmd_instructions)
