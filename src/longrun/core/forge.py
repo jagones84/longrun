@@ -61,6 +61,7 @@ Usage:
                            | deliberation audit FILE.json | frontier bracket FILE.json | transfer check FILE.json
                            | repair churn FILE.json | validation risk FILE.json | grounding session FILE.json
                            | folding trigger FILE.json | invocation rates FILE.json | capabilities updating FILE.json
+                           | govern validate FILE.json | typed build FILE.json | pipeline blame FILE.json
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -2598,6 +2599,118 @@ def cmd_capabilities(args):
     sys.exit(0)
 
 
+def cmd_govern(args):
+    """Round 140 (arXiv:2609.34017): a deterministic gate, and the halt it earns."""
+    from longrun.harness import handoff_governance
+    if not getattr(args, "file", None):
+        print("usage: govern anchor|validate|attribute|compare|coverage|posture|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "anchor":
+        out = handoff_governance.anchor(doc.get("rules") or [], doc.get("version", 1))
+    elif args.action == "validate":
+        out = handoff_governance.validate(
+            doc.get("handoff") or doc, doc.get("anchor") or {},
+            doc.get("mode", "warn"), doc.get("state"))
+    elif args.action == "attribute":
+        out = handoff_governance.attribute(doc.get("halts") or [])
+    elif args.action == "compare":
+        out = handoff_governance.compare(doc.get("pairs") or [],
+                                         doc.get("flat_band", 0.02))
+    elif args.action == "coverage":
+        out = handoff_governance.coverage(doc.get("checks") or [])
+    elif args.action == "posture":
+        out = handoff_governance.posture(doc.get("profile") or doc)
+    else:
+        out = handoff_governance.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_typed(args):
+    """Round 140 (arXiv:2610.37461): withhold the tool, do not ask the model."""
+    from longrun.harness import session_protocol
+    if not getattr(args, "file", None):
+        print("usage: typed build|allowed|tick|refines|split|charge|compliance|pressure|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "build":
+        out = session_protocol.protocol(
+            doc.get("states") or [], doc.get("actions") or [], doc.get("start"),
+            doc.get("finals") or [], doc.get("delta") or {})
+    elif args.action == "allowed":
+        out = {"allowed": session_protocol.allowed(doc.get("protocol") or doc,
+                                                   doc.get("state"))}
+    elif args.action == "tick":
+        out = session_protocol.tick(doc.get("protocol") or {}, doc.get("state"),
+                                    doc.get("action"), doc.get("target"))
+    elif args.action == "refines":
+        out = session_protocol.refines(
+            doc.get("parent") or {}, doc.get("child") or {},
+            doc.get("human_parent") or [], doc.get("human_child") or [])
+    elif args.action == "split":
+        out = session_protocol.split(doc.get("budget") or {}, doc.get("share", 0.5))
+    elif args.action == "charge":
+        out = session_protocol.charge(doc.get("budget") or {}, doc.get("usage") or {})
+    elif args.action == "compliance":
+        out = session_protocol.compliance(doc.get("runs") or [])
+    elif args.action == "pressure":
+        out = session_protocol.pressure(doc.get("rows") or [])
+    else:
+        out = session_protocol.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_pipeline(args):
+    """Round 140 (arXiv:2510.07614): blame is a computation over stages."""
+    from longrun.harness import pipeline_traceability
+    if not getattr(args, "file", None):
+        print("usage: pipeline final|blame|handoff|rates|origins|pareto|casting|gain|advise FILE.json",
+              file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "final":
+        out = {"final": pipeline_traceability.final(doc.get("stages") or doc)}
+    elif args.action == "blame":
+        out = pipeline_traceability.blame(doc.get("stages") or doc,
+                                          doc.get("gold"))
+    elif args.action == "handoff":
+        out = pipeline_traceability.handoff(doc.get("record") or doc)
+    elif args.action == "rates":
+        out = pipeline_traceability.rates(doc.get("rows") or [])
+    elif args.action == "origins":
+        out = pipeline_traceability.origins(doc.get("rows") or [])
+    elif args.action == "pareto":
+        out = pipeline_traceability.pareto(doc.get("rows") or [])
+    elif args.action == "casting":
+        out = pipeline_traceability.casting(doc.get("table") or doc)
+    elif args.action == "gain":
+        out = pipeline_traceability.gain(doc.get("pairs") or [],
+                                         doc.get("flat_band", 0.5))
+    else:
+        out = pipeline_traceability.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
 def cmd_instructions(args):
     """Round 114 (arXiv:2611.13709): explicit context-file directives vs the cards."""
     from longrun.harness import instruction_audit
@@ -4431,6 +4544,21 @@ def main():
                                           "budget", "pairing", "insitu", "advise"]); \
         p.add_argument("file", nargs="?", help="JSON: {rows}, {row}, or {profile}"); \
         p.set_defaults(fn=cmd_capabilities)
+    p = sub.add_parser("govern"); \
+        p.add_argument("action", choices=["anchor", "validate", "attribute", "compare",
+                                          "coverage", "posture", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {rules, version}, {handoff, anchor, mode}, {halts}, {pairs}, {checks}, or {profile}"); \
+        p.set_defaults(fn=cmd_govern)
+    p = sub.add_parser("typed"); \
+        p.add_argument("action", choices=["build", "allowed", "tick", "refines", "split",
+                                          "charge", "compliance", "pressure", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: protocol spec, {parent, child}, {budget, share}, {runs}, {rows}, or {profile}"); \
+        p.set_defaults(fn=cmd_typed)
+    p = sub.add_parser("pipeline"); \
+        p.add_argument("action", choices=["final", "blame", "handoff", "rates", "origins",
+                                          "pareto", "casting", "gain", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {stages, gold}, {record}, {rows}, {pairs}, or {profile}"); \
+        p.set_defaults(fn=cmd_pipeline)
     p = sub.add_parser("instructions"); p.add_argument("action", choices=["audit"]); \
         p.add_argument("file", nargs="?", help="JSON: {text, cards}"); \
         p.set_defaults(fn=cmd_instructions)
