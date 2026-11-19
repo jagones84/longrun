@@ -79,6 +79,8 @@ Usage:
                            | beliefprobe scaling FILE.json
                            | awareness snapshot FILE.json | diagnostics severity FILE.json
                            | orchcredit certify FILE.json
+                           | intentgraph audit FILE.json | writeguard mediate FILE.json
+                           | ctxregime regimes FILE.json
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
@@ -4201,6 +4203,115 @@ def cmd_orchcredit(args):
     sys.exit(0)
 
 
+def cmd_intentgraph(args):
+    """Round 155 (arXiv:2611.11305): least-privilege auditing against an intent DAG."""
+    from longrun.harness import intent_audit
+    if not getattr(args, "file", None):
+        print("usage: intentgraph graph|scope|classify|audit|metrics|coupling|"
+              "audit_record|advise FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "graph":
+        out = intent_audit.graph(doc.get("record") or doc)
+    elif args.action == "scope":
+        out = intent_audit.scope(doc.get("expr"), doc.get("params") or {},
+                                 doc.get("policy") or "fail-closed")
+    elif args.action == "classify":
+        out = intent_audit.policy(doc.get("record") or doc)
+    elif args.action == "audit":
+        out = intent_audit.audit(doc.get("call") or {}, doc.get("graph") or {},
+                                 doc.get("state"), doc.get("bypass") is True,
+                                 doc.get("severity"), doc.get("threshold", 0.99),
+                                 doc.get("scope_policy") or "fail-closed")
+    elif args.action == "metrics":
+        out = intent_audit.metrics(doc.get("rows") or [])
+    elif args.action == "coupling":
+        out = intent_audit.coupling(doc.get("record") or doc)
+    elif args.action == "audit_record":
+        out = intent_audit.audit_record(doc.get("record") or doc)
+    else:
+        out = intent_audit.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_writeguard(args):
+    """Round 155 (arXiv:2611.17115): schema-derived policy and exact grounding."""
+    from longrun.harness import write_integrity
+    if not getattr(args, "file", None):
+        print("usage: writeguard classify|grounding|commit|mediate|integrity|"
+              "ablate|audit|advise FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "classify":
+        out = write_integrity.policy(doc.get("record") or doc)
+    elif args.action == "grounding":
+        out = write_integrity.grounding(doc.get("request") or doc.get("text"))
+    elif args.action == "commit":
+        out = write_integrity.commit(doc.get("plan") or doc)
+    elif args.action == "mediate":
+        out = write_integrity.mediate(doc.get("call") or {},
+                                      doc.get("ground") or {},
+                                      doc.get("plan"), doc.get("schema"))
+    elif args.action == "integrity":
+        out = write_integrity.integrity(doc.get("trace") or doc)
+    elif args.action == "ablate":
+        out = write_integrity.ablate(doc.get("record") or doc)
+    elif args.action == "audit":
+        out = write_integrity.audit_record(doc.get("record") or doc)
+    else:
+        out = write_integrity.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def cmd_ctxregime(args):
+    """Round 155 (arXiv:2611.05306): short working context and disciplined state."""
+    from longrun.harness import context_regime
+    if not getattr(args, "file", None):
+        print("usage: ctxregime length|charge|savings|compaction|regimes|"
+              "selective|sac|history|audit|advise FILE.json", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(args.file, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("bad file:", e, file=sys.stderr)
+        sys.exit(2)
+    if args.action == "length":
+        out = context_regime.length(doc.get("record") or doc)
+    elif args.action == "charge":
+        out = context_regime.charge(doc.get("record") or doc)
+    elif args.action == "savings":
+        out = context_regime.savings(doc.get("record") or doc)
+    elif args.action == "compaction":
+        out = context_regime.compaction(doc.get("record") or doc)
+    elif args.action == "regimes":
+        out = context_regime.regimes(doc.get("record") or doc)
+    elif args.action == "selective":
+        out = context_regime.selective(doc.get("record") or doc)
+    elif args.action == "sac":
+        out = context_regime.sac(doc.get("record") or doc)
+    elif args.action == "history":
+        out = context_regime.history(doc.get("record") or doc)
+    elif args.action == "audit":
+        out = context_regime.audit_record(doc.get("record") or doc)
+    else:
+        out = context_regime.advise(doc.get("profile") or doc)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
 def cmd_instructions(args):
     """Round 114 (arXiv:2611.13709): explicit context-file directives vs the cards."""
     from longrun.harness import instruction_audit
@@ -6270,6 +6381,23 @@ def main():
                                           "controlled", "audit", "advise"]); \
         p.add_argument("file", nargs="?", help="JSON: {record}, {candidates}, or {profile}"); \
         p.set_defaults(fn=cmd_orchcredit)
+    p = sub.add_parser("intentgraph"); \
+        p.add_argument("action", choices=["graph", "scope", "classify", "audit",
+                                          "metrics", "coupling", "audit_record",
+                                          "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {record}, {call,graph,state}, {rows}, or {profile}"); \
+        p.set_defaults(fn=cmd_intentgraph)
+    p = sub.add_parser("writeguard"); \
+        p.add_argument("action", choices=["classify", "grounding", "commit", "mediate",
+                                          "integrity", "ablate", "audit", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {record}, {request}, {plan}, {call,ground}, or {trace}"); \
+        p.set_defaults(fn=cmd_writeguard)
+    p = sub.add_parser("ctxregime"); \
+        p.add_argument("action", choices=["length", "charge", "savings", "compaction",
+                                          "regimes", "selective", "sac", "history",
+                                          "audit", "advise"]); \
+        p.add_argument("file", nargs="?", help="JSON: {record}, {rows}, or {profile}"); \
+        p.set_defaults(fn=cmd_ctxregime)
     p = sub.add_parser("instructions"); p.add_argument("action", choices=["audit"]); \
         p.add_argument("file", nargs="?", help="JSON: {text, cards}"); \
         p.set_defaults(fn=cmd_instructions)
