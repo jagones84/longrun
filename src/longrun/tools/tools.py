@@ -4277,14 +4277,168 @@ def _knowledge(args, run_id):
             "count": len(res.get("results", [])), "scope": scope}
 
 
+def _harness_status(sid):
+    """One deterministic, read-only report about ONE session (`harness.status`).
+
+    Answers the operator's `/status` slash command and gives any agent the same
+    facts in a single call. Every number comes from the store that already owns
+    it — never re-derived here: the context meter is `httpapi.context_usage`, the
+    task plan is `taskgraph.public`, the approvals are `approvals.list_unified`,
+    identity/teams are the agent and team registries. Each block is isolated: a
+    store that cannot be read becomes a `null`/`error` field, never a crash.
+    """
+    out = {"ok": True, "backend": "host", "sandboxed": False, "exit_code": 0,
+           "session": sid, "kind": "session_status"}
+    if not sid:
+        out.update({"ok": False, "exit_code": 1,
+                    "error": "no session in scope (pass session=)"})
+        return out
+
+    # ---- identity / model / workspace (the session store owns these) ----
+    sess = None
+    try:
+        from longrun.memory import stores
+        sess = stores.load_session(sid)
+    except Exception as exc:  # noqa: BLE001 — a store read must not break the report
+        out["session_error"] = str(exc)
+    if not sess:
+        out.update({"ok": False, "exit_code": 1,
+                    "error": "session not found: %s" % sid})
+        return out
+    msgs = sess.get("messages") or []
+    last_ts = 0.0
+    for m in msgs:
+        try:
+            last_ts = max(last_ts, float(m.get("ts") or 0))
+        except (TypeError, ValueError):
+            pass
+    out["identity"] = {
+        "id": sid,
+        "title": sess.get("title") or "",
+        "model": sess.get("model") or "",
+        "workspace": sess.get("workspace") or "",
+        "messages": len(msgs),
+        "created": sess.get("created"),
+        "last_message_ts": round(last_ts, 3) or None,
+        "interrupted": bool(sess.get("interrupted")),
+    }
+
+    # ---- context saturation vs the MAX context (one owner: the meter) ----
+    ctx = {}
+    try:
+        from longrun.core import httpapi
+        ctx = httpapi.context_usage(session_id=sid) or {}
+    except Exception as exc:  # noqa: BLE001
+        out["context_error"] = str(exc)
+    used = ctx.get("tokens_used")
+    budget = ctx.get("budget_tokens")
+    out["context"] = {
+        "tokens_used": used,
+        "max_tokens": budget,               # the session's context window budget
+        "pct": ctx.get("pct"),
+        "auto_compact_pct": ctx.get("auto_compact_pct"),
+        "over_threshold": ctx.get("over_threshold"),
+        "over_budget": ctx.get("over_budget"),
+        "source": ctx.get("source") or ("real" if ctx.get("available") else "n/a"),
+    }
+
+    # ---- the live task plan (the store the model owns) ----
+    plan = {"nodes": 0, "open": 0, "done": 0, "counts": {}, "goal": ""}
+    try:
+        from longrun.plan import taskgraph as _tg
+        g = _tg.load(sid) or {}
+        pub = _tg.public(g) or {}
+        nodes = pub.get("nodes") or []
+        counts = pub.get("counts") or {}
+        plan["nodes"] = len(nodes)
+        plan["counts"] = counts
+        plan["goal"] = (g or {}).get("goal") or ""
+        plan["done"] = sum(int(counts.get(s) or 0)
+                           for s in _tg.CLOSED_STATUSES)
+        plan["open"] = sum(int(counts.get(s) or 0)
+                           for s in _tg.OPEN_STATUSES)
+    except Exception as exc:  # noqa: BLE001
+        plan["error"] = str(exc)
+    out["plan"] = plan
+
+    # ---- approvals waiting for this session (pending) ----
+    try:
+        from longrun.tools import approvals as _appr
+        pend = _appr.list_unified(status="pending", limit=500) or []
+        mine = [r for r in pend
+                if str(r.get("run_id") or r.get("turn_scope")
+                       or r.get("session") or "") == sid]
+        out["approvals"] = {"pending_here": len(mine), "pending_total": len(pend),
+                            "tools": sorted({str(r.get("tool") or "") for r in mine
+                                             if r.get("tool")})}
+    except Exception as exc:  # noqa: BLE001
+        out["approvals"] = {"error": str(exc)}
+
+    # ---- is a turn running right now? ----
+    try:
+        from longrun.core import inflight as _inflight
+        out["running"] = sid in (_inflight.snapshot() or {})
+    except Exception:  # noqa: BLE001
+        out["running"] = None
+
+    # ---- the org identity: agent id, reports-to, teams, role ----
+    try:
+        from longrun.agent import agents as _agents
+        from longrun.orchestrate import teams as _teams
+        from longrun.orchestrate import roles as _roles
+        a = _agents.REGISTRY.get(sid) or {}
+        teams = []
+        for t in (a.get("teams") or []):
+            teams.append((_teams.REGISTRY.get(t) or {}).get("name") or t)
+        role_txt = ""
+        try:
+            role_txt = _roles.read(sid) or ""
+        except Exception:  # noqa: BLE001
+            pass
+        out["agent"] = {
+            "id": a.get("id"), "name": a.get("name"), "kind": a.get("kind"),
+            "reports_to": a.get("reports_to"), "teams": teams,
+            "role_set": bool(role_txt), "role_chars": len(role_txt),
+        }
+    except Exception as exc:  # noqa: BLE001
+        out["agent"] = {"error": str(exc)}
+
+    # ---- the service it runs on ----
+    try:
+        from longrun.core import server as _srv
+        from longrun.model import rllm as _rllm
+        out["service"] = {"name": "longrun", "version": getattr(_srv, "VERSION", "?"),
+                          "port": 8790, "router": _rllm.ROUTER_BASE,
+                          "default_model": getattr(_rllm, "DEFAULT_MODEL", "")}
+    except Exception as exc:  # noqa: BLE001
+        out["service"] = {"error": str(exc)}
+
+    # ---- a one-line human summary (also the tool's stdout) ----
+    _u = used if used is not None else "?"
+    _b = budget if budget is not None else "?"
+    _p = ctx.get("pct")
+    out["stdout"] = (
+        "status[%s] %s | model=%s | ctx %s/%s (%.1f%%) | msgs=%d | plan open=%d/%d "
+        "| approvals=%d | running=%s"
+        % (sid, (out["identity"].get("title") or "untitled"),
+           out["identity"].get("model") or "?", _u, _b, float(_p or 0),
+           out["identity"]["messages"], plan["open"], plan["nodes"],
+           out["approvals"].get("pending_here", 0), bool(out.get("running"))))
+    return out
+
+
 def _harness(args, run_id):
-    """Harness lifecycle actions (`harness.restart`).
+    """Harness lifecycle actions (`harness.restart`, `harness.status`).
 
     2026-11-15: `restart` moved here from the Matrix suite. It kills the whole
     process, so it is a harness action, not a Matrix artifact operation.
+    2026-11-21: `status` joins it — the ONE read-only report about a session.
     """
     from longrun.core import restart
     action = str((args or {}).get("action") or "restart").strip().lower()
+    if action in ("status", "info"):
+        sid = str((args or {}).get("session") or run_id or "").strip()
+        return _harness_status(sid)
     if action == "restart":
         sid = str((args or {}).get("session") or run_id or "").strip()
         return restart.schedule_restart(

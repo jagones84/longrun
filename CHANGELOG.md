@@ -7,6 +7,36 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **`/status` — one deterministic report about a session (tool + slash command).** Operator:
+  *"in the commands (slash /) list there shall be created a command status that reports
+  everything information on the session, context saturation, max context, LLM used … that
+  command can be deterministically run as tools also by any agent."* One read-only handler,
+  `harness.status`, joins the existing harness lifecycle namespace (`harness.restart`), so any
+  agent runs it as `{"action":"status","session":…}` while the composer's `/status` opens the
+  same facts in a modal. It aggregates the stores that already own each number — session
+  identity/model/workspace (`stores`), context saturation vs the **max context**
+  (`httpapi.context_usage`), the live plan and its open steps (`taskgraph.public`), this
+  session's pending approvals and running-turn state (`approvals`, `inflight`), and the org
+  identity (agent id, teams, role). Locked by `v1238` (16/16).
+- **A brand menu (⋮) beside the LONGRUN wordmark and a changelog button.** Operator: *"a button
+  to restart longrun … a three-dot menu just beside right to the LONGRUN title … other high level
+  suggestions … shall not be already other buttons in the webui"* and *"a changelog button
+  (visible mobile and desktop mode)."* The ⋮ opens ONE body-anchored popover with the lifecycle
+  acts the topbar had no home for — **restart longrun** (reuses the supervised-restart route,
+  warns about running turns), reload interface, copy diagnostics, about. A dedicated
+  **changelog** icon button sits in the topbar action cluster (sized for the 44 px landscape
+  rail and the phone header) and opens a modal with the repo's `CHANGELOG.md` releases plus the
+  recent git commits and HEAD, served by the new read-only `GET /api/changelog`. Locked by
+  `v1237` (9/9).
+- **The terminal and feed rail group moved to the top of the tool sidebar**, and the composer
+  gained a tiny numberless **context-saturation ring** left of the model name (green < 50%,
+  amber < 70%, red ≥ 70%). Operator: *"the feed and terminal icon in the sidebar shall be placed
+  on the very top of the sidebar"* and *"the context saturation circle shall appear also in the
+  message chat box beside left of the LLM name … tiny … no number percentage only the circle
+  with color amber green red. dont duplicate code."* The ring geometry is ONE shared helper
+  (`_ringCircles`) used by both the rail row and the composer chip, so the two can never drift;
+  both read the same `/api/context` number the rail meter already shows. Locked by `v1239` (8/8);
+  the rail-order pins in `v885`/`v890` were updated to the new order.
 - **The Architect can preview and delete sessions (and their agents) in bulk.** Operator: *"vorrei
   che A1 architect … abbia la possibilità di cancellare sessioni (agenti) … cancellami le sessioni
   no team che ti sembrano inutili."* `session.delete` now takes `session` OR a `sessions` batch —

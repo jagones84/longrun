@@ -1003,16 +1003,20 @@ _LEGACY_SCHEMAS = {
     # `matrix` only because Matrix built it first for its evolution loop, so the
     # Tools panel showed the whole suite description on a plain process restart.
     "harness": {
-        "description": ("Harness lifecycle: restart the Longrun process and continue the "
-                        "calling session. The service manager restarts the unit; boot then "
-                        "resumes the interrupted turn. Every running turn in every session "
-                        "dies with the process, so use it only for a change that hotload "
-                        "cannot apply (promoted Nucleous code)."),
+        "description": ("Harness lifecycle. `status` reports everything about ONE session "
+                        "in a single deterministic read (identity, model, context "
+                        "saturation vs the max context, plan, approvals, teams). `restart` "
+                        "restarts the Longrun process and continues the calling session: the "
+                        "service manager restarts the unit and boot resumes the interrupted "
+                        "turn. Every running turn in every session dies with the process, so "
+                        "use restart only for a change that hotload cannot apply (promoted "
+                        "Nucleous code)."),
         "type": "object",
         "properties": {
-            "action": {"type": "string", "enum": ["restart"], "default": "restart"},
+            "action": {"type": "string", "enum": ["restart", "status"],
+                       "default": "restart"},
             "session": {"type": "string",
-                        "description": "session id to continue after the restart (default: the calling turn's session)"},
+                        "description": "the session to report (status) or to continue after the restart (restart; default: the calling turn's session)"},
             "reason": {"type": "string", "description": "why the restart is needed"},
             "dry_run": {"type": "boolean", "default": False,
                         "description": "return the ticket a real restart would write and do not exit"},
@@ -1177,6 +1181,7 @@ _SUBTOOL_FIELDS = {
     },
     "harness": {
         "restart": ["session", "reason", "dry_run"],
+        "status": ["session"],
     },
 }
 
@@ -1525,6 +1530,14 @@ _SUBTOOL_GUIDANCE = {
         "process, so use it only for a change hotload cannot apply (promoted "
         "Nucleous code). `dry_run=true` returns the ticket a real restart would "
         "write and leaves no pending resume behind."
+    ),
+    "harness.status": (
+        "Report EVERYTHING about one session in a single deterministic, read-only "
+        "call: identity (agent id, title, workspace, model), context saturation "
+        "(tokens used vs the max context, percentage), the live task plan and its "
+        "open steps, pending approvals for this session, running-turn state, the "
+        "roles/teams it belongs to, and the service/version it runs on. Optional "
+        "`session` (default: the calling turn's session). Nothing is written."
     ),
     # R2 (2026-11-15): one actionable line per canonical action. Before this
     # block 43 of the 90 multi-action tools had no row and fell back to the

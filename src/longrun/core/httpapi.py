@@ -2300,6 +2300,97 @@ def status_payload():
     }
 
 
+#: How much of CHANGELOG.md the changelog button renders. Bounded on purpose:
+#: the file is thousands of lines and the modal is a reader, not an archive.
+_CHANGELOG_SECTIONS = 6
+_CHANGELOG_ITEMS = 25
+_CHANGELOG_ITEM_CHARS = 240
+_CHANGELOG_COMMITS = 20
+
+
+def _parse_changelog(text):
+    """`CHANGELOG.md` → a list of `{title, date, items}` for the top sections.
+
+    Keep-a-Changelog shape: `## [x.y] - date` headings, `- ` bullets (a wrapped
+    line is a continuation of the bullet above). Pure text in, list out — the
+    reader decides how it looks.
+    """
+    releases = []
+    cur = None
+    for raw in (text or "").splitlines():
+        line = raw.rstrip()
+        if line.startswith("## "):
+            title = line[3:].strip()
+            m = re.search(r"(\d{4}-\d{2}-\d{2})", title)
+            cur = {"title": title, "date": (m.group(1) if m else ""), "items": []}
+            releases.append(cur)
+            continue
+        if cur is None:
+            continue
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped[:2] in ("- ", "* "):
+            if len(cur["items"]) >= _CHANGELOG_ITEMS:
+                continue
+            cur["items"].append({"text": stripped[2:].strip()[:_CHANGELOG_ITEM_CHARS]})
+        elif cur["items"] and raw[:1] in (" ", "\t"):
+            # a wrapped continuation of the bullet above
+            last = cur["items"][-1]
+            if len(last["text"]) < _CHANGELOG_ITEM_CHARS:
+                joiner = "" if last["text"].endswith(("-", "(", "/", " ")) else " "
+                last["text"] = (last["text"] + joiner + stripped)[:_CHANGELOG_ITEM_CHARS]
+    return releases[:_CHANGELOG_SECTIONS]
+
+
+def _git_log(repo):
+    """The last commits as `{sha, subject, date}`, plus the HEAD one.
+
+    Best-effort: a checkout without git, or a package install, simply has no
+    history — the reader shows the changelog path and stops. Never raises.
+    """
+    try:
+        out = subprocess.run(
+            ["git", "-C", repo, "log", "-n", str(_CHANGELOG_COMMITS),
+             "--pretty=%h\x1f%ad\x1f%s", "--date=short"],
+            capture_output=True, text=True, timeout=5).stdout
+    except Exception:  # noqa: BLE001 — no git / no repo is data, not a crash
+        return []
+    rows = []
+    for line in (out or "").splitlines():
+        parts = line.split("\x1f")
+        if len(parts) != 3:
+            continue
+        rows.append({"sha": parts[0], "date": parts[1], "subject": parts[2]})
+    return rows
+
+
+def changelog_payload():
+    """`GET /api/changelog` — the release notes AND the latest commit.
+
+    The WebUI's changelog button (desktop and mobile) reads this. `releases`
+    come from the repository's own `CHANGELOG.md`; `head`/`commits` are the git
+    history when one exists. Nothing here writes.
+    """
+    path = os.path.join(REPO, "CHANGELOG.md")
+    text = ""
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            text = f.read()
+    except OSError:
+        text = ""
+    commits = _git_log(REPO)
+    return {
+        "ok": True,
+        "version": VERSION,
+        "path": path,
+        "exists": os.path.isfile(path),
+        "head": (commits[0] if commits else None),
+        "commits": commits,
+        "releases": _parse_changelog(text),
+    }
+
+
 def improvement_failures(limit=8):
     """The failure register the AGENT reads, on the operator's surface (round 42).
 
@@ -2588,6 +2679,10 @@ class Handler(BaseHTTPRequestHandler):
             except OSError:
                 _b = ""
             return self._send(200, {"build": _b})
+        if path == "/api/changelog":
+            # 2026-11-21: the changelog button's ONE read — release notes from the
+            # repo's CHANGELOG.md plus the recent git commits. Read-only.
+            return self._send(200, changelog_payload())
         if path == "/api/matrix":
             from longrun.core import matrix as _mtx_api
             return self._send(200, _mtx_api.status())

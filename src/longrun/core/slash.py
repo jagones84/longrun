@@ -37,6 +37,10 @@ BUILTINS = [
      "hint": "list the skills in this menu \u2014 the choice lands as /<name> in the message"},
     {"id": "compact", "aliases": [], "title": "Compact", "icon": "\U0001f5dc",
      "kind": "ui", "insert": "", "hint": "compact this session's context now"},
+    {"id": "status", "aliases": [], "title": "Status", "icon": "\u2139",
+     "kind": "ui", "insert": "",
+     "hint": "report everything about this session: identity, model, context "
+             "saturation vs the max context, the plan and its open steps, approvals"},
     {"id": "reset", "aliases": [], "title": "Reset", "icon": "\u21ba", "kind": "ui",
      "insert": "",
      "hint": "start a fresh chat (a new session in this workspace) — nothing is deleted"},

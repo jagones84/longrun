@@ -47,9 +47,10 @@ check("A2 the store lives under the data home (operator-owned, not shipped confi
 check("A3 the built-in tokens are declared as reserved",
       # v1051c: `/reset` and `/unlock` are built-ins too; the list is derived from
       # `core/slash.py:BUILTINS`, so a new built-in cannot be shadowed by a user command.
+      # v1238: `/status` (the read-only session report) joined the catalogue.
       set(commands.RESERVED) == {"goal", "skills", "skill", "compact",
                                  "plan", "spec", "plugins", "plugin",
-                                 "reset", "unlock"}, commands.RESERVED)
+                                 "status", "reset", "unlock"}, commands.RESERVED)
 
 # ── B: round-trip ───────────────────────────────────────────────────────────
 res = save()
