@@ -13,6 +13,12 @@ Measured live on a SWE-bench instance (2026-11-07, `271dcb827fad`): 11 of 22 cal
 were duplicate samples (50%), i.e. the v838 change bought nothing on this workload
 against the 46% measured before it (session `dbaa607aa31b`, 56 of 121).
 
+2026-11-21: `_looks_like_json_action` no longer requires `startswith` — a
+prose-prefixed call is machine text ANYWHERE (so an unparseable one cannot leak
+into the chat, session 5033e643711a). B4's pin moves with that; C still holds,
+because a SHAPE check is not the loop's general finder (argkv / tagged / markup
+forms are actions the shape check does not name).
+
   A) `spend_extra` keeps its meaning (prose-only by default, reversible by config);
   B) a prose-prefixed action is an ACTION for the step classifier;
   C) the gate in `agent.py` passes that classifier, not the shape check.
@@ -62,9 +68,11 @@ check("B2 plain prose is not", getattr(A, "_step_is_action", lambda _t: None)(PL
 check("B3 a bare action is still an action",
       getattr(A, "_step_is_action", lambda _t: None)(
           '{"action":"tool","tool":"shell","args":{"command":"ls"}}') is True)
-check("B4 the shape check is what misses it (the defect, pinned)",
-      A._looks_like_json_action(PREFIXED) is False
-      and A._extract_action(PREFIXED) is not None)
+check("B4 the shape check ALSO catches a prose-prefixed call now (2026-11-21)",
+      A._looks_like_json_action(PREFIXED) is True
+      and A._extract_action(PREFIXED) is not None,
+      "was False: the `startswith` gate let an unparseable prose-prefixed call "
+      "leak into the chat (session 5033e643711a); it is machine text anywhere")
 
 # ------------------------------------------------- C. the gate uses the truth ---
 src = open(os.path.join(REPO, "src", "longrun", "agent", "agent.py"),

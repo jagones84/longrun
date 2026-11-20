@@ -117,6 +117,24 @@ All notable changes to Longrun are documented here. The format follows
   tool gate. (Locked by `v1052` B1/B1b, N9d/N9d2, N11b/N11b2, O1–O7; `v785` K1–K5; `v763` F1–F2.)
 
 ### Fixed
+- **A tool call written AFTER prose no longer leaks as the reply, and its raw newlines no longer drop it.** Operator:
+  *"why interrupted this way? that's not a foreseen failure mode, please diagnose first and fix if necessary"*.
+  The model (A8 "Master", session `5033e643711a`) emitted prose then a call whose `code` value carried REAL
+  newlines (`{"action":"tool","tool":"python.run","args":{"code":"import os<NEWLINE>print(1)"}}`) — technically
+  invalid JSON. `_extract_action` returned `None`, and the machine-text guard required the message to **start**
+  with `{`, so the raw call was persisted as the turn's answer and the turn stopped as `user_pivot`. Two fixes,
+  both in the shared text layer: a JSON object whose strings hold raw control characters is now **repaired**
+  (escaped) and re-parsed, so the call RUNS (`textkit._escape_control_chars`); and a call-shaped JSON **anywhere**
+  in a message is machine text (`agent._looks_like_json_action` no longer gates on `startswith`), so an
+  unparseable call can never leak. Locked by `v1242` (14/14, A/B) and `v843` (B4 re-pointed).
+- **The `human.ask` call now appears and REMAINS in the chat history.** Operator: *"human in the loop dialog is
+  called by the agent with a tool? if not fix — the correct way is that it uses the tool and the tool call shall
+  appear and remain in the chat history"*. The agent DID call the baseline tool `human.ask`, but the loop
+  intercepted it and published only `hitl.request` — so no tool card was ever drawn (a scan of the session's feed
+  showed 21 `tool.call` events and **none** for `human.ask`). The branch now publishes the SAME inline card as
+  every other tool (`tool.call` + `tool.result`) and **persists** it (`persist_tool_card`), reusing the
+  harness-action convention of `_apply_chat_todos` — no second mechanism. The decision FORM still ends the turn.
+  Locked by `v1242` (14/14, C) and `v733`.
 - **The DSML "no tool" retry stopped lying, and the drifted markup now parses.** Operator: *"it was not
   true that the harness was saying in that case A8 master, why it said so? fix, after diagnosis"*. The model
   (A8 "Master", session `5033e643711a`) drifted its native tool-call markup: a stray `>` right after the

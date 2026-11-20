@@ -1361,9 +1361,16 @@ def _looks_like_json_action(text):
         return True
     if "<arg_value>" in t and "</arg_key>" in t:
         return True
-    if not t.startswith(("{", "[")):
-        return False
-    return ('"action"' in t) or ('"tool"' in t) or ('"args"' in t)
+    if t.startswith(("{", "[")):
+        return ('"action"' in t) or ('"tool"' in t) or ('"args"' in t)
+    # 2026-11-21: the model also writes PROSE then its call in ONE message
+    # ("Vado avanti da solo…  {"action":"tool","tool":"python.run", …}"). The old
+    # `startswith` gate treated that as a normal ANSWER, so when the call did not
+    # parse into an action (raw newlines / unescaped quotes) the raw JSON was
+    # painted in the chat and the turn stopped as `user_pivot` (session
+    # 5033e643711a). An object whose FIRST key is an action key, ANYWHERE in the
+    # message, is a call attempt — never a reply.
+    return bool(re.search(r"[\{\[]\s*\"(?:action|tool|tool_name|args)\"\s*:", t))
 
 
 # JAG-304: a parsed JSON OBJECT is only an ACTION ATTEMPT when it carries one of
@@ -6537,6 +6544,24 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             _hitl = {"reason": "asked", "question": _q, "open": _steps,
                      "open_total": len(_steps),
                      "options": [str(o) for o in (_ask.get("options") or [])][:6]}
+            # 2026-11-21 (operator): the human.ask CALL must APPEAR and REMAIN in
+            # the chat — it is a real tool call, so it renders as the SAME inline
+            # card as every other tool (the `_apply_chat_todos` convention), and it
+            # is PERSISTED (`persist_tool_card`) so a reload rebuilds it. The turn
+            # still ENDS on the call: the form below carries the DECISION, this card
+            # is the RECORD of the call that asked for it.
+            _ask_args = {"question": _q,
+                         "steps": [str(x).strip() for x in (_ask.get("steps") or [])
+                                   if str(x).strip()],
+                         "options": list(_hitl["options"])}
+            on_event("tool.call", session=sess["id"], tool="human.ask",
+                     args=_ask_args, inline=True)
+            on_event("tool.result", session=sess["id"], tool="human.ask", ok=True,
+                     exit_code=0, backend="harness", args=_ask_args, output=_q,
+                     summary="waiting for the operator's decision")
+            persist_tool_card(sess, "human.ask", True, args=_ask_args, result=_q,
+                              exit_code=0, backend="harness", node=_cur_node(),
+                              after=_after())
             # 2026-11-11: the card must carry the DECISION, not a generic form — the
             # question and the options the agent proposed ride the event too (the
             # synthesized reply that repeats them is persisted, never streamed).

@@ -45,6 +45,44 @@ def strip_think(text):
     return clean, "\n\n".join(found).strip() or None
 
 
+#: JSON string escapes for the control characters a model writes RAW (a literal
+#: newline/tab instead of `\n`), which makes an otherwise-valid object unparseable.
+_JSON_CTRL_ESCAPES = {"\n": "\\n", "\r": "\\r", "\t": "\\t", "\b": "\\b", "\f": "\\f"}
+
+
+def _escape_control_chars(blob):
+    """Escape RAW control characters that sit INSIDE JSON string literals.
+
+    A model that writes a multi-line value emits technically-INVALID JSON —
+    `"code": "line1<newline>line2"` with a REAL newline — so `json.loads` rejects
+    the whole object ("Invalid control character"). The intent is unambiguous: the
+    control character is a literal character of the string, so escape it (and only
+    inside string literals) and let the parser read the model's call. Measured
+    2026-11-21 (session 5033e643711a): `{"action":"tool","tool":"python.run", …}`
+    carried raw newlines, so the call never ran and 2 KB of raw JSON was painted in
+    the chat as the turn's answer.
+    """
+    out, in_str, esc = [], False, False
+    for ch in blob:
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            elif ch in _JSON_CTRL_ESCAPES:
+                out.append(_JSON_CTRL_ESCAPES[ch])
+                continue
+            elif ord(ch) < 0x20:
+                out.append("\\u%04x" % ord(ch))
+                continue
+        elif ch == '"':
+            in_str = True
+        out.append(ch)
+    return "".join(out)
+
+
 def _iter_json_objects(text):
     """Every balanced top-level JSON object/array found in `text`, in order.
 
@@ -80,10 +118,17 @@ def _iter_json_objects(text):
                             break
                 j += 1
             if depth == 0 and j < n:
+                blob = text[start:j + 1]
                 try:
-                    objs.append(json.loads(text[start:j + 1]))
-                except Exception:  # noqa: BLE001 — skip an unparseable blob
-                    pass
+                    objs.append(json.loads(blob))
+                except Exception:  # noqa: BLE001
+                    # A model's multi-line string value makes the object invalid for
+                    # the strict parser (raw control chars): escape them and retry
+                    # before dropping the model's call on the floor.
+                    try:
+                        objs.append(json.loads(_escape_control_chars(blob)))
+                    except Exception:  # noqa: BLE001 — genuinely unparseable blob
+                        pass
                 i = j + 1
                 continue
         i += 1
