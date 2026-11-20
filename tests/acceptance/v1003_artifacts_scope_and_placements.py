@@ -92,8 +92,10 @@ i_objects = ui.index('id="dockBtn"')
 i_jump = ui.index('id="inspJump"')
 i_runtime = ui.index('id="inspJumpRuntime"')
 i_chat = ui.index('id="chatViewSec"')
-check("C1 rail order is objects → Inspector jumps → runtime → chat",
-      i_objects < i_jump < i_runtime < i_chat, (i_objects, i_jump, i_runtime, i_chat))
+# 2026-11-21 (operator): "the feed and terminal icon in the sidebar shall be placed on the
+# very top of the sidebar" — the runtime group is now FIRST (v1239 pins the new order).
+check("C1 rail order is runtime → objects → Inspector jumps → chat",
+      i_runtime < i_objects < i_jump < i_chat, (i_runtime, i_objects, i_jump, i_chat))
 check("C2 the chat group is the LAST group of the rail (nearest the composer)",
       i_chat < ui.index('class="tb-foot"'))
 check("C3 the PLAN jump is mounted inside the chat group, before the ✨",

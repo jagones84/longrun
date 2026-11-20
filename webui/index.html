@@ -92,6 +92,18 @@
     stroke-dasharray: 100 100; stroke-dashoffset: 100; transition: stroke-dashoffset .3s, stroke .3s; }
   .pill.meter.hot .mfill { stroke: var(--err); }
   .pill.meter.hot b { color: var(--err); }
+  /* 2026-11-21 (operator): the composer's own saturation ring — a tiny, NUMBERLESS
+     circle to the LEFT of the model name, sharing the rail's ring geometry (`.mring`
+     + `_ringCircles`). Colour only: green < 50%, amber < 70%, red ≥ 70%. */
+  .cmp-ctx { flex: 0 0 auto; display: inline-flex; align-items: center;
+    margin-right: 2px; cursor: help; }
+  .cmp-ctx[hidden] { display: none; }
+  .cmp-ctx .mring { width: 13px; height: 13px; }
+  .cmp-ctx .mring .mtrk { stroke-width: 4.5; }
+  .cmp-ctx .mfill { stroke-width: 4.5; }
+  .cmp-ctx.lvl-ok .mfill { stroke: var(--ok); }
+  .cmp-ctx.lvl-warn .mfill { stroke: var(--warn); }
+  .cmp-ctx.lvl-hot .mfill { stroke: var(--err); }
   /* 2026-11-16 (operator): the rail has neither horizontal nor vertical room, so the
      rail meter is a 13px ring + a 9px number — NO padding, border or background. The
      exact token counts stay in the tooltip; the ring turns red from 70%. */
@@ -114,6 +126,25 @@
   #settingsBtn, #palette-open { width: 32px; height: 32px; padding: 0; border-radius: 8px;
     display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
   #settingsBtn svg, #palette-open svg { display: block; }
+  /* 2026-11-21: the changelog button shares the very same box as the gear/search; a
+     SEPARATE rule so the pinned one-box selector above stays intact. */
+  #changelogBtn { width: 32px; height: 32px; padding: 0; border-radius: 8px;
+    display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+  #changelogBtn svg { display: block; }
+  /* 2026-11-21: the brand ⋮ beside the LONGRUN wordmark and its one menu. The button is
+     a tight 24x30 ghost glyph so it never widens the header on a phone; the menu is a
+     body-anchored popover, placed from the button (never clipped by the topbar). */
+  .brand-wrap { position: relative; display: inline-flex; align-items: center; }
+  .brand-menu-btn { width: 24px; height: 30px; min-height: 30px; padding: 0; border-radius: 7px;
+    display: inline-flex; align-items: center; justify-content: center; color: var(--dim); }
+  .brand-menu-btn:hover, .brand-menu-btn[aria-expanded="true"] { color: var(--txt); background: var(--hover); }
+  #brandMenu { position: fixed; z-index: 46; min-width: 216px; max-width: min(90vw, 300px);
+    padding: 5px; display: flex; flex-direction: column; gap: 2px; }
+  #brandMenu[hidden] { display: none; }
+  #brandMenu .mi { display: flex; align-items: center; gap: 8px; width: 100%;
+    padding: 8px 10px; border-radius: 8px; font-size: 12px; color: var(--txt);
+    text-align: left; white-space: nowrap; }
+  #brandMenu .mi:hover { background: var(--hover); }
   @media (max-width: 640px) {
     /* a phone keeps brand + sections + settings. The session badge here only ever
        showed its 🗂 emoji (the bar clipped it to 24px) and it DUPLICATES the chat head
@@ -3400,8 +3431,9 @@
     #topbar #apprPill { font-size: 0; width: 30px; height: 26px; padding: 0;
                         justify-content: center; }
     #topbar #apprPill::before { content: "\2713"; font-size: 12px; line-height: 1; }
-    #topbar #palette-open, #topbar #buildChip {
+    #topbar #palette-open, #topbar #buildChip, #topbar #changelogBtn {
       width: 32px; height: 28px; min-height: 28px; padding: 0; }
+    #topbar #brandMenuBtn { width: 30px; height: 26px; min-height: 26px; }
     #topbar #buildChip { font-size: 0; }
     #topbar #buildChip::before { content: "⇪"; font-size: 13px; }
 
@@ -3523,7 +3555,8 @@
        tighten the tabs and the gaps; the two icon buttons keep a 28 px target. */
     #topbar { gap: 4px; padding: 8px 8px; }
     #topbar #topTabs .ttab { width: 34px; }
-    #topbar #palette-open, #topbar #settingsBtn { width: 28px; min-width: 28px; height: 28px; }
+    #topbar #palette-open, #topbar #settingsBtn, #topbar #changelogBtn {
+      width: 28px; min-width: 28px; height: 28px; }
   }
   @media (max-width: 360px) and (min-height: 501px) {
     /* 320 px (the narrowest phone): the four icon tabs + sandbox dot + approval mode +
@@ -3617,6 +3650,26 @@
 </div>
 <header id="topbar">
   <h1 class="logo"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px"><circle cx="14.9" cy="3.7" r="2.4" fill="currentColor" stroke="none"/><path d="M13.1 6.9 10.5 13.3"/><path d="M13.1 7.2 16.9 8.6 18.9 6.2"/><path d="M13.1 7.2 9.5 9.5 6.0 7.4"/><path d="M10.5 13.3 15.2 13.6 17.1 17.8"/><path d="M10.5 13.3 6.1 16.6 2.4 14.1"/></svg> LONGRUN</h1>
+  <!-- 2026-11-21 (operator): "a button to restart longrun … a three-dot menu just beside
+       right to the LONGRUN title … other high level suggestions … shall not be already
+       other buttons in the webui". ONE brand menu, opened by the ⋮ beside the wordmark;
+       it carries the lifecycle acts the topbar had no home for (restart, reload,
+       diagnostics, about) — never a duplicate of the gear/search/pane controls. -->
+  <div class="brand-wrap">
+    <button class="ghost brand-menu-btn" id="brandMenuBtn" aria-haspopup="true"
+            aria-expanded="false" title="Longrun menu — restart, reload, diagnostics, about"
+            aria-label="Longrun menu"><svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5.2" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="18.8" r="1.7"/></svg></button>
+    <div id="brandMenu" class="card" role="region" aria-label="Longrun menu" hidden>
+      <button class="ghost mi" id="bmRestart" data-call="restartLongrun"
+              aria-label="restart longrun" title="restart the Longrun service — every running turn ends, then the service comes back">↻ restart longrun</button>
+      <button class="ghost mi" id="bmReload" data-call="reloadInterface"
+              aria-label="reload the interface" title="reload this page to pick up a new build">⟳ reload interface</button>
+      <button class="ghost mi" id="bmDiag" data-call="copyDiagnostics"
+              aria-label="copy diagnostics" title="copy a diagnostics report (paths, service, tools, recent errors) to the clipboard">⧉ copy diagnostics</button>
+      <button class="ghost mi" id="bmAbout" data-call="openAbout"
+              aria-label="about longrun" title="version, build fingerprint and data home">ⓘ about longrun</button>
+    </div>
+  </div>
   <nav id="topTabs" class="topTabs" aria-label="top-level sections">
     <!-- 2026-11-15 (operator): "remove the text on top bar for tabs use only icons
          always!" Four drawn SVGs (the rail's 17px/1.8 stroke recipe), named by
@@ -3673,6 +3726,13 @@
        /api/build fingerprint moves — show an in-place reload chip instead of
        looking stale (same watcher as the Control deck). -->
   <button class="ghost" id="buildChip" title="the server app changed — reload to run the new build" hidden>⇪ update</button>
+  <!-- 2026-11-21 (operator): "a changelog button (visible mobile and desktop mode)". ONE
+       icon button in the topbar action cluster, next to the gear — it opens the release
+       notes (CHANGELOG.md) and the latest commits from GET /api/changelog. -->
+  <button class="ghost" id="changelogBtn" data-call="openChangelog"
+          title="changelog — what changed, the latest commits" aria-label="changelog">
+    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5h8l4 4V20a.5.5 0 0 1-.5.5h-11A.5.5 0 0 1 6 20Z"/><path d="M14 3.5V8h4.5"/><path d="M9 12.5h6M9 15.5h6"/></svg>
+  </button>
   <!-- 2026-11-07 (operator): "il gear di settings mettilo in ALTO nella GUI" — the
        gear returns to the topbar (RH-27 had moved it to the rail's foot), at the far
        right like a desktop IDE keeps it. -->
@@ -3956,6 +4016,10 @@
           </div>
         </div>
         <div class="cb-right">
+          <!-- 2026-11-21 (operator): a tiny, numberless saturation ring LEFT of the model
+               name. It reuses the rail's ring geometry (`_ringCircles`) and is painted by
+               `_setCmpRing` — green / amber / red, no percentage. -->
+          <span class="cmp-ctx" id="cmpCtx" title="context saturation" hidden></span>
           <div class="model-wrap">
           <button class="ghost model-btn" id="model-btn" title="choose the LLM for this chat"><span class="mname">model</span> <span class="mc">▾</span></button>
           <div id="modelMenu" hidden></div>
@@ -3982,6 +4046,12 @@
          It shipped with four COLOUR EMOJI (a book, a target, a brain, a tag) and two
          box-drawing glyphs, so the column read as a sticker sheet, not one instrument. -->
     <div class="tb-mid">
+    <!-- 2026-11-21 (operator): "the feed and terminal icon in the sidebar shall be placed
+         on the very top of the sidebar". The RUNTIME group (terminal · feed) is now the
+         rail's FIRST section, above the session objects; it is built from the real
+         Inspector sections at runtime (`_buildInspJump`) and collapses to nothing while
+         empty, so an idle rail gains no blank space. -->
+    <div class="tb-sec" id="inspJumpRuntime" role="group" aria-label="runtime panels"></div>
     <!-- 2026-11-07 (operator): section 1 — the session's OBJECTS (what this session
          produced or is waiting for). -->
     <div class="tb-sec">
@@ -4017,7 +4087,6 @@
          sections at runtime (`_buildInspJump`), so they follow your drag order and
          cannot drift; Approvals/Workspace keep their own badged buttons. -->
     <div class="tb-sec" id="inspJump" role="group" aria-label="inspector sections"></div>
-    <div class="tb-sec" id="inspJumpRuntime" role="group" aria-label="runtime panels"></div>
     <!-- 2026-11-07 (operator): section 3 — the CHAT controls (how the transcript is
          read). 2026-11-14 (operator): *"shift the group relevant to chat session (the
          one with autogenerate below) … move all that group below. terminal and feed
@@ -8075,6 +8144,9 @@ let SLASH_COMMANDS = [
   { id: "compact", aliases: [], icon: "🗜", kind: "ui", insert: "",
     hint: "compact this session's context now",
     run: () => compactNow() },
+  { id: "status", aliases: [], icon: "ℹ", kind: "ui", insert: "",
+    hint: "report everything about this session: identity, model, context saturation vs the max context, the plan and its open steps, approvals",
+    run: () => openSessionStatus() },
   { id: "reset", aliases: [], icon: "↺", kind: "ui", insert: "",
     hint: "start a fresh chat (a new session in this workspace) — nothing is deleted",
     run: () => resetChat() },
@@ -8148,6 +8220,7 @@ const _SLASH_RUN = {
   skills: () => openSkillMenu(),
   plugins: () => openPluginMenu(),
   compact: () => compactNow(),
+  status: () => openSessionStatus(),
   reset: () => resetChat(),
   unlock: () => docUnlock(),
 };
@@ -9050,6 +9123,14 @@ function _orgRankMap() {
    keeps the ids, so the live `/api/context` meter still repaints it; a row with no
    number (a session that never ran) renders nothing — never a fabricated 0%. */
 let _ctxRingPlaced = false, _ctxPct = null, _ctxTitle = "context tokens / budget";
+/* ONE ring geometry for every saturation circle in the app (the rail row's pill and the
+   composer's `#cmpCtx`): a track + a fill whose dash offset is the UNUSED fraction.
+   `attr` is the optional id attribute of the fill, so a live repaint can address it. */
+function _ringCircles(attr, pct) {
+  const off = 100 - Math.max(0, Math.min(100, pct == null ? 0 : pct));
+  return '<circle class="mtrk" cx="18" cy="18" r="15.9155"></circle>'
+    + '<circle class="mfill"' + (attr || "") + ' cx="18" cy="18" r="15.9155" style="stroke-dashoffset:' + off + '"></circle>';
+}
 function _ctxRingHtml(s) {
   const isActive = s.id === sessionId;
   const _n = Number(s.ctx_pct);
@@ -9060,15 +9141,33 @@ function _ctxRingHtml(s) {
   const iM = isActive ? ' id="ctx-meter"' : "";
   const iR = isActive ? ' id="ctxRing"' : "";
   const iP = isActive ? ' id="ctxPctTop"' : "";
-  const off = 100 - Math.max(0, Math.min(100, pct == null ? 0 : pct));
   const tip = pct == null ? "context tokens / budget"
     : ("context: " + pct + "% of the budget (" + (s.ctx_tokens || "?") + " / "
        + (s.ctx_budget || "?") + " tokens)");
   return '<span class="sess-ctx"><span class="pill meter' + (pct != null && pct >= 70 ? " hot" : "") + '"' + iM
     + ' title="' + esc(tip) + '">'
-    + '<svg class="mring" viewBox="0 0 36 36" aria-hidden="true"><circle class="mtrk" cx="18" cy="18" r="15.9155"></circle>'
-    + '<circle class="mfill"' + iR + ' cx="18" cy="18" r="15.9155" style="stroke-dashoffset:' + off + '"></circle></svg>'
+    + '<svg class="mring" viewBox="0 0 36 36" aria-hidden="true">' + _ringCircles(iR, pct) + '</svg>'
     + '<b' + iP + '>' + (pct == null ? "…" : Math.round(pct) + "%") + '</b></span></span>';
+}
+/* The composer's numberless ring beside the model name. Rebuilt only when the value
+   moves a colour band, so the 5 s poll never thrashes the DOM. */
+let _cmpRing = null;
+function _setCmpRing(pct) {
+  const el = $("cmpCtx");
+  if (!el) return;
+  const p = Number(pct);
+  if (pct == null || !isFinite(p)) {
+    if (_cmpRing !== null) { el.hidden = true; el.innerHTML = ""; _cmpRing = null; }
+    return;
+  }
+  const lvl = p >= 70 ? "lvl-hot" : (p >= 50 ? "lvl-warn" : "lvl-ok");
+  if (_cmpRing === lvl) return;
+  _cmpRing = lvl;
+  el.hidden = false;
+  el.className = "cmp-ctx " + lvl;
+  el.title = "context saturation: " + Math.round(p) + "% of this model's window";
+  el.innerHTML = '<svg class="mring" viewBox="0 0 36 36" aria-hidden="true">'
+    + _ringCircles(' id="cmpCtxRing"', p) + '</svg>';
 }
 function _repaintCtx() {
   const pill = $("ctx-meter");
@@ -9076,6 +9175,7 @@ function _repaintCtx() {
   const p = $("ctxPctTop"); if (p) p.textContent = (_ctxPct == null ? "–" : Math.round(_ctxPct) + "%");
   const ring = $("ctxRing");
   if (ring) ring.style.strokeDashoffset = String(100 - Math.max(0, Math.min(100, _ctxPct || 0)));
+  _setCmpRing(_ctxPct);
 }
 /* 2026-11-16 (operator): the message COUNT is gone from the rail — it cost the width
    the ctx ring needs beside the A-id. Only the compact last-use age remains ("46m",
@@ -10016,6 +10116,7 @@ function ctxNa(reason) {
   const _bar = $("ctxBar");
   if (_bar) { _bar.style.width = "0%"; _bar.style.minWidth = "0px"; _bar.className = ""; }
   _ctxPct = null; _ctxTitle = "context tokens / budget";   // JAG-424g: the ring lives on the row
+  _setCmpRing(null);   // 2026-11-21: no session's saturation — never the previous one's
   const _cm = $("ctx-meter"); if (_cm) { _cm.className = "pill meter"; _cm.title = _ctxTitle; }
   const _cp = $("ctxPctTop"); if (_cp) _cp.textContent = "–";
   const _cr = $("ctxRing"); if (_cr) _cr.style.strokeDashoffset = "100";
@@ -10178,6 +10279,7 @@ async function loadCtx() {
     // full "used / budget · %" string moves to the tooltip instead of the label.
     const pct = (d.pct != null ? d.pct : 0);
     _ctxPct = pct; _ctxTitle = d.detail || d.short || "context tokens / budget";
+    _setCmpRing(pct);   // 2026-11-21: the composer ring follows the same number
     const pill = $("ctx-meter");
     if (pill) { pill.title = _ctxTitle; pill.className = "pill meter" + (pct >= 70 ? " hot" : ""); }
     const pctEl = $("ctxPctTop"); if (pctEl) pctEl.textContent = Math.round(pct) + "%";
@@ -12616,6 +12718,216 @@ async function homeRestart() {
     if (!r.ok) { toast(r.error || "restart unavailable", "err"); return; }
     setTimeout(() => location.reload(), 3000);
   } catch (e) { toast("restart failed: " + e, "err"); }
+}
+
+/* ---- 2026-11-21: the brand menu (⋮ beside LONGRUN), About, Changelog, Status ----
+   ONE topbar menu for the lifecycle acts the header had no home for. Placement is a
+   body-level fixed popover anchored to the button (like the session ⋮), so the sticky
+   topbar can never clip it. The informational surfaces (About · Changelog · Session
+   status) share ONE builder (`_infoModal` + `_kvRows`) — no second modal anatomy. */
+function _placeBrandMenu() {
+  const m = $("brandMenu"), b = $("brandMenuBtn");
+  if (!m || !b) return;
+  const r = b.getBoundingClientRect();
+  const w = m.offsetWidth, h = m.offsetHeight;
+  let left = Math.max(6, Math.min(r.left, window.innerWidth - w - 6));
+  let top = r.bottom + 4;
+  if (top + h > window.innerHeight - 6) top = Math.max(6, r.top - h - 4);
+  m.style.left = left + "px";
+  m.style.top = top + "px";
+}
+function toggleBrandMenu() {
+  const m = $("brandMenu"), b = $("brandMenuBtn");
+  if (!m || !b) return;
+  const open = m.hidden;
+  m.hidden = !open;                       // measure while visible
+  b.setAttribute("aria-expanded", String(open));
+  if (open) _placeBrandMenu();
+}
+function closeBrandMenu() {
+  const m = $("brandMenu"), b = $("brandMenuBtn");
+  if (m) m.hidden = true;
+  if (b) b.setAttribute("aria-expanded", "false");
+}
+$("brandMenuBtn").onclick = (e) => { e.stopPropagation(); toggleBrandMenu(); };
+$("brandMenu").addEventListener("click", () => closeBrandMenu());
+document.addEventListener("click", (e) => {
+  const m = $("brandMenu");
+  if (m && !m.hidden && !(e.target.closest && (e.target.closest("#brandMenu") || e.target.closest("#brandMenuBtn")))) closeBrandMenu();
+});
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeBrandMenu(); });
+window.addEventListener("resize", () => { const m = $("brandMenu"); if (m && !m.hidden) _placeBrandMenu(); });
+
+/* ONE shared read-only modal for the small informational surfaces. Content is built
+   with the DOM API, so a server string (a commit subject, a path) is never injected
+   as HTML. `buildBody` receives the scrollable body node. */
+function _infoModal(title, buildBody) {
+  const back = document.createElement("div"); back.className = "smback";
+  const box = document.createElement("div"); box.className = "smodal uidlg";
+  box.setAttribute("role", "dialog"); box.setAttribute("aria-modal", "true");
+  const hd = document.createElement("div"); hd.className = "pick-hd";
+  const t = document.createElement("b"); t.textContent = title;
+  const x = document.createElement("button"); x.type = "button"; x.className = "ghost"; x.textContent = "✕";
+  x.setAttribute("aria-label", "close");
+  hd.append(t, x); box.append(hd);
+  const body = document.createElement("div");
+  body.style.cssText = "overflow:auto;max-height:62vh";
+  box.append(body);
+  const close = () => { document.removeEventListener("keydown", onKey, true); back.remove(); box.remove(); };
+  const onKey = e => { if (e.key === "Escape") { e.preventDefault(); close(); } };
+  x.onclick = close; back.onclick = close;
+  document.addEventListener("keydown", onKey, true);
+  document.body.append(back, box);
+  try { buildBody(body); } catch (e) { body.textContent = "error: " + e; }
+  return close;
+}
+function _kvRows(rows) {
+  const wrap = document.createElement("div");
+  wrap.style.cssText = "display:grid;grid-template-columns:minmax(96px,auto) 1fr;gap:5px 12px;font-size:12px;line-height:1.45";
+  (rows || []).forEach(pair => {
+    const kk = document.createElement("div"); kk.style.color = "var(--dim)"; kk.textContent = String(pair[0]);
+    const vv = document.createElement("div"); vv.style.cssText = "word-break:break-word";
+    vv.textContent = (pair[1] == null || pair[1] === "") ? "—" : String(pair[1]);
+    wrap.append(kk, vv);
+  });
+  return wrap;
+}
+async function _liveTurnsCount() {
+  try { const d = await api("GET", "/api/chat/live"); return ((d && d.active) || []).length; }
+  catch (e) { return 0; }
+}
+/* Restart reuses the ONE supervised-restart route Settings ▸ Info already calls
+   (POST /api/home/restart); the server refuses when nothing supervises the process. */
+async function restartLongrun() {
+  closeBrandMenu();
+  const live = await _liveTurnsCount();
+  const warn = live ? ("\n\n" + live + " turn(s) are running and will be killed.") : "";
+  const ok = await uiConfirm("Restart Longrun?",
+    "The service restarts and comes back. Open chats survive; running turns do not." + warn,
+    { okLabel: "restart", danger: true });
+  if (!ok) return;
+  toast("restarting Longrun…", "ok");
+  try {
+    const r = await api("POST", "/api/home/restart", {});
+    if (!r || r.ok === false) { toast("restart unavailable: " + ((r && r.error) || "not supervised"), "err"); return; }
+    setTimeout(() => location.reload(), 3500);
+  } catch (e) { toast("restart failed: " + e, "err"); }
+}
+function reloadInterface() {
+  closeBrandMenu();
+  location.reload();
+}
+async function copyDiagnostics() {
+  closeBrandMenu();
+  let txt = "";
+  try { txt = JSON.stringify(await api("GET", "/api/self"), null, 2); }
+  catch (e) { txt = "self unavailable: " + e; }
+  try {
+    await navigator.clipboard.writeText(txt);
+    toast("diagnostics copied to the clipboard", "ok");
+  } catch (e) {
+    await uiAsk({ title: "Diagnostics", hint: "copy manually", multiline: true, rows: 12,
+                  value: txt, okLabel: "close", cancelLabel: "close" });
+  }
+}
+async function openAbout() {
+  closeBrandMenu();
+  let build = "?", self = {};
+  try { build = (await api("GET", "/api/build")).build || "?"; } catch (e) {}
+  try { self = await api("GET", "/api/self") || {}; } catch (e) {}
+  _infoModal("About Longrun", body => body.append(_kvRows([
+    ["version", self.version],
+    ["build", String(build).slice(0, 40)],
+    ["port", self.port || 8790],
+    ["repo", self.repo_path],
+    ["data home", self.data_home || self.data_dir],
+    ["restart", self.service && self.service.restart_cmd],
+  ])));
+}
+async function openChangelog() {
+  let d = null;
+  try { d = await api("GET", "/api/changelog"); }
+  catch (e) { toast("changelog unavailable: " + e, "err"); return; }
+  if (!d || d.ok === false) { toast("changelog unavailable", "err"); return; }
+  _infoModal("Changelog", body => {
+    if (d.head && (d.head.sha || d.head.subject)) {
+      const h = document.createElement("div");
+      h.style.cssText = "font-size:12px;padding:6px 9px;background:var(--hover);border-radius:8px;font-family:ui-monospace,monospace";
+      h.textContent = "latest: " + (d.head.sha || "") + " · " + (d.head.subject || "");
+      body.append(h);
+    }
+    (d.releases || []).forEach(rel => {
+      const sec = document.createElement("details");
+      sec.open = true; sec.style.marginTop = "8px";
+      const sum = document.createElement("summary");
+      sum.style.cssText = "cursor:pointer;font-weight:600;font-size:13px";
+      sum.textContent = rel.title + (rel.date ? ("  ·  " + rel.date) : "");
+      sec.append(sum);
+      const ul = document.createElement("ul");
+      ul.style.cssText = "margin:5px 0 4px 18px;font-size:12px;line-height:1.5";
+      (rel.items || []).forEach(it => { const li = document.createElement("li"); li.textContent = String(it.text || ""); ul.append(li); });
+      sec.append(ul); body.append(sec);
+    });
+    if (!(d.releases || []).length) {
+      const p = document.createElement("div"); p.className = "remaining"; p.textContent = "no changelog entries found"; body.append(p);
+    }
+    if ((d.commits || []).length) {
+      const h2 = document.createElement("div");
+      h2.textContent = "recent commits"; h2.style.cssText = "font-weight:600;margin:12px 0 2px";
+      body.append(h2);
+      const ul = document.createElement("ul");
+      ul.style.cssText = "margin:4px 0 4px 18px;font-size:11.5px;line-height:1.55;font-family:ui-monospace,monospace";
+      (d.commits || []).forEach(c => {
+        const li = document.createElement("li");
+        li.textContent = (c.sha || "") + "  " + (c.subject || "") + (c.date ? ("  (" + c.date + ")") : "");
+        ul.append(li);
+      });
+      body.append(ul);
+    }
+  });
+}
+/* `/status` and the composer's ctx-ring both read the SAME facts: the tool
+   `harness.status` (one deterministic read) — the modal never re-derives them. */
+async function openSessionStatus() {
+  if (!sessionId) { toast("no session selected", "warn"); return; }
+  let res = null;
+  try {
+    const j = await api("POST", "/api/tools/call",
+      { tool: "harness", run_id: "ui-status:" + sessionId,
+        args: { action: "status", session: sessionId } });
+    res = (j && j.result) || j || {};
+  } catch (e) { toast("status failed: " + e, "err"); return; }
+  if (!res || res.ok === false) {
+    toast("status failed: " + ((res && (res.error || res.reason)) || "unknown"), "err"); return;
+  }
+  _infoModal("Session status", body => {
+    const idn = res.identity || {}, ctx = res.context || {}, plan = res.plan || {};
+    const ap = res.approvals || {}, ag = res.agent || {}, svc = res.service || {};
+    const pct = (ctx.pct == null) ? "—" : (Math.round(ctx.pct * 10) / 10) + "%";
+    body.append(_kvRows([
+      ["session", idn.id || sessionId],
+      ["title", idn.title],
+      ["agent", (ag.id || "—") + (ag.name ? (" · " + ag.name) : "")],
+      ["teams", (ag.teams || []).join(", ")],
+      ["model", idn.model || svc.default_model],
+      ["workspace", idn.workspace],
+      ["messages", idn.messages],
+      ["context", (ctx.tokens_used == null ? "—" : ctx.tokens_used) + " / " +
+                  (ctx.max_tokens == null ? "—" : ctx.max_tokens) + "  (" + pct + ")"],
+      ["auto-compact", (ctx.auto_compact_pct == null ? "—" : ctx.auto_compact_pct + "%")],
+      ["over threshold", String(ctx.over_threshold)],
+      ["plan", (plan.open || 0) + " open / " + (plan.nodes || 0) + " steps"],
+      ["plan goal", plan.goal],
+      ["approvals here", ap.pending_here],
+      ["turn running", String(res.running)],
+      ["service", (svc.name || "longrun") + " " + (svc.version || "?")],
+    ]));
+    if (res.stdout) {
+      const pre = document.createElement("pre");
+      pre.style.cssText = "white-space:pre-wrap;font-size:11px;margin-top:8px;color:var(--dim)";
+      pre.textContent = res.stdout; body.append(pre);
+    }
+  });
 }
 
 /* ---- approvals (v0.2: HITL gate) ----

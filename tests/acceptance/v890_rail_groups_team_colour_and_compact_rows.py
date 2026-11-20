@@ -61,15 +61,17 @@ check("A6 the mobile rail tightens its tiers (operator: reduce the spacing)",
       and "#toolsBar .tb-sec + .tb-sec { margin-top: 4px; padding-top: 6px; }" in UI)
 
 # ---------------- B: four groups, each by what it acts on -------------------
-check("B1 the rail reads objects | panel jumps | runtime | chat (chat is last, v1003)",
+check("B1 the rail reads runtime | objects | panel jumps | chat (chat is last, v1003)",
       # 2026-11-14 (operator): *"shift the group relevant to chat session (the one with
       # autogenerate below) … move all that group below. terminal and feed group just
       # above then the other"* — four groups, each by what it acts on, but the CHAT
       # group is now the bottom-most (nearest the composer).
+      # 2026-11-21 (operator): *"the feed and terminal icon in the sidebar shall be placed
+      # on the very top of the sidebar"* — the RUNTIME group moved to the top.
       RAIL.count('class="tb-sec"') == 4
+      and RAIL.index('id="inspJumpRuntime"') < RAIL.index('id="dockBtn"')
       and RAIL.index('id="kbSessionBtn"') < RAIL.index('id="inspJump"')
-      and RAIL.index('id="inspJump"') < RAIL.index('id="inspJumpRuntime"')
-      and RAIL.index('id="inspJumpRuntime"') < RAIL.index('id="chatViewSec"')
+      and RAIL.index('id="inspJump"') < RAIL.index('id="chatViewSec"')
       and RAIL.index('id="chatViewSec"') < RAIL.index('class="tb-foot"'))
 check("B2 feed and terminal are their OWN group, not panel jumps",
       'const INSP_JUMP_RUNTIME = ["terminal", "feed"];' in UI
