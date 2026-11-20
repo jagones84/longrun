@@ -104,6 +104,18 @@
   .cmp-ctx.lvl-ok .mfill { stroke: var(--ok); }
   .cmp-ctx.lvl-warn .mfill { stroke: var(--warn); }
   .cmp-ctx.lvl-hot .mfill { stroke: var(--err); }
+  /* 2026-11-20 (operator): clicking the composer context ring opens a MINIMAL popover —
+     the numbers already in the meter + the `compact` action. Styled like the other
+     body-anchored popovers (same surface, radius, shadow). */
+  .ctxpop { position: fixed; z-index: 60; min-width: 196px; padding: 10px 12px; border: 1px solid var(--line);
+    border-radius: 10px; background: var(--menubg); box-shadow: 0 8px 24px rgba(0,0,0,.28); font-size: 12px; color: var(--txt); }
+  .ctxpop[hidden] { display: none; }
+  .ctxpop .cp-head { font-weight: 600; margin-bottom: 6px; }
+  .ctxpop .cp-row { display: flex; justify-content: space-between; gap: 14px; color: var(--dim); padding: 1px 0; }
+  .ctxpop .cp-row b { color: var(--txt); font-weight: 600; }
+  .ctxpop .cp-compact { margin-top: 8px; width: 100%; border: 1px solid var(--line); background: transparent;
+    color: var(--acc); border-radius: 8px; padding: 5px 8px; cursor: pointer; font: inherit; }
+  .ctxpop .cp-compact:hover { background: var(--hover); }
   /* 2026-11-16 (operator): the rail has neither horizontal nor vertical room, so the
      rail meter is a 13px ring + a 9px number — NO padding, border or background. The
      exact token counts stay in the tooltip; the ring turns red from 70%. */
@@ -2184,8 +2196,25 @@
     width: min(1120px, 96vw); max-height: calc(100dvh / var(--zoom, 1) - 24px); padding: 14px;
     background: var(--menubg); display: flex; flex-direction: column; }
   #diffView[hidden] { display: none; }
+  #diffWrap { flex: 1 1 auto; min-height: 0; position: relative; display: flex; }
   #diffBody { flex: 1 1 auto; min-height: 0; overflow: auto; border: 1px solid var(--line);
     border-radius: 8px; font-family: monospace; font-size: 11.5px; line-height: 1.45; }
+  /* 2026-11-20 (operator): a change MAP on the right edge — in a long file the operator could
+     not tell WHERE the edits sit ("non so dove scrollare per trovarle"). Ticks mark every
+     add / del / change row; a click jumps there. */
+  #diffMap { position: absolute; top: 6px; right: 3px; bottom: 6px; width: 7px; border-radius: 4px;
+    background: rgba(255,255,255,.05); cursor: pointer; }
+  #diffMap[hidden] { display: none; }
+  #diffMap i { position: absolute; left: 0; right: 0; height: 3px; border-radius: 2px; }
+  #diffMap i.a { background: var(--ok); }
+  #diffMap i.d { background: var(--err); }
+  #diffMap i.v { background: var(--warn, #e0a03a); }
+  /* 2026-11-20 (operator): an image the agent SHOWS is previewed INLINE (a medium box),
+     not only as a path link — clicking it opens the dedicated image window. */
+  .chatimgs { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  .chatimg { display: block; border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+    background: var(--bg2); cursor: zoom-in; }
+  .chatimg img { display: block; max-width: min(360px, 62vw); max-height: 260px; object-fit: contain; }
   .diffhead, .diffrow { display: grid; grid-template-columns: 1fr 1fr; }
   .diffhead > span { padding: 4px 8px; background: var(--bg2); color: var(--dim);
     border-bottom: 1px solid var(--line); position: sticky; top: 0; }
@@ -5345,7 +5374,7 @@
     <button class="ghost" data-call="closeDiff">✕ close</button>
   </div>
   <div class="remaining" id="diffSub" style="margin:4px 0 8px"></div>
-  <div id="diffBody"></div>
+  <div id="diffWrap"><div id="diffBody"></div><div id="diffMap" hidden aria-label="change map — click to jump to a change"></div></div>
 </div>
 <div id="imgBackdrop" hidden data-call="closeImage"></div>
 <div id="imgView" hidden role="region" aria-label="image preview">
@@ -9283,6 +9312,35 @@ function _repaintCtx() {
   if (ring) ring.style.strokeDashoffset = String(100 - Math.max(0, Math.min(100, _ctxPct || 0)));
   _setCmpRing(_ctxPct);
 }
+/* 2026-11-20 (operator): click the composer context ring → a MINIMAL popover (the numbers
+   the meter already carries) + the `compact` action. Reuses `compactNow()` (the ONE
+   compaction door) — no second mechanism. */
+let _ctxDisplay = null, _ctxPopEl = null;
+function _closeCtxPop() { if (_ctxPopEl) { _ctxPopEl.remove(); _ctxPopEl = null; } }
+function _ctxPopover() {
+  if (_ctxPopEl) { _closeCtxPop(); return; }
+  const d = _ctxDisplay || {};
+  const pop = document.createElement("div");
+  pop.className = "ctxpop";
+  pop.setAttribute("role", "dialog");
+  pop.innerHTML =
+    '<div class="cp-head">context ' + (d.pct != null ? ("<b>" + d.pct + "%</b>") : "<b>–</b>") + '</div>' +
+    '<div class="cp-row"><span>tokens</span><b>' + esc(d.tokens || "n/d") + '</b></div>' +
+    '<div class="cp-row"><span>budget</span><b>' + esc(d.budget || "n/d") + '</b></div>' +
+    '<div class="cp-row"><span>messages</span><b>' + esc(d.messages || "n/d") + '</b></div>' +
+    '<button class="cp-compact" type="button" title="compact this session now (/api/context/compact)">compact</button>';
+  document.body.appendChild(pop);
+  const r = ($("cmpCtx") || pop).getBoundingClientRect();
+  pop.style.left = Math.max(8, Math.min(r.left, window.innerWidth - pop.offsetWidth - 8)) + "px";
+  pop.style.top = Math.max(8, r.top - pop.offsetHeight - 8) + "px";
+  pop.querySelector(".cp-compact").onclick = () => { _closeCtxPop(); compactNow(); };
+  _ctxPopEl = pop;
+}
+document.addEventListener("click", e => {
+  if (_ctxPopEl && !_ctxPopEl.contains(e.target)
+      && !(e.target.closest && e.target.closest("#cmpCtx"))) _closeCtxPop();
+});
+{ const _cc = $("cmpCtx"); if (_cc) { _cc.onclick = _ctxPopover; _cc.style.cursor = "pointer"; } }
 /* 2026-11-16 (operator): the message COUNT is gone from the rail — it cost the width
    the ctx ring needs beside the A-id. Only the compact last-use age remains ("46m",
    "4h", "2d"); the full sentence ("215 messages · last used 46 min") stays in the
@@ -10385,6 +10443,7 @@ async function loadCtx() {
     // full "used / budget · %" string moves to the tooltip instead of the label.
     const pct = (d.pct != null ? d.pct : 0);
     _ctxPct = pct; _ctxTitle = d.detail || d.short || "context tokens / budget";
+    _ctxDisplay = d;   // 2026-11-20: the click-popover reads these same numbers
     _setCmpRing(pct);   // 2026-11-21: the composer ring follows the same number
     const pill = $("ctx-meter");
     if (pill) { pill.title = _ctxTitle; pill.className = "pill meter" + (pct >= 70 ? " hot" : ""); }
@@ -21837,7 +21896,7 @@ async function showDiff(path) {
   $("diffBackdrop").hidden = false; $("diffView").hidden = false;
   if (!d || d.error) {
     $("diffSub").textContent = (d && d.error) || "error";
-    $("diffStat").textContent = ""; $("diffBody").innerHTML = "";
+    $("diffStat").textContent = ""; $("diffBody").innerHTML = ""; $("diffMap").hidden = true;
     // JAG-431r4: disable Approve too — otherwise ✓ on a diff that failed to load
     // approved/cleared a file the user never actually reviewed (only Undo was off).
     $("diffUndo").disabled = true;
@@ -21854,7 +21913,37 @@ async function showDiff(path) {
   const rows = (d.rows || []).map(r =>
     '<div class="diffrow r-' + r.t + '"><span class="dl">' + esc(r.l) + '</span><span class="dr">' + esc(r.r) + "</span></div>").join("");
   $("diffBody").innerHTML = '<div class="diffhead"><span>before</span><span>after</span></div>' + rows;
+  _buildDiffMap();
   $("diffUndo").disabled = !(d.add || d.del || (d.rows || []).length);
+}
+/* 2026-11-20 (operator): map the edits onto the scrollbar and LAND on the first one —
+   in a long file the operator could not tell where the changes were. */
+function _buildDiffMap() {
+  const body = $("diffBody"), map = $("diffMap");
+  if (!body || !map) return;
+  const total = body.scrollHeight || 1;
+  const bt = body.getBoundingClientRect().top;
+  const marks = [];
+  Array.from(body.querySelectorAll(".diffrow")).forEach(row => {
+    const m = /(?:^|\s)r-(add|del|chg)(?:\s|$)/.exec(row.className);
+    if (!m) return;
+    const off = row.getBoundingClientRect().top - bt + body.scrollTop;
+    marks.push('<i class="' + (m[1] === "add" ? "a" : m[1] === "del" ? "d" : "v") +
+               '" style="top:' + Math.max(0, Math.min(100, 100 * off / total)).toFixed(2) + '%"></i>');
+  });
+  if (!marks.length) { map.hidden = true; return; }
+  map.hidden = false;
+  map.innerHTML = marks.join("");
+  map.onclick = ev => {
+    const r = map.getBoundingClientRect();
+    const pct = Math.max(0, Math.min(1, (ev.clientY - r.top) / (r.height || 1)));
+    body.scrollTop = Math.max(0, pct * body.scrollHeight - body.clientHeight / 2);
+  };
+  const first = body.querySelector(".diffrow.r-add, .diffrow.r-del, .diffrow.r-chg");
+  if (first) {
+    const br = body.getBoundingClientRect(), fr = first.getBoundingClientRect();
+    body.scrollTop = Math.max(0, body.scrollTop + (fr.top - br.top) - 16);
+  }
 }
 function closeDiff() { $("diffBackdrop").hidden = true; $("diffView").hidden = true; }
 
@@ -21938,6 +22027,33 @@ function _readable(p) {
 function _isImage(u) {
   return /\.(png|jpe?g|gif|svg|webp|bmp|avif|ico)(\?|#|$)/i.test(String(u || ""));
 }
+/* 2026-11-20 (operator): "se chiedo fammi vedere una foto X, me la fai vedere IN CHAT oltre
+   che darmi il path". Preview every image the agent REFERENCED as a medium inline box;
+   clicking it opens the dedicated image window. Fail-safe: a path the backend cannot
+   serve simply does not render. Idempotent (re-render replaces, never doubles). */
+function _inlineImages(bubble) {
+  if (!bubble) return;
+  bubble.querySelectorAll(".chatimgs").forEach(e => e.remove());
+  const seen = new Set(), urls = [];
+  bubble.querySelectorAll("a.imglink").forEach(a => {
+    const u = a.dataset.u || "";
+    if (u && !seen.has(u)) { seen.add(u); urls.push(u); }
+  });
+  if (!urls.length) return;
+  const box = document.createElement("div");
+  box.className = "chatimgs";
+  urls.slice(0, 8).forEach(u => {
+    const src = /^https?:\/\//i.test(u) ? u : _rawUrl(u);
+    const cell = document.createElement("div");
+    cell.className = "chatimg"; cell.title = u + " — click to open";
+    const im = document.createElement("img");
+    im.loading = "lazy"; im.alt = u; im.src = src;
+    im.onerror = () => { cell.remove(); if (!box.children.length) box.remove(); };
+    cell.onclick = () => showImage(src);
+    cell.appendChild(im); box.appendChild(cell);
+  });
+  bubble.appendChild(box);
+}
 function _markdownFilePath(href) {
   let ref = String(href || "").trim();
   if (!ref || ref[0] === "#" || ref.startsWith("//")) return "";
@@ -22000,6 +22116,7 @@ function renderAnswerBubble(b) {
   b.innerHTML = mdToHtml(b.dataset.raw || "");
   decorateHtmlPreviews(b);
   linkifyNodes(b);
+  _inlineImages(b);
   _resolveCitations(b);   // 2026-11-16: [wN] markers become links to the hit
   b.querySelectorAll('a[href^="http"]').forEach(a => { a.target = "_blank"; a.rel = "noopener noreferrer"; });
   if (cursorEl && curAns && b === curAns.querySelector(".bubble")) b.appendChild(cursorEl);

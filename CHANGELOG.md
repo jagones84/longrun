@@ -7,6 +7,16 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Three WebUI surfaces: inline image preview · diff change-map · context-ring popover.** Operator: *"se
+  chiedo fammi vedere una foto X me la fai vedere in chat oltre che darmi il iperlink path"*; *"il diff view …
+  non mostra dove sono le modifiche così non so dove scrollare per trovarle"*; *"il cerchietto di contesto …
+  se ci clicchi sopra devono uscire più dettagli minimali più … compact"*. (1) An image the agent references
+  is previewed **inline** as a medium box (clicking opens the dedicated image window); the path link stays.
+  (2) The diff modal now **lands on the first change** and draws a **change map** on its right edge (add/del/
+  change ticks, click to jump). (3) Clicking the composer **context ring** opens a minimal popover (tokens /
+  budget / messages) with a **compact** action that reuses `compactNow()` — one compaction door. Locked by
+  `v1244` (15/15). Also recorded in the project rules: draw WebUI surfaces with the `impeccable` + `frontendui`
+  skills after reading the neighbouring surfaces, and never close a task with an open todo step.
 - **Post-turn completeness verifier — an INDEPENDENT model checks the agent's own last message.** Operator:
   *"non doveva esserci dopo ogni fine messaggio … una LLM call al modello stesso in versione verificatore che
   il suo stesso ultimo messaggio non abbia lasciato lavoro incompiuto? … non basterebbe vedere todo aperti
