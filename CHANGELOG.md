@@ -139,19 +139,22 @@ All notable changes to Longrun are documented here. The format follows
   behaviour). The composer's send-button tooltip echoed the *steer* wording when the picker was on `steer`;
   with a `/…` draft it now says the command waits for the next turn. Locked by `v1053` (59/59, I11).
 - **An approval in the inbox now names the session it belongs to.** Operator: *"approvals open permission
-  instead of the specific session where approval = full is placed! fix"*. The approvals chip opened the
-  inbox (fixed above), but a tool-gate row could not point at the session waiting on the decision: the chat
-  loop records `run_id = session id`, yet the row carried no `session`. The unified inbox now resolves that
-  id to a live session ONCE (`approvals.list_unified`), so the WebUI's `→ <title> (<sid>)` jump, the CLI and
+  instead of the specific session where approval = full is placed! fix"*. A tool-gate row in the approvals
+  inbox (the rail's `#apprBtn`) could not point at the session waiting on the decision: the chat loop
+  records `run_id = session id`, yet the row carried no `session`. The unified inbox now resolves that id to
+  a live session ONCE (`approvals.list_unified`), so the WebUI's `→ <title> (<sid>)` jump, the CLI and
   `harness.status` all read the same field — a `run_xxx` API run (no session) correctly stays session-less
   and shows no jump. Locked by `v1240` (7/7).
-- **The approvals chip opens the approvals, not the global Permissions page.** Operator: *"approvals open
-  permission instead of the specific session where approval = full is placed! fix"*. The topbar chip
-  reports the approval MODE (`approvals: full`) but was wired to `openSettings("permissions")` — the page
-  that says *what may EVER run*, a different fact. It now opens the **approvals inbox** (the pending
-  decisions; the mode stays edited in Settings ▸ Permissions, reachable from the gear). Each inbox row now
-  **names the session a decision belongs to** and jumps to it (`→ <title> (<sid>)`), so an approval is tied
-  to the session that is waiting on it. Locked by `v1023` (18/18, C4/C7).
+- **The approvals chip lands on the setting that owns the mode.** Operator: *"approvals shall open the
+  settings → Tools & approvals menu, focused on the specific approval part, scrolled to"*. The topbar chip
+  reports the approval MODE (`approvals: full`), so a click now opens **Settings ▸ Tools & approvals**,
+  scrolls to the **Approval mode** row and flashes it (focus moves to its control) — the exact place the
+  mode is set. It is no longer the Permissions page (a different fact that never sets the mode); the pending
+  decisions stay in the rail's `#apprBtn` → the approvals inbox. Locked by `v1023` (18/18, C4).
+- **A new icon for the changelog.** Operator: *"the changelog icon is horrible — find a new way to represent
+  it"*. The button wore the generic page+lines (the artifact/document glyph = "a file"), which says nothing
+  about "what changed". It is now a **history clock** — the record of changes over time — distinct from the
+  gear, search, ⋮ and refresh. Locked by `v1237` (11/11, B2).
 - **No frames around the new icons, and real icons in the brand menu.** Operator: *"dont use frames for
   icon please use correct icons for last changes!"*. The changelog button and the brand ⋮ inherited the
   `.ghost` border — a frame around the icon — so both are now **frameless** glyphs like the gear and the

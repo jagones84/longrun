@@ -1178,6 +1178,11 @@
   .hitl-opts button.sel, .hitl-row button.sel { border-color: var(--acc); background: var(--hover); color: var(--txt); }
   .hitl.answered { opacity: .62; }
   .hitl.answered .hitl-title { color: var(--dim); }
+  /* 2026-11-21: the approvals chip lands on Settings ▸ Tools & approvals ▸ Approval
+     mode — flash the row so the eye finds the control the chip reports. */
+  .flash-hit { animation: flashHit 1.3s ease; border-radius: 8px; }
+  @keyframes flashHit { 0% { background: color-mix(in srgb, var(--acc) 24%, transparent); }
+                        100% { background: transparent; } }
   .cursor { display: inline-block; width: 8px; height: 14px; background: var(--acc); margin-left: 2px;
     vertical-align: text-bottom; animation: blink 1s steps(1) infinite; }
   @keyframes blink { 50% { opacity: 0; } }
@@ -3707,15 +3712,14 @@
   <span class="pill sbox" id="sbxPill" title="sandbox backend"><span class="sdot" id="sbxDot"></span><span
       id="sbxTxt">…</span></span>
   <!-- v1023: the approval MODE in force, next to the sandbox pill — the two things
-       that decide whether a tool call can touch the world. One control per fact:
-       the chip reports, Settings ▸ Permissions owns the value. -->
-  <!-- 2026-11-21 (operator): "approvals open permission instead of the specific session
-       where approval = full is placed!". The chip reports the MODE, so clicking it must
-       open the APPROVALS (the pending decisions, each tied to its session) — NOT the
-       global Permissions page. The mode itself stays editable in Settings › Permissions
-       (gear), which is a different fact ("what may EVER run"). -->
-  <button class="pill sbox" id="apprPill" hidden data-call="openApprovals"
-          title="tool approval mode — click for the approvals inbox (each request names its session)"></button>
+       that decide whether a tool call can touch the world. One control per fact.
+       v1023b (2026-11-21, operator): "approvals shall open the settings → Tools &
+       approvals menu, focused on the specific approval part, scrolled to". The chip
+       reports the MODE, so a click lands on the control that SETS it — Settings ›
+       Tools & approvals › Approval mode (scrolled + flashed). The pending decisions
+       stay in the rail's #apprBtn → the approvals inbox, one row per session. -->
+  <button class="pill sbox" id="apprPill" hidden data-call="openApprovalSettings"
+          title="tool approval mode — click to set it (Settings › Tools &amp; approvals › Approval mode)"></button>
   <!-- RH-27 (operator, 2026-11-03): the settings gear LEFT the topbar — it now lives
        in the chat tool rail (#toolsBar), pinned level with the send button, found the
        same way on desktop and on a phone. Only the search stays up here. -->
@@ -3754,7 +3758,12 @@
        notes (CHANGELOG.md) and the latest commits from GET /api/changelog. -->
   <button class="ghost" id="changelogBtn" data-call="openChangelog"
           title="changelog — what changed, the latest commits" aria-label="changelog">
-    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5h8l4 4V20a.5.5 0 0 1-.5.5h-11A.5.5 0 0 1 6 20Z"/><path d="M14 3.5V8h4.5"/><path d="M9 12.5h6M9 15.5h6"/></svg>
+    <!-- 2026-11-21 (operator): "the changelog icon is horrible — find a new way to
+         represent it". It was the generic page+lines (the artifact/document glyph),
+         which reads as "a file", not "the history of changes". This is a HISTORY
+         clock — the record of what changed, when — distinct from every other glyph
+         (gear, search, ⋮, refresh). -->
+    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.3"/><path d="M12 7.6V12.1l3.2 1.9"/></svg>
   </button>
   <!-- 2026-11-07 (operator): "il gear di settings mettilo in ALTO nella GUI" — the
        gear returns to the topbar (RH-27 had moved it to the rail's foot), at the far
@@ -5934,6 +5943,32 @@ function openChanges() {
 function openApprovals() {
   if (!_railToggleInsp("approvals")) return;
   loadApprovals();
+}
+/* 2026-11-21 (operator): "approvals shall open the settings → Tools & approvals menu,
+   focused on the specific approval part, scrolled to". The `approvals: <mode>` chip
+   reports the MODE, so clicking it lands on the control that SETS that mode —
+   Settings ▸ Tools & approvals ▸ "Approval mode" — scrolled to and flashed. It is
+   NOT the Permissions page (a different fact, which never sets the mode) and NOT the
+   pending-decisions inbox (that is the rail's #apprBtn → `openApprovals`). */
+function openApprovalSettings() {
+  openSettings("tools");
+  // the Tools & approvals panel paints from an async fetch — wait for the row, then
+  // scroll to it, flash it and move focus to its control.
+  let n = 0;
+  const tick = () => {
+    const row = $("apModeRow");
+    if (row) {
+      try { row.scrollIntoView({ block: "center" }); } catch (_) {}
+      row.classList.remove("flash-hit");
+      void row.offsetWidth;                 // restart the animation
+      row.classList.add("flash-hit");
+      const b = row.querySelector('button[data-pol="mode"]');
+      if (b) { try { b.focus({ preventScroll: true }); } catch (_) {} }
+      return;
+    }
+    if (n++ < 60) setTimeout(tick, 60);
+  };
+  tick();
 }
 /* ONE helper for every rail button that targets an Inspector section (2026-11-15):
    closed -> open + centre (`_railOpenInsp`), open -> collapse in place. Re-clicking a
@@ -12681,10 +12716,10 @@ async function loadApprPill() {
     el.className = "pill sbox" + (mode === "full" ? " warn" : " ok");
     el.textContent = "approvals: " + mode;
     el.title = "tool approval mode: " + mode +
-      " — click for the approvals inbox (each request names its session)";
+      " — click to set it in Settings › Tools & approvals › Approval mode";
     // 2026-11-15: on a squeezed bar the chip is only its ✓ glyph, so the name must still
     // say the mode (and keep the visible text as a substring — axe label-content-name).
-    el.setAttribute("aria-label", "approvals: " + mode + " — click for the approvals inbox");
+    el.setAttribute("aria-label", "approvals: " + mode + " — click to set the approval mode");
   } catch (_) { el.hidden = true; }
 }
 /* v1023: the issue template already ships in the repository; this is the door to
@@ -15534,7 +15569,7 @@ function renderTools(el, d) {
          <span class="remaining" id="apPolicyMsg" role="status" aria-live="polite" style="margin-left:auto">changes save automatically — each one is audited</span>
        </div>
        <div class="pol-sec">
-         <div class="pol-row">
+         <div class="pol-row" id="apModeRow">
            <span class="pol-lbl">Approval mode</span>
            <div class="pol-seg">${mk("mode", "normal", mode)} ${mk("mode", "full", mode, "FULL — never ask")}</div>
          </div>

@@ -64,6 +64,13 @@ check("B2 it is visible on desktop AND on a phone (sized in every layout)",
       "#changelogBtn { width: 32px; height: 32px;" in UI                        # desktop box
       and "#topbar #palette-open, #topbar #buildChip, #topbar #changelogBtn {" in UI  # 44px rail
       and "#topbar #palette-open, #topbar #settingsBtn, #topbar #changelogBtn {" in UI)  # phone
+_CHLOG = UI[UI.find('id="changelogBtn"'):UI.find("</button>", UI.find('id="changelogBtn"'))]
+check("B2b the changelog uses a HISTORY glyph (clock), not the generic document/page (2026-11-21)",
+      # Operator: "the changelog icon is horrible — find a new way to represent it". It was
+      # the artifact/document page+lines; it is now a history clock (circle + hands),
+      # distinct from the gear, search, ⋮ and refresh.
+      '<circle cx="12" cy="12" r="8.3"/>' in _CHLOG
+      and "M6 3.5h8l4 4V20" not in _CHLOG)
 check("B3 the modal shows release notes AND the latest commit",
       "async function openChangelog(" in UI
       and "d.head" in UI and "d.releases" in UI and "d.commits" in UI

@@ -4,8 +4,9 @@ the second door to the Marketplace, and the Recommended row.
 
   A  Ctrl/⌘+, opens Settings (the IDE shortcut)
   B  Settings ▸ Info opens the bug-report template that ships in the repo
-  C  the approval MODE is reported once from the live policy — clicking opens the APPROVALS
-     inbox (2026-11-21), while WRITING the mode stays in Settings ▸ Permissions
+  C  the approval MODE is reported once from the live policy — clicking the chip lands
+     on the control that sets it (2026-11-21: Settings ▸ Tools & approvals ▸ Approval
+     mode, scrolled + flashed)
   D  the Marketplace is reachable from Settings too, as a PAGE
   E  `featured` items render under "Recommended", not a second vocabulary
 """
@@ -47,12 +48,17 @@ check("C2 it reports the LIVE policy mode",
       'const mode = String((r && r.policy && r.policy.mode) || "normal");' in UI)
 check("C3 it is fetched once per page, not on every status poll",
       "if (!loadApprPill._done) { loadApprPill._done = true; loadApprPill(); }" in UI)
-check("C4 clicking it opens the APPROVALS inbox (2026-11-21: not the global Permissions page)",
-      # Operator: "approvals open permission instead of the specific session where
-      # approval = full is placed!". The chip reports the MODE, so it opens the pending
-      # decisions (each row names + jumps to its session); the mode stays edited in
-      # Settings › Permissions (the gear) — still no second writer.
-      'id="apprPill" hidden data-call="openApprovals"' in UI)
+check("C4 clicking it lands on Settings ▸ Tools & approvals ▸ Approval mode (2026-11-21)",
+      # Operator: "approvals shall open the settings → Tools & approvals menu, focused on
+      # the specific approval part, scrolled to". The chip reports the MODE, so clicking it
+      # lands on the control that SETS it (Settings ▸ Tools & approvals ▸ Approval mode,
+      # id apModeRow, scrolled + flashed) — NOT the Permissions page (a different fact that
+      # never sets the mode) and NOT the pending-decisions inbox (the rail's #apprBtn).
+      'id="apprPill" hidden data-call="openApprovalSettings"' in UI
+      and "function openApprovalSettings()" in UI
+      and 'id="apModeRow"' in UI
+      and 'row.scrollIntoView({ block: "center" })' in UI
+      and 'openSettings("tools")' in UI)
 check("C5 the chip never writes the mode itself",
       "apprPill" in UI and not any(
           frag in UI.split('id="apprPill"')[1].split("</button>")[0]
