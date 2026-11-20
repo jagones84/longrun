@@ -6845,6 +6845,19 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 note = ("Observation for tool %s:\n%s\n\n"
                         "Continue: call the next tool, or report the result."
                         % (tool, obs))
+            # Round 163 (arXiv:2611.26553, ROGUE-AI): a note attached to the tool
+            # output that names the HAZARD and its CONSEQUENCE lowered harm for all
+            # five tested models; a fact-only or rule-restating note of the same
+            # length did not. Deterministic, silent when no rule fires, and never
+            # allowed to kill the turn.
+            if not _gate_only:
+                try:
+                    from longrun.harness import hazard_notice as _hazard
+                    _hz = _hazard.notice(tool, args, obs)
+                except Exception:  # noqa: BLE001 — a notice must never kill a turn
+                    _hz = ""
+                if _hz:
+                    note = note + "\n" + _hz
             msgs.append({"role": "assistant", "content": answer})
             _inject(note, "observation")
             continue

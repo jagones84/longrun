@@ -121,6 +121,12 @@ context:
   skills_prompt_max_chars: 2600
   memory_prompt_max_chars: 1200
   memory_item_chars: 120
+  # How many self-distilled lessons the memory index carries. Round 163
+  # (arXiv:2611.26361): the right dose is a property of the model — a weak model
+  # does WORSE with the full set (silently), and support-ranked selection beats
+  # injection of everything. Records that carry a `support` count are shown
+  # highest-support first; this cap bounds the block itself.
+  memory_lessons_cap: 4
   # System-prompt rules block (global + project + AGENTS.md).
   rules_prompt_max_bytes: 32768
   # A shell command's captured stdout returned to the agent (hard cut).

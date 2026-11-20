@@ -1766,6 +1766,77 @@ def cmd_continuation(args):
     _emit(continuation_policy, out)
 
 
+def cmd_hazard(args):
+    """Round 163 (arXiv:2611.26553): name the hazard and its consequence at the action."""
+    from longrun.harness import hazard_notice
+    doc = _load_doc(args, "hazard classify|notice|audit FILE.json")
+    if args.action == "classify":
+        out = hazard_notice.classify(doc.get("tool") or "", doc.get("args") or {},
+                                     doc.get("result") or "")
+    elif args.action == "notice":
+        out = {"format": hazard_notice.FORMAT,
+               "notice": hazard_notice.notice(doc.get("tool") or "",
+                                              doc.get("args") or {},
+                                              doc.get("result") or "")}
+    else:
+        out = hazard_notice.audit(doc)
+    _emit(hazard_notice, out)
+
+
+def cmd_guidelines(args):
+    """Round 163 (arXiv:2611.26361): conserve support, deliver the model's dose."""
+    from longrun.harness.checks import guideline_budget
+    doc = _load_doc(args, "guidelines consolidate|dose|audit FILE.json")
+    if args.action == "consolidate":
+        out = guideline_budget.consolidate(doc.get("lessons") or [])
+    elif args.action == "dose":
+        out = guideline_budget.dose(doc.get("guidelines") or [], doc.get("capability") or "unknown",
+                                    doc.get("core_support", 3))
+    else:
+        out = guideline_budget.audit(doc.get("record") or doc)
+    _emit(guideline_budget, out)
+
+
+def cmd_skillos(args):
+    """Round 163 (arXiv:2611.26256): screen a skill's contract for OS assumptions."""
+    from longrun.harness.checks import skill_os_contract
+    doc = _load_doc(args, "skillos build|screen|rank|audit FILE.json")
+    if args.action == "build":
+        out = {"format": skill_os_contract.FORMAT,
+               "contract": skill_os_contract.build(doc.get("files") or {})}
+    elif args.action == "screen":
+        contract = (doc.get("contract") or skill_os_contract.build(doc.get("files") or {}))
+        out = skill_os_contract.screen(contract, doc.get("target_os"))
+    elif args.action == "rank":
+        out = {"format": skill_os_contract.FORMAT,
+               "evidence": skill_os_contract.rank(doc.get("evidence") or [])}
+    else:
+        out = skill_os_contract.audit(doc.get("rows") or [])
+    _emit(skill_os_contract, out)
+
+
+def cmd_greprecall(args):
+    """Round 163 (arXiv:2611.25123): the lossless log is the memory; grep is the reader."""
+    from longrun.harness.checks import recall_log
+    doc = _load_doc(args, "greprecall search|count|verify|advantage FILE.json")
+    text = doc.get("text")
+    if text is None and doc.get("path"):
+        with open(str(doc["path"]), "r", encoding="utf-8", errors="replace") as fh:
+            text = fh.read()
+    if args.action in ("search", "count"):
+        out = recall_log.search(text or "", doc.get("pattern") or "",
+                                context=doc.get("context", 2), page=doc.get("page", 1),
+                                page_size=doc.get("page_size", 20),
+                                max_matches=doc.get("max_matches", 500),
+                                ignore_case=doc.get("ignore_case", True),
+                                count_only=(args.action == "count"))
+    elif args.action == "verify":
+        out = recall_log.verify(doc.get("entries") or [], text or "")
+    else:
+        out = recall_log.advantage(doc.get("rows") or [])
+    _emit(recall_log, out)
+
+
 def cmd_bench(args):
     """Round 136 (arXiv:2611.23045): the evidence is an experimental variable."""
     from longrun.harness.checks import evidence_replay
@@ -5803,6 +5874,22 @@ def _build_parser():
         p.add_argument("value", nargs="?"); p.add_argument("--to"); p.add_argument("--blocked-by"); \
         p.add_argument("--agents"); p.add_argument("--coordinator"); p.add_argument("--mode"); \
         p.set_defaults(fn=cmd_jobs)
+    p = sub.add_parser("hazard"); \
+        p.add_argument("action", choices=["classify", "notice", "audit"]); \
+        p.add_argument("file", nargs="?", help="JSON: {tool, args, result} or {incident, control}"); \
+        p.set_defaults(fn=cmd_hazard)
+    p = sub.add_parser("guidelines"); \
+        p.add_argument("action", choices=["consolidate", "dose", "audit"]); \
+        p.add_argument("file", nargs="?", help="JSON: {lessons}, {guidelines, capability}, or {record}"); \
+        p.set_defaults(fn=cmd_guidelines)
+    p = sub.add_parser("skillos"); \
+        p.add_argument("action", choices=["build", "screen", "rank", "audit"]); \
+        p.add_argument("file", nargs="?", help="JSON: {files, target_os}, {evidence}, or {rows}"); \
+        p.set_defaults(fn=cmd_skillos)
+    p = sub.add_parser("greprecall"); \
+        p.add_argument("action", choices=["search", "count", "verify", "advantage"]); \
+        p.add_argument("file", nargs="?", help="JSON: {text|path, pattern}, {entries, text}, or {rows}"); \
+        p.set_defaults(fn=cmd_greprecall)
     p = sub.add_parser("harness",
                        help="list the per-paper groups, their actions and their input")
     p.add_argument("group", nargs="?", help="one group: print its own -h")

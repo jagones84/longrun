@@ -640,6 +640,12 @@ _LEGACY_SCHEMAS = {
                         "action=list -> what this session has curated. Only tool "
                         "results are selectable; user, system and assistant messages "
                         "are not. "
+                        "action=grep -> regex recall over the session's append-only "
+                        "plain-text history log (round 163, arXiv:2611.25123): matches "
+                        "in chronological order with their original line numbers and "
+                        "surrounding context, paginated; action=count returns only the "
+                        "number of matching lines. This is how a detail that compaction "
+                        "summarised away is recovered exactly, with no index. "
                         "`session` defaults to this run's session (always allowed). "
                         "Naming ANOTHER one requires it to be BELOW you in the "
                         "reporting line (any level, same team); compacting another "
@@ -647,7 +653,8 @@ _LEGACY_SCHEMAS = {
         "type": "object",
         "properties": {
             "action": {"type": "string",
-                       "enum": ["status", "compact", "apply", "recover", "list"],
+                       "enum": ["status", "compact", "apply", "recover", "list",
+                                "grep", "count"],
                        "default": "status"},
             "session": {"type": "string",
                         "description": "session id (default: this run's session)"},
@@ -663,6 +670,20 @@ _LEGACY_SCHEMAS = {
                                   "required": ["card", "note"]}},
             "ref": {"type": "string",
                     "description": "action=recover: the card handle that was archived"},
+            "pattern": {"type": "string",
+                        "description": ("action=grep|count: a regular expression "
+                                        "(case-insensitive by default) searched over "
+                                        "the history log")},
+            "context_lines": {"type": "integer", "default": 2,
+                              "description": "action=grep: lines kept around each match"},
+            "page": {"type": "integer", "default": 1,
+                     "description": "action=grep: 1-based page of matches"},
+            "page_size": {"type": "integer", "default": 20,
+                          "description": "action=grep: matches per page (max 100)"},
+            "max_matches": {"type": "integer", "default": 500,
+                            "description": "action=grep|count: scan ceiling"},
+            "ignore_case": {"type": "boolean", "default": True,
+                            "description": "action=grep|count: case-insensitive regex"},
         },
         "required": [],
         "subject": "action",
@@ -1092,7 +1113,10 @@ _SUBTOOL_FIELDS = {
     },
     "context": {"status": ["session"], "compact": ["session"],
                 "apply": ["targets", "session"], "recover": ["ref", "session"],
-                "list": ["session"]},
+                "list": ["session"],
+                "grep": ["pattern", "session", "context_lines", "page", "page_size",
+                         "max_matches", "ignore_case"],
+                "count": ["pattern", "session", "max_matches", "ignore_case"]},
     "memory": {
         "store": ["content", "kind", "source", "ttl_secs"],
         "recall": ["query", "kind", "limit", "include_invalid", "semantic"],
@@ -1248,6 +1272,17 @@ _SUBTOOL_GUIDANCE = {
         "`ref` is the card handle that was curated."
     ),
     "context.list": "List the tool results this session has curated, with their notes.",
+    "context.grep": (
+        "Search the session's complete history log (every message, tool output and "
+        "harness note, verbatim) with a regular expression after compaction has "
+        "summarised old turns. Returns matches in chronological order with their "
+        "original line numbers and surrounding context, paginated — the exact detail "
+        "a summary dropped is recoverable here. No embeddings, no index."
+    ),
+    "context.count": (
+        "Count the lines in the session's history log that match a regular "
+        "expression, without returning their text."
+    ),
     "workspace.set": (
         "Re-root an agent (scope=self, default) or its WHOLE org subtree "
         "(scope=subtree: the agent plus every report at every level). The agent "
@@ -1689,6 +1724,8 @@ TOOL_EFFECTS = {
     "context.recover": {"effect": "append", "idempotent": False,
                         "reads": ["file"], "writes": ["session"]},
     "context.list": {"effect": "read", "idempotent": True, "reads": ["session"]},
+    "context.grep": {"effect": "read", "idempotent": True, "reads": ["session", "file"]},
+    "context.count": {"effect": "read", "idempotent": True, "reads": ["session", "file"]},
     "sessions.send": {"effect": "external", "idempotent": False, "writes": ["session"]},
     "agent.delete": {"effect": "delete", "idempotent": False,
                      "reads": ["agent"], "writes": ["agent"]},

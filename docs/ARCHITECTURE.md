@@ -339,14 +339,14 @@ Harness² upstream (arXiv:2610.14224): that is only a comparison arm in
 
 Layout (2026-11-20), by runtime role:
 
-* `harness/checks/` — the 134 report-only per-paper checkers. Pure data in,
+* `harness/checks/` — the 137 report-only per-paper checkers. Pure data in,
   verdict out; only `core/forge.py` imports them.
 * `harness/execution/` — the 9 gated executors (`probe`, `runner`, `editors`,
   `compose`, `contrast`, `whole`, `snapshot`, `gateway`, `unixshim`). Only
   `cycle` (with `dry_run=False`) reaches them, and only after
   `whole.readiness()` passes; tests inject a fake runner.
-* `harness/` root — the 20 modules the running app imports (live turn seams,
-  read-only HTTP surfaces and their support).
+* `harness/` root — the 21 modules the running app imports (live turn seams,
+  read-only HTTP surfaces and their support, including `hazard_notice` below).
 
 ### Wired vs report-only
 
@@ -731,6 +731,49 @@ same pass gives every tool row a human label and an inline SVG icon (`_toolUI`),
 **canonical** name (`web.search`, `fs.read`, …) with a raw-name fallback so a new Matrix tool never
 breaks the row. Nothing here is live-DOM only: a reload rebuilds it from `tool_cards` + message meta,
 which is the rule that keeps the chat and the transcript the same object.
+
+## Newest online papers (round 163, 2026-11-20)
+
+Four papers submitted 2026-11-18/19, read in full, each landed as one capability.
+The deterministic halves are report-only checkers; the two that belong in the live
+loop were wired where the model reads its own work.
+
+- **A hazard notice on every tool output** (arXiv:2611.26553, ROGUE-AI). Of 72
+  real-world agent incidents 62 had no attacker: the agent did what the task asked
+  and missed an ordinary hazard such as a production database shared with the live
+  site. A note attached to the tool output that names **the hazard and its
+  consequence** lowered harm for all five tested models; a fact-only note of the
+  same length did not. `harness/hazard_notice.py` classifies the call from the
+  tool name, arguments and output (production target, destructive verb,
+  credentials in reach, shared resource, public surface, money movement) and the
+  chat loop appends its one line to the observation it is about to inject —
+  silent when no rule fires, never fatal. `forge.py hazard classify|notice|audit`
+  exposes the same rules plus the incident/control test (one-sided Fisher).
+- **A lossless history log with grep recall** (arXiv:2611.25123, GrepMem).
+  Summaries and masking lose exactly the detail a later question needs; an
+  append-only plain-text log plus one regex tool reached 95-97% on ContextBench
+  where lossy baselines stayed at 6.6-20.7%. `memory/stores.py` writes
+  `<data>/sessions/<sid>.log` from the three persistence points (message, tool
+  card, harness inject) and the delete cascade removes it;
+  `context.grep` / `context.count` search it (regex, chronological line numbers,
+  context, pagination, count-only) with no index and no embedding. The pure half
+  is `harness/checks/recall_log.py` (`forge.py greprecall`).
+- **A cross-OS skill contract screen** (arXiv:2611.26256, SkillBridge). A skill
+  is a contract over guide text, package surface, metadata, install lines and OS
+  assumptions; static screening is recall-oriented triage for dynamic validation,
+  never a verdict. `harness/checks/skill_os_contract.py` builds the contract and
+  fires a rule only when it is matched, reachable, in conflict with the target OS
+  and not covered by a fallback, naming the contract field and the repair target.
+  `skills.install_skill_file|install_skill_dir|install_zip` return the screen as
+  `os_warnings` beside a successful install (`forge.py skillos`).
+- **A memory dose that belongs to the model** (arXiv:2611.26361). A strong model
+  improves with the full guideline set; a weak one does worse with it and gives
+  no error. Consolidation is support-conserving (each guideline records how many
+  lessons it merged, plus polarity and source tasks) and delivery selects a
+  dose. `harness/checks/guideline_budget.py` enforces the conservation invariant
+  and the per-capability dose (`forge.py guidelines`); the live memory index
+  ranks `agent.note` lessons by support and bounds them with the new
+  `context.memory_lessons_cap` (default 4).
 
 ## Data stores (the data home — `~/.longrun/data`, never the checkout)
 

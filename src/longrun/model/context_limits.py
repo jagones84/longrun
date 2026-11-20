@@ -43,6 +43,7 @@ DEFAULTS = {
     "skills_prompt_max_chars": 2600,
     "memory_prompt_max_chars": 1200,
     "memory_item_chars": 120,
+    "memory_lessons_cap": 4,
     "rules_prompt_max_bytes": 32768,
     "shell_capture_max": 200000,
     "fs_read_max_bytes": 65536,

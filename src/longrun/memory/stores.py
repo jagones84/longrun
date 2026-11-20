@@ -487,6 +487,12 @@ def _purge_session_artifacts(sid):
     with _LIVE_LOCK:            # a deleted id must not leave live fields behind
         _LIVE.pop(sid, None)
     bases = [os.path.join(SESSIONS_DIR, sid + ".json")]
+    # Round 163: the lossless history log is a per-session artifact too, and the
+    # glob below only matches `<sid>.json*` — without this row a deleted chat left
+    # its `.log` behind.
+    _log = history_log_path(sid)
+    if _log:
+        bases.append(_log)
     try:
         bases.append(taskgraph._path(sid))
         # v812: a RUN keys its graph by the run id (and records the session inside),
@@ -1543,6 +1549,45 @@ def fork_session(sid, at=None, title=None, model=None, workspace=None):
             "messages": len(prefix)}
 
 
+def history_log_path(sid):
+    """The append-only plain-text history log for one session (round 163).
+
+    Source: arXiv:2611.25123 (GrepMem) — a lossless, index-free log of the whole
+    interaction that a regex can search after compaction has replaced the working
+    context. It sits BESIDE the transcript JSON, never inside it: the transcript
+    is rewritten on every save, the log is only ever appended to.
+    """
+    if not _valid_sid(sid):
+        return ""
+    return os.path.join(SESSIONS_DIR, "%s.log" % sid)
+
+
+def append_history_log(sess, role, text, kind="message"):
+    """Append one interaction to the session's lossless history log.
+
+    Called from the three persistence points (message, tool card, harness
+    inject), so every interaction the model saw is recoverable. Bounded per
+    entry (200 KB, the offload ceiling) and fail-open: a logging failure must
+    never lose the turn. Returns the path, or "" when nothing was written.
+    """
+    try:
+        sid = str((sess or {}).get("id") or "")
+        path = history_log_path(sid)
+        if not path:
+            return ""
+        body = str(text or "")
+        if len(body) > 200000:
+            body = body[:200000] + "\n… [log entry truncated at 200000 chars]"
+        stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        _ensure_dirs()
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write("=== %s|%s|%s|%s ===\n%s\n\n"
+                     % (stamp, role, kind, sid, body))
+        return path
+    except Exception:  # noqa: BLE001 — the log must never break a turn
+        return ""
+
+
 def append_message(sess, role, content, reasoning=None, meta=None):
     # JAG-238: the transcript must only ever hold STRING content. A client could
     # POST {"message": 123}; the int was persisted and later crashed /api/context
@@ -1562,6 +1607,9 @@ def append_message(sess, role, content, reasoning=None, meta=None):
                        idx=len(sess.get("messages", [])))
     sess["messages"].append(msg)
     save_session(sess)
+    # Round 163 (arXiv:2611.25123): the same message also lands in the lossless
+    # plain-text log, so a detail compaction drops stays grep-able.
+    append_history_log(sess, role, content, kind="message")
     return msg
 
 
@@ -1621,6 +1669,14 @@ def persist_tool_card(sess, tool, ok, args=None, result="", error="",
                            idx=card["after"])
         sess.setdefault("tool_cards", []).append(card)
         save_session(sess)
+        # Round 163 (arXiv:2611.25123): the tool OUTPUT is the payload compaction
+        # most often discards, so the log keeps it verbatim (card bodies are
+        # capped at 4000 chars; the log is the lossless copy).
+        append_history_log(sess, "tool", "%s %s\n%s%s"
+                           % (tool, args_str,
+                              str(result or ""),
+                              ("\nerror: %s" % error) if error else ""),
+                           kind="tool")
         return card
     except Exception:  # noqa: BLE001 — persisting a card must never break a turn
         return None
@@ -1656,6 +1712,7 @@ def persist_inject(sess, kind, text, node=None, after=None):
         threads_mod.record(sess, node=node, text=text, idx=rec["after"])
         sess.setdefault("injects", []).append(rec)
         save_session(sess)
+        append_history_log(sess, "harness", text, kind=str(kind or "inject"))
         return rec
     except Exception:  # noqa: BLE001 — persisting an inject must never break a turn
         return None

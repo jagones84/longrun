@@ -7,6 +7,35 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Round 163 — four newest online harness papers, four capabilities, all wired where the model
+  reads its own work.** Sources (submitted 2026-11-18/19, read in full, max four): S-2026-11-20-015
+  ROGUE-AI (arXiv:2611.26553), S-2026-11-20-016 *How Much Should an Agent Remember?*
+  (arXiv:2611.26361), S-2026-11-20-017 SkillBridge (arXiv:2611.26256), S-2026-11-20-018 GrepMem
+  (arXiv:2611.25123).
+  - **A hazard notice on every tool output.** `harness/hazard_notice.py` names the hazard AND its
+    consequence (production target, destructive verb, credentials in reach, shared resource, public
+    surface, money movement) and the chat loop appends one line to the observation it is about to
+    inject — silent when no rule fires, fail-open. ROGUE-AI: this note lowered harm for all five
+    tested models, where a fact-only note of the same length did not. Also `forge.py
+    hazard classify|notice|audit`, the last one the paper's incident/matched-control test (one-sided
+    Fisher).
+  - **A lossless history log with grep recall.** `memory/stores.py` appends every message, tool card
+    and harness inject to `<data>/sessions/<sid>.log` (beside the transcript, append-only, 200 KB per
+    entry, removed by the delete cascade), and `context.grep` / `context.count` search it with a regex
+    — chronological line numbers, surrounding context, pagination, count-only, no index. GrepMem:
+    95-97% on ContextBench against 6.6-20.7% for summarization/masking. Pure half
+    `harness/checks/recall_log.py` (`forge.py greprecall`).
+  - **A cross-OS skill contract screen.** `harness/checks/skill_os_contract.py` builds the G/P/M/D/A
+    contract and fires a rule only when matched, reachable, conflicting and not covered by a fallback,
+    naming the field and the repair target. `skills.install_*` return it as `os_warnings`; the install
+    still succeeds (a screen is a hypothesis, never a verdict). `forge.py skillos`.
+  - **A memory dose that belongs to the model.** `harness/checks/guideline_budget.py` consolidates
+    support-conservingly (sum(support) == lessons, provenance kept) and selects a dose by capability;
+    `audit()` names a store that never grew, a run with no call and a high-support failure lesson. The
+    live memory index ranks `agent.note` lessons by support and bounds them with the new
+    `context.memory_lessons_cap` (default 4). `forge.py guidelines`. Locked by `v1235` (37/37);
+    battery 921/921.
+
 - **The chat header hands out the session's FILE, not just its name.** Operator: *"a way to copy the
   session file (absolute path) so you have the path in hand and can hand it to another agent — look at the
   chat in this path … at the top, near the other copy (copy name), always an icon, no text"*. A second

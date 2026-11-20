@@ -312,6 +312,34 @@ def shadowed_skills():
     return list(_cache.get("shadowed") or [])
 
 
+def _os_screen(folder):
+    """Screen an installed skill's OS contract (round 163, arXiv:2611.26256).
+
+    SkillBridge: static evidence proposes which skill-OS pairs deserve dynamic
+    validation; it is a recall-oriented HYPOTHESIS, never a confirmed defect, so
+    the install still succeeds and the findings ride beside it. Bounded (50
+    files, 200 KB each) and fail-open.
+    """
+    try:
+        from longrun.harness.checks import skill_os_contract
+        files = {}
+        for base, _dirs, names in os.walk(str(folder or "")):
+            for name in names[:50]:
+                path = os.path.join(base, name)
+                try:
+                    if os.path.getsize(path) > 200000:
+                        continue
+                    rel = os.path.relpath(path, folder).replace(os.sep, "/")
+                    with open(path, "r", encoding="utf-8", errors="replace") as fh:
+                        files[rel] = fh.read()
+                except OSError:
+                    continue
+        contract = skill_os_contract.build(files)
+        return skill_os_contract.screen(contract)
+    except Exception:  # noqa: BLE001 — a screen must never block an install
+        return {}
+
+
 def install_skill_file(category, name, content, root=None):
     """Install ONE verified `SKILL.md` under `skills/<category>/<name>/`.
 
@@ -341,7 +369,7 @@ def install_skill_file(category, name, content, root=None):
     except OSError as e:
         return {"ok": False, "error": "write failed: %s" % e}
     list_skills(reload=True)
-    return {"ok": True, "path": folder}
+    return {"ok": True, "path": folder, "os_warnings": _os_screen(folder)}
 
 
 def install_skill_dir(src_dir, dest_dir):
@@ -364,7 +392,7 @@ def install_skill_dir(src_dir, dest_dir):
     except OSError as e:
         return {"ok": False, "error": "copy failed: %s" % e}
     list_skills(reload=True)
-    return {"ok": True, "path": dest}
+    return {"ok": True, "path": dest, "os_warnings": _os_screen(dest)}
 
 
 def install_zip(data, name=None, overwrite=False):
@@ -444,7 +472,8 @@ def install_zip(data, name=None, overwrite=False):
             except Exception:  # noqa: BLE001 — stamping never breaks install
                 pass
             return {"ok": True, "name": safe, "category": LOCAL_CATEGORY,
-                    "path": os.path.relpath(target, REPO)}
+                    "path": os.path.relpath(target, REPO),
+                    "os_warnings": _os_screen(target)}
         finally:
             if stage and os.path.isdir(stage):
                 shutil.rmtree(stage, ignore_errors=True)

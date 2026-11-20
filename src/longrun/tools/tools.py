@@ -2386,6 +2386,70 @@ def _context_apply(args, run_id):
     return curation.handle(dict(args or {}, action="apply"), run_id=run_id)
 
 
+def _context_recall(args, run_id=None, count_only=False):
+    """`context.grep` / `context.count` — lossless recall over the session log.
+
+    Source: arXiv:2611.25123 (GrepMem, round 163). Compaction summarises the
+    working context; this reads the append-only plain-text log of the complete
+    interaction with a regex, returning matches in chronological order with their
+    original locations, paginated, or count-only. No embeddings, no index.
+    """
+    from longrun.harness.checks import recall_log
+    from longrun.memory import stores
+    args = args or {}
+    sid = str(args.get("session") or "").strip() or str(run_id or "")
+    if not sid:
+        return {"ok": False, "exit_code": 1, "error": "no session in scope (pass session=)",
+                "backend": "host", "sandboxed": False}
+    path = stores.history_log_path(sid)
+    if not path or not os.path.isfile(path):
+        return {"ok": False, "exit_code": 1, "session": sid,
+                "error": ("no history log for session %s yet — it is written from "
+                          "the first message of the session" % sid),
+                "backend": "host", "sandboxed": False}
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            text = fh.read()
+    except OSError as exc:
+        return {"ok": False, "exit_code": 1, "session": sid,
+                "error": "cannot read history log: %s" % exc,
+                "backend": "host", "sandboxed": False}
+    out = recall_log.search(
+        text, args.get("pattern") or args.get("query") or "",
+        context=args.get("context_lines", 2),
+        page=args.get("page", 1), page_size=args.get("page_size", 20),
+        max_matches=args.get("max_matches", 500),
+        ignore_case=bool(args.get("ignore_case", True)),
+        count_only=count_only)
+    out.update({"session": sid, "path": path, "backend": "host", "sandboxed": False,
+                "exit_code": 0 if out.get("ok") else 1})
+    if not out.get("ok"):
+        out["stdout"] = out.get("error") or "grep failed"
+        return out
+    if count_only:
+        out["stdout"] = ("history[%s]: %d matching line(s) of %d\n"
+                         "(count only — pass count=false or use action=grep for the "
+                         "matching text)" % (sid, out.get("count", 0), out.get("lines", 0)))
+        return out
+    head = []
+    for hit in out.get("matches") or []:
+        head.append("%d: %s" % (hit.get("line"), hit.get("text")))
+    out["stdout"] = ("history[%s]: %d match(es), page %s/%s, log=%s\n%s"
+                     % (sid, out.get("total_matches", 0), out.get("page"),
+                        out.get("pages"), path, "\n".join(head)))
+    return out
+
+
+def _context_grep(args, run_id):
+    """`context.grep` — the canonical subtool name supplies the action."""
+    return _context_recall(args, run_id, count_only=False)
+
+
+def _context_count(args, run_id):
+    """`context.count` — the canonical subtool name supplies the action."""
+    return _context_recall(args, run_id, count_only=True)
+
+
 def _context_recover(args, run_id):
     """`context.recover` — return an archived payload as a new card."""
     from longrun.tools import curation
@@ -3938,6 +4002,10 @@ def _context(args, run_id):
     args = args or {}
     sid = str(args.get("session") or "").strip() or str(run_id or "")
     action = str(args.get("action") or "status").strip().lower()
+    if action in ("grep", "recall", "history"):
+        return _context_recall(args, run_id, count_only=False)
+    if action in ("count", "grep_count"):
+        return _context_recall(args, run_id, count_only=True)
     if action in ("apply", "curate", "recover", "restore", "list", "curated"):
         from longrun.tools import curation
         return curation.handle(args, run_id=run_id)
@@ -4518,6 +4586,7 @@ def _docs_tool(args, run_id):
 _DISPATCH = {"shell": _shell_hinted, "shell.exec": _shell_hinted,
              "context.apply": _context_apply, "context.recover": _context_recover,
              "context.list": _context_list,
+             "context.grep": _context_grep, "context.count": _context_count,
              "fs.read": _fs_read, "fs.write": _fs_write, "fs.edit": _fs_edit,
              "diff": _diff,
              "human": _human, "human.ask": _human,

@@ -575,9 +575,15 @@ def _provider_memory(sess, ws, ctx):
     try:
         from longrun.memory import memory
 
-        def _items(kind, limit):
+        def _items(kind, limit, support_aware=False):
+            rows = memory.governed_query(kind=kind, limit=limit, workspace=ws)
+            if support_aware:
+                # Round 163 (arXiv:2611.26361): support is recurrence, so a lesson
+                # learned five times outranks the newest one-off — but the CAP is
+                # the dose, because too much memory hurts a weak model silently.
+                rows = sorted(rows, key=lambda r: -int(r.get("support") or 0))
             out = []
-            for r in memory.governed_query(kind=kind, limit=limit, workspace=ws):
+            for r in rows:
                 c = " ".join(str(r.get("content", "")).split())
                 if c:
                     out.append("- " + (c[:_MEM_ITEM_CHARS] + "…"
@@ -592,7 +598,8 @@ def _provider_memory(sess, ws, ctx):
         # CO-3 (v998): the WHERE/VERIFY anchors a finished turn left behind. They
         # are copied from real tool arguments, so they outrank a prose lesson.
         anchors = _items("repo.anchor", 2)
-        lessons = _items("agent.note", 4)
+        lessons = _items("agent.note",
+                         ctx_limits.get("memory_lessons_cap"), support_aware=True)
         questions = _items("question.open", 3)
         if facts:
             parts.append("## Memory \u2014 user facts (told by the user; trust these)\n"
