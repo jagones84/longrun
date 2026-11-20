@@ -12849,11 +12849,15 @@ async function openChangelog() {
   try { d = await api("GET", "/api/changelog"); }
   catch (e) { toast("changelog unavailable: " + e, "err"); return; }
   if (!d || d.ok === false) { toast("changelog unavailable", "err"); return; }
+  // The CHANGELOG is markdown; the modal is plain text (no HTML injection), so strip the
+  // bold/code markers that would otherwise show literally. Underscores are LEFT ALONE —
+  // they are file/path characters here (`hazard_notice.py`), not emphasis.
+  const plain = t => String(t == null ? "" : t).replace(/\*\*/g, "").replace(/`/g, "");
   _infoModal("Changelog", body => {
     if (d.head && (d.head.sha || d.head.subject)) {
       const h = document.createElement("div");
       h.style.cssText = "font-size:12px;padding:6px 9px;background:var(--hover);border-radius:8px;font-family:ui-monospace,monospace";
-      h.textContent = "latest: " + (d.head.sha || "") + " · " + (d.head.subject || "");
+      h.textContent = "latest: " + (d.head.sha || "") + " · " + plain(d.head.subject);
       body.append(h);
     }
     (d.releases || []).forEach(rel => {
@@ -12861,11 +12865,11 @@ async function openChangelog() {
       sec.open = true; sec.style.marginTop = "8px";
       const sum = document.createElement("summary");
       sum.style.cssText = "cursor:pointer;font-weight:600;font-size:13px";
-      sum.textContent = rel.title + (rel.date ? ("  ·  " + rel.date) : "");
+      sum.textContent = plain(rel.title) + (rel.date ? ("  ·  " + rel.date) : "");
       sec.append(sum);
       const ul = document.createElement("ul");
       ul.style.cssText = "margin:5px 0 4px 18px;font-size:12px;line-height:1.5";
-      (rel.items || []).forEach(it => { const li = document.createElement("li"); li.textContent = String(it.text || ""); ul.append(li); });
+      (rel.items || []).forEach(it => { const li = document.createElement("li"); li.textContent = plain(it.text); ul.append(li); });
       sec.append(ul); body.append(sec);
     });
     if (!(d.releases || []).length) {
