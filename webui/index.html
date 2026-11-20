@@ -127,23 +127,31 @@
     display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
   #settingsBtn svg, #palette-open svg { display: block; }
   /* 2026-11-21: the changelog button shares the very same box as the gear/search; a
-     SEPARATE rule so the pinned one-box selector above stays intact. */
+     SEPARATE rule so the pinned one-box selector above stays intact.
+     2026-11-21 (operator: "dont use frames for icon"): it is a FRAMELESS glyph like the
+     gear and the search — the ghost border it inherited was a frame around the icon. */
   #changelogBtn { width: 32px; height: 32px; padding: 0; border-radius: 8px;
+    border: 0; background: transparent; box-shadow: none; color: var(--dim);
     display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
   #changelogBtn svg { display: block; }
-  /* 2026-11-21: the brand ⋮ beside the LONGRUN wordmark and its one menu. The button is
-     a tight 24x30 ghost glyph so it never widens the header on a phone; the menu is a
-     body-anchored popover, placed from the button (never clipped by the topbar). */
+  #changelogBtn:hover { background: var(--hover); color: var(--txt); }
+  /* 2026-11-21: the brand ⋮ beside the LONGRUN wordmark and its one menu. Frameless (the
+     same "no frame around an icon" rule), a tight 24x30 glyph so it never widens the
+     header on a phone; the menu is a body-anchored popover, placed from the button. */
   .brand-wrap { position: relative; display: inline-flex; align-items: center; }
-  .brand-menu-btn { width: 24px; height: 30px; min-height: 30px; padding: 0; border-radius: 7px;
-    display: inline-flex; align-items: center; justify-content: center; color: var(--dim); }
-  .brand-menu-btn:hover, .brand-menu-btn[aria-expanded="true"] { color: var(--txt); background: var(--hover); }
+  /* `#topbar .brand-menu-btn` (not the bare class): `button.ghost { border: 1px … }`
+     outranks a class selector, so the bare class kept the frame. */
+  #topbar .brand-menu-btn { width: 24px; height: 30px; min-height: 30px; padding: 0; border-radius: 7px;
+    border: 0; background: transparent; box-shadow: none; color: var(--dim);
+    display: inline-flex; align-items: center; justify-content: center; }
+  #topbar .brand-menu-btn:hover, #topbar .brand-menu-btn[aria-expanded="true"] { color: var(--txt); background: var(--hover); }
   #brandMenu { position: fixed; z-index: 46; min-width: 216px; max-width: min(90vw, 300px);
     padding: 5px; display: flex; flex-direction: column; gap: 2px; }
   #brandMenu[hidden] { display: none; }
   #brandMenu .mi { display: flex; align-items: center; gap: 8px; width: 100%;
-    padding: 8px 10px; border-radius: 8px; font-size: 12px; color: var(--txt);
-    text-align: left; white-space: nowrap; }
+    padding: 8px 10px; border: 0; background: transparent; border-radius: 8px;
+    font-size: 12px; color: var(--txt); text-align: left; white-space: nowrap; }
+  #brandMenu .mi svg { flex: 0 0 auto; color: var(--dim); }
   #brandMenu .mi:hover { background: var(--hover); }
   @media (max-width: 640px) {
     /* a phone keeps brand + sections + settings. The session badge here only ever
@@ -3660,14 +3668,17 @@
             aria-expanded="false" title="Longrun menu — restart, reload, diagnostics, about"
             aria-label="Longrun menu"><svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5.2" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="18.8" r="1.7"/></svg></button>
     <div id="brandMenu" class="card" role="region" aria-label="Longrun menu" hidden>
+      <!-- 2026-11-21 (operator: "use correct icons"): every row wears a monochrome SVG
+           glyph in the app's 14px/1.8 recipe (`#moreMenu .mi`), never an emoji or a
+           text symbol that renders as a framed emoji. -->
       <button class="ghost mi" id="bmRestart" data-call="restartLongrun"
-              aria-label="restart longrun" title="restart the Longrun service — every running turn ends, then the service comes back">↻ restart longrun</button>
+              aria-label="restart longrun" title="restart the Longrun service — every running turn ends, then the service comes back"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.6-5.9"/><path d="M4 4.4V9h4.6"/></svg>restart longrun</button>
       <button class="ghost mi" id="bmReload" data-call="reloadInterface"
-              aria-label="reload the interface" title="reload this page to pick up a new build">⟳ reload interface</button>
+              aria-label="reload the interface" title="reload this page to pick up a new build"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 4.4V9h-4.6"/></svg>reload interface</button>
       <button class="ghost mi" id="bmDiag" data-call="copyDiagnostics"
-              aria-label="copy diagnostics" title="copy a diagnostics report (paths, service, tools, recent errors) to the clipboard">⧉ copy diagnostics</button>
+              aria-label="copy diagnostics" title="copy a diagnostics report (paths, service, tools, recent errors) to the clipboard"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg>copy diagnostics</button>
       <button class="ghost mi" id="bmAbout" data-call="openAbout"
-              aria-label="about longrun" title="version, build fingerprint and data home">ⓘ about longrun</button>
+              aria-label="about longrun" title="version, build fingerprint and data home"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.6"/><path d="M12 10.6V16"/><circle cx="12" cy="7.9" r=".9" fill="currentColor" stroke="none"/></svg>about longrun</button>
     </div>
   </div>
   <nav id="topTabs" class="topTabs" aria-label="top-level sections">
@@ -3691,8 +3702,13 @@
   <!-- v1023: the approval MODE in force, next to the sandbox pill — the two things
        that decide whether a tool call can touch the world. One control per fact:
        the chip reports, Settings ▸ Permissions owns the value. -->
-  <button class="pill sbox" id="apprPill" hidden data-call="openSettings" data-args='["permissions"]'
-          title="tool approval mode — click for Settings › Permissions"></button>
+  <!-- 2026-11-21 (operator): "approvals open permission instead of the specific session
+       where approval = full is placed!". The chip reports the MODE, so clicking it must
+       open the APPROVALS (the pending decisions, each tied to its session) — NOT the
+       global Permissions page. The mode itself stays editable in Settings › Permissions
+       (gear), which is a different fact ("what may EVER run"). -->
+  <button class="pill sbox" id="apprPill" hidden data-call="openApprovals"
+          title="tool approval mode — click for the approvals inbox (each request names its session)"></button>
   <!-- RH-27 (operator, 2026-11-03): the settings gear LEFT the topbar — it now lives
        in the chat tool rail (#toolsBar), pinned level with the send button, found the
        same way on desktop and on a phone. Only the search stays up here. -->
@@ -8144,7 +8160,7 @@ let SLASH_COMMANDS = [
   { id: "compact", aliases: [], icon: "🗜", kind: "ui", insert: "",
     hint: "compact this session's context now",
     run: () => compactNow() },
-  { id: "status", aliases: [], icon: "ℹ", kind: "ui", insert: "",
+  { id: "status", aliases: [], icon: "ⓘ", kind: "ui", insert: "",
     hint: "report everything about this session: identity, model, context saturation vs the max context, the plan and its open steps, approvals",
     run: () => openSessionStatus() },
   { id: "reset", aliases: [], icon: "↺", kind: "ui", insert: "",
@@ -12607,8 +12623,9 @@ async function loadStatus() {
 }
 /* v1023: the approval MODE is a different fact from the sandbox backend and it
    changes rarely, so it is fetched ONCE per page (GET /api/tools carries the live
-   policy), never on every status poll. The chip reports; Settings ▸ Permissions
-   owns the value — no second writer. */
+   policy), never on every status poll. The chip reports the mode; clicking opens the
+   APPROVALS inbox (2026-11-21, operator: the chip opened the global Permissions page
+   instead of the approvals) — the value stays owned by Settings › Permissions. */
 async function loadApprPill() {
   const el = $("apprPill"); if (!el) return;
   try {
@@ -12617,10 +12634,11 @@ async function loadApprPill() {
     el.hidden = false;
     el.className = "pill sbox" + (mode === "full" ? " warn" : " ok");
     el.textContent = "approvals: " + mode;
-    el.title = "tool approval mode: " + mode + " — click for Settings › Permissions";
+    el.title = "tool approval mode: " + mode +
+      " — click for the approvals inbox (each request names its session)";
     // 2026-11-15: on a squeezed bar the chip is only its ✓ glyph, so the name must still
     // say the mode (and keep the visible text as a substring — axe label-content-name).
-    el.setAttribute("aria-label", "approvals: " + mode + " — click for Settings › Permissions");
+    el.setAttribute("aria-label", "approvals: " + mode + " — click for the approvals inbox");
   } catch (_) { el.hidden = true; }
 }
 /* v1023: the issue template already ships in the repository; this is the door to
@@ -12980,6 +12998,20 @@ async function loadApprovals() {
       (dlTxt ? `<div style="margin:4px 0;font-size:11px;color:var(--warn,#b26a00);white-space:pre-wrap;word-break:break-all">${esc(dlTxt)}</div>` : "") +
       (extra ? `<div style="font-size:11px;color:var(--dim);white-space:pre-wrap;word-break:break-all">${esc(extra)}</div>` : "") +
       more;
+    // 2026-11-21 (operator): a decision belongs to the SESSION that is waiting on it, so
+    // the row NAMES that session and jumps to it ("approvals open … the specific session
+    // where approval is placed"). A tool gate carries `run_id`; a plan/spec document
+    // carries `session`/`session_title` — prefer the explicit session.
+    const _asid = String(a.session || "");
+    if (_asid) {
+      const sBtn = document.createElement("button");
+      sBtn.type = "button"; sBtn.className = "lnk";
+      sBtn.style.cssText = "margin-top:4px;font-size:11px";
+      sBtn.textContent = "→ " + (a.session_title || _asid) + "  (" + _asid + ")";
+      sBtn.title = "open this session — where this approval is waiting";
+      sBtn.onclick = () => { try { selectSession({ id: _asid, title: a.session_title || _asid }); } catch (e) {} };
+      d.appendChild(sBtn);
+    }
     const row = document.createElement("div"); row.style.cssText = "display:flex;gap:6px";
     // A plan/spec document is decided like a tool gate: approve releases the write
     // lock, "deny" IS the reject (the file stays on disk). Same inbox, honest verb.

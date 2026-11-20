@@ -47,6 +47,14 @@ check("A4 the menu carries only NEW high-level acts (no duplicate of the gear/se
       and "function reloadInterface(" in UI
       and "function copyDiagnostics(" in UI
       and "function openAbout(" in UI)
+# 2026-11-21 (operator: "dont use frames for icon please use correct icons for last changes")
+_BRAND = UI[UI.find('id="brandMenu"'):UI.find("</div>", UI.find('id="brandMenu"'))]
+check("A5 every brand row wears an SVG icon, never an emoji or a text glyph",
+      _BRAND.count("<svg") == 4
+      and not any(g in _BRAND for g in ("\u21bb", "\u27f3", "\u29c9", "\u24d8")))
+check("A6 the brand ⋮ and the changelog button are FRAMELESS glyphs (no ghost border)",
+      UI.count("border: 0; background: transparent; box-shadow: none;") >= 2
+      and "#changelogBtn:hover { background: var(--hover); color: var(--txt); }" in UI)
 
 # ---- B: the changelog button + modal + endpoint ----------------------------
 check("B1 a dedicated changelog button exists in the topbar action cluster",

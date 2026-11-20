@@ -117,6 +117,20 @@ All notable changes to Longrun are documented here. The format follows
   tool gate. (Locked by `v1052` B1/B1b, N9d/N9d2, N11b/N11b2, O1–O7; `v785` K1–K5; `v763` F1–F2.)
 
 ### Fixed
+- **The approvals chip opens the approvals, not the global Permissions page.** Operator: *"approvals open
+  permission instead of the specific session where approval = full is placed! fix"*. The topbar chip
+  reports the approval MODE (`approvals: full`) but was wired to `openSettings("permissions")` — the page
+  that says *what may EVER run*, a different fact. It now opens the **approvals inbox** (the pending
+  decisions; the mode stays edited in Settings ▸ Permissions, reachable from the gear). Each inbox row now
+  **names the session a decision belongs to** and jumps to it (`→ <title> (<sid>)`), so an approval is tied
+  to the session that is waiting on it. Locked by `v1023` (18/18, C4/C7).
+- **No frames around the new icons, and real icons in the brand menu.** Operator: *"dont use frames for
+  icon please use correct icons for last changes!"*. The changelog button and the brand ⋮ inherited the
+  `.ghost` border — a frame around the icon — so both are now **frameless** glyphs like the gear and the
+  search (`border: 0; background: transparent; box-shadow: none`), and the four brand-menu rows traded
+  their text symbols (`↻ ⟳ ⧉ ⓘ`) for the app's monochrome **SVG** icons (14px, stroke 1.8, the
+  `#moreMenu .mi` recipe). The `/status` slash glyph moved off `ℹ` (emoji-capable) to `ⓘ`. Locked by
+  `v1237` (11/11, A5/A6).
 - **Rejecting a plan/spec closes the entity — in the inbox and in the chat.** Operator: *"rejecting spec or
   plan into the approvals RH panel doesn't make the approval entity to disappear! also in the msg box in
   chat maybe"*. Reproduced live on the screenshot's own state (session `5671e8b2c493`, content approved,
