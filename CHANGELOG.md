@@ -7,6 +7,20 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **The Architect can preview and delete sessions (and their agents) in bulk.** Operator: *"vorrei
+  che A1 architect … abbia la possibilità di cancellare sessioni (agenti) … cancellami le sessioni
+  no team che ti sembrano inutili."* `session.delete` now takes `session` OR a `sessions` batch —
+  one cascade (running turn aborted, graph/runs/edits/ROLE.md/knowledge notebook purged, agent
+  record released with jobs scrubbed, routines deleted, reports re-parented) — plus `workspace:true`
+  to remove the dedicated folder. The new read-only `session.delete_preview` reuses the WebUI's own
+  No-team bucket (`orchestration._no_team_sessions`), excludes the system session and RUNNING turns,
+  and returns title/agent/teams/messages/age/reports/jobs/routines/workspace so the model can judge
+  what is useless BEFORE deleting. Workspace removal now refuses the global default and any folder
+  a live session still references (both `session.delete` and `agent.delete`). New P1 tools:
+  `team.models_set` (lead/member/local-slot model policy in one call), `session.model_set` (pin one
+  chat's model in both stores), `provider.test` (probe a provider or ping a model without changing
+  config). Locked by `v1236` (34/34); v537 42/42, v740 7/7, v887 23/23, v889 11/11, v534 38/38.
+
 - **Round 163 — four newest online harness papers, four capabilities, all wired where the model
   reads its own work.** Sources (submitted 2026-11-18/19, read in full, max four): S-2026-11-20-015
   ROGUE-AI (arXiv:2611.26553), S-2026-11-20-016 *How Much Should an Agent Remember?*

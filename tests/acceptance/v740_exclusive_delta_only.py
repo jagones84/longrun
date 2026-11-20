@@ -66,15 +66,16 @@ DELTA = {
     "agent.create", "agent.update", "agent.get", "agent.list", "agent.delete",
     "agent.prompt_set", "agent.prompt_get", "agent.prompt_clear",
     "team.create", "team.update", "team.delete", "team.get", "team.list",
-    "team.member_add", "team.member_remove",
+    "team.member_add", "team.member_remove", "team.models_set",
     "job.create", "job.update", "job.wake", "job.dispatch", "job.get", "job.list", "job.delete",
     "routine.create", "routine.update", "routine.get", "routine.list",
     "routine.delete",
     "session.create", "session.rename", "session.delete",
+    "session.delete_preview", "session.model_set",
     "kb.notebook_rename", "kb.notebook_delete", "kb.source_remove", "kb.reembed",
     "mcp.upsert", "mcp.remove", "mcp.test", "mcp.reload",
     "provider.upsert", "provider.remove", "provider.add_model",
-    "provider.remove_model", "provider.set_default", "provider.reload",
+    "provider.remove_model", "provider.set_default", "provider.reload", "provider.test",
     "skill.remove", "webui.inspect", "webui.configure",
 }
 live = set(LRA.TOOL_SCHEMAS)

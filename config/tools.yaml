@@ -835,12 +835,12 @@ tools:
   # session is `architect` or has `allow_architect: true`.
   # One namespace per object; each tool is exactly `namespace.tool`.
   agent:      { enabled: true, approval: auto }   # agent.create|update|get|list|delete|prompt_*
-  team:       { enabled: true, approval: auto }   # team.create|update|get|list|delete|member_*
+  team:       { enabled: true, approval: auto }   # team.create|update|get|list|delete|member_*|models_set
   job:        { enabled: true, approval: auto }   # job.create|dispatch|get|list|delete
   routine:    { enabled: true, approval: auto }   # routine.create|update|get|list|delete
-  session:    { enabled: true, approval: auto }   # session.create|rename|list|delete
+  session:    { enabled: true, approval: auto }   # session.create|rename|delete|delete_preview|model_set
   webui:      { enabled: true, approval: auto }   # webui.inspect|configure
-  provider:   { enabled: true, approval: auto }   # provider.upsert|remove|add_model|remove_model|set_default|reload
+  provider:   { enabled: true, approval: auto }   # provider.upsert|remove|add_model|remove_model|set_default|reload|test
   mcp:        { enabled: true, approval: auto }   # mcp.upsert|remove|test|reload
   skill:      { enabled: true, approval: auto }   # skill.remove
   kb:         { enabled: true, approval: auto }   # kb.notebook_*|source_*|reembed

@@ -389,6 +389,26 @@ TOOL_SCHEMAS = {
         "_namespace": "team",
         "_subtool": "member_remove",
     },
+    "team.models_set": {
+        "description": (
+            "team.models_set — Apply the team model policy in ONE call: a lead model "
+            "for the agents someone inside the team reports to, a member model for "
+            "everyone else, and at most `local_slots` local models kept per machine "
+            "among the non-leads. Omitted models fall back to the harness defaults; "
+            "each agent's session model is updated with its record."
+        ),
+        "type": "object",
+        "properties": {
+            "team": {"type": "string", "description": "Team ID ('T1') or team name."},
+            "lead_model": {"type": "string", "description": "Model ref for team leads (default: the cheap cloud lead model)."},
+            "member_model": {"type": "string", "description": "Model ref for non-lead members (default: the cheap cloud member model)."},
+            "local_slots": {"type": "integer", "description": "How many LOCAL models to keep per machine among non-leads (0 = none)."},
+        },
+        "required": ["team"],
+        "_origin": "exclusive",
+        "_namespace": "team",
+        "_subtool": "models_set",
+    },
     "job.create": {
         "description": (
             "job.create — Create a team job (J<n>; not an in-chat Session Job SJ<n>): "
@@ -604,18 +624,85 @@ TOOL_SCHEMAS = {
     # the operator sees a duplicate tool and the model has to guess.
     "session.delete": {
         "description": (
-            "session.delete — Delete a session with its full cascade: running turn "
-            "aborted, graph, run metrics, edit journal and its knowledge notebook removed. The permanent "
-            "`architect` session itself can never be deleted."
+            "session.delete — Delete ONE session, or a BATCH (`sessions`), with the full "
+            "cascade: running turn aborted, graph, run metrics, edit journal, ROLE.md "
+            "and its knowledge notebook removed, and the agent record RELEASED (jobs "
+            "scrubbed, routines deleted, reports re-parented to nobody). `workspace:true` "
+            "also removes the dedicated workspace folder, only when it sits under the "
+            "workspaces root. The permanent `architect` session can never be deleted. "
+            "Preview a scope with `session.delete_preview` before a large batch."
         ),
         "type": "object",
         "properties": {
-            "session": {"type": "string", "description": "Session ID."},
+            "session": {"type": "string", "description": "Session ID, agent ID ('A3'), or agent name."},
+            "sessions": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Batch of session/agent references (max 200), each through the same cascade.",
+            },
+            "workspace": {
+                "type": "boolean",
+                "description": "Also remove each agent's dedicated workspace folder (default false; only folders under the workspaces root).",
+            },
         },
-        "required": ["session"],
+        "required": [],
+        "anyOf": [{"required": ["session"]}, {"required": ["sessions"]}],
         "_origin": "exclusive",
         "_namespace": "session",
         "_subtool": "delete",
+    },
+    "session.delete_preview": {
+        "description": (
+            "session.delete_preview — Read-only preview of the sessions a delete would "
+            "hit for a scope (`__none__` = the no-team bucket, `ALL`, or one team) and "
+            "optional filters, with the facts needed to judge a chat useless: title, "
+            "agent, teams, message count, age, RUNNING state, direct reports, jobs, "
+            "routines and workspace. Nothing is deleted: pass the chosen ids to "
+            "`session.delete`."
+        ),
+        "type": "object",
+        "properties": {
+            "team": {
+                "type": "string",
+                "description": "'__none__' (default: sessions with no team), 'ALL', or a team ID/name.",
+            },
+            "max_messages": {
+                "type": "integer",
+                "description": "Only sessions with at most this many messages (0 = empty chats).",
+            },
+            "older_than_days": {
+                "type": "number",
+                "description": "Only sessions not updated in the last N days.",
+            },
+            "include_running": {
+                "type": "boolean",
+                "description": "Include sessions with a turn in flight (default false).",
+            },
+            "limit": {
+                "type": "integer",
+                "description": "Max rows to return (default 50, max 200).",
+            },
+        },
+        "required": [],
+        "_origin": "exclusive",
+        "_namespace": "session",
+        "_subtool": "delete_preview",
+    },
+    "session.model_set": {
+        "description": (
+            "session.model_set — Pin ONE session's LLM in both stores (session and its "
+            "agent record, when it has one) so chat and jobs cannot disagree. Use 'auto' "
+            "for the cheap remote default; an empty value clears the pin back to the router."
+        ),
+        "type": "object",
+        "properties": {
+            "session": {"type": "string", "description": "Session ID, agent ID ('A3'), or agent name."},
+            "model": {"type": "string", "description": "Model ref (`<provider>:<model>`), 'auto' for the cheap remote default, or '' to clear."},
+        },
+        "required": ["session", "model"],
+        "_origin": "exclusive",
+        "_namespace": "session",
+        "_subtool": "model_set",
     },
     "webui.inspect": {
         "description": (
@@ -738,6 +825,23 @@ TOOL_SCHEMAS = {
         "_origin": "exclusive",
         "_namespace": "provider",
         "_subtool": "reload",
+    },
+    "provider.test": {
+        "description": (
+            "provider.test — Probe ONE configured provider (reachability and accepted "
+            "key) or, when `model` is given, run ONE real minimal chat completion on "
+            "that model to prove it answers. Read-only: it changes no configuration."
+        ),
+        "type": "object",
+        "properties": {
+            "provider": {"type": "string", "description": "Provider id (e.g. 'openrouter')."},
+            "model": {"type": "string", "description": "Optional model id (or full `<provider>:<model>` ref) to ping with a real completion."},
+            "timeout": {"type": "number", "description": "Optional timeout in seconds (default 10 for a provider probe, 25 for a model ping)."},
+        },
+        "required": ["provider"],
+        "_origin": "exclusive",
+        "_namespace": "provider",
+        "_subtool": "test",
     },
     "skill.remove": {
         "description": (
@@ -1727,6 +1831,28 @@ def _resolve_agent_session(ref):
     return None, None
 
 
+def _resolve_session_strict(ref):
+    """Resolve a session id / A-id / agent name WITHOUT matching a title.
+
+    A title is not unique, so a destructive call (`session.delete`,
+    `session.model_set`) must never guess one: the id is tried first, then the
+    agent registry (session id, A-id, name), and nothing else.
+    """
+    from longrun.agent import agents as agents_mod
+    from longrun.memory import stores
+
+    raw = str(ref or "").strip()
+    if not raw:
+        return None, None
+    if stores.load_session(raw):
+        return raw, agents_mod.REGISTRY.get(raw)
+    ag = agents_mod.REGISTRY.resolve(raw)
+    sid = (ag or {}).get("session")
+    if sid:
+        return sid, ag
+    return None, None
+
+
 def _ensure_agent_workspace(name, explicit_ws=None):
     """Create or validate a dedicated workspace folder for an agent."""
     if explicit_ws:
@@ -1977,6 +2103,62 @@ def _remove_workspace_path(path):
     return {"removed": True, "path": target}
 
 
+def _workspace_removal(path, exclude_sids=()):
+    """Remove a workspace ONLY when it is dedicated to `exclude_sids`.
+
+    A session is born with the GLOBAL default workspace, and many sessions can
+    share one folder. Deleting the chat must never delete a folder another live
+    session (or the global default) still uses, so the removal is refused with a
+    reason instead of trusting the path alone.
+    """
+    from longrun.agent import agents as agents_mod
+    from longrun.memory import rules as rules_mod
+    from longrun.memory import stores
+
+    raw = str(path or "").strip()
+    if not raw:
+        return {"removed": False, "skipped": "", "reason": "no workspace"}
+    try:
+        target = os.path.realpath(os.path.abspath(os.path.expanduser(raw)))
+    except Exception:  # noqa: BLE001
+        return {"removed": False, "skipped": raw, "error": "unresolvable path"}
+    try:
+        default = os.path.realpath(os.path.abspath(os.path.expanduser(
+            str(rules_mod.get_workspace() or ""))))
+    except Exception:  # noqa: BLE001
+        default = ""
+    if default and target == default:
+        return {"removed": False, "skipped": target,
+                "reason": "global default workspace — shared by every session"}
+    exclude = {str(s) for s in (exclude_sids or ()) if s}
+    users = set()
+    for row in stores.list_sessions():
+        sid = row.get("id")
+        ws = row.get("workspace")
+        if sid in exclude or not ws:
+            continue
+        try:
+            if os.path.realpath(os.path.abspath(os.path.expanduser(str(ws)))) == target:
+                users.add(sid)
+        except Exception:  # noqa: BLE001 — one bad path must not block the sweep
+            continue
+    for a in agents_mod.REGISTRY.list().get("agents") or []:
+        sid = a.get("session")
+        ws = a.get("workspace")
+        if sid in exclude or not ws:
+            continue
+        try:
+            if os.path.realpath(os.path.abspath(os.path.expanduser(str(ws)))) == target:
+                users.add(sid or ("agent:%s" % a.get("id")))
+        except Exception:  # noqa: BLE001
+            continue
+    if users:
+        return {"removed": False, "skipped": target,
+                "reason": "workspace is shared with %d other session(s)" % len(users),
+                "shared_with": sorted(users)[:10]}
+    return _remove_workspace_path(target)
+
+
 def _agent_delete(args):
     """JAG-537: remove an agent and everything that only exists for it.
 
@@ -2010,7 +2192,7 @@ def _agent_delete(args):
 
     workspace_res = None
     if args.get("workspace") is not False and workspace:
-        workspace_res = _remove_workspace_path(workspace)
+        workspace_res = _workspace_removal(workspace, exclude_sids={sid})
 
     return {
         "ok": True,
@@ -2197,6 +2379,35 @@ def _team_membership(args, remove):
             res["team"]["id"], res["team"]["name"]
         ),
     }
+
+
+def _team_models_set(args):
+    """Apply the team model policy (leads / members / local slots) in one call."""
+    from longrun.orchestrate import teams as teams_mod
+
+    t = teams_mod.REGISTRY.get(args.get("team"))
+    if not t:
+        return {"ok": False, "error": "team not found: %s" % args.get("team")}
+    kw = {}
+    for key in ("lead_model", "member_model"):
+        if args.get(key) is not None:
+            kw[key] = str(args.get(key) or "").strip()
+    if args.get("local_slots") is not None:
+        try:
+            kw["local_slots_n"] = max(0, int(args.get("local_slots")))
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "local_slots must be an integer"}
+    res = teams_mod.REGISTRY.assign_models(t["id"], **kw)
+    res.setdefault("ok", False)
+    if res.get("ok"):
+        res["stdout"] = (
+            "team %s model policy applied: %d agent(s) reassigned "
+            "(lead=%s, member=%s, local_kept=%d)"
+            % (t["id"], int(res.get("assigned") or 0),
+               res.get("lead_model"), res.get("member_model"),
+               len(res.get("local_kept") or []))
+        )
+    return res
 
 
 def _job_create(args, caller=None):
@@ -2545,13 +2756,227 @@ def _session_rename(args):
             "stdout": "renamed session %s -> %s" % (sid, title)}
 
 
-def _session_delete(args):
-    from longrun.core import httpapi
+def _session_delete_preview(args):
+    """Read-only list of the sessions a delete would hit, with decision facts.
 
-    sid = str(args.get("session") or "").strip()
+    `__none__` reuses `orchestration._no_team_sessions`, so this preview and the
+    WebUI "No team" bucket can never disagree. Nothing is written.
+    """
+    from longrun.agent import agents as agents_mod
+    from longrun.memory import stores
+    from longrun.orchestrate import jobs as jobs_mod
+    from longrun.orchestrate import routines as routines_mod
+    from longrun.orchestrate import teams as teams_mod
+
+    scope_arg = str(args.get("team") or "__none__").strip()
+    rows = {r.get("id"): r for r in stores.list_sessions() if r.get("id")}
+    agent_rows = {}
+    for a in agents_mod.REGISTRY.list().get("agents") or []:
+        sid = a.get("session")
+        if sid:
+            agent_rows[sid] = a
+
+    if scope_arg.lower() in ("__none__", "none", "no-team", "no team", ""):
+        from longrun.orchestrate import orchestration
+        ids = list(orchestration._no_team_sessions(agents_mod.REGISTRY))
+        scope = "__none__"
+    elif scope_arg.upper() == "ALL":
+        ids = sorted(rows)
+        scope = "ALL"
+    else:
+        t = teams_mod.REGISTRY.get(scope_arg)
+        if not t:
+            return {"ok": False, "error": "team not found: %s" % scope_arg}
+        ids = [a.get("session") for a in agents_mod.REGISTRY.agents_of_team(t["id"])
+               if a.get("session")]
+        scope = t["id"]
+
+    try:
+        limit = max(1, min(int(args.get("limit") or 50), 200))
+    except (TypeError, ValueError):
+        limit = 50
+    try:
+        max_messages = (None if args.get("max_messages") is None
+                        else max(0, int(args.get("max_messages"))))
+    except (TypeError, ValueError):
+        max_messages = None
+    try:
+        older = (None if args.get("older_than_days") is None
+                 else max(0.0, float(args.get("older_than_days"))))
+    except (TypeError, ValueError):
+        older = None
+    include_running = bool(args.get("include_running"))
+    cutoff = (time.time() - older * 86400.0) if older is not None else None
+
+    # Counts only — the preview never reads job/routine contents.
+    jobs_by_agent, routines_by_agent = {}, {}
+    try:
+        for j in jobs_mod.JOBS.list().get("jobs") or []:
+            touched = set(j.get("agents") or [])
+            if j.get("coordinator"):
+                touched.add(j.get("coordinator"))
+            for aid in touched:
+                jobs_by_agent[aid] = jobs_by_agent.get(aid, 0) + 1
+    except Exception:  # noqa: BLE001 — a preview must survive a bad job store
+        pass
+    try:
+        for r in routines_mod.REGISTRY.list().get("routines") or []:
+            aid = r.get("agent")
+            if aid:
+                routines_by_agent[aid] = routines_by_agent.get(aid, 0) + 1
+    except Exception:  # noqa: BLE001 — a preview must survive a bad routine store
+        pass
+
+    out = []
+    for sid in ids:
+        row = rows.get(sid)
+        if not row:
+            continue
+        if is_system_session(sid) or row.get("system") or row.get("undeletable"):
+            continue
+        if row.get("running") and not include_running:
+            continue
+        msgs = int(row.get("messages") or 0)
+        if max_messages is not None and msgs > max_messages:
+            continue
+        upd = row.get("updated") or 0
+        if cutoff is not None and upd > cutoff:
+            continue
+        ag = agent_rows.get(sid) or {}
+        aid = ag.get("id")
+        out.append({
+            "session": sid,
+            "title": row.get("title") or "",
+            "agent": aid,
+            "agent_name": ag.get("name") if ag else None,
+            "teams": list(ag.get("teams") or []),
+            "messages": msgs,
+            "age": row.get("age") or "",
+            "updated": upd,
+            "running": bool(row.get("running")),
+            "reports": len(ag.get("reports") or []),
+            "jobs": jobs_by_agent.get(aid, 0) if aid else 0,
+            "routines": routines_by_agent.get(aid, 0) if aid else 0,
+            "workspace": row.get("workspace") or ag.get("workspace"),
+            "empty": msgs == 0,
+        })
+    # Empty/oldest first: the chats most likely to be useless surface at the top.
+    out.sort(key=lambda r: (r["messages"], r["updated"] or 0))
+    out = out[:limit]
+    return {
+        "ok": True,
+        "scope": scope,
+        "count": len(out),
+        "sessions": out,
+        "stdout": (
+            "%d candidate(s) in scope %s — nothing deleted; pass the chosen ids to "
+            "session.delete" % (len(out), scope)
+        ),
+    }
+
+
+def _session_delete(args):
+    """Delete one session, or a batch, through the ONE cascade.
+
+    A batch returns a per-session result and never aborts on a single failure;
+    a single call keeps the historical response shape (`ok`, `deleted`, `removed`).
+    """
+    from longrun.core import httpapi
+    from longrun.memory import stores
+
+    refs = []
+    raw = str(args.get("session") or "").strip()
+    if raw:
+        refs.append(raw)
+    many = args.get("sessions")
+    if isinstance(many, (list, tuple)):
+        refs.extend(str(x).strip() for x in many if str(x or "").strip())
+    seen, ordered = set(), []
+    for ref in refs:
+        if ref not in seen:
+            seen.add(ref)
+            ordered.append(ref)
+    if not ordered:
+        return {"ok": False, "error": "session or sessions required"}
+    ordered = ordered[:200]
+    want_workspace = bool(args.get("workspace"))
+    batch_sids = {sid for sid, _ag in (_resolve_session_strict(r) for r in ordered) if sid}
+
+    def _delete_one(ref):
+        sid, ag = _resolve_session_strict(ref)
+        if not sid:
+            return {"session": ref, "ok": False,
+                    "error": "session not found: %s" % ref}
+        workspace = ""
+        try:
+            sess = stores.load_session(sid) or {}
+            workspace = str(sess.get("workspace") or (ag or {}).get("workspace") or "")
+        except Exception:  # noqa: BLE001 — an unreadable field must not block the delete
+            workspace = ""
+        res = httpapi.delete_session(sid)
+        item = {"session": sid, "ok": bool(res.get("ok")),
+                "removed": res.get("removed") or []}
+        if not item["ok"]:
+            item["error"] = res.get("error") or "delete failed"
+            return item
+        if want_workspace and workspace:
+            item["workspace"] = _workspace_removal(workspace, exclude_sids=batch_sids)
+        return item
+
+    if len(ordered) == 1:
+        item = _delete_one(ordered[0])
+        if item.get("ok"):
+            out = {
+                "ok": True,
+                "deleted": item["session"],
+                "removed": item.get("removed") or [],
+                "stdout": "deleted session %s" % item["session"],
+            }
+            if item.get("workspace"):
+                out["workspace"] = item["workspace"]
+            return out
+        return {"ok": False, "error": item.get("error"),
+                "session": item.get("session")}
+
+    results, deleted = [], 0
+    for ref in ordered:
+        item = _delete_one(ref)
+        results.append(item)
+        if item.get("ok"):
+            deleted += 1
+    return {
+        "ok": True,
+        "deleted": deleted,
+        "count": len(ordered),
+        "failed": len(ordered) - deleted,
+        "results": results,
+        "stdout": "deleted %d/%d session(s)%s" % (
+            deleted, len(ordered),
+            "" if deleted == len(ordered) else " — see results for the failures"),
+    }
+
+
+def _session_model_set(args):
+    """Pin one session's model in both stores (the session and its agent record)."""
+    from longrun.memory import stores
+
+    ref = str(args.get("session") or "").strip()
+    sid, ag = _resolve_session_strict(ref)
     if not sid:
-        return {"ok": False, "error": "session required"}
-    return httpapi.delete_session(sid)
+        return {"ok": False, "error": "session not found: %s" % ref}
+    if args.get("model") is None:
+        return {"ok": False, "error": "model required ('' clears the pin)"}
+    model = str(args.get("model") or "").strip()
+    if model.lower() == "auto":
+        model = pick_cheap_remote_model()
+    got = stores._set_session_model(sid, model)
+    return {
+        "ok": True,
+        "session": sid,
+        "agent": (ag or {}).get("id"),
+        "model": got,
+        "stdout": "session %s model -> %s" % (sid, got or "(router default)"),
+    }
 
 
 def _team_create(args):
@@ -3056,6 +3481,25 @@ def _webui_providers(args, op):
         return {"ok": True, "stdout": "providers reloaded"}
     if not pid:
         return {"ok": False, "error": "id required"}
+    if op == "test":
+        from longrun.model import providers as prov
+        model = str(args.get("model") or "").strip()
+        try:
+            default_timeout = 25.0 if model else 10.0
+            timeout = float(args.get("timeout") or default_timeout)
+        except (TypeError, ValueError):
+            timeout = default_timeout
+        if model:
+            ref = model if ":" in model else ("%s:%s" % (pid, model))
+            res = prov.probe_model(ref, timeout=max(1.0, min(timeout, 120.0)))
+        else:
+            res = prov.probe(pid, timeout=max(1.0, min(timeout, 120.0)))
+        res.setdefault("ok", False)
+        if res.get("ok"):
+            res["stdout"] = ("model %s answered in %sms" % (ref, res.get("latency_ms"))
+                             if model else "provider %s reachable (%s models)"
+                             % (pid, res.get("models")))
+        return res
     if op == "upsert":
         body = dict(args.get("values") or {})
         body.setdefault("id", pid)
@@ -3158,6 +3602,7 @@ _SUBTOOL_MAP = {
     "team.delete": _team_delete,
     "team.member_add": _team_member_add,
     "team.member_remove": _team_member_remove,
+    "team.models_set": _team_models_set,
     "job.create": _job_create,
     "job.update": _job_update,
     "job.dispatch": _job_dispatch,
@@ -3172,7 +3617,9 @@ _SUBTOOL_MAP = {
     "routine.delete": _routine_delete,
     "session.create": _session_create,
     "session.rename": _session_rename,
+    "session.delete_preview": _session_delete_preview,
     "session.delete": _session_delete,
+    "session.model_set": _session_model_set,
     "webui.inspect": _webui_inspect,
     "webui.configure": _webui_configure,
     # Typed object tools: the operation is bound HERE, by name, so the model can only
@@ -3183,6 +3630,7 @@ _SUBTOOL_MAP = {
     "provider.remove_model": lambda a: _webui_providers(a, "remove_model"),
     "provider.set_default": lambda a: _webui_providers(a, "default"),
     "provider.reload": lambda a: _webui_providers(a, "reload"),
+    "provider.test": lambda a: _webui_providers(a, "test"),
     "skill.remove": _webui_skills_remove,
     "mcp.upsert": lambda a: _webui_mcp(a, "upsert"),
     "mcp.remove": lambda a: _webui_mcp(a, "remove"),
