@@ -83,6 +83,69 @@ def _escape_control_chars(blob):
     return "".join(out)
 
 
+def inline_code_ranges(text):
+    """(start, end) of every INLINE code span in `text` (CommonMark backtick runs).
+
+    2026-11-21 (bug hunt, session b7329cccf94c): a verification report wrote
+    `POST /api/tools/call {"tool":"fs.read"}` — a QUOTATION inside an inline code
+    span. `extract_action_json` read it as the turn's action, the call ran with no
+    arguments and failed, and the same sentence in each of the next five reports
+    re-fired the "repeat" guard: seven harness rows in one close-out. A call inside
+    backticks is prose, never an emission.
+
+    A FENCED block (```…```) is deliberately NOT a span here: models habitually wrap
+    a REAL call in ```json, and those must keep running.
+    """
+    out, i, n = [], 0, len(text or "")
+    while i < n:
+        if text[i] != "`":
+            i += 1
+            continue
+        j = i
+        while j < n and text[j] == "`":
+            j += 1
+        ticks = j - i
+        k = j
+        close = None
+        while k < n:
+            if text[k] != "`":
+                k += 1
+                continue
+            m = k
+            while m < n and text[m] == "`":
+                m += 1
+            if m - k >= ticks:
+                close = m
+                break
+            k = m
+        if close is None:      # an unclosed run is literal text, not a span
+            i = j
+            continue
+        if ticks < 3:          # a fence, not an inline span — never masked
+            out.append((i, close))
+        i = close
+    return out
+
+
+def mask_inline_code(text):
+    """`text` with every INLINE code span's body blanked (same length, offsets kept).
+
+    The ONE helper the machine-text judgement uses: anything inside single backticks
+    is a quotation, so a JSON object there can never be the message's action.
+    """
+    text = text or ""
+    spans = inline_code_ranges(text)
+    if not spans:
+        return text
+    parts, last = [], 0
+    for a, b in spans:
+        parts.append(text[last:a])
+        parts.append(" " * (b - a))
+        last = b
+    parts.append(text[last:])
+    return "".join(parts)
+
+
 def _iter_json_objects(text):
     """Every balanced top-level JSON object/array found in `text`, in order.
 
@@ -93,7 +156,12 @@ def _iter_json_objects(text):
     the text with a brace/quote-aware cursor and yields each complete value
     independently.
     """
-    objs, i, n = [], 0, len(text)
+    return [obj for _start, obj in _iter_json_spans(text)]
+
+
+def _iter_json_spans(text):
+    """`(start_offset, value)` for every balanced top-level JSON value in `text`."""
+    out, i, n = [], 0, len(text)
     while i < n:
         if text[i] in "{[":
             depth, instr, esc, start = 0, False, False, i
@@ -120,19 +188,19 @@ def _iter_json_objects(text):
             if depth == 0 and j < n:
                 blob = text[start:j + 1]
                 try:
-                    objs.append(json.loads(blob))
+                    out.append((start, json.loads(blob)))
                 except Exception:  # noqa: BLE001
                     # A model's multi-line string value makes the object invalid for
                     # the strict parser (raw control chars): escape them and retry
                     # before dropping the model's call on the floor.
                     try:
-                        objs.append(json.loads(_escape_control_chars(blob)))
+                        out.append((start, json.loads(_escape_control_chars(blob))))
                     except Exception:  # noqa: BLE001 — genuinely unparseable blob
                         pass
                 i = j + 1
                 continue
         i += 1
-    return objs
+    return out
 
 
 #: The keys that make a JSON object an ACTION rather than a data artifact.
@@ -148,6 +216,12 @@ def extract_action_json(text):
     rejected a call the model had not made — and the model, seeing its correct JSON
     refused, re-emitted the identical thing four times. An action is the message's
     CONCLUSION, not the first JSON that happens to appear in it.
+
+    2026-11-21: the same hazard with NO later action — a report that QUOTES a call
+    inside inline backticks (`` `POST /api/tools/call {"tool":"fs.read"}` ``) had the
+    quotation executed as the turn's action, then re-blocked on every retry. A JSON
+    value that starts inside an inline code span is prose and is never an action;
+    a fenced block still counts (models wrap real calls in ```json).
     """
     text = (text or "").strip()
     if not text:
@@ -158,7 +232,9 @@ def extract_action_json(text):
             return whole
     except Exception:  # noqa: BLE001 — prose around the object is the normal case
         pass
-    objs = [o for o in _iter_json_objects(text) if isinstance(o, dict)]
+    spans = inline_code_ranges(text)
+    objs = [o for s, o in _iter_json_spans(text) if isinstance(o, dict)
+            and not any(a <= s < b for a, b in spans)]
     if not objs:
         return None
     for obj in reversed(objs):

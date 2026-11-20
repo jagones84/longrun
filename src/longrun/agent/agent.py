@@ -48,7 +48,7 @@ from longrun.memory.stores import (FINISH_SUMMARY_KEYS as _FINISH_SUMMARY_KEYS,
                      persist_inject, persist_tool_card, save_plan, save_session,
                      save_tasks)
 from longrun.util.textkit import (DSML_MARK, extract_action_json, extract_json,
-                                  is_dsml, is_tool_markup)
+                                  is_dsml, is_tool_markup, mask_inline_code)
 from longrun.util.tracing import RunTrace, _REAL_CACHED_TOKENS, _REAL_PROMPT_TOKENS
 
 
@@ -1361,6 +1361,11 @@ def _looks_like_json_action(text):
         return True
     if "<arg_value>" in t and "</arg_key>" in t:
         return True
+    # 2026-11-21: an object inside INLINE backticks is a QUOTATION, not a call —
+    # a report writes `POST /api/tools/call {"tool":"fs.read"}` and the "anywhere"
+    # match below made that sentence the turn's action (session b7329cccf94c: the
+    # call ran, failed, and re-fired the repeat guard five times). Mask first.
+    t = mask_inline_code(t).strip()
     if t.startswith(("{", "[")):
         return ('"action"' in t) or ('"tool"' in t) or ('"args"' in t)
     # 2026-11-21: the model also writes PROSE then its call in ONE message
