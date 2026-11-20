@@ -392,15 +392,42 @@ def _improvement_records(status=None):
     return [_improvement_view(p) for p in proposals if p.get("id")]
 
 
+def _session_titles():
+    """{session_id: title} for the live session store, or {} on any fault.
+
+    Lets the inbox tie a TOOL-GATE approval to the session that asked for it. The
+    chat loop records `run_id = session id` (agent.py `gated_call`), so a record
+    whose run_id names a live session IS that session's; an `agent_run_v2` run
+    (`run_xxx`) matches nothing and correctly stays session-less. The inbox is the
+    ONE owner of this resolution — the WebUI, the CLI and `harness.status` just
+    read the field, they never re-derive it.
+    """
+    try:
+        from longrun.memory import stores as _st
+        return {str(s.get("id")): (s.get("title") or "")
+                for s in (_st.list_sessions() or []) if s.get("id")}
+    except Exception:  # noqa: BLE001 — a broken store must not empty the inbox
+        return {}
+
+
 def list_unified(status=None, limit=100):
     """The operator's single approval inbox: tool gates + improvement proposals
     + plan/spec documents awaiting a decision."""
     rows = list_all(None, 100000)
+    _sess = _session_titles()
     for rec in rows:
         rec.setdefault("kind", "tool")
         rec.setdefault("source", "tool")
         rec.setdefault("can_approve", rec.get("status") == "pending")
         rec.setdefault("blocked_reason", "")
+        # 2026-11-21 (operator): "approvals open permission instead of the specific
+        # session where approval is placed!". A decision belongs to the session
+        # waiting on it — NAME it here so every consumer can show/jump to it.
+        if not rec.get("session"):
+            _rid = str(rec.get("run_id") or rec.get("turn_scope") or "")
+            if _rid and _rid in _sess:
+                rec["session"] = _rid
+                rec["session_title"] = _sess[_rid]
     rows.extend(_improvement_records(status))
     rows.extend(_document_records(status))
     if status:

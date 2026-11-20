@@ -117,6 +117,13 @@ All notable changes to Longrun are documented here. The format follows
   tool gate. (Locked by `v1052` B1/B1b, N9d/N9d2, N11b/N11b2, O1–O7; `v785` K1–K5; `v763` F1–F2.)
 
 ### Fixed
+- **An approval in the inbox now names the session it belongs to.** Operator: *"approvals open permission
+  instead of the specific session where approval = full is placed! fix"*. The approvals chip opened the
+  inbox (fixed above), but a tool-gate row could not point at the session waiting on the decision: the chat
+  loop records `run_id = session id`, yet the row carried no `session`. The unified inbox now resolves that
+  id to a live session ONCE (`approvals.list_unified`), so the WebUI's `→ <title> (<sid>)` jump, the CLI and
+  `harness.status` all read the same field — a `run_xxx` API run (no session) correctly stays session-less
+  and shows no jump. Locked by `v1240` (7/7).
 - **The approvals chip opens the approvals, not the global Permissions page.** Operator: *"approvals open
   permission instead of the specific session where approval = full is placed! fix"*. The topbar chip
   reports the approval MODE (`approvals: full`) but was wired to `openSettings("permissions")` — the page
