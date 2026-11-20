@@ -127,18 +127,84 @@ def inline_code_ranges(text):
     return out
 
 
-def mask_inline_code(text):
-    """`text` with every INLINE code span's body blanked (same length, offsets kept).
+def _single_quote_is_bracket(text, i, closing):
+    """Is the `'` at `i` an OPENING quote and the one at `closing` its CLOSING quote?
 
-    The ONE helper the machine-text judgement uses: anything inside single backticks
-    is a quotation, so a JSON object there can never be the message's action.
+    A real quotation is bounded by whitespace (` 'a phrase' `); an APOSTROPHE is not
+    (`don't`, `agents'`). Without this test, pairing quotes at random would let a
+    stray apostrophe pair with another one 1000 chars later and mask a REAL call in
+    between — the mask must never hide an emission.
+    """
+    before = text[i - 1] if i > 0 else " "
+    after_open = text[i + 1] if i + 1 < len(text) else ""
+    before_close = text[closing - 1] if closing > 0 else ""
+    after = text[closing + 1] if closing + 1 < len(text) else " "
+    return ((i == 0 or before.isspace() or before in "([{—-")
+            and after_open not in ("", " ")
+            and before_close not in ("", " ")
+            and (after.isspace() or after in ".,;:!?)]}'\"—-"))
+
+
+def single_quote_ranges(text):
+    """(start, end) of every well-formed SINGLE-quoted span in `text`.
+
+    2026-11-21 (round 165, session b7329cccf94c): the model's explicit finish summary
+    read *"the exact sentence **'**The harness once executed the quotation
+    POST /api/tools/call {"tool":"fs.read"} and it was denied.**'** was quoted…"*. The
+    JSON sat inside SINGLE quotes, so `_looks_like_json_action` still called the whole
+    summary machine text and the harness replaced a real answer with "The turn ended
+    before a final answer" — the operator's *"I don't want agents stopping
+    unexpectedly"*. Prose quotes a sentence with `'…'`; that is a quotation too.
+
+    Measured before shipping: of 2148 assistant messages in the live store, extending
+    the mask to these spans changes the SELECTED action in 2 messages and both are
+    phantom picks (a shell `-d '{…}'` argument, a payload dump) — no real emission is
+    hidden.
+    """
+    out, i, n = [], 0, len(text or "")
+    while i < n:
+        if text[i] != "'":
+            i += 1
+            continue
+        j, close = i + 1, None
+        while j < n:
+            if text[j] == "'" and _single_quote_is_bracket(text, i, j):
+                close = j
+                break
+            j += 1
+        if close is None:      # an apostrophe (or an unclosed quote) is literal text
+            i += 1
+            continue
+        out.append((i, close + 1))
+        i = close + 1
+    return out
+
+
+def quotation_ranges(text):
+    """Every QUOTED span in `text`: inline code spans + well-formed `'…'` spans.
+
+    The ONE reader both the extractor and the reply judgement use, so a JSON object
+    that is quoted in prose can never be an emission in one place and an action in
+    another.
+    """
+    return sorted(inline_code_ranges(text) + single_quote_ranges(text))
+
+
+def mask_quotations(text):
+    """`text` with every QUOTED span's body blanked (same length, offsets kept).
+
+    The ONE helper the machine-text judgement uses: anything inside backticks or
+    single quotes is a quotation, so a JSON object there can never be the message's
+    action.
     """
     text = text or ""
-    spans = inline_code_ranges(text)
+    spans = quotation_ranges(text)
     if not spans:
         return text
     parts, last = [], 0
     for a, b in spans:
+        if a < last:
+            continue
         parts.append(text[last:a])
         parts.append(" " * (b - a))
         last = b
@@ -220,8 +286,9 @@ def extract_action_json(text):
     2026-11-21: the same hazard with NO later action — a report that QUOTES a call
     inside inline backticks (`` `POST /api/tools/call {"tool":"fs.read"}` ``) had the
     quotation executed as the turn's action, then re-blocked on every retry. A JSON
-    value that starts inside an inline code span is prose and is never an action;
-    a fenced block still counts (models wrap real calls in ```json).
+    value that starts inside a QUOTED span (backticks, or a well-formed `'…'`) is prose
+    and is never an action; a fenced block still counts (models wrap real calls in
+    ```json).
     """
     text = (text or "").strip()
     if not text:
@@ -232,7 +299,7 @@ def extract_action_json(text):
             return whole
     except Exception:  # noqa: BLE001 — prose around the object is the normal case
         pass
-    spans = inline_code_ranges(text)
+    spans = quotation_ranges(text)
     objs = [o for s, o in _iter_json_spans(text) if isinstance(o, dict)
             and not any(a <= s < b for a, b in spans)]
     if not objs:

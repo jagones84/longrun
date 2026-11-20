@@ -54,8 +54,12 @@ check("2d the map is called from showDiff and reset on error",
 # ---- 3: context-ring popover + compact -------------------------------------
 check("3a a ctx popover surface exists and is styled like the other popovers",
       ".ctxpop {" in HTML and "function _ctxPopover()" in HTML)
-check("3b it shows the minimal numbers (tokens / budget / messages)",
-      "tokens</span>" in HTML and "budget</span>" in HTML and "messages</span>" in HTML)
+check("3b it shows the three values the panel shows (messages / tokens / budget)",
+      # 2026-11-21 (round 165): the stub rows became the inspector's OWN card, so the
+      # values are read from the same `/api/context` display instead of hand-rolled
+      # `<span>tokens</span>` labels. Re-pointed, not weakened: same three numbers,
+      # now one vocabulary with the panel (see v1249).
+      "esc(d.messages" in HTML and "esc(d.tokens" in HTML and "esc(d.budget" in HTML)
 check("3c it reuses the ONE compaction door (no second mechanism)",
       'pop.querySelector(".cp-compact").onclick = () => { _closeCtxPop(); compactNow(); }' in HTML
       and "async function compactNow()" in HTML)

@@ -94,9 +94,9 @@ check("D3 a ``double`` span is a span and does not swallow the fence",
       T.inline_code_ranges("a ``f`` b ```g```") == [(2, 7)],
       T.inline_code_ranges("a ``f`` b ```g```"))
 check("D4 mask keeps the length (offsets stay valid)",
-      len(T.mask_inline_code("a `bc` d")) == len("a `bc` d")
-      and "bc" not in T.mask_inline_code("a `bc` d"),
-      repr(T.mask_inline_code("a `bc` d")))
+      len(T.mask_quotations("a `bc` d")) == len("a `bc` d")
+      and "bc" not in T.mask_quotations("a `bc` d"),
+      repr(T.mask_quotations("a `bc` d")))
 
 # --- E: reply selection -----------------------------------------------------
 from longrun.memory import stores  # noqa: E402

@@ -106,16 +106,19 @@
   .cmp-ctx.lvl-hot .mfill { stroke: var(--err); }
   /* 2026-11-20 (operator): clicking the composer context ring opens a MINIMAL popover —
      the numbers already in the meter + the `compact` action. Styled like the other
-     body-anchored popovers (same surface, radius, shadow). */
-  .ctxpop { position: fixed; z-index: 60; min-width: 196px; padding: 10px 12px; border: 1px solid var(--line);
+     body-anchored popovers (same surface, radius, shadow).
+     2026-11-21 (operator): *"clicking on compact in msg box doesn't open the wanted menu
+     with more context details … similar to the RH panel"*. The popover now renders the
+     SAME Context card the inspector shows (percentage + meter + state, then
+     messages / tokens / budget) and the SAME two actions — `compact` runs `compactNow()`
+     and `settings` opens the shared compaction policy, so there is ONE anatomy and ONE
+     compaction door and no second endpoint. */
+  .ctxpop { position: fixed; z-index: 60; min-width: 226px; padding: 10px 12px; border: 1px solid var(--line);
     border-radius: 10px; background: var(--menubg); box-shadow: 0 8px 24px rgba(0,0,0,.28); font-size: 12px; color: var(--txt); }
   .ctxpop[hidden] { display: none; }
-  .ctxpop .cp-head { font-weight: 600; margin-bottom: 6px; }
-  .ctxpop .cp-row { display: flex; justify-content: space-between; gap: 14px; color: var(--dim); padding: 1px 0; }
-  .ctxpop .cp-row b { color: var(--txt); font-weight: 600; }
-  .ctxpop .cp-compact { margin-top: 8px; width: 100%; border: 1px solid var(--line); background: transparent;
-    color: var(--acc); border-radius: 8px; padding: 5px 8px; cursor: pointer; font: inherit; }
-  .ctxpop .cp-compact:hover { background: var(--hover); }
+  .ctxpop .ctxhead { margin-bottom: 4px; }
+  .ctxpop .ctxrow { gap: 10px; font-variant-numeric: tabular-nums; }
+  .ctxpop .ctxacts { margin-top: 8px; }
   /* 2026-11-16 (operator): the rail has neither horizontal nor vertical room, so the
      rail meter is a 13px ring + a 9px number — NO padding, border or background. The
      exact token counts stay in the tooltip; the ring turns red from 70%. */
@@ -9336,26 +9339,48 @@ function _repaintCtx() {
 }
 /* 2026-11-20 (operator): click the composer context ring → a MINIMAL popover (the numbers
    the meter already carries) + the `compact` action. Reuses `compactNow()` (the ONE
-   compaction door) — no second mechanism. */
+   compaction door) — no second mechanism.
+   2026-11-21 (operator): *"clicking on compact in msg box doesn't open the wanted menu
+   with more context details … similar to the RH panel"* — the popover is now the SAME card
+   the inspector's Context section renders (percentage + meter + state, then messages /
+   tokens / budget, then `compact` + `settings`), fed by the SAME `/api/context` read
+   (`_ctxDisplay`): one anatomy, one vocabulary, no second endpoint. */
 let _ctxDisplay = null, _ctxPopEl = null;
 function _closeCtxPop() { if (_ctxPopEl) { _ctxPopEl.remove(); _ctxPopEl = null; } }
 function _ctxPopover() {
   if (_ctxPopEl) { _closeCtxPop(); return; }
   const d = _ctxDisplay || {};
+  const state = d.state || "na";
+  const label = state === "over" ? "above threshold"
+    : (state === "near" ? "near threshold" : (state === "na" ? "n/d" : "normal"));
+  const pct = (d.pct != null ? d.pct : null);
+  const bar = Math.max(0, Math.min(100, (d.bar_pct != null ? d.bar_pct : (pct || 0))));
   const pop = document.createElement("div");
   pop.className = "ctxpop";
   pop.setAttribute("role", "dialog");
+  pop.setAttribute("aria-label", "context details");
   pop.innerHTML =
-    '<div class="cp-head">context ' + (d.pct != null ? ("<b>" + d.pct + "%</b>") : "<b>–</b>") + '</div>' +
-    '<div class="cp-row"><span>tokens</span><b>' + esc(d.tokens || "n/d") + '</b></div>' +
-    '<div class="cp-row"><span>budget</span><b>' + esc(d.budget || "n/d") + '</b></div>' +
-    '<div class="cp-row"><span>messages</span><b>' + esc(d.messages || "n/d") + '</b></div>' +
-    '<button class="cp-compact" type="button" title="compact this session now (/api/context/compact)">compact</button>';
+    '<div class="ctxhead">' +
+      '<span class="ctxpct">' + (pct != null ? pct : "–") + '%</span>' +
+      '<div class="meter"><i class="' + (d.bar_hot ? "hot" : (state === "near" ? "near" : "")) +
+        '" style="width:' + bar + '%;min-width:' + (bar > 0 ? 6 : 0) + 'px"></i></div>' +
+      '<span class="ctxstate ' + esc(state) + '">' + esc(label) + '</span>' +
+    '</div>' +
+    '<div class="ctxrow"><span>' + esc(d.messages || "n/d") + '</span>' +
+      '<span>' + esc(d.tokens || "n/d") + '</span>' +
+      '<span>' + esc(d.budget || "n/d") + '</span></div>' +
+    '<div class="ctxacts">' +
+      '<button class="cp-compact lnk" type="button" ' +
+        'title="summarize this session\'s transcript now to free up context">compact</button>' +
+      '<button class="cp-settings lnk" type="button" ' +
+        'title="open the shared automatic and manual compaction policy">settings</button>' +
+    '</div>';
   document.body.appendChild(pop);
   const r = ($("cmpCtx") || pop).getBoundingClientRect();
   pop.style.left = Math.max(8, Math.min(r.left, window.innerWidth - pop.offsetWidth - 8)) + "px";
   pop.style.top = Math.max(8, r.top - pop.offsetHeight - 8) + "px";
   pop.querySelector(".cp-compact").onclick = () => { _closeCtxPop(); compactNow(); };
+  pop.querySelector(".cp-settings").onclick = () => { _closeCtxPop(); openSettings("compaction"); };
   _ctxPopEl = pop;
 }
 document.addEventListener("click", e => {

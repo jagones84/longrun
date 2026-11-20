@@ -1,0 +1,89 @@
+#!/usr/bin/env python3
+"""v1249 — the composer context popover IS the inspector's Context card.
+
+Operator (2026-11-21): *"clicking on compact in msg box doesn't open the wanted menu
+with more context details … similar to the RH panel. Don't duplicate code backend."*
+
+The composer ring used to open a stub of its own (four `cp-row`s and a full-width
+`cp-compact` button) with its own class vocabulary. It now renders the SAME card the
+inspector's Context section draws — percentage + meter + state, then
+messages / tokens / budget, then the two text actions — from the SAME `/api/context`
+read (`_ctxDisplay`) and the SAME two doors: `compactNow()` (the ONLY compaction call)
+and `openSettings("compaction")`. One anatomy, one vocabulary, no second endpoint.
+
+  A  the popover renders the inspector's card anatomy
+  B  the stub vocabulary is gone (no cp-head / cp-row / cp-compact-only CSS)
+  C  the two actions are the ONE doors (compactNow + the compaction settings)
+  D  the data is `_ctxDisplay` (the same /api/context read the panel uses)
+  E  no new backend call was introduced (one /api/context/compact in the file)
+  F  the ring is still the trigger, and the popover still closes on an outside click
+
+Deterministic and offline: static pins on webui/index.html.
+Run: python3 tests/acceptance/v1249_ctx_popover_mirrors_panel.py
+"""
+import os
+import re
+import sys
+
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+HTML = open(os.path.join(REPO, "webui", "index.html"), encoding="utf-8").read()
+_POP = HTML.split("function _ctxPopover()")[1].split("\ndocument.addEventListener")[0]
+
+results = []
+
+
+def check(name, ok, detail=""):
+    results.append(bool(ok))
+    print(("PASS " if ok else "FAIL ") + name
+          + ((" :: " + str(detail)[:300]) if detail and not ok else ""))
+
+
+# --- A: the inspector's anatomy ---------------------------------------------
+for cls in ("ctxhead", "ctxpct", "meter", "ctxstate", "ctxrow", "ctxacts"):
+    check("A the popover renders .%s (the panel's anatomy)" % cls, cls in _POP)
+check("A7 the two actions are `.lnk` text actions, like the panel's",
+      _POP.count('class="cp-') == 2 and _POP.count(" lnk\"") == 2)
+check("A8 the population of the card is not hand-rolled twice",
+      HTML.count('class="ctxhead"') == 2, HTML.count('class="ctxhead"'))
+
+# --- B: no second vocabulary -------------------------------------------------
+check("B1 the old stub CSS is gone",
+      ".cp-head" not in HTML and ".cp-row" not in HTML
+      and ".ctxpop .cp-compact {" not in HTML)
+check("B2 the popover only styles the shared card (spacing, not a new look)",
+      ".ctxpop {" in HTML and ".ctxpop .ctxhead {" in HTML
+      and ".ctxpop .ctxacts {" in HTML)
+
+# --- C: the ONE doors --------------------------------------------------------
+check("C1 compact reuses `compactNow()` (the single compaction call)",
+      'pop.querySelector(".cp-compact").onclick = () => { _closeCtxPop(); compactNow(); }' in HTML)
+check("C2 settings opens the SHARED compaction policy",
+      'openSettings("compaction")' in _POP)
+check("C3 the panel's compact link still calls the same door",
+      '$("compactBtn").onclick = compactNow;' in HTML)
+
+# --- D/E: one data source, no new endpoint -----------------------------------
+check("D1 the popover reads `_ctxDisplay` (the /api/context display, same as the panel)",
+      "const d = _ctxDisplay || {};" in _POP
+      and "_ctxDisplay = d;" in HTML)
+check("D2 every field it shows is one the panel already shows",
+      all(f in HTML.split("const { d = c.display")[1][:400] if False else f in HTML
+          for f in ("d.pct", "d.tokens", "d.budget", "d.messages", "d.state")))
+check("E1 exactly ONE /api/context/compact CALL SITE in the whole WebUI",
+      HTML.count('api("POST", "/api/context/compact"') == 1,
+      HTML.count('api("POST", "/api/context/compact"'))
+check("E2 the popover adds no fetch of its own",
+      "fetch(" not in _POP and "api(" not in _POP)
+
+# --- F: the trigger and the dismissal ---------------------------------------
+check("F1 the composer ring is still the trigger",
+      '{ const _cc = $("cmpCtx"); if (_cc) { _cc.onclick = _ctxPopover;' in HTML)
+check("F2 an outside click still closes it",
+      "_ctxPopEl && !_ctxPopEl.contains(e.target)" in HTML)
+check("F3 the popover is a labelled dialog and stays on screen",
+      'setAttribute("role", "dialog")' in _POP
+      and 'setAttribute("aria-label", "context details")' in _POP
+      and "window.innerWidth - pop.offsetWidth - 8" in _POP)
+
+print("\n---\nv1249: %d/%d PASS" % (sum(results), len(results)))
+sys.exit(0 if all(results) else 1)

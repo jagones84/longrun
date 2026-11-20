@@ -116,6 +116,16 @@ All notable changes to Longrun are documented here. The format follows
   browser-rebuilt `/data/sessions/<id>.json` would be a guess.) Locked by `v1067` A1–A6, B1–B10.
 
 ### Changed
+- **The composer's context popover is now the inspector's Context card — one anatomy, one compaction door.**
+  Operator: *"clicking on compact in msg box doesn't open the wanted menu with more context details … similar
+  to the RH panel. Don't duplicate code backend."* The ring's popover used to draw a stub of its own (four
+  `cp-row`s and a full-width `cp-compact` button). It now renders the SAME card the Inspector's Context section
+  draws — percentage + meter + state, then messages / tokens / budget, then the two text actions — from the
+  SAME `/api/context` read (`_ctxDisplay`) and the SAME two doors: `compactNow()` (still the only
+  `/api/context/compact` call site in the file) and `openSettings("compaction")`. No new endpoint, no second
+  vocabulary; the dead stub CSS is gone. Verified on the rendered page (headless Chrome, real rail click on
+  `b7329cccf94c` + real event on the ring): `6% · normal`, `195 messages · 65811 tok · 1044480 tok`, both links
+  with handlers, on-screen, sharing the panel's anatomy. Locked by `v1249` (20/20) and `v1244` (re-pointed 3b).
 - **A document now carries TWO decisions, and the approval policy has ONE owner.** Operator: *"the manual
   approval is required both plan and spec … i was in approval=FULL … a specific checkbox: auto-approve
   plans and specs … one can be approved to do spec but not authorized to implement them … can you change
@@ -138,6 +148,36 @@ All notable changes to Longrun are documented here. The format follows
   tool gate. (Locked by `v1052` B1/B1b, N9d/N9d2, N11b/N11b2, O1–O7; `v785` K1–K5; `v763` F1–F2.)
 
 ### Fixed
+- **An explicit `finish` summary that quotes a tool call is an ANSWER, not an action — "the turn ended before
+  a final answer" is gone.** Operator: *"why stopped this way? I don't want agents stopping unexpectedly, I
+  told many times it is one of the worst failure modes."* Measured live (session `b7329cccf94c`, run
+  4071053→4071054): the model closed with `{"action":"finish","summary":"…"}` and the summary — a real,
+  complete report — quoted the call inside SINGLE quotes (*"the exact sentence 'The harness once executed the
+  quotation POST /api/tools/call {"tool":"fs.read"} and it was denied.' was quoted…"*).
+  `_looks_like_json_action` is a CONTAINS test (since the 2026-11-21 A8 fix), so the whole summary was judged
+  machine text and the live persist path replaced it with *"The turn ended before a final answer: the last
+  message was still an action (…)"* — although `stores.turn_reply` (reload, D5) shows the finish summary. One
+  turn, two answers, and the agent looked like it had died mid-work. One rule, extended by measurement: a JSON
+  value inside a QUOTATION is prose — inline code spans **and** well-formed `'…'` spans
+  (`textkit.quotation_ranges` / `mask_quotations`; an apostrophe in `don't` is not a quote, so a stray pair can
+  never mask a real call). Over 2148 live assistant messages the extension changes the selected action in 2,
+  both phantom picks (a shell `-d '{…}'` argument and a payload dump) — no real emission is hidden; the seven
+  round-164 phantom reports and the killed summary all return `None`/`False`. Locked by `v1248` (16/16) and
+  `v1247` (13/13).
+- **A JSON call QUOTED inside backticks is prose, not the turn's action — the harness-row storm.** Operator:
+  *"ma che modo è, cosa sono tutti quei messaggi harness in serie … dove è rotto il sistema?"*. A54's
+  verification report (session `b7329cccf94c`) wrote `` `POST /api/tools/call {"tool":"fs.read","args":{…}}` ``
+  inside an inline code span; `extract_action_json` executed that quotation as the turn's action, the call
+  failed (missing `path`), and each of the next five reports repeating the same sentence re-fired the repeat
+  guard: 7 phantom calls and 9 harness rows (nudge/observation/retry/citation-check/failed-call/closure-check)
+  in one close-out. Scope measured over 2142 assistant messages in the live store: 8 phantom messages in 2
+  sessions, every one with the only action-shaped JSON inside inline backticks. `textkit.inline_code_ranges` /
+  `mask_inline_code` now make any JSON value that STARTS inside a single-backtick span prose (a ```json fence
+  is still a real call, so models that wrap calls keep working), `extract_action_json` skips those values, and
+  `agent._looks_like_json_action` masks them before its "anywhere" match. The 2026-11-21 A8 rule survives:
+  prose followed by RAW JSON still runs, and a real call after a quotation still wins. Locked by `v1247`
+  (13/13); live replay of the seven phantom reports returns no action, and A54's own turn quoting the sentence
+  closed with zero harness rows.
 - **One hard-deny answer for every filesystem door — the preview endpoints no longer served `.env`.** Bug hunt
   2026-11-21 (API boundary), CONFIRMED with a live measurement: `POST /api/tools/call fs.read` on the repo `.env`
   answered `{"status":"blocked","reason":"matches hard-deny pattern '(^|/)\.env…'"}` while the operator preview
