@@ -117,6 +117,19 @@ All notable changes to Longrun are documented here. The format follows
   tool gate. (Locked by `v1052` B1/B1b, N9d/N9d2, N11b/N11b2, O1–O7; `v785` K1–K5; `v763` F1–F2.)
 
 ### Fixed
+- **A PDF/DOC attachment now PREVIEWS — before and after sending.** Operator: *"if i append in chat a pdf,
+  doc, image, can i preview it [before send and after send, clicking in the chat]?"*. An image already
+  opened its lightbox, but a file attachment (`_openAttachment`) opened the **editor dock**, which paints a
+  PDF as raw bytes — no preview. It now opens the **dedicated preview window** (`openPreview`, v1002): a PDF
+  renders in a sandboxed frame, markdown/CSV/sheets/slides/images draw, and ⋯ › *open in the editor* / raw
+  covers the rest. One chip, so the before-send (composer) and after-send (transcript) doors behave
+  identically. Locked by `v283` (14/14). Honest limit: `.docx`/`.doc`/`.odt` have no in-browser renderer, so
+  they open the preview window with the ⋯ menu rather than an inline render.
+- **The send button tells the truth about a `/command` while a turn runs.** Operator asked: *"does commands
+  enter in chat queue or steer according to the selected menu as other messages?"*. A command is **always
+  queued** for the next turn — never steered (a running turn resolves no leading `/`; `v863` C3 pins the
+  behaviour). The composer's send-button tooltip echoed the *steer* wording when the picker was on `steer`;
+  with a `/…` draft it now says the command waits for the next turn. Locked by `v1053` (59/59, I11).
 - **An approval in the inbox now names the session it belongs to.** Operator: *"approvals open permission
   instead of the specific session where approval = full is placed! fix"*. The approvals chip opened the
   inbox (fixed above), but a tool-gate row could not point at the session waiting on the decision: the chat

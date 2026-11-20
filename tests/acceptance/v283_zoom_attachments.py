@@ -44,9 +44,18 @@ check("the zoom is bounded (no runaway)",
 # --- 2) clickable chat attachments -------------------------------------------
 check("an attachment renders as a clickable chip",
       "function _attachmentChips" in ui and 'class="chatatt"' in ui and 'class="attrow"' in ui)
-check("a chip opens images in the image window and files in the editor",
+check("a chip opens an image in the image window and any other file in the preview window (2026-11-21)",
+      # Operator: "if i append in chat a pdf, doc, image, can i preview it [before and
+      # after send]?". PDF/DOC used to open the EDITOR DOCK (raw bytes — no preview);
+      # they now open the dedicated preview window (v1002) which renders a PDF in a
+      # frame, markdown/CSV/sheets, and offers ⋯ › editor. The editor is still reachable.
       "function _openAttachment" in ui and "showImage(_rawUrl(path))" in ui
-      and "openInEditor(path)" in ui)
+      and "openPreview(path)" in ui and "openInEditor(path)" in ui)
+check("a PDF/DOC attachment chip PREVIEWS — the editor dock is no longer the target",
+      # the defect state the operator reported: a file attachment opened the editor
+      # (no preview for a PDF). The old routing must be gone from the chip handler.
+      'if (path) { openInEditor(path); return; }' not in ui
+      and "if (path) { openPreview(path); return; }" in ui)
 check("chips are bound for mouse AND keyboard",
       "function _bindAttachmentChips" in ui and "el.onkeydown" in ui)
 check("a raw-bytes URL helper exists (works behind the token)",

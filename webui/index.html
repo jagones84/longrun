@@ -8096,8 +8096,15 @@ function _rawUrl(path) {
   return "/api/fs/raw?path=" + encodeURIComponent(path) + (authQS() ? "&" + authQS() : "") + (sessionId ? "&session=" + encodeURIComponent(sessionId) : "");
 }
 function _openAttachment(kind, path) {
+  // 2026-11-21 (operator): "if i append in chat a pdf, doc, image, can i preview it
+  // [before and after send, clicking its chip]?". A file with a path opens the
+  // DEDICATED preview window (v1002, `openPreview`): a PDF renders in a sandboxed
+  // frame, markdown/CSV/sheets/slides are drawn, and ⋯ › editor covers what it
+  // cannot inline. The editor DOCK was the old target and cannot show a PDF (it
+  // painted raw bytes). One chip, so the before-send (composer) and after-send
+  // (transcript) doors preview identically. An image keeps its lightbox window.
   if (kind === "img" && path) { showImage(_rawUrl(path)); return; }
-  if (path) { openInEditor(path); return; }
+  if (path) { openPreview(path); return; }
   toast("pasted text — nothing to open");
 }
 function _attachmentChips(atts) {
@@ -14168,7 +14175,8 @@ function sendOrStop() { if (composerBusy() && !composerDraft()) stopRun(); else 
 function refreshSendBtn() {
   const b = $("sendBtn"); if (!b) return;
   const busy = composerBusy();
-  const draft = !!composerDraft();
+  const draftText = composerDraft();
+  const draft = !!draftText;
   b.disabled = _attachmentPending(sessionId) && !busy;
   // JAG-463: while a turn runs a green dot shows when the composer queue is
   // non-empty (something waits to be sent).
@@ -14177,11 +14185,18 @@ function refreshSendBtn() {
   b.classList.toggle("hasqueue", qn > 0);
   b.textContent = (busy && !draft) ? "■" : "↑";
   const mode = (localStorage.getItem("sf_qmode") || "queue");
+  // 2026-11-21 (operator asked): what does a COMMAND do while a turn runs? A `/…`
+  // is never STEERED (a running turn resolves no leading `/` — the send path always
+  // queues it for the next turn), so the steer wording would lie. A pure UI command
+  // (`/status`) has already RUN by now and is not in the box.
+  const isCmd = draftText.startsWith("/");
   b.title = busy
     ? (draft
-        ? (mode === "steer"
-            ? "steer this prompt into the running turn (Enter) · Esc stops the turn"
-            : "queue this prompt — sent when the turn ends (Enter) · Esc stops the turn")
+        ? (isCmd
+            ? "this command waits for the next turn — a /command is never steered into a running turn (Enter) · Esc stops the turn"
+            : (mode === "steer"
+                ? "steer this prompt into the running turn (Enter) · Esc stops the turn"
+                : "queue this prompt — sent when the turn ends (Enter) · Esc stops the turn"))
         : ("stop agent / chat (■) · "
            + (qn ? qn + " queued — Enter adds another" : "type to queue or steer")))
     : "send (Enter — Shift+Enter for a newline)";

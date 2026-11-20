@@ -206,6 +206,11 @@ check("I9 a flushed /plan never wipes the box or the operator's draft",
       "if (text === undefined) {\n      inp.value = \"\"; if (inp.style) inp.style.height = \"\"; _draftClear(sessionId);\n    }" in UI)
 check("I10 /plan says it ignores composer attachments (the planner has no tools)",
       "does not include the \" + _attachments.length" in UI)
+check("I11 the send button says a /command QUEUES while a turn runs (never steered)",
+      # Operator asked: "does commands enter in chat queue or steer as other messages?".
+      # v863 C3 pins the BEHAVIOUR (a command is never steered); this pins that the UI
+      # hint tells the truth about it instead of echoing the steer wording.
+      "this command waits for the next turn — a /command is never steered into a running turn" in UI)
 
 print("\n---\nv1053: %d/%d PASS" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)
