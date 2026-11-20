@@ -68,6 +68,10 @@ DEFAULT_CONFIG = {
     "runtime": {},
     "verifier": {},
     "goal_verify": {},
+    # Post-turn completeness verifier (`plan/turn_verify.py`, Settings-editable):
+    # an INDEPENDENT model checks the agent's own final message. Both read the
+    # YAML section of the same name; an unlisted block is silently dropped.
+    "turn_verify": {},
     "budget": {},
     "bestofn": {},
     "difficulty": {},
@@ -2008,6 +2012,7 @@ def _merge_into(cfg, data):
     if not isinstance(data, dict):
         return
     for key in ("sandbox", "approvals", "runtime", "verifier", "goal_verify",
+                "turn_verify",
                 "bestofn", "difficulty", "selfevolve", "reasoning",
                 "loop_detection", "budget", "context", "shell", "limits",
                 "webhooks"):

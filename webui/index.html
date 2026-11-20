@@ -4931,6 +4931,15 @@
           <select aria-label="Architect model" id="architectModel" data-change="saveArchitectModel" class="inp u-w100 u-p610 u-fs12"></select>
           <div class="remaining u-mt6" id="architectResult"></div>
         </div>
+        <h2 title="After a turn that produced a final answer, an INDEPENDENT model reads ONLY your request, the agent's own last message and its still-open plan steps, and can ask the agent to finish the missing work — bounded by `max rounds`, so no infinite loop. It never sees the tool transcript.">Turn verifier · independent <span class="set-chip live" title="applies to the next turn end">live</span></h2>
+        <div class="card">
+          <div class="u-df u-g6 u-aic u-fww">
+            <select aria-label="turn verifier model" id="tvModel" class="inp u-w100 u-p610 u-fs12"></select>
+            <label class="u-df u-g6 u-aic" title="off = no verifier call at the end of a turn"><input type="checkbox" id="tvOn" data-change="saveTurnVerify"> enabled</label>
+            <label class="u-df u-g6 u-aic" title="max extra rounds the verifier may ask for in one turn (anti-loop)">max rounds <input id="tvMax" type="number" min="0" max="9" class="inp" style="width:64px;padding:6px 8px;font-size:12px" data-change="saveTurnVerify"></label>
+          </div>
+          <div class="remaining u-mt6" id="tvResult"></div>
+        </div>
         <!-- JAG-505: the subagent model + failover live in Settings ▸ Subagents —
              this card was a duplicate of it. -->
         <h2 title="Model that writes the cited summary for Research (Knowledge → Research · web → notebook). Same setting as the Knowledge-panel picker — one writer (POST /api/research/model → research_model in the index overlay), two views, no duplication.">Research model · web → notebook <span class="set-chip live" title="applies the moment you pick a model — no save button">live</span></h2>
@@ -17094,6 +17103,28 @@ async function saveGoalVerify() {
   }});
   who("ai", "✓ goal verification updated");
 }
+async function loadTurnVerify() {
+  const d = await api("GET", "/api/tools");
+  const x = (d && d.turn_verify) || {};
+  if ($("tvOn")) $("tvOn").checked = x.enabled !== false;
+  if ($("tvMax")) $("tvMax").value = (x.max_rounds ?? 2);
+  const sel = $("tvModel");
+  if (sel) {
+    const cur = x.model || "";
+    if (cur && ![...sel.options].some(o => o.value === cur)) {
+      sel.insertAdjacentHTML("afterbegin", '<option value="' + _attr(cur) + '">' + esc(cur) + '</option>');
+    }
+    if (cur) sel.value = cur;
+  }
+}
+async function saveTurnVerify() {
+  await api("POST", "/api/tools", { turn_verify: {
+    enabled: !!($("tvOn") || {}).checked,
+    model: ($("tvModel") || {}).value || "",
+    max_rounds: parseInt(($("tvMax") || {}).value, 10) || 0,
+  }});
+  const el = $("tvResult"); if (el) el.textContent = "\u2713 turn verifier updated";
+}
 async function loadDifficulty() {
   const d = await api("GET", "/api/tools");
   const x = (d && d.difficulty) || {};
@@ -18246,6 +18277,8 @@ function settingsCategory(name) {
     if (typeof emRefresh === "function") { emRefresh(); emCosts(); }
     if (typeof researchModelLs === "function") researchModelLs();   // v609: Models card
     if (typeof loadRerankModel === "function") loadRerankModel();   // 2026-11-05: re-ranker picker
+    if (typeof loadTurnVerify === "function") loadTurnVerify();      // 2026-11-20: turn verifier
+ 
     gateEnroll($("provCard"));   // JAG-496: an untouched provider form cannot be saved
   }
   else if (name === "diagnostics") { runHealthChecks(); }
@@ -18602,6 +18635,10 @@ async function loadRouting() {
       lraSel.innerHTML = '<option value="@chat">same as active session model (dynamic)</option>' + (lraOpts || rosterOptions);
       lraSel.value = (lraCur && [...lraSel.options].some(o => o.value === lraCur)) ? lraCur : "@chat";
     }
+    // 2026-11-20: the turn-verifier picker offers the SAME full roster (every
+    // provider + model). `loadTurnVerify` then selects the configured ref.
+    const tvSel = $("tvModel");
+    if (tvSel) tvSel.innerHTML = rosterOptions;
     // JAG-505: the duplicate subagent picker is gone — Settings ▸ Subagents owns it.
     const fb = ((d.config || {}).default_fallbacks || []);
     // 2026-11-05: this element used to be its own "Available models" section whose

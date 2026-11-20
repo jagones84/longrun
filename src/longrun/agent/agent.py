@@ -4201,6 +4201,41 @@ def _failure_contract_text(failures):
     return "\n".join(lines)
 
 
+def _turn_verify_bounce(answer, request_text, sess, used):
+    """The INDEPENDENT post-turn verifier (operator 2026-11-20).
+
+    Returns the "CONTINUE" text to inject when a SECOND model reads the agent's own
+    final message against the operator's request and the still-open plan steps and
+    finds the work unfinished — or None (disabled, budget spent, verifier silent, or
+    the turn is complete). It never sees the tool transcript, so the cost is bounded.
+    Bounded by `turn_verify.max_rounds` per turn; the caller owns the counter.
+    """
+    try:
+        from longrun.plan import turn_verify as _tv
+        cfg = _tv.config()
+        if not cfg.get("enabled", True) or used >= int(cfg.get("max_rounds") or 0):
+            return None
+        open_steps = []
+        try:
+            _g = taskgraph.load(sess["id"]) or {}
+            open_steps = [str(n.get("label") or "") for n in taskgraph.plan_nodes(_g)
+                          if n.get("status") in taskgraph.OPEN_STATUSES][:8]
+        except Exception:  # noqa: BLE001
+            open_steps = []
+        v = _tv.verify_turn(request_text, answer, open_steps)
+        if not v or v.get("ok"):
+            return None
+        miss = "; ".join(str(m) for m in (v.get("missing") or [])[:5]) \
+            or "the request is not fully done"
+        return ("CONTINUE — an INDEPENDENT verifier read your FINAL message against "
+                "the user's request and your own plan and found the turn INCOMPLETE: "
+                "%s. Do the missing work now with real tool calls and evidence, or — "
+                "if it is truly done — point to the concrete evidence. Do not merely "
+                "restate the result." % miss)
+    except Exception:  # noqa: BLE001 — a verifier must never break a turn
+        return None
+
+
 def _turn_unfinished(sess, goal_mode):
     """True when the turn would close with work still open (never raises)."""
     try:
@@ -5909,6 +5944,9 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     # even when every step is closed and no artefact was written.
     _request_thread_text = _request_thread(sess, message)
     _request_verified = False
+    # 2026-11-20: how many INDEPENDENT post-turn verifier rounds this turn has
+    # already spent (bounded by `turn_verify.max_rounds`).
+    _turn_verify_used = 0
     # v861: the LAST read-back text the harness produced this turn. It is what
     # turns the closure verdict from "check it yourself" into "you missed THIS".
     _review_known = ""
@@ -7394,6 +7432,16 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             # IN THE LOOP card belongs to `human.ask` — the agent's judgement — so
             # a pause with open steps is information for the operator (the plan
             # panel and this event), not a card the harness decides to raise.
+        # 2026-11-20 (operator): before the turn closes, an INDEPENDENT verifier
+        # reads the agent's own FINAL message against the request and its plan. If
+        # it is incomplete, give the agent ONE more bounded round (`turn_verify`).
+        _tv_bounce = _turn_verify_bounce(answer, _request_thread_text, sess,
+                                         _turn_verify_used)
+        if _tv_bounce:
+            _turn_verify_used += 1
+            msgs.append({"role": "assistant", "content": answer})
+            _inject(_tv_bounce, "verifier")
+            continue
         for ch, t in collected:
             on_delta(ch, t)
         final_answer, think = answer, think

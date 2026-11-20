@@ -7,6 +7,17 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Post-turn completeness verifier — an INDEPENDENT model checks the agent's own last message.** Operator:
+  *"non doveva esserci dopo ogni fine messaggio … una LLM call al modello stesso in versione verificatore che
+  il suo stesso ultimo messaggio non abbia lasciato lavoro incompiuto? … non basterebbe vedere todo aperti
+  perché potrebbe non esserci"*. After a turn that produced a final answer, a **dedicated model** (config
+  `turn_verify`, default `openrouter:z-ai/glm-5.3-flash`) reads ONLY the operator's request, the agent's own
+  final message and the still-open plan steps — never the tool transcript, so the cost is bounded and the
+  work is not marked by the model that did it. It returns `{"complete", "missing"}`; on `complete=false` the
+  harness gives the agent at most `turn_verify.max_rounds` (default 2) more round(s) to finish, so the loop
+  is **bounded** (no infinite loop). One shared judge call (`plan/judge.py`) now serves BOTH this verifier and
+  the L3 goal judge, so there is no second mechanism. The cheap SAME-model closure check stays. Editable in
+  `config/tools.yaml` (Settings ▸ Config files). Locked by `v1243` (20/20).
 - **`/status` — one deterministic report about a session (tool + slash command).** Operator:
   *"in the commands (slash /) list there shall be created a command status that reports
   everything information on the session, context saturation, max context, LLM used … that

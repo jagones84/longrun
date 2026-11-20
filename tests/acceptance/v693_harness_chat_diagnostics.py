@@ -78,6 +78,10 @@ class ChatDiagnostics(unittest.TestCase):
                               stdout="", backend="fixture")
                 response = {"status": "executed", "result": result,
                             "observation": "candidate inspection completed"}
+                # 2026-11-20: the post-turn verifier (`turn_verify`, on by default)
+                # makes its own model call at the close; stubbed here so this
+                # fixture test stays deterministic and network-free (the new
+                # behaviour is exercised by v1243, not here).
                 with patch.object(server, "_tool_context", return_value="fs.read"), \
                         patch.object(A, "assemble_turn", return_value=(
                             [{"role": "system", "content": "Fixture tool context."},
@@ -88,6 +92,7 @@ class ChatDiagnostics(unittest.TestCase):
                                      return_value=response) as tool_calls, \
                         patch.object(registry, "_external_tools", return_value={}), \
                         patch.object(A, "_improvement_pass"), \
+                        patch.object(A, "_turn_verify_bounce", return_value=None), \
                         patch.object(socket.socket, "connect",
                                      side_effect=AssertionError("network forbidden")) as network:
                     reply, model = A.chat_once(

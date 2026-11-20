@@ -2567,6 +2567,7 @@ def handle(handler, method, path, qs, body):
                                      "budget": registry.load_config().get("budget") or {},
                                      "bestofn": registry.load_config().get("bestofn") or {},
                                      "goal_verify": registry.load_config().get("goal_verify") or {},
+                                     "turn_verify": registry.load_config().get("turn_verify") or {},
                                      "difficulty": registry.load_config().get("difficulty") or {},
                                      "selfevolve": registry.load_config().get("selfevolve") or {},
                                      "reasoning": registry.load_config().get("reasoning") or {},
@@ -4173,6 +4174,23 @@ def _update_policy(body):
         registry.load_config(reload=True)
         _publish("tools.update", goal_verify=dict(gv))
         return {"ok": True, "tools": registry.catalog(), "goal_verify": dict(gv)}
+    # 2026-11-20: the post-turn completeness verifier (enabled / model / max_rounds).
+    if isinstance(body.get("turn_verify"), dict):
+        tv = cfg.setdefault("turn_verify", {})
+        src = body["turn_verify"]
+        if "enabled" in src:
+            tv["enabled"] = bool(src["enabled"])
+        if "model" in src:
+            tv["model"] = str(src["model"] or "").strip()
+        if src.get("max_rounds") is not None:
+            try:
+                tv["max_rounds"] = max(0, int(src["max_rounds"]))
+            except (TypeError, ValueError):
+                pass
+        registry.save_config(cfg)
+        registry.load_config(reload=True)
+        _publish("tools.update", turn_verify=dict(tv))
+        return {"ok": True, "tools": registry.catalog(), "turn_verify": dict(tv)}
     # JAG-134: difficulty / budget adattivo (enabled / easy_n / medium_n / hard_n / soglie)
     if isinstance(body.get("difficulty"), dict):
         d = cfg.setdefault("difficulty", {})

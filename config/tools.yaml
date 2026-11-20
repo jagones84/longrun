@@ -313,6 +313,17 @@ goal_verify:
   judge: false              # L3: also ask a model to pass/fail the objective
   judge_model: ""           # empty = the subagent role chain
 
+# ---- post-turn completeness verifier (2026-11-20) ---------------------------
+# After a turn that DID work and closes without an explicit finish, an INDEPENDENT
+# model reads ONLY the operator's request, the agent's own final message and the
+# still-open plan steps, and returns {complete, missing}. On complete=false the
+# harness gives the agent at most `max_rounds` more round(s) to finish. It never
+# sees the tool transcript (bounded cost) and it is NOT the same closure check.
+turn_verify:
+  enabled: true                              # one verifier call at each turn end
+  model: "openrouter:z-ai/glm-5.3-flash"     # a dedicated judge model
+  max_rounds: 2                              # anti-loop: <= N extra rounds per turn
+
 # ---- run budget (R3) ---------------------------------------------------------
 # Hard ceiling on cumulative prompt+completion tokens for ONE run tree (the run
 # plus every subagent it spawns). 0 = off (today's behaviour). Checked after each

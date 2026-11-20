@@ -332,8 +332,7 @@ def _check_acceptance(session_id, ws, cfg):
 def _check_judge(objective, ws, missing, cfg):
     """L3: an independent model judgement over the OBJECTIVE + artefacts only."""
     try:
-        import json as _json
-        from longrun.core import server as srv
+        from longrun.plan import judge as _judge
         from longrun.model import routing
     except Exception:  # noqa: BLE001
         return None
@@ -363,20 +362,17 @@ def _check_judge(objective, ws, missing, cfg):
     try:
         model = str(cfg.get("judge_model") or "").strip()
         if not model:
-            try:
-                chain = routing.model_chain("subagent")
-                model = chain[0] if chain else ""
-            except Exception:  # noqa: BLE001
-                model = ""
-        msgs = [{"role": "user", "content": prompt}]
-        text, _think = srv._router_stream(msgs, model or None, lambda *a: None)
-    except Exception:  # noqa: BLE001 — no model → no judge, not a failure
-        return None
-    try:
-        start, end = text.find("{"), text.rfind("}")
-        got = _json.loads(text[start:end + 1]) if start >= 0 and end > start else {}
+            chain = routing.model_chain("subagent")
+            model = chain[0] if chain else ""
     except Exception:  # noqa: BLE001
-        return {"ok": None, "raw": str(text)[:400]}
+        model = ""
+    # ONE shared judge call (`plan/judge.py`) — the same mechanism the per-turn
+    # verifier (`plan/turn_verify.py`) uses, so the two can never drift apart.
+    got = _judge.ask_json(prompt, model)
+    if got is None:
+        return None
+    if "_raw" in got:
+        return {"ok": None, "raw": got["_raw"]}
     return {"ok": bool(got.get("achieved")), "missing": got.get("missing") or []}
 
 
