@@ -4703,6 +4703,23 @@ def _link_path(path, qs=None) -> str:
     return p
 
 
+def _fs_deny(path):
+    """The hard-deny rule a READ/PREVIEW path matches, or "" (2026-11-21).
+
+    `/api/fs/read`, `/api/fs/structured`, `/api/fs/sheet` and `/api/fs/raw` are the
+    operator's preview doors — the same module's other entrance to the filesystem.
+    They used to serve the repo `.env` while the TOOL layer refused it: one rule,
+    two answers (measured: `fs.read` -> "denied", `GET /api/fs/read?path=.../.env`
+    -> 200 with the API bearer and every provider key). Every door now asks the ONE
+    judge (`registry.deny_hit`), so the env file has a single answer.
+    """
+    try:
+        from longrun.tools import registry as _reg
+        return _reg.deny_hit("fs.read", {"path": str(path or "")}) or ""
+    except Exception:  # noqa: BLE001 — fail CLOSED: an unknown policy never exposes a file
+        return "policy unavailable"
+
+
 FS_TREE_SKIP = {"node_modules", "__pycache__", ".git", ".hg", ".svn", ".venv",
                 "venv", "dist", "build", "target", ".mypy_cache", ".pytest_cache",
                 ".ruff_cache", ".ipynb_checkpoints"}
@@ -4841,6 +4858,9 @@ def fs_read(qs=None) -> dict:
     p = _safe_fs_path(_link_path(q.get("path"), q), _fs_allowed_roots(q))
     if not p:
         return {"error": "path outside allowed roots"}
+    _deny = _fs_deny(p)
+    if _deny:
+        return {"error": "denied: %s" % _deny}
     if not _os.path.isfile(p):
         return {"error": "not a file: %s" % p}
     size = _os.path.getsize(p)
@@ -4917,6 +4937,9 @@ def fs_structured(qs=None) -> dict:
     p = _safe_fs_path(_link_path(q.get("path"), q), _fs_allowed_roots(q))
     if not p:
         return {"ok": False, "error": "path outside allowed roots"}
+    _deny = _fs_deny(p)
+    if _deny:
+        return {"ok": False, "error": "denied: %s" % _deny}
     if not _os.path.isfile(p):
         return {"ok": False, "error": "not a file: %s" % p}
     ext = _os.path.splitext(p)[1].lower()
@@ -4995,6 +5018,9 @@ def fs_sheet(qs=None) -> dict:
     p = _safe_fs_path(_link_path(q.get("path"), q), _fs_allowed_roots(q))
     if not p:
         return {"error": "path outside allowed roots"}
+    _deny = _fs_deny(p)
+    if _deny:
+        return {"error": "denied: %s" % _deny}
     if not _os.path.isfile(p):
         return {"error": "not a file: %s" % p}
     ext = _os.path.splitext(p)[1].lower()
@@ -5258,6 +5284,9 @@ def _fs_raw(handler, qs=None):
     p = _safe_fs_path(_link_path(q.get("path"), q), _fs_allowed_roots(q))
     if not p or not _os.path.isfile(p):
         return _r(handler, 404, {"error": "not found"})
+    _deny = _fs_deny(p)
+    if _deny:
+        return _r(handler, 403, {"error": "denied: %s" % _deny})
     if _os.path.getsize(p) > _paths.attach_max_bytes():
         return _r(handler, 413, {"error": "file too large to preview"})
     ctype = (mimetypes.guess_type(p)[0] or "application/octet-stream").lower()

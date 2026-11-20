@@ -3600,12 +3600,20 @@
     #topbar .topTabs { margin-right: 0; }
   }
   @media (max-width: 480px) and (min-height: 501px) {
-    /* Three tabs + the wordmark + the sandbox dot + search + gear must fit 390 px:
-       tighten the tabs and the gaps; the two icon buttons keep a 28 px target. */
-    #topbar { gap: 4px; padding: 8px 8px; }
-    #topbar #topTabs .ttab { width: 34px; }
+    /* Four icon tabs + the brand ⋮ + the sandbox dot + the approvals chip + search +
+       changelog + gear must fit ~363 px — what a OnePlus 15R reports at dpr 3.5.
+       Measured 2026-11-21 (mobile emulation, approvals chip visible): 388 px of
+       content at 363 and 388 at 380 — 25/8 px OVER, so the right end (the gear) was
+       clipped by the header scroller: "la barra superiore è satura e non si vede
+       tutta". The ⋮ is part of the BRAND, so it HUGS the wordmark (the logo's 6 px
+       padding and the bar gap were dead space); every target loses 1-2 px, which is
+       exactly what brings the row back inside the viewport. */
+    #topbar { gap: 3px; padding: 8px 7px; }
+    #topbar .logo { padding-right: 0; }
+    #topbar .brand-wrap { margin-left: -3px; }
+    #topbar #topTabs .ttab { width: 32px; }
     #topbar #palette-open, #topbar #settingsBtn, #topbar #changelogBtn {
-      width: 28px; min-width: 28px; height: 28px; }
+      width: 27px; min-width: 27px; height: 27px; }
   }
   @media (max-width: 360px) and (min-height: 501px) {
     /* 320 px (the narrowest phone): the four icon tabs + sandbox dot + approval mode +
@@ -3613,6 +3621,20 @@
     #topbar { gap: 2px; padding: 8px 6px; }
     #topbar #topTabs .ttab { width: 32px; }
     #topbar #apprPill { padding: 3px 7px; }
+  }
+  /* 2026-11-21 (measured defect): at 320 CSS px the bar still carried 348 px with the
+     approvals chip visible — 28 px over — and the header scroller clipped the GEAR
+     (`offscreen: ["settingsBtn"]`), so Settings was unreachable on the narrowest phone.
+     This tier exists only for that case; 360 px phones keep their comfortable 32 px
+     tabs. Targets stay >= 24 px (the a11y floor the app already uses in a rail). */
+  @media (max-width: 340px) and (min-height: 501px) {
+    #topbar { gap: 2px; padding: 8px 5px; }
+    #topbar #topTabs .ttab { width: 28px; }
+    #topbar #palette-open, #topbar #settingsBtn, #topbar #changelogBtn {
+      width: 25px; min-width: 25px; height: 25px; }
+    #topbar .logo svg { width: 18px; height: 18px; }
+    #topbar #brandMenuBtn { width: 22px; }
+    #topbar #apprPill { padding: 2px 5px; }
   }
   /* v1014: the narrow phone's side room is the cheapest space the model name can
      have — 16 px here, and no control is resized or covered. Declared LAST for the
@@ -22179,7 +22201,10 @@ function linkifyNodes(root) {
         const a = document.createElement("a");
         a.href = "#";
         // JAG-283: an image path opens in the image window, other files in the editor.
-        if (_isImage(p)) { a.className = "imglink"; a.dataset.u = _rawUrl(p); }
+        // 2026-11-21: `data-u` always carries the PATH (one truth) — the two readers
+        // build the raw URL themselves. Storing `_rawUrl(p)` here made `_inlineImages`
+        // wrap it a SECOND time and the preview 404'd.
+        if (_isImage(p)) { a.className = "imglink"; a.dataset.u = p; }
         else { a.className = "filelink"; a.dataset.p = p; }
         a.textContent = p;
         frag.appendChild(a);
@@ -22199,7 +22224,7 @@ function linkifyNodes(root) {
   root.querySelectorAll("a.filelink").forEach(a =>
     a.onclick = e => { e.preventDefault(); openInEditor(a.dataset.p); });
   root.querySelectorAll("a.imglink").forEach(a =>
-    a.onclick = e => { e.preventDefault(); showImage(a.dataset.u); });
+    a.onclick = e => { e.preventDefault(); showImage(_rawUrl(a.dataset.u)); });
 }
 function linkifyFiles(bubble) { linkifyNodes(bubble); }
 function linkifyAll() {

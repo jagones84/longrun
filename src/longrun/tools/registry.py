@@ -3103,6 +3103,22 @@ def deny_subject(tool, args):
     return _deny_text(_subject(tool, args))
 
 
+def deny_hit(tool, args):
+    """The hard-deny pattern `tool`+`args` matches, or "" — with NO side effects.
+
+    2026-11-21: the operator's preview doors (`/api/fs/read`, `/api/fs/structured`,
+    `/api/fs/sheet`, `/api/fs/raw`) are the same module's other entrance to the
+    filesystem, and they served the repo `.env` while `fs.read` refused it: one
+    rule, two answers (measured — the tool said "denied", the HTTP door returned
+    the API bearer and every provider key). They now ask THIS judge. It shares the
+    patterns with `classify` but skips the approval machinery and the
+    `rule_firings` accounting, which would otherwise count an operator preview as
+    a blocked tool call.
+    """
+    spec = tool_spec(canonical_name(tool, args)) or {}
+    return _match(spec.get("deny") or [], deny_subject(tool, args)) or ""
+
+
 def _deny_parts(entries):
     """Split a configured deny list into (patterns, notes, proofs).
 

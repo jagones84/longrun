@@ -138,6 +138,27 @@ All notable changes to Longrun are documented here. The format follows
   tool gate. (Locked by `v1052` B1/B1b, N9d/N9d2, N11b/N11b2, O1–O7; `v785` K1–K5; `v763` F1–F2.)
 
 ### Fixed
+- **One hard-deny answer for every filesystem door — the preview endpoints no longer served `.env`.** Bug hunt
+  2026-11-21 (API boundary), CONFIRMED with a live measurement: `POST /api/tools/call fs.read` on the repo `.env`
+  answered `{"status":"blocked","reason":"matches hard-deny pattern '(^|/)\.env…'"}` while the operator preview
+  doors read the SAME file — `GET /api/fs/read?path=…/.env` returned **200 with the API bearer and every
+  provider key**, `/api/fs/structured` and `/api/fs/sheet` also 200, and `/api/fs/raw` leaked its existence
+  (415 instead of 404). One rule, two answers. `registry.deny_hit(tool, args)` is now the ONE judge (it shares
+  the patterns with `classify` but skips the approval machinery and the `rule_firings` accounting, so a preview
+  is not counted as a blocked tool call) and `api_v02._fs_deny` asks it from all four doors before a byte is
+  served. Measured after the fix: read/structured/sheet `denied: (^|/)\.env(\.(?!template$)[^/]*)?$`, raw
+  `403`, `.env.template` still readable, `../../../../../../etc/passwd` still `path outside allowed roots`.
+  Locked by `v1246` (15/15 B1–F2).
+- **The phone topbar fits a OnePlus 15R, and an image link carries ONE truth.** Operator: *"on mobile la barra
+  superiore è satura e non si vede tutta, i tre dot accanto all'icona LONGRUN vanno avvicinati all'icona per
+  risparmiare horizontal space … modalità mobile OnePlus 15R"*. Measured with headless-Chrome mobile emulation
+  (dpr 2, touch, approvals chip visible): at 363/380 px the bar carried 388 px, so the header scroller clipped
+  the gear; the 361–480 band is exactly where the phone lands. The ⋮ is part of the BRAND and now hugs the
+  wordmark (logo padding and bar gap shaved), tabs/icon buttons lose 1–2 px; a new `@media (max-width: 340px)`
+  tier keeps Settings reachable at 320 px (previously 28 px over, `settingsBtn` offscreen). Re-measured
+  overflow 0 at 412/400/380/363/360/340/320. Same change fixes an image link that stored a RAW URL in `data-u`
+  on one path and a PATH on the other, so the inline preview wrapped the URL twice and 404'd — `data-u` is now
+  always the PATH and the two readers build the URL. Locked by `v1245` (8/8).
 - **A tool call written AFTER prose no longer leaks as the reply, and its raw newlines no longer drop it.** Operator:
   *"why interrupted this way? that's not a foreseen failure mode, please diagnose first and fix if necessary"*.
   The model (A8 "Master", session `5033e643711a`) emitted prose then a call whose `code` value carried REAL
