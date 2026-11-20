@@ -1175,11 +1175,19 @@ def _next_stale(prev_stale, prev_hash, cur_hash, worked):
 # accept the marker as OPTIONAL.
 _DSML_MARK = DSML_MARK
 # `<｜DSML｜ invoke …>` / `<invoke …>` / `<parameter …>`
-_DSML_TAG = r"<\s*(?:" + _DSML_MARK + r")?\s*"
+# 2026-11-21 (live, session 5033e643711a msg 116/283 — A8 "Master"): the model drifts
+# AGAIN. It writes a stray `>` right after the marker and/or DOUBLES the marker before
+# the tag name (`<|DSML|> invoke name="tool">`, `<|DSML|> <|DSML|> parameter …`), so
+# every tag regex failed to see the `<invoke>`/`<parameter>`, `_dsml_action` returned
+# None and the harness told the model it had named no runnable tool — a LIE, the reply
+# named a real tool (`python.run`). The prefix is now a REPEATED marker run,
+# each marker allowed a trailing `>`: `<|DSML| invoke`, `<|DSML|> invoke` and
+# `<|DSML|> <|DSML|> parameter` all resolve to the same tag.
+_DSML_TAG = r"<\s*(?:(?:" + _DSML_MARK + r")\s*>?\s*)*"
 # The same, but ALSO admitting a tag spelled as a CLOSE: the live shape
 # (2026-11-04) where closing one parameter and opening the next are the SAME
 # tag, so that close carries the next parameter's `name=` attribute.
-_DSML_ANY_TAG = r"</?\s*(?:" + _DSML_MARK + r")?\s*"
+_DSML_ANY_TAG = r"</?\s*(?:(?:" + _DSML_MARK + r")\s*>?\s*)*"
 # The names a model invents for the wrapper itself (never a real tool).
 _DSML_WRAPPERS = ("", "tool", "tools", "action", "call", "calls", "tool_call",
                   "tool_calls", "toolcall", "function", "function_call", "invoke",
@@ -5002,7 +5010,12 @@ def _dsml_one_invoke(attrs, body):
         key = _nm.group(1).strip()
         _seg = body[_pt.end():(_ptags[_i + 1].start() if _i + 1 < len(_ptags)
                                 else len(body))]
-        _bare = re.search(r"</\s*(?:" + _DSML_MARK + r")?\s*>", _seg, re.I)
+        # A value ends at `</…>` (with or without the marker) OR at a BARE marker
+        # close `|DSML|>` — the 2026-11-21 drift (session 5033e643711a) closes a
+        # parameter with the marker alone, no `</`, so `python.run|DSML|>` used to
+        # keep the markup and the tool name arrived as `python.run|DSML| <|DSML|…`.
+        _bare = re.search(r"</\s*(?:" + _DSML_MARK + r")?\s*>|(?:" + _DSML_MARK + r")\s*>",
+                          _seg, re.I)
         val = _seg[:_bare.start()] if _bare else _seg
         if 'string="false"' in _attr:
             try:
@@ -7127,8 +7140,12 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                                              _invalid_streak - _invalid_cap + 1), "retry")
                 continue
             _inject(
-                "Your reply used the model's native <|DSML|> tool-call markup, but it "
-                "named no tool the harness can run. It was: "
+                # 2026-11-21 (operator): the old wording claimed the reply named no
+                # runnable tool — FACTUALLY FALSE: the reply DID name a real tool
+                # (`python.run`), the harness just could not PARSE the drifted markup
+                # (now fixed above). Say what is true: the markup could not be parsed.
+                "Your reply used the model's native <|DSML|> tool-call markup, which "
+                "the harness could not parse into a tool call. It was: "
                 + str(answer or "").strip()[:240] + "\n"
                 "Emit ONLY plain JSON: "
                 '{"action":"tool","tool":"<tool name>","args":{...}} — no <|DSML|> '

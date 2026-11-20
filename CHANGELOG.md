@@ -117,6 +117,16 @@ All notable changes to Longrun are documented here. The format follows
   tool gate. (Locked by `v1052` B1/B1b, N9d/N9d2, N11b/N11b2, O1–O7; `v785` K1–K5; `v763` F1–F2.)
 
 ### Fixed
+- **The DSML "no tool" retry stopped lying, and the drifted markup now parses.** Operator: *"it was not
+  true that the harness was saying in that case A8 master, why it said so? fix, after diagnosis"*. The model
+  (A8 "Master", session `5033e643711a`) drifted its native tool-call markup: a stray `>` right after the
+  marker and/or a DOUBLED marker (`<|DSML|> invoke name="tool">`, `<|DSML|> <|DSML|> parameter name="tool">`),
+  plus a parameter closed by the marker ALONE (`python.run|DSML|>`, no `</`). Every tag regex required the
+  name immediately after the marker, so `_dsml_action` returned `None` and the loop told the model *"it named
+  no tool the harness can run"* — **false**: the reply named a real, registered tool (`python.run`). The tag
+  regexes now accept the drifted prefix and the bare close, so the call parses and RUNS; and the retry note
+  no longer claims the falsehood — it says the markup could not be parsed. Locked by `v1241` (7/7) and
+  `v774` (36/36, D2).
 - **The Human-in-the-loop choice panel is ONE decision, merged into one message.** Operator: *"additional
   info of human in the loop doesn't merge, [it] queues another different message — make that choice panel
   correct"*. Each click used to fire its own message — an option button SENT, then *send choice* SENT again —

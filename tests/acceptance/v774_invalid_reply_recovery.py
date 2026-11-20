@@ -143,7 +143,12 @@ check("C8 the strategy switch shows the count and the rejected reply, and names 
 # ============================================================================
 check("D1 the unparseable retry is the quoting note (round 73: it also carries the finish reason)",
       "_inject(_rejected_reply_note(\n                answer, (chat_usage or {}).get(\"finish_reason\")), \"retry\")" in SRC)
-check("D2 the DSML retry quotes the reply too", '"named no tool the harness can run. It was: "' in SRC)
+check("D2 the DSML retry quotes the reply — and says the truth about the failure",
+      # 2026-11-21 (operator): the old wording "but it named no tool the harness can run"
+      # was FALSE — the reply named a real tool (`python.run`), the harness only failed to
+      # PARSE the drifted markup. The note now says it could not parse, and still quotes.
+      '"the harness could not parse into a tool call. It was: "' in SRC
+      and "named no tool the harness can run" not in SRC)
 check("D3 a stop that does happen still names the cause and quotes the reply",
       "not an executable action" in SRC and "Last rejected reply: " in SRC)
 check("D4 the reason is carried on the message meta for replay",
