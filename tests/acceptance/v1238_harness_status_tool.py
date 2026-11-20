@@ -81,6 +81,10 @@ check("B5 the org identity (agent id / teams / role) is present",
       and "teams" in res["agent"], res.get("agent"))
 check("B6 there is a one-line human summary", "status[" in (res.get("stdout") or ""),
       res.get("stdout"))
+# A31 (tester session, 2026-11-21): the one-liner an agent reads most had no archive
+# status while the tool's own guidance promised it — the terse report names it too now.
+check("B6b the one-liner carries the archive status",
+      "curated=" in (res.get("stdout") or ""), res.get("stdout"))
 check("B7 an unknown session is a refusal, not a crash",
       T._harness({"action": "status", "session": "nope-nope"}, None).get("ok") is False)
 check("B8 it is JSON-serialisable (the tool result is shipped as-is)",

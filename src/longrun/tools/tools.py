@@ -4438,13 +4438,16 @@ def _harness_status(sid):
     _u = used if used is not None else "?"
     _b = budget if budget is not None else "?"
     _p = ctx.get("pct")
+    _cur = out.get("curation") or {}
+    _cur_s = ("%s/%s" % (_cur.get("curated"), _cur.get("tool_cards"))
+              if _cur.get("curated") is not None else "?")
     out["stdout"] = (
         "status[%s] %s | model=%s | ctx %s/%s (%.1f%%) | msgs=%d | plan open=%d/%d "
-        "| approvals=%d | running=%s"
+        "| approvals=%d | curated=%s | running=%s"
         % (sid, (out["identity"].get("title") or "untitled"),
            out["identity"].get("model") or "?", _u, _b, float(_p or 0),
            out["identity"]["messages"], plan["open"], plan["nodes"],
-           out["approvals"].get("pending_here", 0), bool(out.get("running"))))
+           out["approvals"].get("pending_here", 0), _cur_s, bool(out.get("running"))))
     return out
 
 
