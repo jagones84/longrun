@@ -12918,11 +12918,14 @@ async function openSessionStatus() {
       ["messages", idn.messages],
       ["context", (ctx.tokens_used == null ? "—" : ctx.tokens_used) + " / " +
                   (ctx.max_tokens == null ? "—" : ctx.max_tokens) + "  (" + pct + ")"],
+      ["headroom", (ctx.remaining_tokens == null ? "—" : ctx.remaining_tokens + " tokens")],
       ["auto-compact", (ctx.auto_compact_pct == null ? "—" : ctx.auto_compact_pct + "%")],
       ["over threshold", String(ctx.over_threshold)],
       ["plan", (plan.open || 0) + " open / " + (plan.nodes || 0) + " steps"],
       ["plan goal", plan.goal],
       ["approvals here", ap.pending_here],
+      ["curated cards", (res.curation && res.curation.curated != null
+                         ? res.curation.curated + " / " + res.curation.tool_cards : null)],
       ["turn running", String(res.running)],
       ["service", (svc.name || "longrun") + " " + (svc.version || "?")],
     ]));

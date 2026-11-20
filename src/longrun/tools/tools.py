@@ -4332,15 +4332,36 @@ def _harness_status(sid):
         out["context_error"] = str(exc)
     used = ctx.get("tokens_used")
     budget = ctx.get("budget_tokens")
+    # VISTA (arXiv:2606.30005 §3): an agent needs "state proprioception" — the remaining
+    # BUDGET in absolute tokens, not just a percentage — to make keep-or-archive calls.
+    # `headroom_pct` is the room left before the window is full; `remaining_tokens` is
+    # that room as a number the model can compare against an observation's size.
+    remaining = (int(budget) - int(used)
+                 if isinstance(used, (int, float)) and isinstance(budget, (int, float))
+                 else None)
     out["context"] = {
         "tokens_used": used,
         "max_tokens": budget,               # the session's context window budget
+        "remaining_tokens": remaining,
         "pct": ctx.get("pct"),
+        "headroom_pct": (round(100 - float(ctx.get("pct") or 0), 1)
+                         if ctx.get("pct") is not None else None),
         "auto_compact_pct": ctx.get("auto_compact_pct"),
+        "auto_compact_target_pct": ctx.get("auto_compact_target_pct"),
+        "keep_recent": ctx.get("keep_recent"),
         "over_threshold": ctx.get("over_threshold"),
         "over_budget": ctx.get("over_budget"),
         "source": ctx.get("source") or ("real" if ctx.get("available") else "n/a"),
     }
+
+    # ---- archive status: tool payloads the agent has already curated (VISTA) ----
+    try:
+        from longrun.tools import curation as _curation
+        cards = sess.get("tool_cards") or []
+        curated = _curation.curated(sess)
+        out["curation"] = {"tool_cards": len(cards), "curated": len(curated)}
+    except Exception as exc:  # noqa: BLE001
+        out["curation"] = {"error": str(exc)}
 
     # ---- the live task plan (the store the model owns) ----
     plan = {"nodes": 0, "open": 0, "done": 0, "counts": {}, "goal": ""}

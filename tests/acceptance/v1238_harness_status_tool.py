@@ -85,6 +85,15 @@ check("B7 an unknown session is a refusal, not a crash",
       T._harness({"action": "status", "session": "nope-nope"}, None).get("ok") is False)
 check("B8 it is JSON-serialisable (the tool result is shipped as-is)",
       bool(json.dumps(res)))
+# VISTA (arXiv:2606.30005 §3): state proprioception needs the remaining budget in
+# absolute tokens, not only a percentage — plus the archive status of curated payloads.
+check("B9 the context block carries the remaining-token headroom",
+      "remaining_tokens" in res["context"] and "headroom_pct" in res["context"]
+      and res["context"]["remaining_tokens"] == res["context"]["max_tokens"]
+          - res["context"]["tokens_used"], res["context"])
+check("B10 the curated-payload archive status is reported",
+      isinstance(res.get("curation"), dict) and "curated" in res["curation"]
+      and "tool_cards" in res["curation"], res.get("curation"))
 
 # ---- C: the `/status` slash builtin ----------------------------------------
 check("C1 /status is a built-in UI command",

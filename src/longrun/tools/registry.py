@@ -1533,11 +1533,12 @@ _SUBTOOL_GUIDANCE = {
     ),
     "harness.status": (
         "Report EVERYTHING about one session in a single deterministic, read-only "
-        "call: identity (agent id, title, workspace, model), context saturation "
-        "(tokens used vs the max context, percentage), the live task plan and its "
-        "open steps, pending approvals for this session, running-turn state, the "
-        "roles/teams it belongs to, and the service/version it runs on. Optional "
-        "`session` (default: the calling turn's session). Nothing is written."
+        "call: identity (agent id, title, workspace, model), context saturation with "
+        "the remaining-token HEADROOM vs the max context, the live task plan and its "
+        "open steps, pending approvals for this session, the curated-payload ARCHIVE "
+        "status, running-turn state, the roles/teams it belongs to, and the "
+        "service/version it runs on. Optional `session` (default: the calling turn's "
+        "session). Nothing is written."
     ),
     # R2 (2026-11-15): one actionable line per canonical action. Before this
     # block 43 of the 90 multi-action tools had no row and fell back to the

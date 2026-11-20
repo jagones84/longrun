@@ -17,7 +17,10 @@ All notable changes to Longrun are documented here. The format follows
   identity/model/workspace (`stores`), context saturation vs the **max context**
   (`httpapi.context_usage`), the live plan and its open steps (`taskgraph.public`), this
   session's pending approvals and running-turn state (`approvals`, `inflight`), and the org
-  identity (agent id, teams, role). Locked by `v1238` (16/16).
+  identity (agent id, teams, role). Grounded in VISTA (arXiv:2606.30005 §3, *state
+  proprioception*), the context block also reports the remaining-token **headroom** in
+  absolute tokens and the **archive status** of curated tool payloads, so a model can make
+  keep-or-archive decisions. Locked by `v1238` (18/18).
 - **A brand menu (⋮) beside the LONGRUN wordmark and a changelog button.** Operator: *"a button
   to restart longrun … a three-dot menu just beside right to the LONGRUN title … other high level
   suggestions … shall not be already other buttons in the webui"* and *"a changelog button
