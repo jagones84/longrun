@@ -1171,6 +1171,13 @@
   .hitl-other, .hitl-note { background: rgba(255,255,255,.04); border: 1px solid var(--line); color: var(--txt);
     border-radius: 8px; padding: 6px 8px; font-size: 12px; }
   .hitl-send { align-self: flex-start; }
+  /* 2026-11-21 (operator: "make that choice panel correct"): the panel is ONE decision.
+     A proposed option and a quick action SELECT (they no longer each send their own
+     message); "send choice" merges the choice + Other + additional info into a single
+     message, then the card locks. */
+  .hitl-opts button.sel, .hitl-row button.sel { border-color: var(--acc); background: var(--hover); color: var(--txt); }
+  .hitl.answered { opacity: .62; }
+  .hitl.answered .hitl-title { color: var(--dim); }
   .cursor { display: inline-block; width: 8px; height: 14px; background: var(--acc); margin-left: 2px;
     vertical-align: text-bottom; animation: blink 1s steps(1) infinite; }
   @keyframes blink { 50% { opacity: 0; } }
@@ -7299,34 +7306,66 @@ function hitlCard(d) {
     const qe = card.querySelector(".hitl-q");
     qe.textContent = _q; qe.hidden = false;
   }
-  const _note = () => (card.querySelector(".hitl-note").value || "").trim();
+  // 2026-11-21 (operator): "additional info of human in the loop doesn't merge, [it]
+  // queues another different message — make that choice panel correct". The panel used
+  // to fire a SEPARATE message per click: an option button SENT, then "send choice"
+  // SENT again, so a choice plus its extra info became TWO queued messages. Now it is
+  // ONE decision — a proposed option and a quick action SELECT (one at a time),
+  // "send choice" merges the choice + Other + additional info into a SINGLE message,
+  // and the card LOCKS so it can never queue a second one.
+  const ACT = {
+    continue: "Continue: execute and close the open steps with concrete evidence.",
+    close: "Close the next step as 'done' ONLY if you have the evidence (command run + output); otherwise tell me what is missing.",
+    replan: "Re-plan the task list based on what is really needed and then continue.",
+    stop: "Stop: that is enough for now. Summarize the state and what is still open in one line.",
+  };
+  const _otherEl = card.querySelector(".hitl-other");
+  const _noteEl = card.querySelector(".hitl-note");
+  let _choice = "";   // the SELECTED choice's text (a proposed option OR a quick action)
+  const _paint = () => card.querySelectorAll(".hitl-opt, .hitl-act").forEach(x => {
+    const on = x.dataset.val === _choice;
+    x.classList.toggle("sel", on);
+    x.setAttribute("aria-pressed", on ? "true" : "false");
+  });
+  const _select = (val) => { _choice = (_choice === val ? "" : val); _paint(); };
+  // ONE message = the chosen option/action (an override typed in "Other" wins) + the note
+  const _build = () => {
+    const other = (_otherEl.value || "").trim();
+    const note = (_noteEl.value || "").trim();
+    let s = other || _choice;
+    if (note) s += (s ? " — " : "") + "additional info: " + note;
+    return s.trim();
+  };
   const _opts = (d.options || []).map(o => String(o || "").trim()).filter(Boolean);
   if (_opts.length) {
     const ow = card.querySelector(".hitl-opts"); ow.hidden = false;
     _opts.forEach(o => {
       const b = document.createElement("button");
-      b.type = "button"; b.className = "ghost"; b.textContent = o;
+      b.type = "button"; b.className = "ghost hitl-opt"; b.textContent = o;
+      b.dataset.val = o;
       b.setAttribute("aria-label", "answer: " + o);
-      b.onclick = () => { const n = _note(); send(n ? o + " — " + n : o); };
+      b.setAttribute("aria-pressed", "false");
+      b.onclick = () => _select(o);
       ow.appendChild(b);
     });
   }
-  const build = (a) => {
-    const other = (card.querySelector(".hitl-other").value || "").trim();
-    const note = _note();
-    let s;
-    if (other) { s = other; }
-    else if (a === "continue") s = "Continue: execute and close the open steps with concrete evidence.";
-    else if (a === "close") s = "Close the next step as 'done' ONLY if you have the evidence (command run + output); otherwise tell me what is missing.";
-    else if (a === "replan") s = "Re-plan the task list based on what is really needed and then continue.";
-    else if (a === "stop") s = "Stop: that is enough for now. Summarize the state and what is still open in one line.";
-    else s = "";
-    if (note) s += (s ? " — " : "") + "additional info: " + note;
-    return s.trim();
+  card.querySelectorAll(".hitl-row [data-a]").forEach(b => {
+    const a = String(b.dataset.a || "");
+    if (!ACT[a]) return;
+    b.classList.add("hitl-act"); b.dataset.val = ACT[a];
+    b.setAttribute("aria-pressed", "false");
+    b.onclick = () => _select(ACT[a]);
+  });
+  card.querySelector(".hitl-send").onclick = () => {
+    const t = _build();
+    if (!t) { toast("pick an option, or type your own answer", "warn"); return; }
+    send(t);
+    // ONE decision per card — a second click can never queue another message.
+    card.querySelectorAll("button, input").forEach(el => { el.disabled = true; });
+    card.querySelector(".hitl").classList.add("answered");
+    const ttl = card.querySelector(".hitl-title");
+    if (ttl) ttl.textContent = "✔ answered — your choice was sent";
   };
-  const go = (a) => { const t = build(a); if (t) send(t); };
-  card.querySelectorAll("[data-a]").forEach(b => b.onclick = () => go(b.dataset.a));
-  card.querySelector(".hitl-send").onclick = () => go(null);
   _logAppend(card); scroll();
 }
 // JAG-265: coalesce chain-of-thought deltas into ONE DOM write per animation

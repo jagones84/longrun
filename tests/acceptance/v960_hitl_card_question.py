@@ -57,13 +57,26 @@ check("A4 exactly ONE place emits hitl.request",
       AGENT.count('on_event("hitl.request"'))
 
 # --- B: the card IS the question ---------------------------------------------
-_card = GUI[GUI.index("function hitlCard(d)"):GUI.index("function hitlCard(d)") + 3200]
+_i0 = GUI.index("function hitlCard(d)")
+_card = GUI[_i0:GUI.index("\nfunction ", _i0 + 1)]
 check("B1 the card has a slot for the question", 'class="hitl-q"' in _card)
 check("B2 ... filled from d.question", 'String(d.question || "")' in _card and "qe.textContent = _q" in _card)
 check("B3 the proposed options become buttons", 'class="hitl-opts"' in _card and "_opts.forEach" in _card)
 check("B4 every option button has an accessible name",
       'b.setAttribute("aria-label", "answer: " + o)' in _card)
-check("B5 an option click sends THAT decision", "send(n ? o + \" — \" + n : o)" in _card)
+check("B5 an option SELECTS its decision — the one-message-per-click is gone (2026-11-21)",
+      # Operator: "additional info of human in the loop doesn't merge, [it] queues another
+      # different message — make that choice panel correct". An option no longer sends its
+      # own message; it selects, so "send choice" can merge everything into one.
+      "b.onclick = () => _select(o);" in _card
+      and 'send(n ? o + " — " + n : o)' not in _card)
+check("B5b one 'send choice' merges the choice + Other + additional info into ONE message",
+      "let s = other || _choice;" in _card
+      and 's += (s ? " — " : "") + "additional info: " + note;' in _card)
+check("B5c the card LOCKS after one decision (no second queued message)",
+      'card.querySelectorAll("button, input").forEach(el => { el.disabled = true; });' in _card)
+check("B5d the quick actions SELECT too (one decision, one send)",
+      'b.classList.add("hitl-act"); b.dataset.val = ACT[a];' in _card)
 check("B6 both slots start hidden (no empty reserved row)",
       '<div class="hitl-q" hidden>' in _card and '<div class="hitl-opts" hidden>' in _card)
 check("B7 the hidden slots are collapsed in CSS",

@@ -117,6 +117,14 @@ All notable changes to Longrun are documented here. The format follows
   tool gate. (Locked by `v1052` B1/B1b, N9d/N9d2, N11b/N11b2, O1–O7; `v785` K1–K5; `v763` F1–F2.)
 
 ### Fixed
+- **The Human-in-the-loop choice panel is ONE decision, merged into one message.** Operator: *"additional
+  info of human in the loop doesn't merge, [it] queues another different message — make that choice panel
+  correct"*. Each click used to fire its own message — an option button SENT, then *send choice* SENT again —
+  so a chosen option plus its "additional info" became **two queued messages**. Now a proposed option and a
+  quick action **select** (one at a time, highlighted), and *send choice* merges the choice + Other +
+  additional info into a **single** message, after which the card **locks** (controls disabled) so it can
+  never queue a second one. Locked by `v960` (18/18, B5/B5b/B5c/B5d). Verified live: selecting sends nothing;
+  *send choice* sends exactly one message (`Opt A — additional info: PORT 37851`); a second click is a no-op.
 - **A PDF/DOC attachment now PREVIEWS — before and after sending.** Operator: *"if i append in chat a pdf,
   doc, image, can i preview it [before send and after send, clicking in the chat]?"*. An image already
   opened its lightbox, but a file attachment (`_openAttachment`) opened the **editor dock**, which paints a
