@@ -47,6 +47,17 @@ BUILTINS = [
     {"id": "unlock", "aliases": [], "title": "Unlock", "icon": "\u23cf", "kind": "ui",
      "insert": "",
      "hint": "leave /plan or /spec mode: release the gate and forget that document"},
+    # 2026-11-22: the two verbs the operator asked for. Both are UI actions whose
+    # backend is already owned elsewhere — `/context` reads `/api/context` and the
+    # RH breakdown, `/restart` calls the `harness` tool (`restart.schedule_restart`),
+    # so the composer and an agent share one implementation, not two.
+    {"id": "context", "aliases": ["ctx"], "title": "Context", "icon": "\u2314",
+     "kind": "ui", "insert": "",
+     "hint": "this session's context: saturation, messages/tokens/budget and the "
+             "full breakdown (the same card the inspector shows)"},
+    {"id": "restart", "aliases": [], "title": "Restart", "icon": "\u27f3",
+     "kind": "ui", "insert": "",
+     "hint": "restart the harness now — the same door the agent's harness tool uses"},
 ]
 
 #: Reserved tokens: a user command may add, never shadow a built-in.

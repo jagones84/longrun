@@ -1016,6 +1016,28 @@
   .toolcard.ok .tc-ic { color: var(--ok); }
   .toolcard.err .tc-ic { color: var(--err); }
   .toolcard.err { border-color: rgba(255,119,119,.5); }
+  /* 2026-11-22 (operator): *"i don't like edit read write, how it shows the file shall have a
+     different format/colour … and maybe italic"*. A file operation is its own OBJECT in the
+     transcript, so it gets its own calm skin — read (steel), edit (theme accent) and write
+     (theme info) — drawn from the SAME theme tokens as every other surface, so celestial/
+     sand/sakura read correctly. Only the SURFACE and the file name change: the verdict pip
+     keeps `--ok`/`--err` (rule 1: a state is an icon, not a colour of the card). The accent
+     sits inside the box (`inset`), so nothing reflows when it appears. */
+  .toolcard[data-tool="fs.read"] {
+    background: color-mix(in srgb, var(--acc2) 8%, var(--panel2));
+    border-color: color-mix(in srgb, var(--acc2) 26%, var(--line));
+    box-shadow: inset 2px 0 0 color-mix(in srgb, var(--acc2) 70%, transparent); }
+  .toolcard[data-tool="fs.edit"] {
+    background: color-mix(in srgb, var(--acc) 7%, var(--panel2));
+    border-color: color-mix(in srgb, var(--acc) 26%, var(--line));
+    box-shadow: inset 2px 0 0 color-mix(in srgb, var(--acc) 70%, transparent); }
+  .toolcard[data-tool="fs.write"] {
+    background: color-mix(in srgb, var(--info) 8%, var(--panel2));
+    border-color: color-mix(in srgb, var(--info) 26%, var(--line));
+    box-shadow: inset 2px 0 0 color-mix(in srgb, var(--info) 70%, transparent); }
+  .toolcard[data-tool="fs.read"] .tc-name { font-style: italic; color: color-mix(in srgb, var(--acc2) 45%, var(--txt)); }
+  .toolcard[data-tool="fs.edit"] .tc-name { font-style: italic; color: color-mix(in srgb, var(--acc) 45%, var(--txt)); }
+  .toolcard[data-tool="fs.write"] .tc-name { font-style: italic; color: color-mix(in srgb, var(--info) 45%, var(--txt)); }
   /* 2026-11-16: web cards, turn header, sources — the Trae-shaped surface.
      Everything here renders values the card already persists (`data`), so a
      reload and the live stream share one look. */
@@ -3239,15 +3261,20 @@
      So: a 36px head with an 11px letter-spaced label, a 29px section row whose
      summary (`ihd-s`) is the collapsed state's status line, and a drag grip in
      the row's left gutter that appears on hover only. */
-  :root { --rail-hd: 36px; --rail-row: 29px; --rail-x: 10px; }
-  /* RH-2: ONE head for both rails — same height, same surface (--panel) and the
-     same single hairline DIRECTLY under the title, so the two "bars" are the same
-     object (the operator asked for graphic symmetry). The sessions tools strip no
-     longer carries the divider: one divider per rail, on the head. */
+  :root { --rail-hd: 36px; --rail-row: 29px; --rail-x: 10px;
+    /* 2026-11-22 (operator): *"why are sessions and inspector bars in a different background?
+       can you uniform please to minimise contrast"*. Measured on the render (1440x900): both
+       heads were already `--panel` over a `--aside` body, but ONE was a flush strip and the
+       other an inset card, so they read as two different objects. `--hd-surf` is the single
+       surface for both: the panel pulled 45% toward the rail body, i.e. barely a step. */
+    --hd-surf: color-mix(in srgb, var(--panel) 55%, var(--aside)); }
+  /* RH-2: ONE head for both rails — same height, same SURFACE and the same inset card
+     shape, so the two "bars" are the same object (the operator asked for graphic symmetry).
+     The sessions tools strip no longer carries the divider: one border per rail, on the head. */
   aside .rail-head, #inspector .insp-tools {
-    height: var(--rail-hd); min-height: var(--rail-hd); margin: 0;
+    height: var(--rail-hd); min-height: var(--rail-hd); margin: 0 0 6px;
     padding: 0 var(--rail-x) 0 12px; gap: 6px;
-    background: var(--panel); border-bottom: 1px solid var(--line);
+    background: var(--hd-surf); border: 1px solid var(--line); border-radius: 8px;
     display: flex; align-items: center; }
   aside .rail-head h2, #inspector .insp-tools h2 {
     flex: 1 1 auto; margin: 0; padding: 0; font-size: 11px; font-weight: 600;
@@ -3673,9 +3700,12 @@
      only thing that gives way (it ellipsizes first, and the sessions tab says the
      same word right above). Declared after the RH-2 head block on purpose — that
      block pins the one-row 36px geometry this rule relaxes. */
-  aside .rail-head { height: auto; min-height: var(--rail-hd);
+  /* 2026-11-22 (operator): the twin heads keep ONE padding too. Measured on the render:
+     the sessions head was `3px 10px 3px 12px` and the inspector `0 10px 0 12px`, so the
+     two labels sat 3px apart — the same defect the surface fix addressed, one layer down. */
+  aside .rail-head, #inspector .insp-tools { height: auto; min-height: var(--rail-hd);
     padding-top: 3px; padding-bottom: 3px; }
-  aside .rail-head h2 { flex-wrap: wrap; row-gap: 4px; min-width: 0; }
+  aside .rail-head h2, #inspector .insp-tools h2 { flex-wrap: wrap; row-gap: 4px; min-width: 0; }
   aside .rail-head h2 .hd-left { flex: 1 1 auto; min-width: 0; }
   aside .rail-head h2 .hd-name { min-width: 0; overflow: hidden;
     text-overflow: ellipsis; white-space: nowrap; }
@@ -6438,7 +6468,8 @@ function _toolUI(tool, args) {
              label: "Searched Web" + (q ? ' "' + q + '"' : "") + (n > 1 ? " (+" + (n - 1) + ")" : "") };
   }
   if (t === "fs.read") return { icon: TOOL_SVG.read, label: "Read " + _baseName(a.path) };
-  if (t === "fs.write" || t === "fs.edit") return { icon: TOOL_SVG.edit, label: "Edited " + _baseName(a.path) };
+  if (t === "fs.write") return { icon: TOOL_SVG.edit, label: "Wrote " + _baseName(a.path) };
+  if (t === "fs.edit") return { icon: TOOL_SVG.edit, label: "Edited " + _baseName(a.path) };
   if (t === "glob" || t === "glob.list") return { icon: TOOL_SVG.folder, label: "Listed " + (_baseName(a.path || a.pattern) || ".") };
   if (/^(grep|search)/.test(t)) return { icon: TOOL_SVG.search, label: "Searched files" + (a.query || a.pattern ? ' "' + (a.query || a.pattern) + '"' : "") };
   if (t === "shell" || t === "shell.exec") return { icon: TOOL_SVG.term, label: "Command executed" };
@@ -8313,6 +8344,12 @@ let SLASH_COMMANDS = [
   { id: "unlock", aliases: [], icon: "⏏", kind: "ui", insert: "",
     hint: "leave /plan or /spec mode: release the gate and forget that document",
     run: () => docUnlock() },
+  { id: "context", aliases: ["ctx"], icon: "◔", kind: "ui", insert: "",
+    hint: "this session's context: saturation, messages/tokens/budget and the full breakdown (the same card the inspector shows)",
+    run: () => openContextDetails() },
+  { id: "restart", aliases: [], icon: "⟳", kind: "ui", insert: "",
+    hint: "restart the harness now — the same door the agent's harness tool uses",
+    run: () => restartService() },
 ];
 const SLASH_BY_ID = {};
 function _indexSlash() {
@@ -8383,6 +8420,8 @@ const _SLASH_RUN = {
   status: () => openSessionStatus(),
   reset: () => resetChat(),
   unlock: () => docUnlock(),
+  context: () => openContextDetails(),   // 2026-11-22: `/context` runs the RH card
+  restart: () => restartService(),       // 2026-11-22: `/restart` calls `harness.restart`
 };
 function _applySlashCatalog(r) {
   if (!r || r.ok === false) return;
@@ -9347,20 +9386,19 @@ function _repaintCtx() {
    (`_ctxDisplay`): one anatomy, one vocabulary, no second endpoint. */
 let _ctxDisplay = null, _ctxPopEl = null;
 function _closeCtxPop() { if (_ctxPopEl) { _ctxPopEl.remove(); _ctxPopEl = null; } }
-function _ctxPopover() {
-  if (_ctxPopEl) { _closeCtxPop(); return; }
-  const d = _ctxDisplay || {};
+/* 2026-11-22 (operator): *"the context command … don't duplicate code"*. ONE builder for
+   the context CARD — ring + state, messages/tokens/budget, the two actions — rendered by
+   the composer popover AND by the `/context` window. The inspector keeps its id-driven
+   copy of the SAME anatomy (its nodes are populated by the loaders), so the vocabulary
+   and the copy live once, not per surface. */
+function _ctxCardHTML(d) {
+  d = d || {};
   const state = d.state || "na";
   const label = state === "over" ? "above threshold"
     : (state === "near" ? "near threshold" : (state === "na" ? "n/d" : "normal"));
   const pct = (d.pct != null ? d.pct : null);
   const bar = Math.max(0, Math.min(100, (d.bar_pct != null ? d.bar_pct : (pct || 0))));
-  const pop = document.createElement("div");
-  pop.className = "ctxpop";
-  pop.setAttribute("role", "dialog");
-  pop.setAttribute("aria-label", "context details");
-  pop.innerHTML =
-    '<div class="ctxhead">' +
+  return '<div class="ctxhead">' +
       '<span class="ctxpct">' + (pct != null ? pct : "–") + '%</span>' +
       '<div class="meter"><i class="' + (d.bar_hot ? "hot" : (state === "near" ? "near" : "")) +
         '" style="width:' + bar + '%;min-width:' + (bar > 0 ? 6 : 0) + 'px"></i></div>' +
@@ -9375,6 +9413,15 @@ function _ctxPopover() {
       '<button class="cp-settings lnk" type="button" ' +
         'title="open the shared automatic and manual compaction policy">settings</button>' +
     '</div>';
+}
+function _ctxPopover() {
+  if (_ctxPopEl) { _closeCtxPop(); return; }
+  const d = _ctxDisplay || {};
+  const pop = document.createElement("div");
+  pop.className = "ctxpop";
+  pop.setAttribute("role", "dialog");
+  pop.setAttribute("aria-label", "context details");
+  pop.innerHTML = _ctxCardHTML(d);
   document.body.appendChild(pop);
   const r = ($("cmpCtx") || pop).getBoundingClientRect();
   pop.style.left = Math.max(8, Math.min(r.left, window.innerWidth - pop.offsetWidth - 8)) + "px";
@@ -10508,6 +10555,9 @@ async function loadCtx() {
  * CURRENT session only. Derived server-side from what is still in context, so it
  * resets by itself after compaction; the client never mixes two sessions. */
 let _ctxItems = null, _ctxCat = null, _ctxTokens = null, _ctxMeta = null, _ctxBreakdown = null, _ctxMemUse = null;
+/* 2026-11-22: the host of the `/context` window, when it is open. `null` = only the
+   inspector section is a home; the renderer is the same one either way. */
+let _ctxHost = null;
 function _pendingCtxItems() {
   return _attachments.map(a => {
     const value = String(a.value || "");
@@ -10542,6 +10592,8 @@ async function loadCtxItems() {
         cached: r.cached_tokens || 0, cache: r.cache_hit_pct || 0 }
     : null;
   renderCtxItems();
+  // the `/context` window, when it is open, is a SECOND home of the same renderer
+  if (_ctxHost && document.body.contains(_ctxHost)) renderCtxItems(_ctxHost);
 }
 function _fmtTok(n) { n = n || 0; return n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + "k" : String(n); }
 /* JAG-355: donut for the context composition. r is chosen so the circumference is
@@ -10577,8 +10629,11 @@ function _ctxDonut(bd, total) {
     '<text class="dc" x="21" y="20.2" text-anchor="middle">' + _fmtTok(total) + "</text>" +
     '<text class="dl" x="21" y="25.4" text-anchor="middle">TOKENS</text></svg>';
 }
-function renderCtxItems() {
-  const box = $("ctxCats"); if (!box) return;
+function renderCtxItems(box) {
+  // 2026-11-22 (operator): `/context` opens the SAME breakdown in a window, so the
+  // renderer takes its host instead of owning `#ctxCats` — one renderer, two homes,
+  // no second copy of the donut/bars/chips.
+  box = box || $("ctxCats"); if (!box) return;
   const data = _ctxItems || {};
   const pending = _pendingCtxItems();
   if (!_ctxItems && !pending.length) { box.innerHTML = '<div class="remaining">no context yet</div>'; return; }
@@ -10654,7 +10709,7 @@ function renderCtxItems() {
     e.preventDefault(); e.stopPropagation();
     copyText(b.getAttribute("data-url")).then(ok => toast(ok ? "URL copied" : "copy failed", ok ? "ok" : "err"));
   });
-  box.querySelectorAll(".ctxchip").forEach(b => b.onclick = () => { _ctxCat = b.dataset.c; renderCtxItems(); });
+  box.querySelectorAll(".ctxchip").forEach(b => b.onclick = () => { _ctxCat = b.dataset.c; renderCtxItems(box); });
   // JAG-395: clicking a donut slice highlights the matching bar (and names it).
   box.querySelectorAll(".ctxdonut .seg").forEach(s => s.onclick = () => {
     const i = s.getAttribute("data-i");
@@ -12979,6 +13034,9 @@ function _infoModal(title, buildBody) {
   const back = document.createElement("div"); back.className = "smback";
   const box = document.createElement("div"); box.className = "smodal uidlg";
   box.setAttribute("role", "dialog"); box.setAttribute("aria-modal", "true");
+  // axe (2026-11-22): a role=dialog without a name is a SERIOUS violation, and every
+  // informational window shares this builder — the title IS the name, one attribute.
+  box.setAttribute("aria-label", String(title || "info"));
   const hd = document.createElement("div"); hd.className = "pick-hd";
   const t = document.createElement("b"); t.textContent = title;
   const x = document.createElement("button"); x.type = "button"; x.className = "ghost"; x.textContent = "✕";
@@ -12992,7 +13050,12 @@ function _infoModal(title, buildBody) {
   x.onclick = close; back.onclick = close;
   document.addEventListener("keydown", onKey, true);
   document.body.append(back, box);
-  try { buildBody(body); } catch (e) { body.textContent = "error: " + e; }
+  // 2026-11-22: a spawned info window is movable like every other panel — the SAME
+  // `dragify` (one behaviour), placed by its title row.
+  try { dragify(hd, box, "sf_win_info"); _winRestore(box, "sf_win_info"); } catch (_) {}
+  // `close` is handed to the builder too (2026-11-22): a body action can dismiss its
+  // own window without reaching for the ✕. Existing builders ignore the extra arg.
+  try { buildBody(body, close); } catch (e) { body.textContent = "error: " + e; }
   return close;
 }
 function _kvRows(rows) {
@@ -13149,6 +13212,48 @@ async function openSessionStatus() {
       pre.textContent = res.stdout; body.append(pre);
     }
   });
+}
+
+/* 2026-11-22 (operator): `/context` — the session's context, in a window: the SAME card
+   the composer popover and the inspector draw (`_ctxCardHTML`, fed by `_ctxDisplay`) and
+   the SAME breakdown the inspector renders (`renderCtxItems`), from the SAME readers
+   (`loadCtx`, `loadCtxItems`) and the SAME two doors (`compactNow`, the compaction
+   policy). One builder, one renderer, one endpoint per number — no second implementation. */
+async function openContextDetails() {
+  if (!sessionId) { toast("no session selected", "warn"); return; }
+  await loadCtx();               // the ring's numbers (`_ctxDisplay`)
+  await loadCtxItems();          // the category breakdown
+  _infoModal("Context · this session", (body, close) => {
+    const card = document.createElement("div");
+    card.className = "ctxcard";
+    card.innerHTML = _ctxCardHTML(_ctxDisplay || {});
+    const brk = document.createElement("div");
+    brk.className = "ctxmodal";
+    body.append(card, brk);
+    card.querySelector(".cp-compact").onclick = () => { close(); compactNow(); };
+    card.querySelector(".cp-settings").onclick = () => { close(); openSettings("compaction"); };
+    _ctxHost = brk;
+    renderCtxItems(brk);
+  });
+}
+/* 2026-11-22 (operator): `/restart` — restart the harness from the composer. It calls
+   the SAME tool an agent calls (`harness` → `restart.schedule_restart`), so the UI and
+   the model share one door; no session is passed, so no continuation turn is spawned. */
+async function restartService() {
+  let r = {};
+  try {
+    const j = await api("POST", "/api/tools/call",
+      { tool: "harness", run_id: "ui-restart",
+        args: { action: "restart", reason: "operator /restart (webui)" } });
+    r = (j && j.result) || j || {};
+  } catch (e) { toast("restart failed: " + e, "err"); return; }
+  if (!r || r.ok === false) {
+    toast("restart refused: " + ((r && (r.error || r.reason)) || "unknown"), "err"); return;
+  }
+  toast("restart scheduled — this page reconnects in a few seconds", "ok");
+  // The socket drops when the process exits; the boot sequence re-attaches it, so the
+  // honest UI act is to say what happens and leave the reconnect to the existing loop.
+  if (typeof feedReconnect === "function") setTimeout(() => { try { feedReconnect(); } catch (_) {} }, 2500);
 }
 
 /* ---- approvals (v0.2: HITL gate) ----
@@ -14526,6 +14631,15 @@ function _renderRunsBody(running, unread) {
 function _placeRunsPanel() {
   const p = $("runsPanel"), bar = $("runsBar");
   if (!p || !bar || p.hidden) return;
+  // 2026-11-22: the panel is movable now. A place the operator dragged it to wins
+  // over the bar anchor; only a panel that was never moved follows `runsBar`.
+  let g = null;
+  try { g = JSON.parse(localStorage.getItem("sf_win_runs") || "null"); } catch (_) {}
+  if (g && isFinite(g.x) && isFinite(g.y)) {
+    if (isFinite(g.w) && g.w > 120) p.style.width = Math.round(g.w) + "px";
+    _winRestore(p, "sf_win_runs");
+    return;
+  }
   const r = bar.getBoundingClientRect();
   p.style.left = Math.max(8, r.left) + "px";
   p.style.top = (r.bottom + 6) + "px";
@@ -18647,25 +18761,105 @@ function _clampBox(box) {
   box.style.left = Math.min(Math.max(0, box.offsetLeft), Math.max(0, vw - w)) + "px";
   box.style.top = Math.min(Math.max(0, box.offsetTop), Math.max(0, vh - h)) + "px";
 }
-function dragify(handle, box, key) {
+/* 2026-11-22 (operator): *"all the spawning panels in the webui shall be movable"*.
+   ONE drag behaviour for every window-like surface (settings, agents/jobs/org deck,
+   runs panel, file preview, diff view, the pickers). It is the ONLY mover: the deck's
+   `_dpDrag` and the settings head both delegate here, so there is no second algorithm
+   to drift.
+   - `opts.smallOff` keeps a phone's full-screen panels full-screen.
+   - `opts.save === false` skips localStorage (the deck keeps `_dpGeoSave`).
+   - `opts.onEnd(box)` lets the caller persist its OWN geometry shape.
+   The pointer delta and the rect are divided by the page zoom on EVERY window: the
+   app zooms the root element (`documentElement.style.zoom`), so a rect is in VISUAL px
+   while `left`/`top` are laid out inside the zoomed tree — the trap that shipped a
+   mis-placed popup in `645eef0`.
+   A centred box (`transform: translate(-50%,-50%)`) becomes a PLACED one on the first
+   press, so the same maths holds for modals and for the fixed deck. */
+function dragify(handle, box, key, opts) {
+  if (!handle || !box || box.dataset.dragBound) return;
+  box.dataset.dragBound = "1";
+  opts = opts || {};
   handle.addEventListener("pointerdown", e => {
-    if (e.target.closest("button")) return;
-    const sx = e.clientX, sy = e.clientY, ox = box.offsetLeft, oy = box.offsetTop;
-    const mv = ev => {
-      box.style.left = Math.max(0, ox + ev.clientX - sx) + "px";
-      box.style.top = Math.max(0, oy + ev.clientY - sy) + "px";
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    if (e.target.closest && e.target.closest("button, a, input, select, textarea")) return;
+    if (opts.smallOff && window.matchMedia && window.matchMedia("(max-width: 900px)").matches) return;
+    const z = _dpZoom();
+    const r = box.getBoundingClientRect();
+    box.style.transform = "none";
+    box.style.margin = "0";
+    box.style.left = (r.left / z) + "px";
+    box.style.top = (r.top / z) + "px";
+    const x0 = e.clientX, y0 = e.clientY;
+    const l0 = r.left / z, t0 = r.top / z, w = r.width / z, h = r.height / z;
+    handle.classList.add("dragging");
+    try { handle.setPointerCapture(e.pointerId); } catch (_) {}
+    const move = ev => {
+      const vw = window.innerWidth / z, vh = window.innerHeight / z;
+      const left = Math.max(0, Math.min(l0 + (ev.clientX - x0) / z, Math.max(0, vw - w)));
+      const top = Math.max(0, Math.min(t0 + (ev.clientY - y0) / z, Math.max(0, vh - h)));
+      box.style.left = left + "px";
+      box.style.top = top + "px";
     };
     const up = () => {
-      handle.removeEventListener("pointermove", mv); handle.removeEventListener("pointerup", up);
+      handle.classList.remove("dragging");
+      handle.removeEventListener("pointermove", move);
+      handle.removeEventListener("pointerup", up);
       handle.removeEventListener("pointercancel", up);
       try { handle.releasePointerCapture(e.pointerId); } catch (_) {}
-      localStorage.setItem(key, JSON.stringify({ x: box.offsetLeft, y: box.offsetTop, w: box.offsetWidth, h: box.offsetHeight }));
+      if (opts.save !== false) {
+        try {
+          localStorage.setItem(key, JSON.stringify({
+            x: Math.round(parseFloat(box.style.left) || 0),
+            y: Math.round(parseFloat(box.style.top) || 0),
+            w: box.offsetWidth, h: box.offsetHeight }));
+        } catch (_) {}
+      }
+      if (opts.onEnd) { try { opts.onEnd(box); } catch (_) {} }
     };
-    try { handle.setPointerCapture(e.pointerId); } catch (_) {}
-    handle.addEventListener("pointermove", mv); handle.addEventListener("pointerup", up);
-    handle.addEventListener("pointercancel", up); e.preventDefault();
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", up);
+    handle.addEventListener("pointercancel", up);
+    e.preventDefault();
   });
 }
+/* The saved place of a window, applied when it is first shown (one key per window).
+   Clamped into the viewport: a window saved on a bigger screen must never open off
+   the edge. */
+function _winRestore(box, key) {
+  try {
+    const g = JSON.parse(localStorage.getItem(key) || "null");
+    if (!g || !isFinite(g.x) || !isFinite(g.y)) return;
+    // Same unit as `dragify`: layout px, so the clamp divides the viewport by the
+    // page zoom. `_zoom` is still in its temporal dead zone while this runs at boot
+    // (the binding table above), hence the guarded call instead of `_dpZoom()`.
+    let z = 1; try { z = _dpZoom(); } catch (_) { z = 1; }
+    const w = Math.max(120, box.offsetWidth || 0), h = Math.max(80, box.offsetHeight || 0);
+    box.style.transform = "none";
+    box.style.margin = "0";
+    box.style.left = Math.max(0, Math.min(Number(g.x) || 0, Math.max(0, innerWidth / z - w))) + "px";
+    box.style.top = Math.max(0, Math.min(Number(g.y) || 0, Math.max(0, innerHeight / z - h))) + "px";
+  } catch (_) {}
+}
+/* Bind every spawning window ONCE, at boot (the settings head keeps its own call in
+   `buildSettingsWin`, which runs once). A window missing from the DOM is skipped.
+   The preview is the one exception on a phone: its media query makes it the screen
+   (`top/left` are CSS), so `smallOff` keeps it full-screen there. */
+[["#runsPanel", ".rp-head", "sf_win_runs"],
+ ["#pvWin", ".pv-head", "sf_win_preview", { smallOff: true }],
+ ["#diffView", ":scope > div:first-child", "sf_win_diff"],
+ ["#pickModal", ".pick-hd", "sf_win_pick"],
+ ["#textModal", ".pick-hd", "sf_win_text"],
+ ["#voiceHelp", ".pick-hd", "sf_win_voice"],
+ ["#firstRunSetup", ".pick-hd", "sf_win_firstrun"],
+ ["#newSessDlg", ":scope > h2", "sf_win_newsess"],
+ ["#dirPicker", "#dirPath", "sf_win_dirpicker"],
+ ["#rwDlg", ":scope > h2", "sf_win_rewind"]].forEach(([sel, hsel, key, opts]) => {
+  const box = document.querySelector(sel);
+  const handle = box && box.querySelector(hsel);
+  if (!box || !handle) return;
+  dragify(handle, box, key, opts);
+  _winRestore(box, key);
+});
 function resizify(handle, box, key) {
   handle.addEventListener("pointerdown", e => {
     const sx = e.clientX, sy = e.clientY, ow = box.offsetWidth, oh = box.offsetHeight;
@@ -23001,36 +23195,17 @@ if ($("pvControl")) $("pvControl").onclick = () => { _closeDeckPanel(true); show
 (function _dpDrag() {
   const el = $("panelView"), head = el && el.querySelector(".pv-head");
   if (!el || !head) return;
-  head.addEventListener("pointerdown", (e) => {
-    if (e.button !== 0) return;
-    // The tab strip's BUTTONS are excluded, not the strip itself: a press between
-    // two tabs is a drag, a press on a tab still switches the panel.
-    if (e.target.closest && e.target.closest("button, a, input, select, textarea")) return;
-    if (window.matchMedia && window.matchMedia("(max-width: 900px)").matches) return;
-    const z = _dpZoom();
-    const r = el.getBoundingClientRect();
-    const x0 = e.clientX, y0 = e.clientY;
-    const l0 = r.left / z, t0 = r.top / z, w = r.width / z, h = r.height / z;
-    head.classList.add("dragging");
-    try { head.setPointerCapture(e.pointerId); } catch (_) {}
-    let last = { left: l0, top: t0 };
-    const move = (ev) => {
-      const vw = window.innerWidth / z, vh = window.innerHeight / z;
-      last = {
-        left: Math.max(0, Math.min(l0 + (ev.clientX - x0) / z, Math.max(0, vw - w))),
-        top: Math.max(0, Math.min(t0 + (ev.clientY - y0) / z, Math.max(0, vh - h)))
-      };
-      el.style.left = last.left + "px";
-      el.style.top = last.top + "px";
-    };
-    const up = () => {
-      head.classList.remove("dragging");
-      head.removeEventListener("pointermove", move);
-      head.removeEventListener("pointerup", up);
-      _dpGeoSave(last.left, last.top, w, h);
-    };
-    head.addEventListener("pointermove", move);
-    head.addEventListener("pointerup", up);
+  // 2026-11-22: the deck is one of the spawning windows, so it uses the ONE mover
+  // (`dragify`). It keeps its OWN geometry shape through `_dpGeoSave` (left/top/width/
+  // height in layout px), which is why `save` is off here: a second shape in the same
+  // localStorage key would be a second truth.
+  dragify(head, el, "sf_panel_geo", {
+    smallOff: true, save: false,
+    onEnd: (b) => {
+      const z = _dpZoom();
+      _dpGeoSave(parseFloat(b.style.left) || 0, parseFloat(b.style.top) || 0,
+                 b.offsetWidth / z, b.offsetHeight / z);
+    },
   });
 })();
 window.addEventListener("resize", () => {

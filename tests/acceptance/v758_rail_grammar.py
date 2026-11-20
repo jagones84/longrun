@@ -137,7 +137,13 @@ check("F3 the markup wraps the sections in exactly one `.insp-list`",
       and UI.index('<div class="insp-list">') > UI.index('class="insp-tools"')
       and UI.index('<div class="insp-list">') < UI.index('<section data-insp="approvals">'))
 check("F4 both heads are the SAME surface and carry the ONE divider",
-      "background: var(--panel); border-bottom: 1px solid var(--line);" in UI
+      # 2026-11-22: re-pointed, not weakened. The operator asked why the two heads read
+      # as different backgrounds; the answer was one flush strip + one inset card. The
+      # divider moved from a bottom border to the head's own border, and the surface is
+      # now the shared `--hd-surf` token — the intent (one head, one hairline, no
+      # second divider on the tools strip) is unchanged.
+      "background: var(--hd-surf);" in UI
+      and "aside .rail-head, #inspector .insp-tools {" in UI
       and "aside .rail-tools { gap: 4px; padding: 4px 12px 8px; border-bottom: 0; }" in UI)
 
 print("\n---\nv758: %d/%d PASS" % (sum(results), len(results)))

@@ -7,6 +7,16 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **`/context` and `/restart` in the composer — two verbs that reuse the doors that already exist.** Operator:
+  *"in the slash commands include the restart command /restart … and the context command for showing context
+  informations and details (see breakdown RH panel also) don't duplicate code please … commands and tool share
+  the same functions."* `/context` (alias `/ctx`) opens a window with the SAME card the composer popover and
+  the inspector draw (one builder, `_ctxCardHTML`, fed by `_ctxDisplay` from `/api/context`) and the SAME
+  breakdown (`renderCtxItems` from `/api/context/items`), with the SAME two doors (`compactNow`, the compaction
+  settings). `/restart` calls the agent's OWN tool — `harness` with `action: "restart"` — so the UI and an
+  agent share one implementation; no session is passed, so no continuation turn is spawned. Both are in the
+  backend catalogue (`core/slash.py` BUILTINS, so the API catalogue cannot drop them) and the WebUI
+  re-attaches the callbacks by id after the catalogue replaces the first-paint fallback. Locked by `v1250`.
 - **Three WebUI surfaces: inline image preview · diff change-map · context-ring popover.** Operator: *"se
   chiedo fammi vedere una foto X me la fai vedere in chat oltre che darmi il iperlink path"*; *"il diff view …
   non mostra dove sono le modifiche così non so dove scrollare per trovarle"*; *"il cerchietto di contesto …
@@ -116,6 +126,21 @@ All notable changes to Longrun are documented here. The format follows
   browser-rebuilt `/data/sessions/<id>.json` would be a guess.) Locked by `v1067` A1–A6, B1–B10.
 
 ### Changed
+- **File-operation cards, ONE rail-head surface, every spawning window movable.** Operator: *"i don't like edit
+  read write … shall have a different format colour … adequate to THEME selected … maybe italic"*; *"why
+  session and inspector bars are in a different background? … uniform … minimise contrast"*; *"all the
+  spawning panels in the webui shall be movable"*. (1) `fs.read` / `fs.edit` / `fs.write` cards carry their own
+  calm skin — steel (`--acc2`), accent (`--acc`), info (`--info`) — mixed into `--panel2`/`--line`, with an
+  inset 2px bar and an italic file name; the verdict pip keeps `--ok`/`--err`, and the labels split into
+  `Read` / `Edited` / `Wrote` (write no longer says "Edited"). Measured on the render in indigo and celestial.
+  (2) `#aside .rail-head` and `#inspector .insp-tools` are one object: one `--hd-surf` surface, one 36px
+  height, one 8px inset card, one padding (they were a flush strip and an inset card, 3px apart). (3) ONE
+  `dragify(handle, box, key, opts)` moves settings, the runs popover, the preview, the diff view, every
+  picker/dialog and the info windows, remembering each place in `localStorage` and clamping it on open; the
+  Control deck's `_dpDrag` now delegates instead of keeping a second pointer algorithm; the pointer maths
+  divides by the page zoom (the `645eef0` trap) — measured: at zoom 125% a 100/50 pointer move is 100/50
+  visual px; the phone preview stays full-screen (`smallOff`). Locked by `v1250` (31/31); `v758` F4 and
+  `v1051` A1 re-pointed to the new single truth.
 - **The composer's context popover is now the inspector's Context card — one anatomy, one compaction door.**
   Operator: *"clicking on compact in msg box doesn't open the wanted menu with more context details … similar
   to the RH panel. Don't duplicate code backend."* The ring's popover used to draw a stub of its own (four

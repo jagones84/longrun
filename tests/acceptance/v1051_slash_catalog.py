@@ -50,9 +50,9 @@ ids = [c["id"] for c in slash.BUILTINS]
 # the catalogue; the order is the menu order, so this list is pinned in full.
 # v1237: `/status` (the one read-only report about a session) joined between
 # `compact` and `reset`.
-check("A1 the nine built-ins are declared once",
+check("A1 the eleven built-ins are declared once",
       ids == ["goal", "plan", "spec", "plugins", "skills", "compact",
-              "status", "reset", "unlock"], ids)
+              "status", "reset", "unlock", "context", "restart"], ids)
 check("A2 plan/spec are DOCUMENT commands with a doc kind",
       all(c.get("kind") == "doc" and c.get("doc") in ("plan", "spec")
           for c in slash.BUILTINS if c["id"] in ("plan", "spec")))

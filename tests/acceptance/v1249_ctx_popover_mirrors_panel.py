@@ -39,11 +39,17 @@ def check(name, ok, detail=""):
 
 
 # --- A: the inspector's anatomy ---------------------------------------------
+# 2026-11-22: the card markup moved into ONE builder (`_ctxCardHTML`) that the popover
+# and the `/context` window both render, so the anatomy is asserted there and the
+# popover must be using it — the intent (one card, one vocabulary) is unchanged.
+_CARD = HTML.split("function _ctxCardHTML(d)")[1].split("function _ctxPopover()")[0]
 for cls in ("ctxhead", "ctxpct", "meter", "ctxstate", "ctxrow", "ctxacts"):
-    check("A the popover renders .%s (the panel's anatomy)" % cls, cls in _POP)
+    check("A the shared card renders .%s (the panel's anatomy)" % cls, cls in _CARD)
+check("A6 the popover renders that builder, not its own copy",
+      "pop.innerHTML = _ctxCardHTML(d);" in _POP)
 check("A7 the two actions are `.lnk` text actions, like the panel's",
-      _POP.count('class="cp-') == 2 and _POP.count(" lnk\"") == 2)
-check("A8 the population of the card is not hand-rolled twice",
+      _CARD.count('class="cp-') == 2 and _CARD.count(" lnk\"") == 2)
+check("A8 the card is built once (inspector's static copy + the shared builder)",
       HTML.count('class="ctxhead"') == 2, HTML.count('class="ctxhead"'))
 
 # --- B: no second vocabulary -------------------------------------------------
