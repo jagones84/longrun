@@ -71,6 +71,15 @@ All notable changes to Longrun are documented here. The format follows
   Locked by `v1250` (32/32); battery 953/953.
 
 ### Fixed
+- **`/skills` no longer answers "no skills installed" from a stale snapshot.** Measured on the live
+  app after the checkout moved to `MyRepos/`: `GET /api/skills` returned 280 skills and every active
+  symlink resolved, and the agent (whose prompt is built server-side from
+  `memory.skills.skills_context`) listed them — while the composer's `/skills` picker said there were
+  none. The picker rendered `_skillsCache`, filled only by `loadSkills()` at boot, so a tab opened
+  before the tree was populated kept the empty list forever. The cache now records when it was filled;
+  `openSkillMenu()` refreshes a stale/empty catalogue BEFORE rendering (showing "loading skills…",
+  never a false empty state), keeps the skills mode while the request is in flight so the arriving
+  list is rendered, and a fresh cache still renders synchronously. Locked by `v1270` (13/13).
 - **Review follow-up on rounds 164–165: every ledger line stays valid JSON, a URL is not a local
   path, and a concise task is still the task.** Four defects an external review raised against the
   round-164/165 commit, each now pinned by the test that used to miss it.

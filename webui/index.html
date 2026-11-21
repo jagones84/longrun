@@ -8472,7 +8472,19 @@ function openSkillMenu() {
   _slashPluginsOnly = false;
   _slashPluginOnly = null;
   inp.focus();
-  skillsAutocomplete();
+  // 2026-11-22 (operator: "/skills says no skill present but the agent has them"):
+  // the picker rendered a BOOT-TIME snapshot and never refetched, so a tab opened
+  // before the skills tree was populated (e.g. across a repository move) answered
+  // "no skills installed" forever while the server — and therefore the agent's
+  // system prompt — listed every skill. Refresh a stale/empty cache, then render.
+  if (_skillsStale()) {
+    const box = $("slashMenu");
+    if (box) { box.innerHTML = '<div class="slashempty">loading skills…</div>'; box.hidden = false; }
+    const done = () => { if (_slashSkillsOnly) skillsAutocomplete(); };
+    loadSkills().then(done, done);
+  } else {
+    skillsAutocomplete();
+  }
   _renderCmdChips();
 }
 /* v1051: `/plugins` opens the SAME inline menu restricted to installed plugin
@@ -17413,6 +17425,16 @@ async function applyMcpJson() {
 
 /* ---- JAG-109: skills panel + '/' autocomplete (engine = /api/skills) ---- */
 let _skillsCache = [];
+/* 2026-11-22: WHEN the cache was filled, so a snapshot can go stale. `/skills`
+   used to answer "no skills installed" from the boot-time list forever (see
+   openSkillMenu); the picker now refreshes an empty/old cache before rendering. */
+let _skillsLoadedAt = 0;
+let _skillsSyncing = false;
+const SKILLS_CACHE_TTL_MS = 30000;
+function _skillsStale() {
+  return !(_skillsCache || []).length ||
+    (Date.now() - _skillsLoadedAt) > SKILLS_CACHE_TTL_MS;
+}
 /* HA-2 (lot H): the reachability block from the SAME /api/skills payload. Kept
    beside the cache so a re-render (filter typing) does not refetch. */
 let _skillsDiscovery = null;
@@ -17561,15 +17583,18 @@ function renderSkills() {
   section("core", "Registered", core, "skill folders present on disk (skills/<category>/)", false);
 }
 async function loadSkills() {
+  _skillsSyncing = true;
   try {
     const d = await api("GET", "/api/skills");
     _skillsCache = d.skills || [];
+    _skillsLoadedAt = Date.now();
     _skillsDiscovery = d.discovery || null;   // HA-2: same payload, no second call
     const search = $("skillsFilter");
     if (search) search.oninput = renderSkills;
     renderSkills();
     _renderCmdChips();   // the cache just arrived — re-grade any /skill already typed
   } catch (e) { $("skillsSummary").textContent = "error: " + e; }
+  finally { _skillsSyncing = false; }
 }
 /* JAG-403e: a skill opens in the FILE EDITOR (like any other file), not a
    separate modal window. */
@@ -18443,6 +18468,15 @@ function skillsAutocomplete() {
   const _more = Math.max(0, _matched.length - hits.length);
   const _members = _plugin ? (_plugin.members || []).filter(m => m && m.kind !== "skill") : [];
   if (!plugs.length && !cmds.length && !hits.length && !_plugin) {
+    // An explicit `/skills` picker with a refresh in flight is NOT "none
+    // installed" — that was the exact lie the operator hit, fired while the
+    // catalogue was still arriving. Keep the skills mode so the refresh can
+    // render the real list when it lands.
+    if (_slashSkillsOnly && _skillsSyncing && !(_skillsCache || []).length) {
+      box.innerHTML = '<div class="slashempty">loading skills…</div>';
+      box.hidden = false;
+      return;
+    }
     if (q) {
       box.innerHTML = '<div class="slashempty">no command, plugin or skill matches “' +
         esc(raw) + '”</div>';
