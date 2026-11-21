@@ -969,10 +969,27 @@
      history instead of appearing live and vanishing on reload. */
   .msg .turnfoot { margin-top: 5px; font-size: 10px; letter-spacing: .04em;
     color: var(--dim); font-variant-numeric: tabular-nums; }
-  details.think { margin-bottom: 8px; }
-  details.think summary { cursor: pointer; font-size: 11px; color: var(--acc); letter-spacing: .08em; }
-  details.think .t { color: var(--dim); font-size: 12px; white-space: pre-wrap; border-left: 1px solid var(--line-2);
-    padding: 6px 0 6px 12px; margin-top: 6px; max-height: 320px; overflow-y: auto; }
+  /* 2026-11-22 (operator): *"solo i thoughts ha nei frames"*, and TRAE's exact shape is
+     what was asked for (`copialo spudoratamente`): a COLLAPSED thought is a plain row on
+     the same rhythm as a tool line, and the quiet card appears only when the text is
+     open. The 1px frame is always allocated (transparent when closed) so opening it never
+     shifts the row. Everything else in the transcript is a line on the timeline. */
+  details.think { margin: 0 0 10px; border: 1px solid transparent; border-radius: 10px;
+    background: transparent; padding: 0 12px; }
+  details.think[open] { border-color: var(--line);
+    background: color-mix(in srgb, var(--panel2) 55%, transparent); }
+  details.think > summary { display: flex; align-items: center; gap: 7px; cursor: pointer;
+    padding: 8px 0 7px; font-size: 11px; color: var(--dim); letter-spacing: .06em; }
+  details.think > summary::-webkit-details-marker { display: none; }
+  details.think > summary::before { content: "▸"; color: var(--dim); font-size: 10px; }
+  details.think[open] > summary::before { content: "▾"; }
+  details.think > summary .tdot { width: 6px; height: 6px; border-radius: 50%;
+    background: var(--acc); animation: thpulse 1.1s ease-in-out infinite; }
+  details.think:not(.live) > summary .tdot { display: none; }
+  @keyframes thpulse { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { details.think > summary .tdot { animation: none; } }
+  details.think .t { color: var(--dim); font-size: 12px; white-space: pre-wrap;
+    padding: 0 0 10px; margin: 0; max-height: 320px; overflow-y: auto; }
   /* v1.6.3 (JAG-55): copy affordance + inline tool-call mini-cards */
   .msg .who { display: flex; align-items: center; gap: 6px; }
   /* 2026-11-01: WCAG 2.2 AA wants a 24x24 pointer target. The copy affordance was
@@ -982,13 +999,21 @@
     display: inline-flex; align-items: center; justify-content: center;
     min-width: 28px; min-height: 24px; padding: 0 7px; border-radius: 6px; cursor: pointer; }
   .msg .copy:hover { color: var(--txt); border-color: var(--acc); }
-  .toolcard { display: flex; flex-direction: column; align-items: stretch; gap: 4px; margin: 2px 0 10px; padding: 6px 10px;
-    border: 1px solid var(--line); border-radius: 10px; background: var(--panel2); font-size: 12px; max-width: 640px; }
+  /* 2026-11-22 (operator): *"non mi piace vedere testi e messaggi vari nei box … guarda
+     TRAE: solo i thoughts ha nei frames"*. A tool call is a LOG LINE on a left timeline,
+     not a card: one 26px row (glyph · verb · file · time), a hover tint, and the details
+     open IN PLACE. The frame belongs to the reasoning block only (`details.think`). */
+  .toolcard { display: flex; flex-direction: column; align-items: stretch; gap: 0; margin: 0;
+    padding: 0 4px 0 10px; border: 0; border-left: 1px solid var(--line);
+    border-radius: 0; background: transparent; font-size: 12px; max-width: 100%; }
+  .toolcard:hover { background: color-mix(in srgb, var(--hover) 55%, transparent); }
+  .toolcard.expanded { border-left-color: var(--acc); border-radius: 0 8px 8px 0;
+    background: color-mix(in srgb, var(--panel2) 55%, transparent); }
   /* 2026-11-01: the head is the card's disclosure control (role=button), so it is a ROW,
      not a text strip: it measured 401x18 before, i.e. an 18px tap target repeated on
      every tool call in the transcript. The wrench emoji that opened it is gone — the
      tool name is the label. */
-  .toolcard-head { display: flex; align-items: center; gap: 8px; min-height: 28px; }
+  .toolcard-head { display: flex; align-items: center; gap: 8px; min-height: 26px; }
   /* axe (2026-11-07): the disclosure is a native <button> so the diff/open buttons
      can be its siblings. It flexes over the row (the whole strip stays clickable),
      and carries no chrome of its own — the card is the surface. */
@@ -1003,8 +1028,8 @@
     stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
   .toolcard .tc-action:hover { background: var(--hover); border-color: var(--acc); color: var(--acc); }
   .toolcard .tc-action:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .toolcard .tc-name { font-weight: 600; color: var(--txt); }
-  .toolcard .tc-meta { color: var(--dim); font-size: 11px; margin-left: auto; }
+  .toolcard .tc-name { font-weight: 400; color: var(--txt); font-size: 12px; }
+  .toolcard .tc-meta { color: var(--dim); font-size: 10.5px; margin-left: auto; }
   .toolcard.pending { opacity: .7; }
   /* 2026-11-01: the tool-card verdict is a PIP, not a colour emoji. The card already
      carries `ok`/`err`, so the class paints the dot — no per-update text write. */
@@ -1013,31 +1038,21 @@
     color: var(--dim); flex: 0 0 auto; }
   .toolcard .tc-ic svg { width: 14px; height: 14px; fill: none; stroke: currentColor;
     stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
-  .toolcard.ok .tc-ic { color: var(--ok); }
+  .toolcard.ok .tc-ic { color: var(--dim); }
   .toolcard.err .tc-ic { color: var(--err); }
-  .toolcard.err { border-color: rgba(255,119,119,.5); }
-  /* 2026-11-22 (operator): *"i don't like edit read write, how it shows the file shall have a
-     different format/colour … and maybe italic"*. A file operation is its own OBJECT in the
-     transcript, so it gets its own calm skin — read (steel), edit (theme accent) and write
-     (theme info) — drawn from the SAME theme tokens as every other surface, so celestial/
-     sand/sakura read correctly. Only the SURFACE and the file name change: the verdict pip
-     keeps `--ok`/`--err` (rule 1: a state is an icon, not a colour of the card). The accent
-     sits inside the box (`inset`), so nothing reflows when it appears. */
-  .toolcard[data-tool="fs.read"] {
-    background: color-mix(in srgb, var(--acc2) 8%, var(--panel2));
-    border-color: color-mix(in srgb, var(--acc2) 26%, var(--line));
-    box-shadow: inset 2px 0 0 color-mix(in srgb, var(--acc2) 70%, transparent); }
-  .toolcard[data-tool="fs.edit"] {
-    background: color-mix(in srgb, var(--acc) 7%, var(--panel2));
-    border-color: color-mix(in srgb, var(--acc) 26%, var(--line));
-    box-shadow: inset 2px 0 0 color-mix(in srgb, var(--acc) 70%, transparent); }
-  .toolcard[data-tool="fs.write"] {
-    background: color-mix(in srgb, var(--info) 8%, var(--panel2));
-    border-color: color-mix(in srgb, var(--info) 26%, var(--line));
-    box-shadow: inset 2px 0 0 color-mix(in srgb, var(--info) 70%, transparent); }
-  .toolcard[data-tool="fs.read"] .tc-name { font-style: italic; color: color-mix(in srgb, var(--acc2) 45%, var(--txt)); }
-  .toolcard[data-tool="fs.edit"] .tc-name { font-style: italic; color: color-mix(in srgb, var(--acc) 45%, var(--txt)); }
-  .toolcard[data-tool="fs.write"] .tc-name { font-style: italic; color: color-mix(in srgb, var(--info) 45%, var(--txt)); }
+  .toolcard.err { border-left-color: var(--err); }
+  /* 2026-11-22 (operator): *"i don't like edit read write … shall have a different
+     format colour … adequate to THEME selected … maybe italic"* and, one round later,
+     *"non voglio read edit tutto italico, solo il nome file — il Read no"*. The TOOL
+     owns the GLYPH and the FILE NAME only; the verb is normal text like every other log
+     line, and the row has no surface of its own (the timeline is the shape). */
+  .toolcard .tc-file { font-style: italic; }
+  .toolcard[data-tool="fs.read"] .tc-file { color: color-mix(in srgb, var(--acc2) 70%, var(--txt)); }
+  .toolcard[data-tool="fs.edit"] .tc-file { color: color-mix(in srgb, var(--acc) 70%, var(--txt)); }
+  .toolcard[data-tool="fs.write"] .tc-file { color: color-mix(in srgb, var(--info) 70%, var(--txt)); }
+  .toolcard[data-tool="fs.read"] .tc-ic { color: color-mix(in srgb, var(--acc2) 75%, var(--dim)); }
+  .toolcard[data-tool="fs.edit"] .tc-ic { color: color-mix(in srgb, var(--acc) 75%, var(--dim)); }
+  .toolcard[data-tool="fs.write"] .tc-ic { color: color-mix(in srgb, var(--info) 75%, var(--dim)); }
   /* 2026-11-16: web cards, turn header, sources — the Trae-shaped surface.
      Everything here renders values the card already persists (`data`), so a
      reload and the live stream share one look. */
@@ -3156,7 +3171,9 @@
   #log { padding: 24px 28px 12px; }
   .msg .who { gap: 8px; }
   .msg .copy { padding: 2px 8px; border-radius: 6px; font-size: 10px; }
-  .toolcard { border-radius: 10px; background: var(--panel); padding: 8px 11px; }
+  /* 2026-11-22: the transcript row is a LOG LINE (borderless, on the left timeline);
+     this pass must not re-introduce a card surface (`background`/`radius`/`padding`). */
+  .toolcard { border-radius: 0; background: transparent; padding: 0 4px 0 10px; }
   .tctree > summary { border-radius: var(--r-sm); background: transparent; }
   .tctree > summary:hover { background: var(--hover); }
   .fgroup > summary { border-radius: var(--r-sm); }
@@ -3261,20 +3278,16 @@
      So: a 36px head with an 11px letter-spaced label, a 29px section row whose
      summary (`ihd-s`) is the collapsed state's status line, and a drag grip in
      the row's left gutter that appears on hover only. */
-  :root { --rail-hd: 36px; --rail-row: 29px; --rail-x: 10px;
-    /* 2026-11-22 (operator): *"why are sessions and inspector bars in a different background?
-       can you uniform please to minimise contrast"*. Measured on the render (1440x900): both
-       heads were already `--panel` over a `--aside` body, but ONE was a flush strip and the
-       other an inset card, so they read as two different objects. `--hd-surf` is the single
-       surface for both: the panel pulled 45% toward the rail body, i.e. barely a step. */
-    --hd-surf: color-mix(in srgb, var(--panel) 55%, var(--aside)); }
-  /* RH-2: ONE head for both rails — same height, same SURFACE and the same inset card
-     shape, so the two "bars" are the same object (the operator asked for graphic symmetry).
-     The sessions tools strip no longer carries the divider: one border per rail, on the head. */
+  :root { --rail-hd: 36px; --rail-row: 29px; --rail-x: 10px; }
+  /* 2026-11-22 (operator): *"guarda inspector panel e sessions panel non hanno stesso
+     margine dal TOP bar … poi io li toglierei dal frame oltre che allinearli"*. The frame
+     is GONE: a head is a LABEL on the rail body, not a card. Both rails use the same
+     12px gutter (the horizontal padding they already share) and the same anatomy, so
+     the two labels sit on the same line and the rows under them start at the same edge. */
   aside .rail-head, #inspector .insp-tools {
     height: var(--rail-hd); min-height: var(--rail-hd); margin: 0 0 6px;
-    padding: 0 var(--rail-x) 0 12px; gap: 6px;
-    background: var(--hd-surf); border: 1px solid var(--line); border-radius: 8px;
+    padding: 0; gap: 6px;
+    background: transparent; border: 0; border-radius: 0;
     display: flex; align-items: center; }
   aside .rail-head h2, #inspector .insp-tools h2 {
     flex: 1 1 auto; margin: 0; padding: 0; font-size: 11px; font-weight: 600;
@@ -3289,20 +3302,21 @@
   aside .rail-tools .runs-bar { padding: 2px 7px; }
   aside .rail-search { padding: 6px 12px; border-bottom: 1px solid var(--line); }
   aside .rail-list { margin-top: 0; }
-  /* RH-14: the head lives INSIDE the (now) scrolling panel, so it is pinned with
+  /* RH-14: the head lives INSIDE the scrolling panel, so it is pinned with
      `position: sticky` — it stays at the top instead of scrolling away with the
-     sections. `--panel` on it is already its own background, so the sections slide
-     under it without bleeding through. */
-  #inspector .insp-tools { position: sticky; top: 0; z-index: 3; }
-  /* RH-14: no top padding on the context panel: the head's flow position is then
-     exactly the scrollport's top edge, so it is pinned from the first pixel — it
-     does not travel (and no section can show above it). The left/right padding
-     stays, so the content inset is unchanged; the SCROLLBAR (drawn on the panel's
-     padding box) now runs the panel's full height on its right edge. */
+     sections. The pin offset is declared once, with the gutter (see below). */
+  /* RH-14: the panel owns the padding (see below), so the sticky head is pinned from the
+     first pixel and no section can show above it; the scrollbar runs the full height. */
   #rail { padding-top: 0; }
-  /* RH-14: #inspector adds no padding of its own — the panel (`aside`) owns it, so
+  /* RH-14: #rail adds no padding of its own — the panel (`aside`) owns it, so
      the sticky head can reach the panel's top edge. Wins over `padding: 8px`. */
   #inspector { padding: 0; }
+  /* 2026-11-22: both rails now start at the SAME distance from the topbar. The session
+     rail's 14px gutter becomes 12px; the inspector reaches 12px by a MARGIN + `top:12px`,
+     so the sticky head is pinned 12px below the topbar from the first pixel (no travel). */
+  #rail { padding: 0 12px 14px; }
+  #aside { padding-top: 12px; }
+  #inspector .insp-tools { position: sticky; top: 12px; z-index: 3; margin-top: 12px; }
   #inspector section { position: relative; border-bottom: 1px solid var(--line); }
   #inspector section:last-of-type { border-bottom: 0; }
   #inspector .insp-hd {
@@ -4222,7 +4236,7 @@
             title="reveal this session in the sessions panel — expand its group and center it"
             aria-label="reveal the current session in the sessions panel"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="6.5"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3"/></svg></button>
     <button class="ghost fold-tg" data-tree-todos data-call="toggleGroups" title="expand all groups (tasks + free threads)" aria-label="expand all groups (tasks + free threads)"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.5 9.5 12 5l4.5 4.5"/><path d="m7.5 14.5 4.5 4.5 4.5-4.5"/></svg></button>
-    <button class="ghost" data-tree-thoughts data-call="toggleThoughts" title="show every chain-of-thought block" aria-label="show every chain-of-thought block"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.6 12C4.6 7.6 8.1 5.4 12 5.4s7.4 2.2 9.4 6.6c-2 4.4-5.5 6.6-9.4 6.6S4.6 16.4 2.6 12Z"/><circle cx="12" cy="12" r="2.6"/><path class="ic-slash" d="M3.4 3.4 20.6 20.6"/></svg></button>
+    <button class="ghost" data-tree-thoughts data-call="toggleThoughts" title="show every thought block" aria-label="show every thought block"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.6 12C4.6 7.6 8.1 5.4 12 5.4s7.4 2.2 9.4 6.6c-2 4.4-5.5 6.6-9.4 6.6S4.6 16.4 2.6 12Z"/><circle cx="12" cy="12" r="2.6"/><path class="ic-slash" d="M3.4 3.4 20.6 20.6"/></svg></button>
     <button class="ghost" data-tree-todos data-call="nameThreads" title="name every untitled Free.* group with one LLM subroutine (the chat model; no step limit)" aria-label="title the free thread groups"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0l-7.2-7.2A2 2 0 0 1 2.8 12V4.2A1.2 1.2 0 0 1 4 3h7.8a2 2 0 0 1 1.4.6l7.4 7.4a2 2 0 0 1 0 2.4Z"/><circle cx="7.6" cy="7.6" r="1.2" fill="currentColor" stroke="none"/></svg></button>
     </div>
     </div>
@@ -5985,8 +5999,8 @@ function _updateTreeTools() {
   if (tBtn) {
     tBtn.hidden = !thinks.length;
     tBtn.classList.toggle("is-off", !tShown);
-    const tl = tShown ? "hide every chain-of-thought block"
-                      : "show every chain-of-thought block";
+    const tl = tShown ? "hide every thought block"
+                      : "show every thought block";
     tBtn.title = tl; tBtn.setAttribute("aria-label", tl);
   }
 }
@@ -6467,9 +6481,10 @@ function _toolUI(tool, args) {
     return { icon: TOOL_SVG.globe,
              label: "Searched Web" + (q ? ' "' + q + '"' : "") + (n > 1 ? " (+" + (n - 1) + ")" : "") };
   }
-  if (t === "fs.read") return { icon: TOOL_SVG.read, label: "Read " + _baseName(a.path) };
-  if (t === "fs.write") return { icon: TOOL_SVG.edit, label: "Wrote " + _baseName(a.path) };
-  if (t === "fs.edit") return { icon: TOOL_SVG.edit, label: "Edited " + _baseName(a.path) };
+  // 2026-11-22 (operator): only the FILE NAME is italic — the verb stays normal text.
+  if (t === "fs.read") return { icon: TOOL_SVG.read, verb: "Read", file: _baseName(a.path) };
+  if (t === "fs.write") return { icon: TOOL_SVG.edit, verb: "Wrote", file: _baseName(a.path) };
+  if (t === "fs.edit") return { icon: TOOL_SVG.edit, verb: "Edited", file: _baseName(a.path) };
   if (t === "glob" || t === "glob.list") return { icon: TOOL_SVG.folder, label: "Listed " + (_baseName(a.path || a.pattern) || ".") };
   if (/^(grep|search)/.test(t)) return { icon: TOOL_SVG.search, label: "Searched files" + (a.query || a.pattern ? ' "' + (a.query || a.pattern) + '"' : "") };
   if (t === "shell" || t === "shell.exec") return { icon: TOOL_SVG.term, label: "Command executed" };
@@ -6480,6 +6495,17 @@ function _toolUI(tool, args) {
   if (t.startsWith("matrix")) return { icon: TOOL_SVG.grid, label: "Matrix · " + t.split(".").pop() };
   if (t.startsWith("todo.")) return { icon: TOOL_SVG.task, label: t };
   return { icon: TOOL_SVG.dot, label: t };
+}
+/* The row label: a file operation puts its verb in normal text and ONLY the file name
+   in the tool tint + italic; every other tool keeps its plain label. */
+function _toolNameHTML(ui) {
+  if (ui && ui.file !== undefined) {
+    const file = String(ui.file || "");
+    // A live card can exist for one frame before its args arrive (no path yet): show the
+    // verb alone rather than a dangling italic gap.
+    return esc(ui.verb || "") + (file ? ' <i class="tc-file">' + esc(file) + "</i>" : "");
+  }
+  return esc((ui && ui.label) || "tool");
 }
 /* --- turn header, tally, sources, citations (2026-11-16) -------------------- */
 let _turnT0 = 0, _turnElapsed = 0, _turnTimer = null, _turnHeadEl = null;
@@ -6710,7 +6736,7 @@ function toolCard(tool, args, ts) {
   wrap.innerHTML = `<div class="toolcard" data-tool="${esc(name)}">` +
     `<div class="toolcard-head"><button type="button" class="tc-toggle" aria-expanded="false" aria-controls="${id}">` +
     `<span class="tc-ic" aria-hidden="true">${ui.icon}</span>` +
-    `<span class="tc-name">${esc(ui.label)}</span>${_tsSpan(ts)}<span class="tc-meta">running…</span><span class="tc-chev" aria-hidden="true">▾</span></button></div>` +
+    `<span class="tc-name">${_toolNameHTML(ui)}</span><span class="tc-meta">running…</span>${_tsSpan(ts)}<span class="tc-chev" aria-hidden="true">▾</span></button></div>` +
     `<div class="toolcard-body" id="${id}"><div class="webhits"></div><pre class="tc-args"></pre><pre class="tc-out"></pre></div></div>`;
   const d = wrap.firstElementChild;
   // JAG-425 (#1): the header toggles the card — make it a real keyboard-accessible
@@ -6733,7 +6759,7 @@ function toolCard(tool, args, ts) {
   // every think delta piled into the first block, hiding the reasoning).
   // JAG-513: the block just ENDED, so it is CLOSED, never re-opened — a CoT is
   // collapsed by default and only the user may open one.
-  if (curThink) { const _t = curThink.querySelector("details"); if (_t) _t.open = false; }
+  if (curThink) { const _t = curThink.querySelector("details"); if (_t) { _t.open = false; _t.classList.remove("live"); } }
   curThink = null;
   scroll(); return d;
 }
@@ -6754,7 +6780,7 @@ function updateToolCard(data) {
   // 2026-11-16: the label follows the ARGS (a live `tool.call` may not have
   // carried them), and a web card renders its structured hits.
   const _ui = _toolUI(tool, data.args);
-  const _nm = card.querySelector(".tc-name"); if (_nm) _nm.textContent = _ui.label;
+  const _nm = card.querySelector(".tc-name"); if (_nm) _nm.innerHTML = _toolNameHTML(_ui);
   const _ic = card.querySelector(".tc-ic"); if (_ic) _ic.innerHTML = _ui.icon;
   if (data.data && typeof data.data === "object") {
     _webBody(card, data.data);
@@ -6861,8 +6887,9 @@ function _tidyThink() {
     const t = (det.querySelector(".t") || {}).textContent || "";
     const m = det.closest(".msg");
     if (!t.trim()) { if (m) m.remove(); return; }
-    const s = det.querySelector("summary");
-    if (s && s.textContent.indexOf("live") >= 0) s.textContent = "🧠 chain-of-thought";
+    // 2026-11-22: the word NEVER changes — only the live dot goes away when the block
+    // is closed (rule 3: an in-flight state animates in place).
+    det.classList.remove("live");
   });
 }
 function ensureThink() {
@@ -6872,7 +6899,10 @@ function ensureThink() {
     // JAG-513: a live chain-of-thought is COLLAPSED like a persisted one. It used
     // to open itself, so a reasoning model buried the actual answer under a wall
     // of text that kept growing. Only the user opens it (click on the summary).
-    d.innerHTML = `<div class="who">${esc(_aiLabel())}</div><details class="think"><summary>🧠 chain-of-thought (live)…</summary><div class="t"></div></details>`;
+    // 2026-11-22 (operator): the reasoning block is the ONE framed surface in the chat
+    // (TRAE's "Thought"): a card with a header whose dot PULSES while it streams — the
+    // state animates in place, the word never changes.
+    d.innerHTML = `<div class="who">${esc(_aiLabel())}</div><details class="think live"><summary><span class="tdot"></span>Thought</summary><div class="t"></div></details>`;
     // JAG-219b: keep the chain-of-thought ABOVE its answer regardless of which
     // channel streams first. A reasoning-first model put it above the answer, but
     // when the answer arrived first the CoT was appended BELOW — the position
@@ -6886,7 +6916,7 @@ function ensureThink() {
 function ensureAnswer() {
   if (!curAns) {
     const d = who("ai", "");
-    if (curThink) curThink.querySelector("details").open = false;
+    if (curThink) { const _t = curThink.querySelector("details"); _t.open = false; _t.classList.remove("live"); }
     curAns = d; curThink = null;
     cursorEl = document.createElement("span"); cursorEl.className = "cursor";
     d.querySelector(".bubble").appendChild(cursorEl);
@@ -7395,7 +7425,7 @@ function harnessDrop(d) {
 function renderThink(text) {
   if (!text) return;
   const d = document.createElement("div"); d.className = "msg ai";
-  d.innerHTML = `<div class="who">${esc(_aiLabel())}</div><details class="think"><summary>🧠 chain-of-thought</summary><div class="t"></div></details>`;
+  d.innerHTML = `<div class="who">${esc(_aiLabel())}</div><details class="think"><summary>Thought</summary><div class="t"></div></details>`;
   d.querySelector(".t").textContent = text;
   _logAppend(d); scroll();
 }
@@ -10273,7 +10303,7 @@ async function loadHistory() {
       if (cot) {
         // JAG-240: the CoT belongs ABOVE its answer, exactly like the live stream.
         const t = document.createElement("div"); t.className = "msg ai";
-        t.innerHTML = `<div class="who">${esc(_aiLabel())}` + _tsSpan(m.ts) + `</div><details class="think"><summary>🧠 chain-of-thought</summary><div class="t"></div></details>`;
+        t.innerHTML = `<div class="who">${esc(_aiLabel())}` + _tsSpan(m.ts) + `</div><details class="think"><summary>Thought</summary><div class="t"></div></details>`;
         t.querySelector(".t").textContent = cot;
         if (d && d.parentNode) d.parentNode.insertBefore(t, d); else _logAppend(t);
       }

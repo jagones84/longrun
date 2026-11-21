@@ -38,34 +38,48 @@ def block(start, end):
     return HTML.split(start)[1].split(end)[0] if start in HTML else ""
 
 
-# ---- A: a file operation is its own card, drawn from the THEME -------------
-_SKIN = '.toolcard[data-tool="fs.read"] {' + block('.toolcard[data-tool="fs.read"] {',
-                                                   "/* 2026-11-16: web cards")
-check("A1 read / edit / write each carry their own selector",
-      all('.toolcard[data-tool="%s"] {' % t in _SKIN for t in ("fs.read", "fs.edit", "fs.write")),
+# ---- A: a file operation is its own row, drawn from the THEME -------------
+# 2026-11-22 (operator, one round later): *"non voglio read edit tutto italico, solo il
+# nome file — il Read no"*, and the row is a LOG LINE, not a card. The intent is the same
+# (a file op is recognisable by its tool colour); the surface moved from the card to the
+# glyph + the file name. Re-pointed, not weakened.
+_SKIN = block('/* 2026-11-22 (operator): *"i don\'t like edit read write',
+              "/* 2026-11-16: web cards")
+check("A1 read / edit / write each tint their own glyph and file name",
+      all('.toolcard[data-tool="%s"] .tc-file {' % t in _SKIN
+          for t in ("fs.read", "fs.edit", "fs.write")),
       _SKIN[:300])
 check("A2 read is steel, edit is the accent, write is info — THREE different tokens",
-      "var(--acc2)" in _SKIN.split('fs.edit"] {')[0]
-      and "var(--acc)" in _SKIN.split('fs.edit"] {')[1].split('fs.write"] {')[0]
-      and "var(--info)" in _SKIN.split('fs.write"] {')[1].split(".tc-name")[0])
-check("A3 the surfaces use color-mix on THEME vars, never a hard-coded colour",
-      "#" not in _SKIN.replace("#", "", 0) or "rgb(" not in _SKIN,
-      "hex/rgb found")
-check("A4 the file name is italic in all three cards",
-      _SKIN.count("font-style: italic") == 3, _SKIN.count("font-style: italic"))
-check("A5 the verdict colour still owns `.tc-ic` (a state is not a card colour)",
-      ".toolcard.ok .tc-ic" in HTML and ".toolcard.err .tc-ic" in HTML
-      and "tc-ic" not in _SKIN)
-check("A6 write says Wrote, edit says Edited — one label per verb",
-      'label: "Wrote "' in HTML and 'label: "Edited "' in HTML)
+      "var(--acc2)" in _SKIN.split('fs.edit"] .tc-file')[0]
+      and "var(--acc)" in _SKIN.split('fs.edit"] .tc-file')[1].split('fs.write"] .tc-file')[0]
+      and "var(--info)" in _SKIN.split('fs.write"] .tc-file')[1].split(".tc-ic")[0])
+check("A3 the tints use color-mix on THEME vars, never a hard-coded colour",
+      "rgb(" not in _SKIN and "color-mix(in srgb, var(--" in _SKIN)
+check("A4 ONLY the file name is italic (one rule, `.tc-file`)",
+      _SKIN.count("font-style: italic") == 1
+      and ".toolcard .tc-file { font-style: italic; }" in _SKIN
+      and ".tc-name { font-style: italic" not in HTML)
+check("A5 the verdict colour still owns `.tc-ic` for errors (a state is an icon)",
+      # 2026-11-22: the glyph now also carries the TOOL tint (a file op is recognisable
+      # by its icon), so the verdict rule is asserted as the ERROR override that paints
+      # the glyph red, with `ok` left neutral — a state is an icon, not a card colour.
+      ".toolcard.ok .tc-ic { color: var(--dim); }" in HTML
+      and ".toolcard.err .tc-ic { color: var(--err); }" in HTML)
+check("A6 write says Wrote, edit says Edited — the verb is normal text",
+      'verb: "Wrote"' in HTML and 'verb: "Edited"' in HTML
+      and 'verb: "Read"' in HTML)
 
-# ---- B: ONE head per rail ---------------------------------------------------
+# ---- B: ONE head per rail, with no frame -----------------------------------
 _HEADS = block("aside .rail-head, #inspector .insp-tools {", "aside .rail-head h2,")
 check("B1 one rule owns BOTH rail heads", "aside .rail-head, #inspector .insp-tools {" in HTML)
-check("B2 the head surface is the shared `--hd-surf` token",
-      "--hd-surf:" in HTML and "background: var(--hd-surf)" in _HEADS, _HEADS[:300])
-check("B3 both heads are the same inset card (border + radius), not a flush strip",
-      "border: 1px solid var(--line)" in _HEADS and "border-radius: 8px" in _HEADS)
+check("B2 the head is a LABEL, not a surface (no background, no border, no radius)",
+      "background: transparent" in _HEADS and "border: 0" in _HEADS
+      and "border-radius: 0" in _HEADS, _HEADS[:300])
+check("B3 both rails start at the SAME distance from the topbar (12px)",
+      # 2026-11-22 (second pass): the session rail by its padding; the inspector by a
+      # margin + sticky offset, so the pinned head never travels the 12px.
+      "#aside { padding-top: 12px; }" in HTML
+      and "#inspector .insp-tools { position: sticky; top: 12px; z-index: 3; margin-top: 12px; }" in HTML)
 check("B4 the old flush-strip surface is gone",
       "background: var(--panel); border-bottom: 1px solid var(--line);" not in HTML)
 

@@ -126,6 +126,19 @@ All notable changes to Longrun are documented here. The format follows
   browser-rebuilt `/data/sessions/<id>.json` would be a guess.) Locked by `v1067` A1–A6, B1–B10.
 
 ### Changed
+- **The transcript is a log, not a stack of boxes; only "Thought" carries a frame.** Operator: *"non mi piace
+  vedere testi e messaggi vari nei box … guarda TRAE: solo i thoughts ha nei frames … copia spudoratamente il
+  formato … non voglio read edit tutto italico, solo il nome file — il Read no … inspector panel e sessions
+  panel non hanno stesso margine dal TOP bar … io li toglierei dal frame."* A tool call is now a **26px log
+  line on a left timeline** (glyph · verb · italic file · time), with no card surface: transparent background,
+  `border: 0`, a 1px `--line` left rule, a hover tint and the details opened in place. Only the **file name**
+  is italic and tool-tinted (`.tc-file`: `fs.read` steel, `fs.edit` accent, `fs.write` info); the verb stays
+  normal text, and one builder (`_toolNameHTML`) feeds both the new row and its live update. **"Thought" is the
+  only block that can be framed**, and — TRAE's shape — the frame appears only while the text is OPEN
+  (`details.think` allocates a transparent 1px frame, `details.think[open]` paints it), so opening never
+  shifts the row; a live block keeps its pulsing dot until the turn moves on. Both rail heads are now
+  **frameless labels at the same 12px offset** from the topbar (sessions by `#aside` padding, inspector by
+  margin + sticky `top: 12px`), and they share one anatomy. Locked by `v1252` (22/22).
 - **A team scope shows ONE team in the Sessions rail; the team option list has one builder.** Operator: *"if I
   filter a team I want only that team not also other teams (it happens because a member can have multiple teams
   that shall be maintained). Filtering a team will show only that TEAM."* A session is drawn once, under the

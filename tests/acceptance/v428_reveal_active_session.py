@@ -70,10 +70,12 @@ check("1i it opens Knowledge expanded on the session's own notebook",
 # while the reasoning is hidden. It used to be 🧠 with a painted bar; a colour emoji
 # in the rail read as a sticker next to six other controls.
 check("1j the chain-of-thought control is one eye toggle (no emoji, no painted bar)",
+      # 2026-11-22: the visible block is TRAE's "Thought" and the control names the same
+      # object ("show every thought block") — one vocabulary. Same assertion, new copy.
       'data-call="toggleThoughts"' in tt
       and "🧠" not in tt
       and "#toolsBar button.slashed::after" not in HTML
-      and tt.count('aria-label="show every chain-of-thought block"') == 1, "")
+      and tt.count('aria-label="show every thought block"') == 1, "")
 # JAG-526: the notebook that belongs to the chat on screen is marked `* current`
 # and the mark moves on every session switch while Knowledge is open.
 _sel = HTML[HTML.index("function selectSession("):]

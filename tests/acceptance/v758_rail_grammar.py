@@ -123,9 +123,11 @@ check("F2 the CONTEXT panel is the ONE scroller, with the head pinned inside it"
       '[data-col="context"]  { flex: 0 0 238px; width: 238px; min-width: 150px; '
       'border-left: 1px solid var(--line); border-right: 0; overflow-y: auto; '
       'overflow-x: hidden; min-height: 0; }' in UI
-      and "#inspector .insp-tools { position: sticky; top: 0; z-index: 3; }" in UI
-      # the head's flow position == the scrollport top, so it is pinned from the
-      # first pixel: no 14px travel and no section can show above it.
+      and "#inspector .insp-tools { position: sticky; top: 12px; z-index: 3; margin-top: 12px; }" in UI
+      # the head's flow position == the scrollport top + 12px (the same gutter as the
+      # sessions head), so it is pinned from the first pixel: no travel and no section
+      # can show above it. 2026-11-22: the 12px offset replaces the 0px one (operator:
+      # "non hanno stesso margine dal TOP bar").
       and "#rail { padding-top: 0; }" in UI)
 check("F2b `.insp-list` is a plain content-height wrapper, not a second scroller",
       "#inspector .insp-list { flex: 0 0 auto; min-height: 0;" in UI
@@ -136,14 +138,12 @@ check("F3 the markup wraps the sections in exactly one `.insp-list`",
       and "<!-- /insp-list (RH-1) -->" in UI
       and UI.index('<div class="insp-list">') > UI.index('class="insp-tools"')
       and UI.index('<div class="insp-list">') < UI.index('<section data-insp="approvals">'))
-check("F4 both heads are the SAME surface and carry the ONE divider",
-      # 2026-11-22: re-pointed, not weakened. The operator asked why the two heads read
-      # as different backgrounds; the answer was one flush strip + one inset card. The
-      # divider moved from a bottom border to the head's own border, and the surface is
-      # now the shared `--hd-surf` token — the intent (one head, one hairline, no
-      # second divider on the tools strip) is unchanged.
-      "background: var(--hd-surf);" in UI
-      and "aside .rail-head, #inspector .insp-tools {" in UI
+check("F4 both heads are the SAME frameless label on the rail body",
+      # 2026-11-22 (operator, second pass): *"io li toglierei dal frame oltre che
+      # allinearli verticalmente"* — the head is a LABEL now: no surface, no border, no
+      # radius, both under the same one rule. Re-pointed, not weakened.
+      "aside .rail-head, #inspector .insp-tools {" in UI
+      and "background: transparent; border: 0; border-radius: 0;" in UI
       and "aside .rail-tools { gap: 4px; padding: 4px 12px 8px; border-bottom: 0; }" in UI)
 
 print("\n---\nv758: %d/%d PASS" % (sum(results), len(results)))

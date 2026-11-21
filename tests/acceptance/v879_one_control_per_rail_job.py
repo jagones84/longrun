@@ -57,8 +57,9 @@ check("B1 the groups glyph follows the real state",
 check("B2 the eye gains a slash while the reasoning is hidden",
       'tBtn.classList.toggle("is-off", !tShown)' in _utt)
 check("B3 the labels name the ACTION (and match the tooltip)",
+      # 2026-11-22: "thought block" is the one name of the block (TRAE's "Thought").
       '"collapse all groups (tasks + free threads)"' in _utt
-      and '"show every chain-of-thought block"' in _utt
+      and '"show every thought block"' in _utt
       and "gBtn.title = gl; gBtn.setAttribute(\"aria-label\", gl)" in _utt)
 check("B4 both rail heads are painted by one function each",
       "function _paintRailToggle()" in HTML and "function _paintInspToggle()" in HTML)

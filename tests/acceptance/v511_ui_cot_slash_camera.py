@@ -87,10 +87,13 @@ check("B4 a team-only action refuses the 'No team' pseudo-scope",
 check("C1 no chain-of-thought block is emitted OPEN",
       'details class="think" open' not in HTML, "")
 ensure = _fn(HTML, "function ensureThink() {")
+# Re-pointed 2026-11-22: the block still opens COLLAPSED; the live one additionally carries
+# `.live` (the pulsing dot), which is the state the round-168 frame keys on.
 check("C2 a LIVE chain-of-thought is created collapsed",
-      'details class="think"' in ensure and " open>" not in ensure, "")
+      'details class="think live"' in ensure and " open>" not in ensure, "")
 check("C3 ending a CoT (tool card) CLOSES it, never re-opens it",
-      'const _t = curThink.querySelector("details"); if (_t) _t.open = false;' in HTML, "")
+      'const _t = curThink.querySelector("details"); if (_t) { _t.open = false;' in HTML
+      and '_t.classList.remove("live");' in HTML, "")
 thead = _fn(HTML, "function toggleThoughts() {")
 check("C4 ONE control toggles every CoT (v879: no longer one-way)",
       "details.think" in thead and "d.open = !open" in thead, "")
