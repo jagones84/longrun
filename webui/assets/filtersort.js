@@ -98,17 +98,20 @@
         }));
   }
 
-  /* The panel markup exists in this one place: the pages never carry a copy. */
+  /* The panel markup exists in this one place: the pages never carry a copy.
+     ROUND 173: the visible `.fs-l` word is not a <label for>, so axe flagged both selects
+     as `label-title-only` — a title is not a name. Each control now carries an aria-label
+     (the visible word stays the sighted label). */
   function panelHtml(ids) {
     return '<div class="fs-row"><span class="fs-l">team</span>' +
-        '<select class="inp fs-inp" id="' + ids.team + '" data-fs="team" ' +
+        '<select class="inp fs-inp" id="' + ids.team + '" data-fs="team" aria-label="team" ' +
         'title="scope the list: one team, the strays (No team), or everything"></select></div>' +
       '<div class="fs-row"><span class="fs-l">sort</span>' +
-        '<select class="inp fs-inp" id="' + ids.sort + '" data-fs="sort" title="order of the rows">' +
+        '<select class="inp fs-inp" id="' + ids.sort + '" data-fs="sort" aria-label="sort" title="order of the rows">' +
           SORTS.map(function (s) { return '<option value="' + s.id + '">' + esc(s.label) + "</option>"; }).join("") +
         "</select>" +
         '<button type="button" class="fs-dir" id="' + ids.dir + '" data-fs="dir" aria-pressed="false" ' +
-        'title="descending">\u2193</button></div>' +
+        'aria-label="sort direction" title="descending">\u2193</button></div>' +
       '<div class="fs-row fs-toggles">' +
         '<label class="fs-chk" title="hide the rows with no content yet (no messages / no prompt)">' +
           '<input type="checkbox" id="' + ids.hideEmpty + '" data-fs="hideEmpty"> hide empty</label>' +
@@ -162,6 +165,7 @@
     function paint() {
       dirBtn.textContent = st.dir === "asc" ? "\u2191" : "\u2193";
       dirBtn.setAttribute("aria-pressed", st.dir === "asc" ? "true" : "false");
+      dirBtn.setAttribute("aria-label", st.dir === "asc" ? "sort direction: ascending" : "sort direction: descending");
       dirBtn.title = st.dir === "asc" ? "ascending \u2014 click for descending"
                                       : "descending \u2014 click for ascending";
       sortSel.value = st.sort;

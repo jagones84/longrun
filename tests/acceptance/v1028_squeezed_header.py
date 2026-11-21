@@ -84,10 +84,12 @@ check("B3 the badge is still in the DOM for the desktop sessions view",
       'id="sessBadge"' in UI and "function updateSessBadge" in UI)
 
 # ---- C: 320 px still fits, with the gear inside the padding -------------------
+# 2026-11-22 ROUND 173: the 360 tier narrows the SAME boxes as the 480 one (30 -> 28 px),
+# so the header keeps one anatomy and one baseline instead of mixing six sizes.
 check("C1 the narrowest phone narrows the tab targets",
-      "gap: 2px; padding: 8px 6px;" in NARROW
-      and "#topbar #topTabs .ttab { width: 32px; }" in NARROW
-      and "#topbar #apprPill { padding: 3px 7px; }" in NARROW)
+      "gap: 3px; padding: 8px 6px;" in NARROW
+      and "#topbar #topTabs .ttab { width: 30px; }" in NARROW
+      and "#topbar #sbxPill, #topbar #apprPill { width: 28px; height: 28px; min-height: 28px; }" in NARROW)
 
 # ---- D: no object was dropped from the bar -----------------------------------
 check("D1 the sandbox state, approval mode, search and settings all remain",

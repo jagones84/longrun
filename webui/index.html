@@ -148,6 +148,11 @@
   #settingsBtn, #palette-open { width: 32px; height: 32px; padding: 0; border-radius: 8px;
     display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
   #settingsBtn svg, #palette-open svg { display: block; }
+  /* ROUND 173: an icon inside a topbar control is NEVER the item that shrinks. The search
+     lens rendered 5 px wide (`padding: 0 10px` left 7 px of content box and the flex SVG
+     gave way) — the operator: *"icone minuscole nella barra, il cerca lente"*. The BOX
+     shrinks with the viewport; the glyph stays at its own 17 px. */
+  #topbar button > svg, #topbar a > svg, #topbar span > svg { flex: 0 0 auto; }
   /* 2026-11-21: the changelog button shares the very same box as the gear/search; a
      SEPARATE rule so the pinned one-box selector above stays intact.
      2026-11-21 (operator: "dont use frames for icon"): it is a FRAMELESS glyph like the
@@ -3277,7 +3282,7 @@
   /* 2026-11-22 ROUND 171 (operator, TRAE reference): the switchable Workspace/Plan bar
      ABOVE the message box, and the chat ✨ inside the message box (top-right). The bar does
      not own a second panel: it hosts the live inspector body while a tab is open. */
-  #cmpSuper { display: flex; flex-direction: column; min-width: 0; }
+  #cmpSuper { display: flex; flex-direction: column; min-width: 0; position: relative; }
   /* ROUND 172 (operator: *"perché non hai aggiunto la sovrabar alla message box? come trae"*):
      the bar is the TOP STRIP of the message box, not a floating row above it — one divider
      under the tabs, the box directly below, exactly the TRAE anatomy. */
@@ -3296,7 +3301,14 @@
   .cs-x { flex: 0 0 auto; border: 0; background: none; color: var(--dim); cursor: pointer;
     font-size: 12px; padding: 2px 4px; }
   .cs-x:hover { color: var(--txt); }
-  .cs-body { max-height: 300px; overflow: auto; padding: 4px 0 2px; }
+  /* ROUND 173 (operator: *"ma perché la barra sopra msg box plan e workspace si alzano? devono
+     rimanere in basso; se clicco si apre il menu sopra"*). The borrowed body is a DROPUP: it
+     floats ABOVE the strip as a menu, so opening Plan/Workspace never moves the composer
+     (before this the 300 px body was in flow and lifted the whole card by 300 px). */
+  .cs-body { position: absolute; left: 0; right: 0; bottom: calc(100% + 6px);
+    max-height: min(52vh, 340px); overflow: auto; padding: 8px 10px;
+    background: var(--menubg); border: 1px solid var(--line-2); border-radius: 10px;
+    box-shadow: 0 18px 48px rgba(0, 0, 0, .46); z-index: 70; }
   .cs-body[hidden] { display: none; }
   .cs-body .insp-body { padding: 0; }
   .cs-body .card { margin: 0 0 6px; }
@@ -3730,27 +3742,33 @@
     #topbar .topTabs { margin-right: 0; }
   }
   @media (max-width: 480px) and (min-height: 501px) {
-    /* Four icon tabs + the brand ⋮ + the sandbox dot + the approvals chip + search +
-       changelog + gear must fit ~363 px — what a OnePlus 15R reports at dpr 3.5.
-       Measured 2026-11-21 (mobile emulation, approvals chip visible): 388 px of
-       content at 363 and 388 at 380 — 25/8 px OVER, so the right end (the gear) was
-       clipped by the header scroller: "la barra superiore è satura e non si vede
-       tutta". The ⋮ is part of the BRAND, so it HUGS the wordmark (the logo's 6 px
-       padding and the bar gap were dead space); every target loses 1-2 px, which is
-       exactly what brings the row back inside the viewport. */
-    #topbar { gap: 3px; padding: 8px 7px; }
+    /* ROUND 173 (operator: *"icone minuscole nella barra, il cerca lente … disallineate"*):
+       ONE anatomy in the phone header — 30×30 for every right-side control, 32×52 labels for
+       the tabs, the sandbox dot and the approvals ✓ inside the same 30×30 box, all on one
+       baseline. Measured before: 24×30, 24×16, 32×20, 27×30, 27×27, 27×27 with tops at
+       11/16/18/11/12 px — a ragged row of six different sizes. */
+    #topbar { gap: 4px; padding: 8px 7px; }
     #topbar .logo { padding-right: 0; }
     #topbar .brand-wrap { margin-left: -3px; }
+    #topbar .brand-menu-btn { width: 30px; height: 30px; min-height: 30px; }
     #topbar #topTabs .ttab { width: 32px; }
     #topbar #palette-open, #topbar #settingsBtn, #topbar #changelogBtn {
-      width: 27px; min-width: 27px; height: 27px; }
+      width: 30px; min-width: 30px; height: 30px; padding: 0; }
+    #topbar #sbxPill, #topbar #apprPill {
+      width: 30px; height: 30px; min-height: 30px; padding: 0;
+      justify-content: center; font-size: 0; }
+    #topbar #apprPill::before { content: "\2713"; font-size: 12px; line-height: 1; }
   }
   @media (max-width: 360px) and (min-height: 501px) {
-    /* 320 px (the narrowest phone): the four icon tabs + sandbox dot + approval mode +
-       search + gear must fit; narrow the tab targets so the gear keeps the padding. */
-    #topbar { gap: 2px; padding: 8px 6px; }
-    #topbar #topTabs .ttab { width: 32px; }
-    #topbar #apprPill { padding: 3px 7px; }
+    /* 320-360 px: the same anatomy, one step smaller — every box shrinks together, so the
+       row keeps ONE baseline instead of mixing sizes. */
+    #topbar { gap: 3px; padding: 8px 6px; }
+    #topbar .logo svg { width: 18px; height: 18px; }
+    #topbar .brand-menu-btn { width: 28px; height: 28px; min-height: 28px; }
+    #topbar #topTabs .ttab { width: 30px; }
+    #topbar #palette-open, #topbar #settingsBtn, #topbar #changelogBtn {
+      width: 28px; min-width: 28px; height: 28px; }
+    #topbar #sbxPill, #topbar #apprPill { width: 28px; height: 28px; min-height: 28px; }
   }
   /* 2026-11-21 (measured defect): at 320 CSS px the bar still carried 348 px with the
      approvals chip visible — 28 px over — and the header scroller clipped the GEAR
@@ -3759,12 +3777,14 @@
      tabs. Targets stay >= 24 px (the a11y floor the app already uses in a rail). */
   @media (max-width: 340px) and (min-height: 501px) {
     #topbar { gap: 2px; padding: 8px 5px; }
-    #topbar #topTabs .ttab { width: 28px; }
+    #topbar .logo svg { width: 18px; height: 18px; }
+    #topbar .brand-menu-btn { width: 26px; height: 26px; min-height: 26px; }
+    #topbar #topTabs .ttab { width: 26px; }
     #topbar #palette-open, #topbar #settingsBtn, #topbar #changelogBtn {
       width: 25px; min-width: 25px; height: 25px; }
-    #topbar .logo svg { width: 18px; height: 18px; }
-    #topbar #brandMenuBtn { width: 22px; }
-    #topbar #apprPill { padding: 2px 5px; }
+    #topbar #sbxPill, #topbar #apprPill { width: 25px; height: 25px; min-height: 25px; }
+    #topbar .brand-menu-btn svg, #topbar #palette-open svg, #topbar #settingsBtn svg,
+    #topbar #changelogBtn svg { width: 16px; height: 16px; }
   }
   /* v1014: the narrow phone's side room is the cheapest space the model name can
      have — 16 px here, and no control is resized or covered. Declared LAST for the
@@ -4062,9 +4082,9 @@
       </header>
       <div class="rail-tools" role="toolbar" aria-label="session tools">
         <button type="button" class="rail-btn" id="railNew" data-call="newSession"
-                title="new session" aria-label="new session">＋</button>
+                title="new session" aria-label="new session"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
         <button type="button" class="rail-btn" id="railSearch" aria-expanded="false"
-                aria-controls="railSearchRow" title="search sessions" aria-label="search sessions">🔍</button>
+                aria-controls="railSearchRow" title="search sessions" aria-label="search sessions"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m19.5 19.5-3.6-3.6"/></svg></button>
         <button type="button" id="runsBar" class="runs-bar" aria-controls="runsPanel"
                 aria-expanded="false"
                 title="agents in flight · sessions that finished while you were elsewhere">

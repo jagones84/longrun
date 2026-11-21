@@ -126,6 +126,19 @@ All notable changes to Longrun are documented here. The format follows
   browser-rebuilt `/data/sessions/<id>.json` would be a guess.) Locked by `v1067` A1–A6, B1–B10.
 
 ### Changed
+- **One 30×30 anatomy in the phone header, a themed full-width filter sheet, and SVG glyphs in the rail
+  toolbar.** Operator: *"icone minuscole nella barra, il cerca lente … disallineate, guarda e capisci da solo
+  cosa va fatto"*; *"ci sono menu che non sono coerenti col theme, soprattutto mobile, per esempio il
+  filtro"*. (1) The search lens rendered **5 px wide**: `#palette-open` had `padding: 0 10px` inside a 27 px
+  box and the flex SVG gave way — every topbar glyph now has `flex: 0 0 auto` and its own 17 px. (2) Below
+  480 px every right-side control is ONE 30×30 box on one baseline (was 24×30, 24×16, 32×20, 27×30, 27×27,
+  27×27 with tops at 11/16/18/11/12): sandbox dot and approvals ✓ included, tabs 32×52; the 360 and 340
+  tiers shrink the SAME boxes (28/25) instead of mixing sizes. (3) The FilterSort panel drops the only
+  UPPERCASE label in the product (9.5 px + .10em tracking → 11 px sentence case) and, on a phone, is a
+  full-width sheet (8 px margins, 12 px radius, 36 px controls) like the model picker; both selects and the
+  direction button now carry `aria-label` (axe `label-title-only`). (4) The rail's new-session and search
+  buttons are SVG glyphs — the search was the 🔍 emoji. Locked by `v1257` B1–B4, C1–C4, D1–D2;
+  `v1245`, `v1028` re-pointed with dated comments.
 - **The Workspace/Plan bar is the message box's top strip, session rows are ONE line, the todo id sits
   beside its badge, and the Agents panel gets its funnel back.** Operator, with TRAE screenshots: *"perché
   non hai aggiunto la sovrabar alla message box? come trae"*; *"nel LH panel sessions le cose stanno tutte in
@@ -265,6 +278,14 @@ All notable changes to Longrun are documented here. The format follows
   tool gate. (Locked by `v1052` B1/B1b, N9d/N9d2, N11b/N11b2, O1–O7; `v785` K1–K5; `v763` F1–F2.)
 
 ### Fixed
+- **The Workspace/Plan menu drops UP: opening a tab no longer lifts the composer.** Operator: *"ma perché
+  la barra sopra msg box plan e workspace si alzano? devono rimanere in basso, se clicco si apre il menu
+  sopra"*. Measured on a 390×844 phone: opening Plan moved `#composer` from y=618 to y=318 — the borrowed
+  inspector body (300 px) was a flex child in flow. It is now an absolutely positioned DROPUP anchored to
+  the strip (`#cmpSuper { position: relative }`, `.cs-body { position: absolute; bottom: calc(100% + 6px) }`)
+  with a menu surface, `max-height: min(52vh, 340px)` and its own scroll. Measured after: composer
+  `[8,618,330,146]` before AND after (desktop `[239,742,480,146]`), body floats at `[17,283,312,340]`
+  entirely above the strip. Locked by `v1257` A1–A3.
 - **The composer's context ring opens its card again — a transcript answer could own `id="cmpCtx"`.**
   Operator: *"ma perché ti ostini a non fare aprire il menu cliccando sul context roundcircel in msg box?
   non si apre ti dico"*. Rendered markdown kept the `id` attributes of any markup an answer quoted, so a

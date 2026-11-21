@@ -9,9 +9,11 @@
   box-shadow: 0 18px 48px rgba(0, 0, 0, .46); font-size: 12px;
 }
 .fs-row { display: flex; align-items: center; gap: 6px; margin: 5px 0; }
+/* ROUND 173 (operator: *"i menu non sono coerenti col theme, soprattutto mobile"*): the
+   label was 9.5px UPPERCASE with .10em tracking — the one stampatello in the product, and
+   it read as debug chrome next to every other 11px sentence-case label. */
 .fs-l {
-  color: var(--dim, #9aa1ae); font-size: 9.5px; letter-spacing: .10em;
-  text-transform: uppercase; min-width: 34px;
+  color: var(--dim, #9aa1ae); font-size: 11px; min-width: 34px;
 }
 .fs-inp { flex: 1 1 auto; min-width: 0; padding: 4px 6px; font-size: 12px; }
 .fs-dir {
@@ -26,3 +28,21 @@
 .fs-chk { display: inline-flex; align-items: center; gap: 5px; color: var(--txt, #e7e9ee); cursor: pointer; white-space: nowrap; }
 .fs-chk input { accent-color: var(--acc, #cf8a4a); margin: 0; }
 .fs-btn svg { display: block; }
+
+/* ROUND 173: on a phone the panel is a full-width sheet like the app's other menus
+   (model picker, more menu), not a 290px card floating over the list with 43px selects
+   and 9px labels. One column per row, 36px controls, one baseline. */
+@media (max-width: 640px) {
+  .fs-pop {
+    left: 8px !important; right: 8px; width: auto; min-width: 0; max-width: none;
+    padding: 10px 12px; border-radius: 12px;
+  }
+  .fs-row { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto;
+            gap: 8px; margin: 7px 0; }
+  .fs-l { font-size: 11px; }
+  .fs-inp { height: 36px; padding: 0 8px; font-size: 13px; }
+  .fs-dir { width: 36px; height: 36px; font-size: 14px; }
+  .fs-toggles { display: flex; flex-wrap: wrap; align-items: center;
+                grid-template-columns: none; gap: 8px 16px; }
+  .fs-chk { font-size: 13px; }
+}

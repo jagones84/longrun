@@ -36,14 +36,15 @@ def check(name, ok, detail=""):
 # ---- A: the 361..480 phone band fits ---------------------------------------
 _BAND = HTML.split("@media (max-width: 480px) and (min-height: 501px)")[1].split("}")[0:1]
 _band = HTML.split("@media (max-width: 480px) and (min-height: 501px)")[1][:1400]
+# 2026-11-22 ROUND 173: one 30x30 anatomy (the 3px/27px band had six different sizes).
 check("A1 the band exists and tightens the bar padding + gap",
-      "#topbar { gap: 3px; padding: 8px 7px; }" in _band, _band[:300])
+      "#topbar { gap: 4px; padding: 8px 7px; }" in _band, _band[:300])
 check("A2 the ⋮ hugs the wordmark (logo padding gone, brand pulled in)",
       "#topbar .logo { padding-right: 0; }" in _band
       and "#topbar .brand-wrap { margin-left: -3px; }" in _band)
-check("A3 the tabs and the three icon buttons shave the last pixels",
+check("A3 the tabs and the icon buttons share ONE box in the band",
       "#topbar #topTabs .ttab { width: 32px; }" in _band
-      and "width: 27px; min-width: 27px; height: 27px;" in _band)
+      and "width: 30px; min-width: 30px; height: 30px;" in _band)
 check("A4 the tighter tiers still come LAST (480 before 360)",
       HTML.index("@media (max-width: 480px) and (min-height: 501px)")
       < HTML.index("@media (max-width: 360px) and (min-height: 501px)"))
