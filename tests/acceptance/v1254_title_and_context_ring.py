@@ -55,7 +55,9 @@ check("B3 it looks clickable (pointer, hover, focus ring) — not cursor:help",
 # ---- C: the click path ----------------------------------------------------
 check("C1 the click is DELEGATED to the document, not bound to one node",
       'e.target.closest && e.target.closest("#cmpCtx")' in HTML
-      and "e.preventDefault();\n  _ctxPopover();" in HTML
+      # 2026-11-22 ROUND 172: the handler hands the CLICKED ring to the popover, so the
+      # card can never be anchored to a same-id node inside a transcript.
+      and "e.preventDefault();\n  _ctxPopover(onRing);" in HTML
       and "_cc.onclick = _ctxPopover" not in HTML)
 check("C2 a stale popover node cannot swallow the next click",
       "if (_ctxPopEl && !document.body.contains(_ctxPopEl)) _ctxPopEl = null;" in HTML)

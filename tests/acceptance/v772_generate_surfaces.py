@@ -178,10 +178,13 @@ check("D2 one entry point, idempotent by the surface id (never two buttons)",
       "async function mountSparkle(host, surfaceId, opts)" in UI
       and "'[data-gen-surface=\"' + surfaceId" in UI
       and "el.dataset.genSurface = surfaceId" in UI)
+# 2026-11-22 ROUND 172 (operator: *"e no gialla … falla dello stesso colore dominante di
+# ciò che sta accanto"*): the glyph is an inline SVG in currentColor, not the U+2728 colour
+# emoji the OS paints gold. ONE constant feeds every ✨ control.
 check("D3 the ✨ button posts /api/generate and fills the field",
       "function genBar(surfaceId, opts)" in UI
       and '"/api/generate"' in UI
-      and "btn.textContent = \"✨\"" in UI)
+      and "const SPARK_SVG =" in UI and "btn.innerHTML = SPARK_SVG" in UI)
 check("D4 a draft is undoable and announces the change to the app (input event)",
       "function _genApply(field, text, apply, st)" in UI
       and 'new Event("input", { bubbles: true })' in UI
@@ -230,10 +233,12 @@ check("F1 the state slot renders ICONS through one helper, never a sentence",
       "function _genState(st, kind, opts)" in UI
       and '"✓ drafted"' not in UI and "gen-undo" not in UI
       and '_genState(st, "undo"' in UI and '_genState(st, "warn"' in UI)
-check("F2 the ✨ pulses while the draft is in flight, and its TEXT never changes",
+# 2026-11-22 ROUND 172: the glyph is the SPARK_SVG icon now (the U+2728 emoji was gold on
+# every OS); "the text never changes" became "the icon is never swapped for another".
+check("F2 the ✨ pulses while the draft is in flight, and its icon never changes",
       'btn.classList.add("busy")' in UI and "btn.classList.remove(\"busy\")" in UI
       and "aria-busy" in UI and "animation: genPulse" in UI
-      and 'btn.textContent = "✨"' in UI and '"✨…"' not in UI)
+      and "btn.innerHTML = SPARK_SVG" in UI and '"✨…"' not in UI)
 check("F3 the pulse is off under prefers-reduced-motion",
       "@keyframes genPulse" in UI
       and "prefers-reduced-motion: reduce" in UI.split("@keyframes genPulse")[1][:400])

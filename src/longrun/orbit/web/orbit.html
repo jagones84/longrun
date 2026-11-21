@@ -698,10 +698,10 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   html.embed-panel #deckRail,
   html.embed-panel #viewBar,
   html.embed-panel #buildChip{display:none!important}
-  /* 2026-11-16 (operator): hosted in the Sessions page, the RAIL's funnel is the one
-     filter control — the same state it already applies to agents, jobs, the org chart
-     and the constellation. A second funnel here would be a second truth. */
-  html.embed-panel #agFilterBtn{display:none!important}
+  /* ROUND 172 (operator: *"in agents panel non lo hai messo il filtro come in sessions …
+     dovevi duplicare solo l'oggetto grafico"*): the funnel stays VISIBLE when the deck runs
+     as the Sessions page's Agents panel. It is the SAME FilterSort control (key "agents"),
+     not a second filter — hiding it cost the panel every sort and the team scope. */
   html.embed-panel .wrap{max-width:none;padding:0;height:100vh}
   html.embed-panel main.view-one{height:100vh}
   html.embed-panel main.view-one .deckBody{height:100%;min-height:0}
@@ -1040,7 +1040,7 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
         <button class="btn" id="tmNewBtn" aria-expanded="false"
                 aria-label="new team" title="create a new team">＋ team</button>
         <span class="stack">
-          <button class="btn gen-only" id="lraAutoBtn" aria-expanded="false" aria-label="automate team, agent and job setup with Architect" title="Architect writes the ROLE.md files, the reporting lines and the jobs of the objects in scope. The run is stateless: it keeps no chat and no memory between runs — open it and the goal is the only input.">✨</button>
+          <button class="btn gen-only" id="lraAutoBtn" aria-expanded="false" aria-label="automate team, agent and job setup with Architect" title="Architect writes the ROLE.md files, the reporting lines and the jobs of the objects in scope. The run is stateless: it keeps no chat and no memory between runs — open it and the goal is the only input."><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M11.4 3.6 13 8.2l4.6 1.6-4.6 1.6-1.6 4.6-1.6-4.6L5.2 9.8l4.6-1.6z"/><path d="m18.2 15.4.7 1.9 1.9.7-1.9.7-.7 1.9-.7-1.9-1.9-.7 1.9-.7z"/></svg></button>
         </span>
       </div>
       <!-- create forms: hidden until the matching ＋ button is pressed (keeps the toolbar tidy). -->

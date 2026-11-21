@@ -386,14 +386,16 @@
   /* JAG-431k -> v630: meta vs body halves of a todo row. The STATUS badge is the
      anchor and every ID (agent.todo, job, subjob) stacks UNDER it, so the label
      owns the full width instead of losing ~110px to an inline preamble. */
-  .task .tmeta { display: flex; flex-direction: column; align-items: flex-start;
-    gap: 2px; flex: 0 0 auto; }
+  /* ROUND 172 (operator: *"per i done dentro la chat accapo c'è A1.n65 — mettilo affianco
+     al done, risparmiamo spazio verticale"*): the chip and the node id share ONE row. */
+  .task .tmeta { display: flex; flex-direction: row; align-items: center;
+    gap: 6px; flex: 0 0 auto; }
   .task .tids { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 6px; }
   .task .tmain { display: flex; gap: 6px; align-items: baseline; flex: 1 1 auto; min-width: 0; }
   /* JAG-455: after two wrapped lines, put the label BELOW the status/id row and give
      it the full width. Keep status and identifiers together to save horizontal space. */
   .task.stacked { display: grid; grid-template-columns: minmax(0, 1fr); gap: 3px; align-items: start; }
-  .task.stacked .tmeta { flex-direction: column; align-items: flex-start; gap: 2px; }
+  .task.stacked .tmeta { flex-direction: row; align-items: center; gap: 6px; }
   .task.stacked .tmain { display: flex; flex-wrap: wrap; width: 100%; min-width: 0; }
   .task.stacked .tlabel { flex: 0 0 100%; }
   .graphrow { display:flex; gap:6px; margin-top:6px; flex-wrap:wrap; }
@@ -434,7 +436,10 @@
      and the meta (msgs · age) rides the badge line on the right — so the name is
      never truncated and the row is tighter (was the name beside the badges, meta
      below → 2 lines with truncated names). */
-  .sess { display: flex; flex-wrap: wrap; align-items: center; gap: 0 7px; padding: 6px 8px;
+  /* ROUND 172 (operator: *"nel LH panel sessions le cose stanno tutte in una riga, non
+     andare accapo con l'ID agent e il contesto"*): ONE line — title (shrinks with an
+     ellipsis) · A-id · ctx ring · age · ⋮. The wrap is what doubled the rail's height. */
+  .sess { display: flex; flex-wrap: nowrap; align-items: center; gap: 0 7px; padding: 6px 8px;
     border-radius: var(--r-sm); border: 1px solid transparent; margin-bottom: 2px; cursor: pointer;
     line-height: 1.22; }
   .sess:hover { background: var(--hover); }
@@ -518,7 +523,7 @@
   /* JAG-479: the rail animations are decorative — honour the OS motion setting. */
   @media (prefers-reduced-motion: reduce) { .sess.running::before, .sess.done::before,
     .runs-bar .rb-dot, .rp-row.run .rp-ic::before { animation: none; } }
-  .sess .t { flex-basis: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; font-weight: 500; }
+  .sess .t { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; font-weight: 500; }
   .sess .n { margin-left: auto; color: var(--dim); font-size: 11px; letter-spacing: .02em; }
   .sess .ws { font-size: 12px; flex-shrink: 0; opacity: .85; }
   /* 2026-11-16 (operator): the per-row team symbol is gone — the sticky group header
@@ -1148,10 +1153,10 @@
   .tctree > summary { cursor: pointer; font-size: 12px; font-weight: 600; list-style: none;
     display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start;
     column-gap: 8px; padding: 4px 26px 4px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel2); }
-  /* v630: the STATUS badge is the row's anchor and every ID (agent + todo)
-     stacks UNDER it, so the label owns the whole remaining width instead of
-     sharing it with an inline "done A8.n28" preamble (the mobile report). */
-  .tctree .tcmeta { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+  /* v630: the STATUS badge is the row's anchor. ROUND 172 (operator: *"per i done dentro
+     la chat accapo c'è A1.n65 — mettilo affianco al done"*): the node id now sits BESIDE
+     the badge on the same line; the label keeps the rest of the width. */
+  .tctree .tcmeta { display: flex; flex-direction: row; align-items: center; gap: 6px; }
   .tctree .tclabel { min-width: 0; overflow-wrap: anywhere; }
   .tctree > summary::-webkit-details-marker { display: none; }
   .tctree[open] > summary { border-color: var(--accent); }
@@ -1382,6 +1387,12 @@
     background: transparent; border-radius: 8px;
     display: inline-flex; align-items: center; justify-content: center;
     font-size: 13px; line-height: 1; }
+  /* ROUND 172: the ✨ is NEUTRAL — the same colour as the icon buttons beside it — and
+     takes the text colour on hover, the accent only while a draft is in flight. */
+  .gen-bar .gen-spark { color: var(--dim); }
+  .gen-bar .gen-spark:hover { color: var(--txt); }
+  .gen-bar .gen-spark svg { display: block; width: 15px; height: 15px; }
+  .gen-bar .gen-act svg { display: block; width: 13px; height: 13px; }
   .gen-bar .gen-status { display: inline-flex; align-items: center; }
   .gen-bar .gen-act { color: var(--dim); cursor: pointer; }
   .gen-bar .gen-act:hover { color: var(--txt); }
@@ -3267,7 +3278,11 @@
      ABOVE the message box, and the chat ✨ inside the message box (top-right). The bar does
      not own a second panel: it hosts the live inspector body while a tab is open. */
   #cmpSuper { display: flex; flex-direction: column; min-width: 0; }
-  .cs-tabs { display: flex; align-items: center; gap: 4px; min-height: 26px; min-width: 0; }
+  /* ROUND 172 (operator: *"perché non hai aggiunto la sovrabar alla message box? come trae"*):
+     the bar is the TOP STRIP of the message box, not a floating row above it — one divider
+     under the tabs, the box directly below, exactly the TRAE anatomy. */
+  .cs-tabs { display: flex; align-items: center; gap: 4px; min-height: 26px; min-width: 0;
+    padding: 2px 2px 5px; border-bottom: 1px solid var(--line); }
   .cs-tab { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 8px;
     border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--dim);
     font: inherit; font-size: 11.5px; cursor: pointer; white-space: nowrap; }
@@ -9365,7 +9380,7 @@ function openTeamMenu(head, g, ev) {
   m.innerHTML = (none ? "" : '<button data-a="assign">＋ Assign agents…</button>'
                       + '<button data-a="newagent">＋ New agent…</button>')
     + '<button data-a="newjob">＋ New job…</button>'
-    + (none ? "" : '<button data-a="architect">✨ Automate with Architect…</button>')
+    + (none ? "" : '<button data-a="architect">' + SPARK_SVG + ' Automate with Architect…</button>')
     + (none ? "" : '<button data-a="edit">✎ Edit team…</button>')
     + '<button data-a="reset">↺ Reset all sessions…</button>'
     + '<button data-a="compact">≡ Compact all sessions…</button>'
@@ -9616,7 +9631,7 @@ function _ctxCardHTML(d) {
         'title="open the shared automatic and manual compaction policy">settings</button>' +
     '</div>';
 }
-function _ctxPopover() {
+function _ctxPopover(anchor) {
   // 2026-11-22: a stale element reference made the toggle a no-op (it thought the popover
   // was open and "closed" a node no longer in the document). Trust the DOM, not the flag.
   if (_ctxPopEl && !document.body.contains(_ctxPopEl)) _ctxPopEl = null;
@@ -9628,7 +9643,10 @@ function _ctxPopover() {
   pop.setAttribute("aria-label", "context details");
   pop.innerHTML = _ctxCardHTML(d);
   document.body.appendChild(pop);
-  const r = ($("cmpCtx") || pop).getBoundingClientRect();
+  // 2026-11-22 ROUND 172: anchor to the ring that was CLICKED (never to "the first node
+  // with this id", which a transcript could own) — the menu opens where the operator's
+  // finger is, or it does not open at all.
+  const r = (anchor || $("cmpCtx") || pop).getBoundingClientRect();
   pop.style.left = Math.max(8, Math.min(r.left, window.innerWidth - pop.offsetWidth - 8)) + "px";
   pop.style.top = Math.max(8, r.top - pop.offsetHeight - 8) + "px";
   pop.querySelector(".cp-compact").onclick = () => { _closeCtxPop(); compactNow(); };
@@ -9645,7 +9663,7 @@ document.addEventListener("click", e => {
   const onRing = e.target && e.target.closest && e.target.closest("#cmpCtx");
   if (!onRing) return;
   e.preventDefault();
-  _ctxPopover();
+  _ctxPopover(onRing);
 });
 /* 2026-11-16 (operator): the message COUNT is gone from the rail — it cost the width
    the ctx ring needs beside the A-id. Only the compact last-use age remains ("46m",
@@ -19306,6 +19324,14 @@ async function runGenerate(surfaceId, field, btn, st, extra, opts) {
   return r.text;
 }
 /* The ✨ for a GENERATE surface: a field to fill plus an optional context getter. */
+/* ROUND 172: ONE sparkle for every autogenerate control (the composer ✨, the panel
+   ✨s, the text buttons that say "Automate"). An SVG, not the U+2728 glyph: the emoji
+   is painted by the OS in gold and no theme can recolour it. `currentColor` keeps it
+   the neutral icon colour next to its neighbours, in every theme. */
+const SPARK_SVG = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"'
+  + ' stroke-width="1.6" stroke-linejoin="round" aria-hidden="true" focusable="false">'
+  + '<path d="M11.4 3.6 13 8.2l4.6 1.6-4.6 1.6-1.6 4.6-1.6-4.6L5.2 9.8l4.6-1.6z"/>'
+  + '<path d="m18.2 15.4.7 1.9 1.9.7-1.9.7-.7 1.9-.7-1.9-1.9-.7 1.9-.7z"/></svg>';
 function genBar(surfaceId, opts) {
   opts = opts || {};
   const bar = document.createElement("span");
@@ -19313,7 +19339,12 @@ function genBar(surfaceId, opts) {
   bar.dataset.genSurface = surfaceId;
   const btn = document.createElement("button");
   btn.type = "button"; btn.className = "ghost gen-spark";
-  btn.textContent = "✨";
+  // 2026-11-22 ROUND 172 (operator): *"e no gialla … falla dello stesso colore dominante
+  // di ciò che sta accanto"*. The control used the U+2728 glyph, which the OS paints as a
+  // COLOUR EMOJI — a gold sparkle no theme could recolour. One inline SVG inherits
+  // `currentColor`, so the ✨ is the neutral icon colour everywhere (dim → txt on hover,
+  // accent only while busy), in every theme.
+  btn.innerHTML = SPARK_SVG;
   const st = document.createElement("span");
   st.className = "gen-status"; st.setAttribute("role", "status"); st.setAttribute("aria-live", "polite");
   bar.append(btn, st);
@@ -19367,7 +19398,7 @@ function makeAutomateWidget(section, getContext) {
   bar.dataset.automateSection = section;
   bar.style.cssText = "display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap";
   bar.innerHTML =
-    '<button type="button" class="ghost lra-auto-toggle" title="Automate this section with Architect (stateless system automation)">✨ Automate</button>' +
+    '<button type="button" class="ghost lra-auto-toggle" title="Automate this section with Architect (stateless system automation)">' + SPARK_SVG + ' Automate</button>' +
     '<input type="text" class="inp lra-auto-inp" placeholder="Ask Architect to configure this section…" hidden style="flex:1;min-width:200px;padding:5px 8px;font-size:12px">' +
     '<button type="button" class="ghost lra-auto-run" hidden>Run</button>' +
     '<span class="remaining lra-auto-status" role="status" aria-live="polite"></span>';
@@ -19947,9 +19978,13 @@ function _csPaint() {
   const x = $("csClose"); if (x) x.hidden = !on;
   const sum = $("csSum");
   if (sum) {
-    const sec = on ? _csSec(on) : null;
+    // ROUND 172 (TRAE reference: the strip always carries the task count, "0/6 tasks
+    // Completed"): with no tab open the line is the PLAN section's own line, so the strip
+    // still says where the session stands. Same node, same sentence — no second count.
+    const sec = _csSec(on || "plan");
     const s = sec ? sec.querySelector(".ihd-s") : null;
     sum.textContent = s ? s.textContent : "";
+    sum.title = on ? "the open panel's summary" : "this session's plan";
   }
 }
 function _csReturn() {
@@ -19980,12 +20015,15 @@ document.addEventListener("click", e => {
   const x = e.target.closest && e.target.closest("#csClose");
   if (x) { e.preventDefault(); _csReturn(); }
 });
-/* The bar summary is the panel's OWN summary line (one truth, no second count). */
+/* The bar summary is the panel's OWN summary line (one truth, no second count). It is
+   painted even with no tab open (ROUND 172: the strip always shows the plan line), so the
+   observer no longer waits for `_cs.key`. */
 ["sPlan", "sWorkspace"].forEach(id => {
   const el = $(id);
-  if (el && window.MutationObserver) new MutationObserver(() => { if (_cs.key) _csPaint(); })
+  if (el && window.MutationObserver) new MutationObserver(() => _csPaint())
     .observe(el, { childList: true, characterData: true, subtree: true });
 });
+_csPaint();
 function _setAllInspector(open) {
   document.querySelectorAll("#inspector section[data-insp]").forEach(section => {
     const body = section.querySelector(".insp-body");
@@ -22615,7 +22653,14 @@ function mdToHtml(text) {
   let html;
   try { html = window.marked ? window.marked.parse(raw) : esc(raw).replace(/\n/g, "<br>"); }
   catch (e) { html = esc(raw).replace(/\n/g, "<br>"); }
-  if (window.DOMPurify) html = window.DOMPurify.sanitize(html, { USE_PROFILES: { html: true } });
+  // 2026-11-22 ROUND 172 (operator: *"clicco sul context roundcircel in msg box e non si
+  // apre"*): an answer that QUOTES the app's markup carried `id="cmpCtx"` into the
+  // transcript, and `$("cmpCtx")` (first match in document order) then resolved to that
+  // copy inside #log — the popover opened next to a node 2 400 px above the composer, i.e.
+  // off-screen, while the ring the operator clicked stayed dead. An `id` in chat text has
+  // no function; dropping it keeps every app id single-owner.
+  if (window.DOMPurify) html = window.DOMPurify.sanitize(html,
+    { USE_PROFILES: { html: true }, FORBID_ATTR: ["id"] });
   return html;
 }
 function decorateHtmlPreviews(root) {

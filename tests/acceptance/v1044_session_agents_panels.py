@@ -74,7 +74,7 @@ check("B4 a real team's menu offers edit/policy/delete without a second engine",
       and '"/api/teams/" + encodeURIComponent(tid) + "/" + action' in UI)
 check("B5 create/automate in the team kebab run the deck's OWN controls",
       'data-a="newjob">＋ New job…' in UI
-      and 'data-a="architect">✨ Automate with Architect…' in UI
+      and 'data-a="architect">' in UI and '+ SPARK_SVG +' in UI
       and '_dpPostAgentsAction("new-job")' in UI
       and '_dpPostAgentsAction("architect")' in UI
       and 'applyView(_act === "new-job" ? "jobs" : "agents")' in ORBIT

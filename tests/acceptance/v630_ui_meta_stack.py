@@ -67,8 +67,10 @@ check("A2 the agent/todo id sits in a COLUMN under the status badge",
       and '<summary><span class="tcmeta"><span class="st"></span><span class="tids"></span></span>'
       in UI)
 meta_css = block(".tctree .tcmeta")
-check("A3 .tcmeta stacks badge then id (no inline preamble)",
-      "flex-direction: column" in meta_css and "align-items: flex-start" in meta_css,
+# 2026-11-22 ROUND 172 (operator: *"per i done dentro la chat accapo c'è A1.n65 — mettilo
+# affianco al done, risparmiamo spazio verticale"*): badge and id share ONE row now.
+check("A3 .tcmeta puts the id beside the badge (one row)",
+      "flex-direction: row" in meta_css and "align-items: center" in meta_css,
       meta_css.strip()[:120])
 check("A4 the label owns the remaining width and may wrap anywhere",
       "min-width: 0" in block(".tctree .tclabel")
@@ -84,15 +86,16 @@ check("B2 the status badge is the FIRST child of .tmeta (ids come after it)",
       'const meta = `<span class="st ${n.status}"' in UI
       and '>${n.status}</span>${ids}`;' in UI)
 tmeta_css = block(".task .tmeta")
-check("B3 .task .tmeta is a column (ids under the badge)",
-      "flex-direction: column" in tmeta_css and "align-items: flex-start" in tmeta_css,
+# 2026-11-22 ROUND 172: the plan row keeps the id BESIDE the badge (same change as A3).
+check("B3 .task .tmeta is a row (ids beside the badge)",
+      "flex-direction: row" in tmeta_css and "align-items: center" in tmeta_css,
       tmeta_css.strip()[:120])
 check("B4 .task .tids wraps instead of overflowing the meta column",
       "flex-wrap: wrap" in block(".task .tids"))
 check("B5 the row aligns to the TOP so a tall meta never centres the label",
       "align-items: flex-start" in block(".step, .task"))
-check("B6 the stacked (long-label) variant keeps the same column meta",
-      "flex-direction: column" in block(".task.stacked .tmeta"))
+check("B6 the stacked (long-label) variant keeps the same inline meta",
+      "flex-direction: row" in block(".task.stacked .tmeta"))
 
 # ---- C. nothing lost -----------------------------------------------------------
 check("C1 the chat id is still painted live after a status change",

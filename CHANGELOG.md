@@ -126,6 +126,21 @@ All notable changes to Longrun are documented here. The format follows
   browser-rebuilt `/data/sessions/<id>.json` would be a guess.) Locked by `v1067` A1–A6, B1–B10.
 
 ### Changed
+- **The Workspace/Plan bar is the message box's top strip, session rows are ONE line, the todo id sits
+  beside its badge, and the Agents panel gets its funnel back.** Operator, with TRAE screenshots: *"perché
+  non hai aggiunto la sovrabar alla message box? come trae"*; *"nel LH panel sessions le cose stanno tutte in
+  una riga, non andare accapo con l'ID agent e il contesto"*; *"anche per i done dentro la chat accapo c'è
+  A1.n65, mettilo affianco al done … risparmiamo spazio verticale"*; *"in agents panel non lo hai messo il
+  filtro come in sessions (non duplicato dato che hanno stessa funzione), dovevi duplicare solo l'oggetto
+  grafico"*. (1) The tabs row carries the divider (`border-bottom`) and keeps the plan line even with no tab
+  open — the summary is still the Plan section's own `.ihd-s` (TRAE's "0/6 tasks Completed"), so the strip
+  says where the session stands at a glance. (2) `.sess` no longer wraps: title (ellipsis) · A-id · context
+  ring · age · ⋮ on ONE 32 px row. (3) `.tctree .tcmeta` and `.task .tmeta` are rows, so `done A54.n72` reads
+  on one line in the chat tree and in the inspector Plan (the stacked variant included). (4) The hosted deck
+  no longer hides `#agFilterBtn`: the Agents panel shows the SAME `FilterSort` control the Sessions rail
+  mounts (key "agents"), not a second filter. The queued-message lane needed no work — verified already
+  implemented (`#queueBar` with edit/steer/remove, queue vs steer in one stored delivery mode) and pinned by
+  `v1256` G1–G2. Locked by `v1256` C1–C3, D1–D2, E1–E2, F1–F2; `v630`, `v439`, `v352`, `v1049` re-pointed.
 - **One transcript typography, a Workspace/Plan bar above the message box, the ✨ inside the box, and
   `+A −D` opens the diff.** Operator, with TRAE screenshots: *"trae li ha [workspace e plan] come sovrabar
   intercambiabile sopra la msg box … implementalo anche tu (non distruggere il RH panel), non duplicare
@@ -250,6 +265,23 @@ All notable changes to Longrun are documented here. The format follows
   tool gate. (Locked by `v1052` B1/B1b, N9d/N9d2, N11b/N11b2, O1–O7; `v785` K1–K5; `v763` F1–F2.)
 
 ### Fixed
+- **The composer's context ring opens its card again — a transcript answer could own `id="cmpCtx"`.**
+  Operator: *"ma perché ti ostini a non fare aprire il menu cliccando sul context roundcircel in msg box?
+  non si apre ti dico"*. Rendered markdown kept the `id` attributes of any markup an answer quoted, so a
+  past reply that showed the composer's own HTML put a second `#cmpCtx` INSIDE the transcript. `$("cmpCtx")`
+  resolves the first match in document order, and that copy was ~2 400 px above the composer, so the popover
+  was positioned off-screen (clamped to y=8, behind the topbar) while the ring the operator clicked stayed
+  dead. The answer pipeline now sanitizes with `FORBID_ATTR: ["id"]` (an id in chat text has no function),
+  and `_ctxPopover(anchor)` positions the card against the ring that was CLICKED. Measured: the popover opens
+  93 px above the ring (`nearRing: true`), zero app ids left inside `#log`. Locked by `v1256` A1–A3 and
+  `v1254` C1 (re-pointed).
+- **The ✨ is one neutral SVG, not the gold colour-emoji glyph.** Operator: *"E NO GIALLA: cambia in tutta la
+  webui, falla dello stesso colore dominante di ciò che sta accanto rispetto al theme specifico"*. Every
+  autogenerate control rendered `textContent = "✨"` (U+2728), which the OS paints as a COLOUR EMOJI — no
+  theme could recolour it, so it was gold next to grey icon buttons. One `SPARK_SVG` constant (inline SVG,
+  `stroke="currentColor"`) now feeds the composer ✨, the panel ✨s, the "Automate" text buttons and the Orbit
+  deck's Architect button; CSS paints it `--dim`, `--txt` on hover, `--acc` only while a draft is in flight.
+  Locked by `v1256` B1–B5 and `v772` D3/F2, `v1044` B5 (re-pointed).
 - **An explicit `finish` summary that quotes a tool call is an ANSWER, not an action — "the turn ended before
   a final answer" is gone.** Operator: *"why stopped this way? I don't want agents stopping unexpectedly, I
   told many times it is one of the worst failure modes."* Measured live (session `b7329cccf94c`, run

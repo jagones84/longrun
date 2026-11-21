@@ -532,7 +532,7 @@ launcher (`tests/battery_tmp.sh`, gitignored and never shipped); every checkout
 scopes the tracked battery with `LONGRUN_BATTERY_TESTS`. The full suite runs on
 request. The fast run skips six heavy indexing and document-ingestion tests:
 
-The suite is 941/941 tests — every acceptance file under `tests/acceptance/` is
+The suite is 942/942 tests — every acceptance file under `tests/acceptance/` is
 counted, and the badge above is the same number (one truth, pinned by `v354`).
 
 ```bash

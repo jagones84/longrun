@@ -73,8 +73,11 @@ check("D2 bolder-text OFF is a real normal baseline (chrome labels not bold)",
       and "html:not(.bold-text) button.primary" in HTML, "")
 # JAG-389: the session row is compact — the NAME is on its OWN full-width line
 # below the badges (never truncated) and the meta rides the badge line, pushed right.
-check("D3 the session name sits on its own FULL-WIDTH line (no truncation)",
-      ".sess .t { flex-basis: 100%" in HTML and ".sess .col" not in HTML, "")
+# 2026-11-22 ROUND 172 (operator: *"nel LH panel sessions le cose stanno tutte in una
+# riga, non andare accapo con l'ID agent e il contesto"*): ONE row, the name truncates.
+check("D3 the session row is ONE line (name · A-id · ring · age)",
+      ".sess { display: flex; flex-wrap: nowrap;" in HTML
+      and ".sess .t { flex: 1 1 auto;" in HTML and ".sess .col" not in HTML, "")
 check("D4 the meta (msgs · age) rides the badge line, pushed right",
       ".sess .n { margin-left: auto" in HTML, "")
 

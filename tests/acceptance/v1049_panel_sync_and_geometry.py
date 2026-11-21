@@ -71,8 +71,12 @@ check("A3 the deck applies it to ITS OWN FilterSort and repaints (no second stat
       and "app.agents.sort = st.sort" in ORBIT
       and "app.agents.dir = st.dir" in ORBIT
       and "app.refresh();" in ORBIT)
-check("A4 a hosted deck hides its own funnel — the rail owns the control",
-      "html.embed-panel #agFilterBtn{display:none!important}" in ORBIT)
+# 2026-11-22 ROUND 172 (operator: *"in agents panel non lo hai messo il filtro come in
+# sessions … dovevi duplicare solo l'oggetto grafico"*): the hosted deck SHOWS its own
+# FilterSort funnel (same module, key "agents"); it is no longer hidden.
+check("A4 a hosted deck shows its own funnel (same FilterSort control)",
+      "html.embed-panel #agFilterBtn{display:none!important}" not in ORBIT
+      and 'id="agFilterBtn"' in ORBIT)
 check("A5 the deck's team scope already reaches agents/jobs/org/map",
       "const team = this.team;" in ORBIT
       and "const inTeam = (a) => (!team || team === \"ALL\"" in ORBIT
@@ -99,7 +103,9 @@ check("B3 the active session is what rings agents and the org chart",
 check("C1 the window is dragged by its head, never through its controls",
       "function _dpDrag()" in UI
       and 'e.target.closest("button, a, input, select, textarea")' in UI
-      and 'head.classList.add("dragging")' in UI)
+      # 2026-11-22: `_dpDrag` delegates to the ONE mover `dragify`, so the class lands on
+      # the handle it was given (the head) — same behaviour, one algorithm.
+      and 'handle.classList.add("dragging")' in UI)
 check("C2 a corner grip resizes width AND height",
       'id="pvGrip" class="pv-grip"' in UI
       and "bind(grip, false);" in UI and "bind(corner, true);" in UI
