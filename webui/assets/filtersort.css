@@ -46,3 +46,40 @@
                 grid-template-columns: none; gap: 8px 16px; }
   .fs-chk { font-size: 13px; }
 }
+
+/* ThemedSelect — the popup of EVERY native <select> (webui/assets/filtersort.js).
+   ROUND 175: a native option list is drawn by the OS/WebView and is white on a phone
+   whatever the page theme says, so the menu is ours and wears the page tokens. Both
+   pages load this file, so the deck's "assign to…" and the WebUI's settings selects
+   are the same surface. */
+.ts-pop {
+  position: fixed; z-index: 10000; min-width: 150px; max-width: min(420px, calc(100vw - 16px));
+  max-height: min(52vh, 340px); overflow: auto; padding: 4px;
+  background: var(--menubg, var(--panel2, #171b23)); color: var(--txt, #e7e9ee);
+  border: 1px solid var(--line-2, var(--line, #2d323b)); border-radius: 10px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, .46);
+  font-size: calc(12.5px * var(--zoom, 1));
+  overscroll-behavior: contain;
+}
+.ts-opt {
+  padding: calc(6px * var(--zoom, 1)) calc(9px * var(--zoom, 1)); border-radius: 7px;
+  cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  color: var(--txt, #e7e9ee);
+}
+.ts-opt:hover, .ts-opt.on {
+  background: var(--sel, var(--hover, rgba(255, 255, 255, .07)));
+}
+.ts-opt[aria-selected="true"] { color: var(--acc, #cf8a4a); }
+.ts-pop:focus-visible { outline: 2px solid var(--acc, #cf8a4a); outline-offset: 1px; }
+
+/* A phone gets the same sheet as the FilterSort panel and the model picker: bottom-
+   anchored, full width, 40px rows (thumb-sized), never a dropdown hanging off a
+   control that sits at the top of a zoomed page. */
+@media (max-width: 640px) {
+  .ts-pop.sheet {
+    left: 8px !important; right: 8px; width: auto; min-width: 0; max-width: none;
+    top: auto !important; bottom: 8px; max-height: 58vh; border-radius: 12px;
+    padding: 6px; font-size: 14px;
+  }
+  .ts-pop.sheet .ts-opt { padding: 11px 12px; font-size: 14px; border-radius: 9px; }
+}

@@ -94,11 +94,13 @@ check("D3 the editor shows an out-of-workspace path with its own warning (one ru
       open(os.path.join(REPO, "webui", "assets", "editor.js"), encoding="utf-8").read())
 
 # ---- E: the axe finding this round closed ---------------------------------
-check("E1 aria-controls names the filter dialog only while it is OPEN",
-      'btn.setAttribute("aria-controls"' not in FS[FS.index('btn.setAttribute("aria-haspopup"'):
-                                                      FS.index("function dirty()")]
-      and 'if (on) btn.setAttribute("aria-controls", pop.id);' in FS
-      and 'else btn.removeAttribute("aria-controls");' in FS)
+# 2026-11-22 ROUND 175: the round-174 fix (publish aria-controls only while open) left
+# axe unable to resolve the idref anyway, so the attribute is gone — aria-haspopup +
+# aria-expanded say what opens and whether it is open. The pin moves with the decision.
+check("E1 the filter button makes no idref claim it cannot back",
+      'btn.setAttribute("aria-controls"' not in FS
+      and 'btn.setAttribute("aria-haspopup", "dialog");' in FS
+      and 'btn.setAttribute("aria-expanded", on ? "true" : "false");' in FS)
 
 print("\n---\nv1258: %d/%d PASS" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

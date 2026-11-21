@@ -447,8 +447,14 @@
   /* ROUND 172 (operator: *"nel LH panel sessions le cose stanno tutte in una riga, non
      andare accapo con l'ID agent e il contesto"*): ONE line — title (shrinks with an
      ellipsis) · A-id · ctx ring · age · ⋮. The wrap is what doubled the rail's height. */
-  .sess { display: flex; flex-wrap: nowrap; align-items: center; gap: 0 7px; padding: 6px 8px;
-    border-radius: var(--r-sm); border: 1px solid transparent; margin-bottom: 2px; cursor: pointer;
+  /* ROUND 175 (operator: *"riduci di poco la spaziatura tra agenti sessione … e l'id
+     agente nascondilo, rendilo visibile al passaggio del mouse sopra"*): the row is 4px
+     tall in padding instead of 6 (27-ish px per row on the phone list) and the A-id chip
+     is NOT printed until the row is hovered or holds the focus — the title gets the
+     width back. The id is still in the row tooltip and in the ⋮ menu ("Show in
+     organigram"), so nothing is lost. */
+  .sess { display: flex; flex-wrap: nowrap; align-items: center; gap: 0 7px; padding: 4px 8px;
+    border-radius: var(--r-sm); border: 1px solid transparent; margin-bottom: 1px; cursor: pointer;
     line-height: 1.22; }
   .sess:hover { background: var(--hover); }
   .sess.active { border-color: color-mix(in srgb, var(--acc) 55%, transparent); background: var(--sel); }
@@ -640,7 +646,11 @@
      dim on a hairline. One definition, dim on a hairline, at the row's smallest size. */
   .sess .jid { font-size: 10.5px; color: var(--dim); flex-shrink: 0;
     background: var(--hover); border: 1px solid var(--line);
-    border-radius: 6px; padding: 1px 5px; cursor: pointer; }
+    border-radius: 6px; padding: 1px 5px; cursor: pointer;
+    /* ROUND 175: hidden until asked for (hover or focus inside the row). It is a
+       shortcut to the organigram, not information the list needs on every line. */
+    display: none; }
+  .sess:hover .jid, .sess:focus-within .jid { display: inline-block; }
   /* AGENTS-panel parity: an EMPTY ROLE.md is a real state and stays visible. */
   .sess .req { color: var(--warn, var(--acc)); font-size: 11px; flex-shrink: 0;
     line-height: 1; }
@@ -9737,6 +9747,9 @@ function _sessRowEl(s, pinnedIds, ag, groupKey, orderContainer) {
     ? '<span class="req" title="EMPTY ROLE.md - this agent runs on the bare system prompt">*</span>' : "";
   const pin = pinnedIds.includes(s.id) ? '<span class="pin" title="pinned session">📌</span>' : "";
   d.title = [(s.messages != null ? (s.messages + " messages") : ""),
+             // ROUND 175: the A-id chip is revealed only on hover, so the tooltip carries
+             // it too — a hidden control must not hide its own value.
+             (ag && _anum ? ("agent A" + _anum) : ""),
              (s.age ? ("last used " + s.age) : ""), roleTip,
              (teamTip ? ("team: " + teamTip) : ""),
              _model ? ("model: " + _model) : "",

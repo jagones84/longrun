@@ -126,6 +126,28 @@ All notable changes to Longrun are documented here. The format follows
   browser-rebuilt `/data/sessions/<id>.json` would be a guess.) Locked by `v1067` A1–A6, B1–B10.
 
 ### Changed
+- **A tighter Sessions rail (agent id on hover) and ONE themed popup for every native `<select>`.** Operator:
+  *"riduci di poco la spaziatura tra agenti sessione in LH panel ed l'id agente nascondilo, rendilo visibile al
+  passaggio mouse sopra"*; *"ci sono menu in mobile mode che si aprono senza tema grafico, sono bianche.
+  Esempio jobs assign to nel pannellone agents jobs … controllali tutti gli spawning menus, devono essere in
+  linea col tema generale impostato da settings"*. (1) A session row is `padding: 4px 8px` / `margin-bottom:
+  1px` (was 6/2 — measured 42 → 38 px per row on the phone list, the `.sess-ctx` ring is what fixes the
+  floor) and the `A<n>` chip is `display: none` until `.sess:hover` / `:focus-within`; the id moved into the
+  row tooltip (`agent A54`) and the organigram door stays in the ⋮ menu, so nothing is lost. (2) A native
+  `<select>` opens a list drawn by the OS/WebView: measured in both documents, every select computes
+  `color-scheme: dark` and a themed box, yet the phone's option list is white whatever the theme is. The new
+  `ThemedSelect` (in the shared `webui/assets/filtersort.js`, loaded by the WebUI and the deck) intercepts the
+  control and draws the list itself: a `role="dialog"` surface containing a `role="listbox"` with
+  `role="option"` rows, the page tokens (`--menubg` → `--panel2`, `--line-2` → `--line`, `--txt`, `--sel`), a
+  bottom sheet at ≤640 px, keyboard (Enter/Space/Arrows/Home/End/letter jump/Escape) and the real contract —
+  `selectedIndex` plus a bubbling `input`/`change` — so every existing `onchange` keeps working. This covers
+  the deck's "assign to…", the filter’s own two selects and every settings picker with one implementation.
+  (3) `aria-controls` left the filter button: it named the dialog by id and axe's `aria-valid-attr-value`
+  reported a CRITICAL incomplete on every run (open or closed); `aria-haspopup` + `aria-expanded` carry the
+  same meaning and verify. Locked by `v1259` A1–A5, B1–B7; `v1258` E1 re-pointed to the decision. axe live
+  with the popup open: **0 violations** at 1440×900, 390×844 and on the deck (only `color-contrast`
+  incomplete). Badge 944 → 945.
+
 - **The Workspace/Plan strip is icon-only, the chat header hides the session id, a todo row is meta-above /
   label-below, and the tool row has TWO readings (file in the editor, `+A −D` in the diff).** Operator:
   *"invece di scrivere workspace and plan sulla barra sopra la msg box metti le icone … e togli il riassunto
