@@ -393,16 +393,19 @@
      owns the full width instead of losing ~110px to an inline preamble. */
   /* ROUND 172 (operator: *"per i done dentro la chat accapo c'è A1.n65 — mettilo affianco
      al done, risparmiamo spazio verticale"*): the chip and the node id share ONE row. */
+  /* ROUND 174 (operator: *"il titolo todo non può stare tutto a destra … deve occupare lo
+     spazio orizzontale invece di essere schiacciato"*): a task row is ONE column — the
+     status badge + ids on their own line, the label on the next at full width. This used
+     to be a flex row (meta beside the label) and only fell back to the stacked shape after
+     two wrapped lines; the narrow Plan panel made every ordinary label start mid-row. The
+     stacked shape IS the row now, so the JS measuring no longer exists. */
+  .task { display: grid; grid-template-columns: minmax(0, 1fr); gap: 3px; align-items: start; }
   .task .tmeta { display: flex; flex-direction: row; align-items: center;
     gap: 6px; flex: 0 0 auto; }
   .task .tids { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 6px; }
-  .task .tmain { display: flex; gap: 6px; align-items: baseline; flex: 1 1 auto; min-width: 0; }
-  /* JAG-455: after two wrapped lines, put the label BELOW the status/id row and give
-     it the full width. Keep status and identifiers together to save horizontal space. */
-  .task.stacked { display: grid; grid-template-columns: minmax(0, 1fr); gap: 3px; align-items: start; }
-  .task.stacked .tmeta { flex-direction: row; align-items: center; gap: 6px; }
-  .task.stacked .tmain { display: flex; flex-wrap: wrap; width: 100%; min-width: 0; }
-  .task.stacked .tlabel { flex: 0 0 100%; }
+  .task .tmain { display: flex; flex-wrap: wrap; width: 100%; min-width: 0;
+    gap: 6px; align-items: baseline; }
+  .task .tlabel { flex: 0 0 100%; }
   .graphrow { display:flex; gap:6px; margin-top:6px; flex-wrap:wrap; }
   .task.fresh { animation: pop .5s ease; border: 1px dashed color-mix(in srgb, var(--acc) 45%, transparent); }
   @keyframes pop { from { transform: scale(.96); opacity: .3; } }
@@ -822,12 +825,23 @@
      the whole left panel was collapsed. */
   #chatHead { flex: 0 0 auto; display: flex; align-items: center; gap: 8px;
     padding: 6px 14px; border-bottom: 1px solid var(--line); background: var(--panel);
-    font-size: 12px; min-height: 30px; }
+    font-size: 12px; min-height: 30px; position: relative; }
   #chatHead[hidden] { display: none; }
   #chatHead .ch-title { font-weight: 600; color: var(--txt); user-select: text;
-    max-width: 52vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #chatHead .ch-id { color: var(--dim); font-size: 11px; user-select: text; flex: 0 0 auto;
+    max-width: 52vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    cursor: pointer; padding: 1px 5px; margin-left: -5px; border-radius: 5px; }
+  #chatHead .ch-title:hover { background: var(--hover); }
+  #chatHead .ch-title:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  /* ROUND 174 (operator: *"on top of chat … non mettere l'id della session chat, occupa
+     spazio. Fallo apparire al passaggio del mouse e click per copiarlo"*): the id no longer
+     sits in the row — it appears as a chip under the title on hover/focus, and clicking the
+     title copies name + id (the ⧉ button keeps doing the same for touch/keyboard). */
+  #chatHead .ch-id { position: absolute; left: 14px; top: calc(100% + 2px); z-index: 20;
+    display: none; padding: 2px 7px; border-radius: 6px; background: var(--menubg);
+    border: 1px solid var(--line-2); box-shadow: var(--shadow-2);
+    color: var(--dim); font-size: 10.5px; user-select: text;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  #chatHead .ch-title:hover ~ .ch-id, #chatHead .ch-title:focus-visible ~ .ch-id { display: block; }
   #chatHead .ch-sp { flex: 1 1 auto; }
   #chatHead .ch-copy { all: unset; cursor: pointer; color: var(--dim); padding: 2px 6px;
     border-radius: 6px; font-size: 12px; }
@@ -1155,9 +1169,15 @@
   .tctree .tc-kids > .toolcard.err::before { background: var(--err); }
   /* JAG-166: in-chat task tree + visible harness→LLM injections */
   .tctree { margin: 4px 0; position: relative; }
+  /* ROUND 174 (operator: *"i todo in chat thread non possono contenere il testo tutto a
+     destra … in basso al done e Jx number, così può occupare lo spazio orizzontale invece
+     di essere schiacciato"*): the summary is ONE column — badge + ids on their own line,
+     the label on the next one at full width and free to wrap. The old two-column grid
+     pushed the label beside `done A1.n65`, so a long step was squeezed into the rest of
+     the row. */
   .tctree > summary { cursor: pointer; font-size: 12px; font-weight: 600; list-style: none;
-    display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start;
-    column-gap: 8px; padding: 4px 26px 4px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel2); }
+    display: grid; grid-template-columns: minmax(0, 1fr); align-items: start;
+    row-gap: 3px; padding: 4px 26px 4px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel2); }
   /* v630: the STATUS badge is the row's anchor. ROUND 172 (operator: *"per i done dentro
      la chat accapo c'è A1.n65 — mettilo affianco al done"*): the node id now sits BESIDE
      the badge on the same line; the label keeps the rest of the width. */
@@ -3288,19 +3308,21 @@
      under the tabs, the box directly below, exactly the TRAE anatomy. */
   .cs-tabs { display: flex; align-items: center; gap: 4px; min-height: 26px; min-width: 0;
     padding: 2px 2px 5px; border-bottom: 1px solid var(--line); }
-  .cs-tab { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 8px;
-    border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--dim);
+  .cs-tab { display: inline-flex; align-items: center; justify-content: center; height: 24px; width: 24px;
+    padding: 0; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--dim);
     font: inherit; font-size: 11.5px; cursor: pointer; white-space: nowrap; }
   .cs-tab svg { width: 13px; height: 13px; fill: none; stroke: currentColor;
     stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex: 0 0 auto; }
   .cs-tab:hover { background: var(--hover); color: var(--txt); }
   .cs-tab[aria-pressed="true"] { color: var(--txt); border-color: var(--line); background: var(--panel2); }
   .cs-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-  .cs-sum { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap;
-    text-overflow: ellipsis; font-size: 10.5px; color: var(--dim); padding-left: 6px; }
   .cs-x { flex: 0 0 auto; border: 0; background: none; color: var(--dim); cursor: pointer;
     font-size: 12px; padding: 2px 4px; }
   .cs-x:hover { color: var(--txt); }
+  /* ROUND 174: the autogenerate ✨ is the RIGHT END of the strip; it writes the composer
+     draft (`chat.prompt`, field #inp), so it lives next to the box it writes. */
+  #cmpSpark { margin-left: auto; display: inline-flex; align-items: center; flex: 0 0 auto; }
+  #cmpSpark .gen-bar { gap: 0; }
   /* ROUND 173 (operator: *"ma perché la barra sopra msg box plan e workspace si alzano? devono
      rimanere in basso; se clicco si apre il menu sopra"*). The borrowed body is a DROPUP: it
      floats ABOVE the strip as a menu, so opening Plan/Workspace never moves the composer
@@ -3314,10 +3336,8 @@
   .cs-body .card { margin: 0 0 6px; }
   #inspector section.cs-lent > .insp-hd::after { content: " · above ↗"; color: var(--dim);
     font-weight: 400; font-size: 10px; letter-spacing: 0; text-transform: none; }
-  #inpWrap { position: relative; display: flex; min-width: 0; }
+  #inpWrap { display: flex; min-width: 0; }
   #inpWrap #inp { flex: 1 1 auto; }
-  #composer #inpWrap #inp { padding-right: 36px; }
-  #cmpSpark { position: absolute; top: 6px; right: 8px; display: flex; align-items: center; }
 
   /* --- menus, dialogs, settings ---------------------------------------- */
   #plusMenu, #moreMenu, #qmodeMenu, #modelMenu, .smodal, #newSessDlg, #rwDlg, #dirPicker,
@@ -4125,7 +4145,8 @@
   <div class="resizer" id="resize-left" title="drag to resize"></div>
   <div id="chat" data-col="chat">
     <div id="chatHead" hidden>
-      <span class="ch-title" id="chatHeadTitle"></span>
+      <span class="ch-title" id="chatHeadTitle" role="button" tabindex="0"
+            aria-label="copy this session's name and id"></span>
       <span class="ch-id" id="chatHeadId"></span>
       <span class="ch-sp"></span>
       <button type="button" class="ch-copy" id="chatSearchToggle"
@@ -4237,20 +4258,21 @@
           <!-- Two TOGGLE buttons, not tabs: each one opens the borrowed panel and a second click
                closes it (a tab cannot close itself). axe 2026-11-21: the tab role plus a selection
                attribute together with aria-pressed is `aria-allowed-attr`, and a tablist holding the
-               summary span is `aria-required-children`. aria-pressed is the honest state here. -->
-          <button type="button" class="cs-tab" data-cs="files" aria-pressed="false" title="the workspace and this session's changed files"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2.75 5.75h5l1.5 2h7.5v7.5a1 1 0 0 1-1 1h-12a1 1 0 0 1-1-1z"/></svg>Workspace</button>
-          <button type="button" class="cs-tab" data-cs="plan" aria-pressed="false" title="the session plan and its tasks"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 5.5h12M4 10h12M4 14.5h8"/></svg>Plan</button>
-          <span class="cs-sum" id="csSum"></span>
+               summary span is `aria-required-children`. aria-pressed is the honest state here.
+               ROUND 174 (operator: *"invece di scrivere workspace and plan … metti le icone,
+               risparmi spazio e togli il riassunto"*): ICON-ONLY toggles, the name lives in
+               aria-label + title; the summary line is gone. -->
+          <button type="button" class="cs-tab" data-cs="files" aria-pressed="false" aria-label="workspace" title="workspace — the workspace and this session's changed files"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2.75 5.75h5l1.5 2h7.5v7.5a1 1 0 0 1-1 1h-12a1 1 0 0 1-1-1z"/></svg></button>
+          <button type="button" class="cs-tab" data-cs="plan" aria-pressed="false" aria-label="plan" title="plan — the session plan and its tasks"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 5.5h12M4 10h12M4 14.5h8"/></svg></button>
+          <!-- ROUND 174 (operator: *"li in alto a destra metti l'autogeneration icon IA"*): the
+               chat.prompt ✨ moved from the message box to the right end of this strip. -->
+          <span id="cmpSpark"></span>
           <button type="button" class="cs-x" id="csClose" aria-label="close the panel" title="close" hidden>✕</button>
         </div>
         <div class="cs-body" id="csBody" role="region" aria-label="workspace and plan panel" hidden></div>
       </div>
       <div id="inpWrap">
         <textarea aria-label="message" id="inp" rows="1" placeholder="Message…" autofocus></textarea>
-        <!-- 2026-11-22 (operator): *"l'autogenerate … lo ha dentro la msg box piccolo in alto a
-             dx … rimuovilo dalla sidebar"*. The chat.prompt ✨ mounts HERE (same registry,
-             same control); the sidebar host no longer carries it. -->
-        <span id="cmpSpark"></span>
       </div>
       <div id="queueBar" hidden></div>
       <div id="composerBar">
@@ -6868,21 +6890,18 @@ function _wireToolName(card, tool, args) {
   if (!nm || !p) return;
   nm.dataset.path = p;
   nm.classList.add("tc-link");
-  nm.title = (tool === "fs.read") ? ("open " + p) : ("show the diff for " + p);
+  // ROUND 174 (operator: *"se clicco sul file si apre file normale nell'editor. Se clicco sui
+  // numeri di linee modificati a destra si apre il pannello diff ok?"*): the NAME is the plain
+  // reading of the file — the editor dock, for every tool (read, write, edit) and for a path
+  // outside the workspace too. The diff is the STAT's affordance (`+A −D`, right); the two
+  // readings no longer share one gesture.
+  nm.title = "open " + p;
   if (nm.dataset.wired) return;
   nm.dataset.wired = "1";
   nm.addEventListener("click", e => {
     const path = nm.dataset.path; if (!path) return;
     e.preventDefault(); e.stopPropagation();
-    // 2026-11-22 (operator): a file OUTSIDE the workspace must not land in the editor
-    // dock with an "outside the workspace" warning — the read-only preview window (v1002)
-    // is the viewer that can show it. `SparkEditor.inWorkspace` is the SAME rule the dock
-    // uses, so the two surfaces can never disagree.
-    if (tool === "fs.read") {
-      const ed = window.SparkEditor;
-      if (ed && typeof ed.inWorkspace === "function" && !ed.inWorkspace(path)) openPreview(path);
-      else openInEditor(path);
-    } else showDiff(path);
+    openInEditor(path);
   });
   // 2026-11-22 (operator): *"se clicco proprio dove dice +48 −5 deve aprirsi il diff, non
   // vale più l'espansione"*. The stat is the diff's own affordance, so it opens the SAME
@@ -12507,7 +12526,6 @@ function renderGraph() {
     // "doing but nothing is running" report).
     if (n && n.status === "doing" && runningSessions[sessionId]) el.classList.add("live");
   });
-  _markWrappedTasks(box);   // JAG-431k: stack the meta on rows with a long wrapped label
   // JAG-514: the ✕ on an "older plan" deletes that plan (and its steps) for real.
   // stopPropagation keeps the click from toggling the <details> around it.
   box.querySelectorAll(".plan-drop").forEach(b => {
@@ -13760,8 +13778,8 @@ function taskTree(nodes) {
       ? ` <span class="ev warn" title="${_claims} of ${_evN} close(s) are CLAIMS with no source reference — click the row for the evidence">\u26a0 ${_claims}</span>`
       : (_evN ? ` <span class="ev" title="${_evN} evidence item(s), ${_refs} with a source reference — click the row for the evidence">\u2713 ${_evN}</span>` : "");
 
-    // JAG-431k: split the row into meta (status/id/JN) and main (label/deps/ev/rewind)
-    // so a long wrapped label can reclaim the width (see `.task.stacked`).
+    // JAG-431k -> ROUND 174: the row is TWO lines — meta (status/ids) above, main
+    // (label/deps/ev/rewind) below at full width, for every row.
     // v610: chips carry the FULL store id (J17 / J17.4) — v609 stripped the
     // J and the registry (keyed "JN") answered "job not found" while the
     // deck showed the same job fine. Job and subjob are different entities:
@@ -13786,20 +13804,6 @@ function taskTree(nodes) {
     if (!seen.has(n.id)) { seen.add(n.id); html += one(n, 0); }
   });
   return html;
-}
-/* JAG-455: after two wrapped lines, move the label below the status/id row and give it
-   full width. Count text fragments because the label is itself a flex item. */
-function _markWrappedTasks(box) {
-  if (!box) return;
-  box.querySelectorAll(".task").forEach(el => {
-    el.classList.remove("stacked");
-    const lbl = el.querySelector(".tlabel");
-    if (!lbl) return;
-    const range = document.createRange();
-    range.selectNodeContents(lbl);
-    const lines = new Set(Array.from(range.getClientRects()).map(r => Math.round(r.top)));
-    if (lines.size > 2) el.classList.add("stacked");
-  });
 }
 async function decideImproveProposal(id, decision) {
   const r = await api("POST", "/api/improve", { id, decision });
@@ -15806,9 +15810,6 @@ function openTab(name) {
     const bd = $("backdrop"); if (bd) bd.classList.add("show");
     if (t.insp) focusInsp(t.insp);
   }
-  // JAG-431k: the plan panel may be revealed here (hidden -> visible means the wrap
-  // measure is only meaningful now), so re-mark the todo rows on the next frame.
-  if (name === "tasks") requestAnimationFrame(() => _markWrappedTasks($("tasks")));
   _settleHandles();
 }
 function closeAside() { _closeDrawers(); _setTabbarActive("chat"); }
@@ -19996,16 +19997,6 @@ function _csPaint() {
     b.setAttribute("aria-pressed", p);
   });
   const x = $("csClose"); if (x) x.hidden = !on;
-  const sum = $("csSum");
-  if (sum) {
-    // ROUND 172 (TRAE reference: the strip always carries the task count, "0/6 tasks
-    // Completed"): with no tab open the line is the PLAN section's own line, so the strip
-    // still says where the session stands. Same node, same sentence — no second count.
-    const sec = _csSec(on || "plan");
-    const s = sec ? sec.querySelector(".ihd-s") : null;
-    sum.textContent = s ? s.textContent : "";
-    sum.title = on ? "the open panel's summary" : "this session's plan";
-  }
 }
 function _csReturn() {
   if (!_cs.node) return;
@@ -20035,14 +20026,9 @@ document.addEventListener("click", e => {
   const x = e.target.closest && e.target.closest("#csClose");
   if (x) { e.preventDefault(); _csReturn(); }
 });
-/* The bar summary is the panel's OWN summary line (one truth, no second count). It is
-   painted even with no tab open (ROUND 172: the strip always shows the plan line), so the
-   observer no longer waits for `_cs.key`. */
-["sPlan", "sWorkspace"].forEach(id => {
-  const el = $(id);
-  if (el && window.MutationObserver) new MutationObserver(() => _csPaint())
-    .observe(el, { childList: true, characterData: true, subtree: true });
-});
+/* ROUND 174: the strip carries no summary any more (operator: *"togli il riassunto 4 done,
+   run id"*), so there is nothing to keep in sync with the inspector's line — the
+   MutationObserver that fed it is gone with it. */
 _csPaint();
 function _setAllInspector(open) {
   document.querySelectorAll("#inspector section[data-insp]").forEach(section => {
@@ -23995,7 +23981,7 @@ function renderChatHead() {
   head.hidden = !sessionId;
   if (!sessionId) return;
   const tt = $("chatHeadTitle"), ii = $("chatHeadId");
-  if (tt) { tt.textContent = t || "(untitled)"; tt.title = t; }
+  if (tt) { tt.textContent = t || "(untitled)"; tt.title = "click to copy the session name and id"; }
   if (ii) ii.textContent = sessionId;
 }
 function _copySessionName() {
@@ -24120,18 +24106,6 @@ if (window.ResizeObserver) {
   if (_sr) _ro.observe(_sr);
   if (_ap) _ro.observe(_ap);
 }
-// JAG-431k: re-mark the todo rows whenever the plan panel's WIDTH changes (desktop
-// splitter drag, drawer, zoom, resize). Guarded on a width change so our own class
-// toggle can never loop the observer.
-if (window.ResizeObserver && $("tasks")) {
-  const _tb = $("tasks"); let _tw = _tb.clientWidth;
-  new ResizeObserver(() => {
-    const w = _tb.clientWidth;
-    if (w === _tw) return;
-    _tw = w;
-    _markWrappedTasks(_tb);
-  }).observe(_tb);
-}
 _restorePanes();
 _settleHandles();
 $("palette-input").addEventListener("input", e => { _palHi = 0; renderPalette(e.target.value); });
@@ -24144,6 +24118,13 @@ _wireRunsPanel();   // JAG-479: the running/unread popover reads real state and 
 _wireSessMenuClose();   // 2026-11-16: one listener closes the session ⋮ menu (reopens cleanly)
 _wireObjectContextMenu();   // 2026-11-16: right-click means something on every object
 { const _chc = $("chatHeadCopy"); if (_chc) _chc.onclick = _copySessionName; }   // JAG-480
+/* ROUND 174 (operator): the NAME itself copies the session (name + id) and the id appears
+   under it on hover/focus; the ⧉ button stays for touch and keyboard. Enter/Space work. */
+{ const _cht = $("chatHeadTitle");
+  if (_cht) {
+    _cht.onclick = _copySessionName;
+    _cht.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); _copySessionName(); } };
+  } }
 { const _chp = $("chatHeadPath"); if (_chp) _chp.onclick = _copySessionPath; }   // JAG-933
 $("chatSearchToggle").onclick = toggleChatSearch;
 $("chatSearchClose").onclick = closeChatSearch;

@@ -13,9 +13,9 @@ li apre nell'editor — risolvi"*.
 
   A  ONE typography: answer and thought 12.5px/400; file name 11.5px italic; bold pref excluded
   B  the Workspace/Plan bar borrows the live inspector body (one implementation)
-  C  the chat ✨ lives inside the message box, not in the sidebar
+  C  the chat ✨ lives at the right end of that strip, not in the sidebar
   D  +A −D opens the diff window and never toggles the row
-  E  a read outside the workspace opens the preview window (same inWorkspace rule as the dock)
+  E  the file NAME opens the editor for every tool — an out-of-workspace path included
 
 Deterministic and offline: static pins on webui/index.html + webui/assets/editor.js.
 Run: python3 tests/acceptance/v1255_typography_superbar_and_links.py
@@ -61,9 +61,10 @@ check("B2 it BORROWS the live inspector body and returns it (no second panel)",
       and '$("csBody").appendChild(body);' in HTML)
 check("B3 the inspector keeps working (a lent body is returned by its header)",
       "if (!body) { _csReturn(); return; }" in HTML)
-check("B4 the bar summary is the panel's OWN line (a MutationObserver, no second count)",
-      '["sPlan", "sWorkspace"].forEach' in HTML and "MutationObserver" in HTML)
 _CMSUPER = HTML[HTML.index('<div id="cmpSuper">'):HTML.index('<div id="inpWrap">')]
+check("B4 the strip carries NO summary line and NO copied count (round 174)",
+      'id="csSum"' not in _CMSUPER and 'class="cs-sum"' not in HTML
+      and '["sPlan", "sWorkspace"].forEach' not in HTML)
 check("B5 one control is pressed at a time and close is explicit",
       'b.setAttribute("aria-pressed", p);' in HTML and 'aria-selected' not in _CMSUPER
       and 'role="group" aria-label="workspace and plan"' in _CMSUPER
@@ -73,11 +74,11 @@ check("B5 one control is pressed at a time and close is explicit",
 check("C1 the chat.prompt spark mounts into the composer, not the sidebar",
       '["chat.prompt", "#inp", "#cmpSpark", null,' in HTML
       and '#toolsBar #chatViewSec", null,' not in HTML)
-check("C2 it is a small control at the top-right INSIDE the message box",
-      '<span id="cmpSpark"></span>' in HTML
-      and "#inpWrap { position: relative;" in HTML
-      and "#cmpSpark { position: absolute; top: 6px; right: 8px;" in HTML
-      and "#composer #inpWrap #inp { padding-right: 36px; }" in HTML)
+check("C2 it is the RIGHT END of the strip and the strip is the message box's top row (round 174)",
+      '<span id="cmpSpark"></span>' in _CMSUPER
+      and "#cmpSpark { margin-left: auto;" in HTML
+      and HTML.index('id="cmpSpark"') < HTML.index('id="inpWrap"')
+      and "#composer #inpWrap #inp { padding-right: 36px; }" not in HTML)
 
 # ---- D: the stat opens the diff ------------------------------------------
 check("D1 +A −D is wired to the SAME diff window and stops the row toggle",
@@ -86,11 +87,17 @@ check("D1 +A −D is wired to the SAME diff window and stops the row toggle",
       and 'e.preventDefault(); e.stopPropagation();' in HTML
       and '      showDiff(path);' in HTML)
 
-# ---- E: out-of-workspace read --------------------------------------------
-check("E1 the dock's own workspace rule is exposed (one predicate)",
-      "inWorkspace: _inWorkspace," in EDITOR)
-check("E2 a read outside it opens the preview window, not the editor tab",
-      "!ed.inWorkspace(path)) openPreview(path);" in HTML
+# ---- E: the name opens the file ------------------------------------------
+_WTN = HTML[HTML.index("function _wireToolName"):HTML.index("const _editStatSeen")]
+check("E1 the name opens the FILE in the editor for EVERY tool (round 174)",
+      'nm.title = "open " + p;' in _WTN
+      and "openInEditor(path);" in _WTN
+      and "openPreview(" not in _WTN
+      and "⚠ outside the workspace" in EDITOR
+      and _WTN.index("openInEditor(path);") < _WTN.index('const st = card.querySelector(".tc-stat")'))
+check("E2 only +A −D opens the diff (the two readings have one gesture each)",
+      "showDiff(path);" in _WTN
+      and _WTN.index("showDiff(path);") > _WTN.index('const st = card.querySelector(".tc-stat")')
       and "function openPreview(path, row)" in HTML)
 
 print("\n---\nv1255: %d/%d PASS" % (sum(results), len(results)))

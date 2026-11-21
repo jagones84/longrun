@@ -126,6 +126,31 @@ All notable changes to Longrun are documented here. The format follows
   browser-rebuilt `/data/sessions/<id>.json` would be a guess.) Locked by `v1067` A1–A6, B1–B10.
 
 ### Changed
+- **The Workspace/Plan strip is icon-only, the chat header hides the session id, a todo row is meta-above /
+  label-below, and the tool row has TWO readings (file in the editor, `+A −D` in the diff).** Operator:
+  *"invece di scrivere workspace and plan sulla barra sopra la msg box metti le icone … e togli il riassunto
+  4 done, run id. Lì in alto a destra metti l'autogeneration"*; *"on top of chat … non mettere l'id di
+  session chat, occupa spazio: fallo apparire al passaggio del mouse e copiare al click sul nome"*; *"i todo
+  in chat thread non possono contenere il testo tutto a destra: deve stare in basso al done e Jx number,
+  così occupa lo spazio orizzontale"*; *"se clicco sul file si apre file normale nell'editor; se clicco sui
+  numeri di linee modificati a destra si apre il pannello diff"*. (1) The two toggles are 24×24 SVG icons
+  (`aria-label` + `title` "workspace"/"plan"), the borrowed `.ihd-s` summary line is gone with its
+  `MutationObserver`, and the `chat.prompt` ✨ is the strip's right end (`margin-left: auto`) instead of an
+  absolutely positioned control over the textarea (its `padding-right: 36px` is gone). (2) `#chatHead` no
+  longer prints the session id inline: `.ch-id` is an absolutely positioned chip shown by
+  `.ch-title:hover`/`:focus-visible`, the title is a `role="button"` that copies name + id (Enter/Space
+  included), and the existing ⧉ button still copies the same pair. (3) `.tctree > summary` and `.task` are
+  ONE column — badge + ids on the first line, the label on the next at full width (measured 92% / 93% of the
+  row at 1440×900 and 89% at 390×844) — which retires `_markWrappedTasks`, the `.stacked` class and its
+  ResizeObserver: the stacked shape IS the row now. (4) `_wireToolName` opens `openInEditor(path)` from the
+  file NAME for every tool (an out-of-workspace path lands in the dock with its own ⚠), and only `.tc-stat`
+  calls `showDiff(path)`; `SparkEditor.inWorkspace` is no longer exported because nothing asks it. Also
+  closed the axe `aria-valid-attr-value` **critical incomplete** on `#hideEmptyBtn`: `aria-controls` is
+  published by `FilterSort.open()` only while the dialog it names is open. Locked by `v1258` A1–A4, B1–B3,
+  C1–C3, D1–D3, E1; `v439` (rewritten for the always-stacked row), `v630` A1/B6, `v1253` E2, `v1255`
+  B4/C2/E1–E2, `v1256` C2–C3/E2 re-pointed with dated comments. axe live: 0 violations at 1440×900 and
+  390×844 (only `color-contrast` incomplete).
+
 - **One 30×30 anatomy in the phone header, a themed full-width filter sheet, and SVG glyphs in the rail
   toolbar.** Operator: *"icone minuscole nella barra, il cerca lente … disallineate, guarda e capisci da solo
   cosa va fatto"*; *"ci sono menu che non sono coerenti col theme, soprattutto mobile, per esempio il

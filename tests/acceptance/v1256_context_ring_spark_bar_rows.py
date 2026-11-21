@@ -73,10 +73,12 @@ check("C1 the tabs row carries the divider and sits above the textarea",
       ".cs-tabs { display: flex; align-items: center; gap: 4px; min-height: 26px; min-width: 0;" in HTML
       and "padding: 2px 2px 5px; border-bottom: 1px solid var(--line);" in HTML
       and HTML.index('id="cmpSuper"') < HTML.index('id="inpWrap"'))
-check("C2 the strip keeps the plan line while no tab is open (TRAE's count)",
-      'const sec = _csSec(on || "plan");' in HTML and "_csPaint();" in HTML)
-check("C3 the summary still comes from the panel's own line (no second count)",
-      'sec.querySelector(".ihd-s")' in HTML and "new MutationObserver(() => _csPaint())" in HTML)
+check("C2 the strip carries no summary line — that count belongs to the panel (round 174)",
+      'id="csSum"' not in HTML and 'class="cs-sum"' not in HTML
+      and 'sec.querySelector(".ihd-s")' not in HTML)
+check("C3 the strip paints only its own state (pressed + close), never a copied count",
+      'document.querySelectorAll("#cmpSuper .cs-tab").forEach(b => {' in HTML
+      and 'b.setAttribute("aria-pressed", p);' in HTML)
 
 # ---- D: one-line session rows ----------------------------------------------
 check("D1 the row does not wrap and the name shrinks instead",
@@ -88,9 +90,9 @@ check("D2 the A-id, the ring and the age all live on that same row",
 # ---- E: the id beside the badge -------------------------------------------
 check("E1 the chat task row puts the id beside the status badge",
       ".tctree .tcmeta { display: flex; flex-direction: row; align-items: center; gap: 6px; }" in HTML)
-check("E2 the inspector Plan row does the same (stacked variant included)",
+check("E2 the inspector Plan row does the same, every row stacked (round 174)",
       ".task .tmeta { display: flex; flex-direction: row; align-items: center;" in HTML
-      and ".task.stacked .tmeta { flex-direction: row; align-items: center; gap: 6px; }" in HTML)
+      and ".task { display: grid; grid-template-columns: minmax(0, 1fr);" in HTML)
 
 # ---- F: the Agents panel funnel -------------------------------------------
 check("F1 the hosted deck no longer hides its funnel",

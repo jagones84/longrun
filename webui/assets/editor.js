@@ -1440,10 +1440,9 @@ window.SparkEditor = {
   refresh,
   refreshAll,
   reloadTree: () => loadTree(),   // JAG-501: workspace changed -> re-root the tree
-  // 2026-11-22: the SAME rule the dock uses to mark a tab "outside the workspace" is
-  // exposed so a caller (e.g. a chat tool row) can send such a file to the preview window
-  // instead of the workspace editor. One predicate, no second copy of the root logic.
-  inWorkspace: _inWorkspace,
+  // 2026-11-22 ROUND 174: the `inWorkspace` predicate is no longer exported — the chat
+  // tool row stopped asking it (the file NAME always opens this dock, which marks a path
+  // outside the workspace with its own ⚠). One consumer of a rule, not two.
   closePath,
   has,
   close,

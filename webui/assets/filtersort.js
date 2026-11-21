@@ -156,7 +156,10 @@
     var runCb = pop.querySelector('[data-fs="running"]');
 
     btn.setAttribute("aria-haspopup", "dialog");
-    btn.setAttribute("aria-controls", pop.id);
+    /* ROUND 174: `aria-controls` is published only while the dialog it names is OPEN.
+       Held permanently it pointed at a `hidden` panel, and axe's `aria-valid-attr-value`
+       cannot resolve an idref to a hidden node — a critical `incomplete` on every run
+       (measured 2026-11-21, `#hideEmptyBtn`). One owner: `open()` writes both attrs. */
 
     function dirty() {
       return st.team !== DEFAULTS.team || st.hideEmpty || st.running ||
@@ -217,6 +220,8 @@
     function open(on) {
       pop.hidden = !on;
       btn.setAttribute("aria-expanded", on ? "true" : "false");
+      if (on) btn.setAttribute("aria-controls", pop.id);
+      else btn.removeAttribute("aria-controls");
       if (on) { fillTeams(true); place(); }
     }
     btn.addEventListener("click", function (e) {

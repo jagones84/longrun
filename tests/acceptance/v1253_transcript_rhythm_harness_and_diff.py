@@ -105,12 +105,14 @@ check("D3 the OPEN thought is the one framed surface",
 check("E1 the edit/write row carries a +A −D slot filled from the diff endpoint",
       '<span class="tc-stat"></span>' in HTML and "function _fillEditStat(card, path)" in HTML
       and '"/api/edits/diff?session="' in HTML)
-check("E2 the name opens the FILE for a read and the DIFF for an edit/write",
+_WTN = HTML[HTML.index("function _wireToolName"):HTML.index("const _editStatSeen")]
+check("E2 the name opens the FILE in the editor for every tool; +A −D opens the diff (round 174)",
       "function _wireToolName(card, tool, args)" in HTML
-      and 'if (tool === "fs.read") {' in HTML
-      and "!ed.inWorkspace(path)) openPreview(path);" in HTML
-      and "else openInEditor(path);" in HTML
-      and "else showDiff(path);" in HTML)
+      and 'nm.title = "open " + p;' in _WTN
+      and "openInEditor(path);" in _WTN
+      and "openPreview(" not in _WTN
+      and _WTN.index("openInEditor(path);") < _WTN.index('const st = card.querySelector(".tc-stat")')
+      and "showDiff(path);" in _WTN)
 check("E3 the row stays clean: action icons appear on hover/focus only",
       "opacity: 0; transition: opacity .12s;" in HTML
       and ".toolcard:hover .tc-action, .toolcard:focus-within .tc-action { opacity: 1; }" in HTML)

@@ -57,8 +57,8 @@ def block(selector, text=None):
 
 # ---- A. chat thread ------------------------------------------------------------
 sum_css = block(".tctree > summary")
-check("A1 the chat summary is a two-column grid (badge column | label)",
-      "display: grid" in sum_css and "grid-template-columns: auto minmax(0, 1fr)" in sum_css,
+check("A1 the chat summary is ONE column — meta line, then the label (round 174)",
+      "display: grid" in sum_css and "grid-template-columns: minmax(0, 1fr)" in sum_css,
       sum_css.strip()[:120])
 check("A2 the agent/todo id sits in a COLUMN under the status badge",
       # v906: the second meta item is the ids LINE (todo + job + subjob), not the
@@ -94,8 +94,9 @@ check("B4 .task .tids wraps instead of overflowing the meta column",
       "flex-wrap: wrap" in block(".task .tids"))
 check("B5 the row aligns to the TOP so a tall meta never centres the label",
       "align-items: flex-start" in block(".step, .task"))
-check("B6 the stacked (long-label) variant keeps the same inline meta",
-      "flex-direction: row" in block(".task.stacked .tmeta"))
+check("B6 every plan row IS the stacked shape — no wrapped-line fallback (round 174)",
+      ".task { display: grid; grid-template-columns: minmax(0, 1fr);" in UI
+      and ".task.stacked" not in UI)
 
 # ---- C. nothing lost -----------------------------------------------------------
 check("C1 the chat id is still painted live after a status change",
