@@ -394,6 +394,65 @@ def _goal_end(sess, goal_mode):
         return None
 
 
+GOAL_RESUME_SENDER = "goal"
+GOAL_RESUME_MESSAGE = (
+    "Resume the goal: continue from where you stopped, work the next open step of the "
+    "plan and record its evidence. Do not ask for confirmation."
+)
+
+
+def _resume_message(objective):
+    """The text of a resumed-goal turn: the OBJECT of the goal, not a vague nudge.
+
+    An autonomous turn wraps its message as `GOAL: <message>`, so passing a generic
+    instruction made the wrapper name the instruction as the goal while the real
+    objective sat further down in harness state. The objective is what the model
+    must pursue, so it IS the message (bounded; the full text is in the goal block).
+    """
+    text = " ".join(str(objective or "").split())
+    if not text:
+        return GOAL_RESUME_MESSAGE
+    return "Continue pursuing this goal: " + text[:600]
+
+
+def start_goal_turn(session_id, model=None):
+    """Start ONE detached turn that PURSUES the session's ACTIVE goal.
+
+    `POST /api/goal {action:"resume"}` used to flip the record back to `active`
+    and stop there: the bar said the goal was live while no turn was running
+    (operator, 2026-11-22: *"resume goal shall start the LLM to pursuit the
+    goal"*). This launches the SAME turn `/goal` launches — one goal gate, one
+    worker — with no HTTP client attached: `chat.user`/`chat.run` reach the feed,
+    so an open page renders and follows it without a reload.
+
+    Returns the turn id, or None when nothing can start (a deleted session, a
+    goal the gate refuses, a thread that will not start). A failed start leaves
+    the goal `active`, which is what makes a second `resume` meaningful.
+    """
+    sess = _open_session(session_id)
+    if sess is None:
+        return None
+    objective = ""
+    try:
+        from longrun.plan import goal as _goal_mod
+        objective = (_goal_mod.load(session_id) or {}).get("objective") or ""
+    except Exception:  # noqa: BLE001 — no objective falls back to the instruction
+        objective = ""
+    message = _resume_message(objective)
+    ok, _payload = _goal_begin(sess, True, message, requested=False)
+    if not ok:
+        return None
+    turn_id = uuid.uuid4().hex
+    try:
+        _start_chat_worker(
+            sess, message, model, autonomous=True, goal_mode=True,
+            goal_started=time.time(), sender=GOAL_RESUME_SENDER,
+            detached=True, turn_id=turn_id)
+    except Exception:  # noqa: BLE001 — the record stays active; retry is allowed
+        return None
+    return turn_id
+
+
 class _DiscardTurnFrames:
     """A detached worker publishes to the durable feed, not a private queue."""
 

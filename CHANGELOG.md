@@ -7,6 +7,19 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Fixed
+- **Resuming a goal now STARTS the turn that pursues it.** Operator: *"resume goal shall start
+  the LLM to pursuit the goal; when paused simply ignores it and listens the user messages
+  coming and does what the user currently asks."* `POST /api/goal {action:"resume"}` used to
+  flip the record back to `active` and stop there: the bar said the goal was live while no
+  turn was running. The resume branch now launches ONE detached, autonomous, goal-mode turn
+  through the same worker `/goal` uses (`httpapi.start_goal_turn`, announced on the feed with
+  `sender: "goal"` so the transcript does not pretend the operator typed it) and answers with
+  the turn id; the page toasts and the feed pulls the turn in without a reload. A paused goal
+  still never hijacks an ordinary message (`_goal_mode_of` is false, and the injected goal
+  block now says this is an ordinary turn); a `completed` goal whose plan REOPENED is
+  resumable again — `settle` no longer runs before `resume`, which had turned that case into
+  an `active` record and made resume answer 409. Locked by `v1265` (21/21, `UI_GUARD`); badge
+  950 → 951.
 - **Queue really queues, steer really steers — and a waiting message is visible.** Operator:
   *"queue message doesn't work, message is sent; steer interrupting current run. I passed from
   steer to queue then sent the message … it shall appear in the up msg box bar … multiple queue

@@ -2466,11 +2466,15 @@ def _goal_action(body):
     from longrun.plan import goal
     sid = str((body or {}).get("session") or "")
     action = str((body or {}).get("action") or "").strip().lower()
+    turn_id = None
     if not sid:
         return 400, {"ok": False, "error": "session required"}
     # A `completed` goal whose plan reopened is not really done: settle it to the
-    # effective status before acting, so pause/resume act on the real state.
-    if action != "delete":
+    # effective status before acting, so pause/stop act on the real state. `resume`
+    # is EXEMPT: `goal.resume()` already tells a PAUSED goal from a COMPLETED one
+    # whose plan reopened — settling first rewrote the second case as `active`, so
+    # resume answered 409 exactly when the reopened goal needed to go back to work.
+    if action not in ("delete", "resume"):
         try:
             goal.settle(sid)
         except Exception:  # noqa: BLE001 — settling must not block the action
@@ -2505,6 +2509,15 @@ def _goal_action(body):
         if rec is None:
             return 409, {"ok": False, "error": "no paused goal to resume",
                          "goal": goal.load(sid)}
+        # 2026-11-22 (operator): "resume goal shall start the LLM to pursuit the
+        # goal". Reactivating the record alone left the bar saying `active` with
+        # nothing running; the turn is started HERE, detached, so the HTTP answer
+        # is not held open while the model works.
+        try:
+            from longrun.core import httpapi as _httpapi
+            turn_id = _httpapi.start_goal_turn(sid, (body or {}).get("model"))
+        except Exception:  # noqa: BLE001 — the goal is resumed even if no turn starts
+            turn_id = None
     elif action == "edit":
         rec = goal.edit(sid, (body or {}).get("objective"))
         if rec is None:
@@ -2520,6 +2533,9 @@ def _goal_action(body):
     out = goal.status(sid)
     out["ok"] = True
     out["goal"] = rec
+    # The turn a `resume` started (None for every other action): the caller can
+    # say the goal is being pursued instead of only re-rendering `active`.
+    out["turn"] = turn_id
     return 200, out
 
 

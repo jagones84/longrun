@@ -608,6 +608,13 @@ def _goal_block(session_id):
                 out.append("  * %s" % str(m)[:_miss_chars])
             out.append("  Make those checks pass; do not close the goal by restating "
                        "that the work is done.")
+    if (st.get("effective_status") or "") == "paused":
+        # 2026-11-22 (operator): "when paused simply ignores it and listens the user
+        # messages coming and does what the user currently asks". The block still
+        # carries the objective (the bar shows it), so it must also say that THIS
+        # turn is not the goal's — otherwise a paused goal keeps steering normal turns.
+        out.append("- the goal is PAUSED: this is an ORDINARY turn — serve the operator's "
+                   "current message and do not pursue the goal until it is resumed.")
     if rec.get("note"):
         out.append("- note: %s" % str(rec.get("note"))[:300])
     return "\n".join(out)

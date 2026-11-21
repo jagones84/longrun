@@ -134,7 +134,13 @@ the configured wall-clock safety cap stops it incomplete. The goal itself is a
 fact: the record owns the objective and its lifecycle (`active|paused|completed`),
 the plan owns the steps and their evidence, so completion is read from
 `taskgraph.goal_complete` and never stored as an opinion. A pause refuses the next
-`/goal` turn before any spend (409), and the WebUI's Active-goal bar renders
+`/goal` turn before any spend (409), and while the goal is paused an ordinary
+message stays an ORDINARY turn (`_goal_mode_of` is false and the goal block says
+so), so the operator is served instead of the paused objective. `POST /api/goal
+{action:"resume"}` reactivates the record AND starts the turn that pursues it
+(`httpapi.start_goal_turn` — the same detached goal-mode worker `/goal` uses,
+with `sender: "goal"` in the transcript); a `completed` goal whose plan reopened
+is resumed the same way. The WebUI's Active-goal bar renders
 `GET /api/goal` — pause, edit and delete are POSTs, so the goal survives the turn,
 the tab and a service restart. Every step is published
 to the event bus and persisted, so a reload rebuilds the transcript and task graph.

@@ -12394,6 +12394,10 @@ async function goalAct(action, extra) {
   const body = Object.assign({ session: sessionId, action: action }, extra || {});
   const r = await api("POST", "/api/goal", body);
   if (r && r.error) toast("goal: " + r.error, "warn");
+  // ROUND 182 (operator): a resume now STARTS the turn that pursues the goal —
+  // the backend launches it detached, so this answer carries the turn id. Say so;
+  // the feed's chat.run/chat.user pull the transcript in without a reload.
+  if (action === "resume" && r && r.turn) toast("goal resumed — the agent is pursuing it", "ok");
   goalRec = (r && !r.error) ? r : goalRec;
   // A delete answers without a goal object: re-read the real state either way.
   if (!r || r.error || action === "delete") await loadGoal(); else renderGoal();
