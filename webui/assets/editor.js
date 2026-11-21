@@ -1440,6 +1440,9 @@ window.SparkEditor = {
   refresh,
   refreshAll,
   reloadTree: () => loadTree(),   // JAG-501: workspace changed -> re-root the tree
+  // 2026-11-22 ROUND 179: the rules panels link a FOLDER path; this reveals it in the
+  // tree (expanding its parents) so a click opens where the files are.
+  revealInTree,
   // 2026-11-22 ROUND 174: the `inWorkspace` predicate is no longer exported — the chat
   // tool row stopped asking it (the file NAME always opens this dock, which marks a path
   // outside the workspace with its own ⚠). One consumer of a rule, not two.

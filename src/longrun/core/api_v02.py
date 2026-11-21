@@ -5911,10 +5911,20 @@ def rules_status(qs=None):
 
 
 def rules_save(body):
-    """POST /api/rules — save rules for 'global' or 'project' (session-aware)."""
+    """POST /api/rules — save rules, or flip one file's always-apply switch.
+
+    ROUND 179: a body with `always_apply` (Trae parity) turns ONE project rule file
+    on/off for the prompt; it never writes the rule text. Everything else keeps
+    saving 'global' or 'project' as before.
+    """
     body = body or {}
     sid = body.get("session")
     ws, _sess = _session_ws(sid)
+    if "always_apply" in body:
+        res = _RULES.set_always_apply(body.get("path"), bool(body.get("always_apply")), ws=ws)
+        _publish("rules.always", path=body.get("path"), ok=bool(res.get("ok")),
+                 always_apply=bool(res.get("always_apply")))
+        return res
     res = _RULES.save(body.get("scope"), body.get("content"), ws=ws)
     _publish("rules.update", scope=body.get("scope"), ok=bool(res.get("ok")))
     return res

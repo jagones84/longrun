@@ -340,12 +340,8 @@ _GENERATE_PROMPTS = {
         "rules that already exist: add a rule that is missing and does not duplicate "
         "them. Imperative, testable, no fluff." + _BARE
     ),
-    "rules.project": (
-        "You write one paragraph of this PROJECT's rules — instructions that hold only "
-        "in this workspace. The context shows the existing project and global rules: "
-        "add what is missing without duplicating them. Imperative and specific to the "
-        "project's real stack." + _BARE
-    ),
+    # ROUND 179: there is no `rules.project` surface any more — project rules are
+    # FILES the operator edits in the editor (Trae's list), not one generated field.
     "agent.role": (
         "You write the ROLE.md of ONE agent of this team: who it is, what it owns, and "
         "how it reports. The context gives the agent's name, role, model, its team and "
@@ -414,9 +410,9 @@ _GENERATE_PROMPTS = {
 }
 
 
-# A rule is ADDED to a file, never swapped in: these two surfaces append to the field
-# so a draft can never silently delete the rules already written next to it.
-_APPEND = ("rules.global", "rules.project")
+# A rule is ADDED to a file, never swapped in: this surface appends to the field so a
+# draft can never silently delete the rules already written next to it.
+_APPEND = ("rules.global",)
 #: RH-18: the reply is ONE JSON object that fills SEVERAL fields, not text for one
 #: field. The client reads this from `GET /api/generate/surfaces` and parses it; a
 #: surface listed here must say so in its own prompt.

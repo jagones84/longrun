@@ -58,12 +58,12 @@ check("A6 Orbit keeps the Teamorg control, now with the ✨ glyph",
       and "teamorg" in LRA.SECTION_PROMPTS)
 check("A7 the server allowlist is unchanged (the operator's safety rule)",
       LRA.AUTOMATE_ALLOWED_SECTIONS == ("rules", "teamorg", "agents", "teams", "orbit"))
-# The Rules panel mounts ONE control per card (global + project), each bound to ITS OWN
-# textarea and its OWN generate surface. A category-level control ran FIRST and added a
-# third button whose ctx said scope=global — two of the three sent the same scope.
-check("A8 the Rules panel owns its two controls, bound to their own fields",
+# The Rules panel mounts ONE control (global), bound to that textarea and its generate
+# surface. ROUND 179: project rules are FILES, so no generated field exists for them.
+check("A8 the Rules panel owns the ONE remaining control (global), bound to its field",
       '["rulesGlobalCard", "rulesGlobalText", "rules.global"]' in UI
-      and '["rulesProjectCard", "rulesProjectText", "rules.project"]' in UI
+      and '["rulesProjectCard", "rulesProjectText", "rules.project"]' not in UI
+      and '"rules.project"' not in UI
       and "mountSparkle(c, sid, { field: ta });" in UI
       and "const AUTOMATE_CAT_SKIP" not in UI)
 check("A9 an automate run refreshes the surface it edited (both paths)",

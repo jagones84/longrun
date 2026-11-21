@@ -61,9 +61,10 @@ check("A7 the session inspector identifies ROLE.md and links global rules to Set
       'data-args=\'["rules"]\'>Rules<' in HTML
       and "ROLE.md" in HTML
       and "Global_rules.md" in HTML, "")
-check("A8 global and project Global_rules.md / Project_rules.md editors remain in Settings",
+check("A8 the global editor remains, and project rules are the FOLDER list",
       'data-cat="rules"' in HTML and 'id="rulesGlobalText"' in HTML
-      and 'id="rulesProjectText"' in HTML, "")
+      and 'id="rulesProjectText"' not in HTML
+      and 'id="rulesProjectList"' in HTML, "")
 check("A9 Settings includes a diagnostics category and panel",
       '["diagnostics", "Diagnostics"]' in HTML
       and 'data-cat="diagnostics"' in HTML

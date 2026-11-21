@@ -139,8 +139,6 @@ GATED_BUTTONS = (
     ("saveToken", '<button class="ghost config-save" data-call="saveToken" disabled'),
     ("saveRules global",
      '<button class="ghost config-save u-mt8" data-call="saveRules" data-args=\'["global"]\' disabled'),
-    ("saveRules project",
-     '<button class="ghost config-save u-mt8" data-call="saveRules" data-args=\'["project"]\' disabled'),
     ("saveProvider", '<button class="ghost config-save u-mt8" data-call="saveProvider" disabled'),
     ("sandbox", '<button class="ghost config-save" id="sbxSave" disabled'),
     ("advanced tool policy", '<button class="ghost config-save" id="advSave" disabled'),

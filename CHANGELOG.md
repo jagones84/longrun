@@ -7,6 +7,21 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Settings ▸ Rules is Trae's Rules list: one folder path, one row per rule file, and a
+  per-file "always apply" switch.** Operator: *"metti solo il path delle rules non ogni
+  singola rules lì in alto così apri magari il path in hyperlink … se vai in settings rules
+  le vedo le rules di progetto tutte cliccabili? e posso selezionare se applicarla ad ogni
+  messaggio always apply o no come in trae?"*. The project card is now ONE clickable
+  `<ws>/.trae/rules` path (click reveals the folder in the editor tree) plus a row per
+  `.md` — name + relative path on the left (click opens the file), an "always apply"
+  checkbox on the right. `POST /api/rules {path, always_apply}` stores the switch in
+  `projects/<ws>/rules_state.json` (absent = ON, the previous behaviour); a file switched
+  OFF leaves the system prompt, the loaded list and the audit in the same turn. The RH
+  panel follows: one path link, no duplicated second folder, and the long green footer
+  sentence is gone. The project textarea, its save button, its ✨ surface (`rules.project`)
+  and the separate "Loaded rule files" card are removed — no single editable project file
+  and no dead generated surface. Locked by `v1261` F1–F7; `v361` A8, `v507`, `v540` A8
+  re-pointed.
 - **`/context` and `/restart` in the composer — two verbs that reuse the doors that already exist.** Operator:
   *"in the slash commands include the restart command /restart … and the context command for showing context
   informations and details (see breakdown RH panel also) don't duplicate code please … commands and tool share

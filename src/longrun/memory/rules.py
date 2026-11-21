@@ -22,7 +22,7 @@ import os
 import re
 
 from longrun.util import paths
-from longrun.util.fswrite import write_json
+from longrun.util.fswrite import read_json, write_json
 from longrun.util.paths import REPO_ROOT as REPO
 # 2026-11-05: the system-prompt rules cap is a CONFIG value (operator: "all in
 # config files ... no hardcoding"); `context.rules_prompt_max_bytes` owns it.
@@ -233,6 +233,43 @@ def project_rules_dirs(ws=None):
     return [workspace_rules_dir(ws), os.path.join(project_dir(ws), "rules")]
 
 
+def project_rules_state_path(ws=None):
+    """Where the per-file ALWAYS-APPLY switches of the project rules live.
+
+    ROUND 179 (operator, Trae parity): *"posso selezionare se applicarla ad ogni
+    messaggio always apply o no?"* — one JSON map in the harness state, never a
+    second `.md` in the operator's checkout. Absent entry = ON, which is the
+    behaviour every file had before the switch existed.
+    """
+    return os.path.join(project_dir(ws), "rules_state.json")
+
+
+def always_apply_map(ws=None):
+    """{abs path: False} for the rules the operator turned OFF (ON is the default)."""
+    d = read_json(project_rules_state_path(ws), {}) or {}
+    m = d.get("always_apply") if isinstance(d, dict) else None
+    return m if isinstance(m, dict) else {}
+
+
+def set_always_apply(path, always, ws=None):
+    """Turn ONE project rule file on/off for the prompt. Only loaded files are valid."""
+    ws = ws or get_workspace()
+    real = os.path.abspath(str(path or ""))
+    allowed = {os.path.abspath(project_agents_path(ws))}
+    for d in project_rules_dirs(ws):
+        if not os.path.isdir(d):
+            continue
+        for fn in os.listdir(d):
+            if fn.endswith(".md"):
+                allowed.add(os.path.abspath(os.path.join(d, fn)))
+    if real not in allowed or not os.path.isfile(real):
+        return {"ok": False, "error": "not a project rule file: %s" % (path or "(empty)")}
+    m = always_apply_map(ws)
+    m[real] = bool(always)
+    write_json(project_rules_state_path(ws), {"always_apply": m})
+    return {"ok": True, "path": real, "always_apply": bool(always)}
+
+
 def project_agents_path(ws=None):
     return os.path.join(ws or get_workspace(), "AGENTS.md")
 
@@ -245,7 +282,7 @@ def _read(path):
         return ""
 
 
-def _collect_scope(native, agents, extra_dirs=None):
+def _collect_scope(native, agents, extra_dirs=None, always_map=None):
     """(text, files): the native Global_rules.md / Project_rules.md PLUS every `.md`
     of the scope's rule FOLDERS and the AGENTS.md addendum.
 
@@ -253,9 +290,14 @@ def _collect_scope(native, agents, extra_dirs=None):
     its text is composed first and the AGENTS.md content is appended after it, so
     BOTH instruction sources reach the model (JAG-128A). The folders (ROUND 177) are
     additive too and deduped by path, so a file listed twice is loaded once.
+
+    ROUND 179: `always_map` is the operator's per-file switch (Trae's "Always Apply").
+    A file explicitly mapped to False is skipped everywhere — text, file list and
+    audit — while an absent entry keeps the historical behaviour (loaded).
     """
+    amap = always_map or {}
     files, parts = [], []
-    if os.path.isfile(native):
+    if os.path.isfile(native) and amap.get(os.path.abspath(native), True) is not False:
         files.append(native)
         parts.append(_read(native))
     # folders load even when the native file is absent: Trae parity is the folder
@@ -266,11 +308,12 @@ def _collect_scope(native, agents, extra_dirs=None):
             if not fn.endswith(".md"):
                 continue
             p = os.path.join(extra_dir, fn)
-            if p in files:
+            if p in files or amap.get(os.path.abspath(p), True) is False:
                 continue
             files.append(p)
             parts.append(_read(p))
-    if os.path.isfile(agents) and agents not in files:
+    if (os.path.isfile(agents) and agents not in files
+            and amap.get(os.path.abspath(agents), True) is not False):
         agents_text = _read(agents)
         if agents_text.strip():
             files.append(agents)
@@ -282,12 +325,14 @@ def _collect_scope(native, agents, extra_dirs=None):
 def collect(ws=None):
     """Everything the model would see: global + project rules and their files.
 
-    `ws` selects the project root (defaults to the global workspace).
+    `ws` selects the project root (defaults to the global workspace). The project
+    scope honours the per-file always-apply switches (ROUND 179).
     """
     gtext, gfiles = _collect_scope(global_rules_path(), global_agents_path())
     ws = ws or get_workspace()
     ptext, pfiles = _collect_scope(project_rules_path(ws), project_agents_path(ws),
-                                   extra_dirs=project_rules_dirs(ws))
+                                   extra_dirs=project_rules_dirs(ws),
+                                   always_map=always_apply_map(ws))
     return {
         "workspace": ws,
         "global": {"text": gtext, "files": gfiles, "path": global_rules_path()},
@@ -349,7 +394,7 @@ def rules_prompt_block(max_bytes=None, ws=None):
         head = ("### %s\n- file: %s\n- AGENTS.md (also loaded, additive): %s\n"
                 % (title, sc["path"], fallback))
         if extra:
-            head += "- folders (every .md loaded): %s\n" % ", ".join(
+            head += "- folders (every .md with always-apply on): %s\n" % ", ".join(
                 d + "/*.md" for d in extra)
         head += "- loaded: %s\n" % (", ".join(sc["files"]) or "(none yet)")
         body = (sc["text"] or "").strip()
@@ -361,7 +406,7 @@ def rules_prompt_block(max_bytes=None, ws=None):
              "rules apply to every project; project rules win on "
              "conflict. Within each scope Global_rules.md/Project_rules.md and AGENTS.md are BOTH loaded "
              "(additive, not a fallback), and EVERY `.md` of the project rules folders "
-             "is loaded too (additive).\n"
+             "whose always-apply switch is on (the default) is loaded too (additive).\n"
              "- GLOBAL file: %s   (AGENTS.md also loaded, additive: %s)\n"
              "- PROJECT file: %s   (AGENTS.md also loaded, additive: %s)\n"
              "- PROJECT folders: %s\n"
@@ -419,6 +464,44 @@ def _file_rows(paths):
     return out
 
 
+def _project_rows(ws=None):
+    """EVERY project rule file with its always-apply switch (the Settings list).
+
+    ROUND 179: `file_rows` (the RH panel) stays the LOADED set; this inventory also
+    names the files the operator turned OFF, so the switch can be turned back on.
+    """
+    ws = ws or get_workspace()
+    amap = always_apply_map(ws)
+    seen, out = set(), []
+
+    def _add(p, fixed=False):
+        ap = os.path.abspath(p)
+        if ap in seen:
+            return
+        seen.add(ap)
+        try:
+            n = os.path.getsize(ap)
+        except OSError:
+            n = 0
+        on = amap.get(ap, True) is not False
+        out.append({"path": ap, "name": os.path.basename(ap), "chars": n,
+                    "always_apply": on, "loaded": on, "fixed": bool(fixed),
+                    "dir": os.path.dirname(ap)})
+
+    native = project_rules_path(ws)
+    if os.path.isfile(native):
+        _add(native, fixed=True)          # harness overlay: always loaded, no switch
+    for d in project_rules_dirs(ws):
+        if not os.path.isdir(d):
+            continue
+        for fn in sorted(os.listdir(d)):
+            if fn.endswith(".md"):
+                _add(os.path.join(d, fn))
+    if os.path.isfile(project_agents_path(ws)):
+        _add(project_agents_path(ws))
+    return out
+
+
 def status(ws=None):
     """UI-friendly snapshot: paths, existence, sizes and the loaded FILE LIST.
 
@@ -428,9 +511,11 @@ def status(ws=None):
 
     ROUND 178: `text` is the COMPOSED corpus (native file + every folder `.md` +
     AGENTS.md) because that is what the model reads; `file_text` is the native
-    file's OWN bytes, and it is what an editor must load and save. Showing the
-    composed corpus in an editor that writes a single file would duplicate every
-    other file's rules into it on the first save.
+    file's OWN bytes, and it is what an editor must load and save.
+
+    ROUND 179: `rules_dir` is the ONE folder path the panels show (the operator's
+    `.trae/rules`), and `all_rows` carries every rule file with its always-apply
+    switch — the Trae list the Settings panel renders.
     """
     c = collect(ws)
 
@@ -441,6 +526,8 @@ def status(ws=None):
                 "file_rows": _file_rows(files), "prompt_cap": MAX_BYTES}
     proj = _scope("project", project_rules_path(ws), c["project"]["files"])
     proj["dirs"] = project_rules_dirs(ws)   # the folder model the panel renders
+    proj["rules_dir"] = workspace_rules_dir(ws)
+    proj["all_rows"] = _project_rows(ws)
     return {
         "workspace": c["workspace"],
         "config_dir": _config_dir(),

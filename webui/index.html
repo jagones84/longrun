@@ -3155,6 +3155,17 @@
   .rfile-n { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .rfile > b { flex: none; color: var(--dim); font-weight: 600; }
   .rfile .remaining { margin-left: auto; flex: none; }
+  /* ROUND 179: the project rule rows (name + relative path on the left, the switch on
+     the right) — the Settings list the operator compares with Trae. */
+  #rulesProjectPath { margin-bottom: 4px; }
+  #rulesProjectPath .lnk, .rpath .lnk { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rule-row { display: flex; align-items: center; gap: 8px; }
+  .rule-row .rfile { flex: 1 1 auto; width: auto; }
+  .rule-txt { display: flex; flex-direction: column; min-width: 0; }
+  .rfile-sub { display: block; font-size: 10px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rule-aa { flex: none; display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--dim); cursor: pointer; white-space: nowrap; }
+  .rule-aa input { accent-color: var(--acc); margin: 0; }
+  .rule-fixed { flex: none; font-size: 10px; color: var(--dim); }
   .rwho { font-size: 11px; color: var(--dim); margin-bottom: 6px; line-height: 1.4; }
   #inspector button.ghost.dirty { color: var(--acc); border-color: var(--acc); box-shadow: inset 0 0 0 1px var(--acc); }
   .rwho.agent { color: var(--txt); }
@@ -5144,24 +5155,23 @@
           <textarea aria-label="global rules markdown" id="rulesGlobalText" style="width:100%;min-height:120px;margin-top:6px;font-size:12px;font-family:monospace;padding:6px;border-radius:8px;border:1px solid var(--line);background:var(--bg2);color:var(--txt)"></textarea>
           <button class="ghost config-save u-mt8" data-call="saveRules" data-args='["global"]' disabled title="no changes to save">save global</button>
           <button class="ghost u-mt8" data-call="openRule" data-args='["global"]' title="open the file in the dock (markdown, with colors)">🗔 open in the editor</button>
-        </div>
-        <h2>Rules · project</h2>
-        <div class="card" id="rulesProjectCard">
-          <div class="remaining" id="rulesProjectPath">…</div>
-          <textarea aria-label="project rules markdown" id="rulesProjectText" title="native Project_rules.md — every .md of the folder above is ALSO loaded; open those from the list below" style="width:100%;min-height:120px;margin-top:6px;font-size:12px;font-family:monospace;padding:6px;border-radius:8px;border:1px solid var(--line);background:var(--bg2);color:var(--txt)"></textarea>
-          <button class="ghost config-save u-mt8" data-call="saveRules" data-args='["project"]' disabled title="no changes to save">save project</button>
-          <button class="ghost u-mt8" data-call="openRule" data-args='["project"]' title="open the file in the dock (markdown, with colors)">🗔 open in the editor</button>
           <div id="rulesResult" class="remaining u-mt6"></div>
         </div>
-        <!-- HA-1 (lot H): the rules doctor rides the SAME /api/rules payload the two
-             editors above already fetch. The card stays COLLAPSED while the corpus is
+        <h2>Rules · project</h2>
+        <!-- ROUND 179 (operator, Trae parity): ONE clickable folder path, then the rule
+             files themselves — each opens in the editor and has its own always-apply
+             switch. There is no single editable project file any more. -->
+        <div class="card" id="rulesProjectCard">
+          <div id="rulesProjectPath">…</div>
+          <div id="rulesProjectList" class="rlist"></div>
+        </div>
+        <!-- HA-1 (lot H): the rules doctor rides the SAME /api/rules payload the
+             panel above already fetches. The card stays COLLAPSED while the corpus is
              clean, so a quiet doctor costs no space (graphics rule 1). -->
         <div class="card" id="rulesDoctorCard" hidden>
           <div class="set-t" title="contradictions, stale paths, duplicates and over-budget scopes — read-only advice, nothing is edited">Rules doctor</div>
           <div id="rulesDoctor" class="remaining"></div>
         </div>
-        <h2>Loaded rule files</h2>
-        <div class="card"><div id="rulesFiles" class="remaining"></div></div>
         <!-- v641: the memory manager moved to Settings ▸ Improvements, next to the
              distilled lessons it edits — it lived here under "Rules", which is why
              the panel looked like the improvement results. -->
@@ -10775,6 +10785,10 @@ async function loadRulesPanel() {
   box.querySelectorAll("[data-rulepath]").forEach(b => {
     b.onclick = () => openInEditor(b.dataset.rulepath);
   });
+  // ROUND 179: the one path line opens the rules FOLDER in the editor tree.
+  box.querySelectorAll("[data-rulesdir]").forEach(b => {
+    b.onclick = () => openRulesDir(b.dataset.rulesdir);
+  });
   // K-5: the ✨ of THIS session's ROLE.md — bound to the field above, so one click
   // drafts the brief with the agent's real identity/team/reporting line as context.
   // The ✨ rides the PATH row (right of the path, beside `save`) instead of taking
@@ -10800,23 +10814,22 @@ function _rulesRefRow(kind, label, src) {
   if (kind === "project") {
     const rows = src.file_rows || (src.files || []).map(p =>
       ({path: p, name: String(p).split("/").pop(), chars: 0}));
-    const over = (src.chars || 0) > (src.prompt_cap || 0) && src.prompt_cap;
+    const dir = src.rules_dir || (src.dirs || [])[0] || src.path;
+    // ROUND 179 (operator): ONE path, clickable — the workspace rules folder. The
+    // harness-owned state folder is loaded silently and is not shown twice; the long
+    // green footer sentence is gone (the file rows say what they do by themselves).
     return '<details class="rulesrc" open>'
       + '<summary><b>' + esc(label) + '</b><span class="rbadge' + (rows.length ? " ok" : "") + '">'
       + esc(rows.length + (rows.length === 1 ? " file" : " files") + " · " + _kb(chars)) + '</span></summary>'
-      + '<div class="rpath" title="' + esc((src.dirs || []).join("  ·  ") || src.path) + '">'
-      + '<span>' + esc((src.dirs || []).length ? "folder · " + src.dirs.join("  ·  ") : src.path)
-      + '</span></div>'
+      + '<div class="rpath" title="' + esc(dir) + '">'
+      + '<button type="button" class="lnk" data-rulesdir="' + _attr(dir) + '" '
+      + 'title="open the rules folder in the editor">' + esc(dir) + '</button></div>'
       + '<div class="rlist">' + rows.map(r =>
           '<button type="button" class="rfile" data-rulepath="' + _attr(r.path) + '" '
           + 'title="open ' + _attr(r.path) + ' in the editor">'
           + '<span class="rfile-n">' + esc(r.name) + '</span>'
           + '<span class="remaining">' + esc(_kb(r.chars)) + '</span></button>').join("")
-      + '</div>'
-      + '<div class="rrow"><span class="remaining">'
-      + (over ? 'over the ' + esc(String(Math.round((src.prompt_cap || 0) / 1024))) + ' KB prompt cap — the tail is cut'
-              : 'every .md is loaded in this session&#39;s prompt')
-      + ' — click a file to open it in the editor</span></div></details>';
+      + '</div></details>';
   }
   return '<details class="rulesrc">'
     + '<summary><b>' + esc(label) + '</b><span class="rbadge' + (ok ? " ok" : "") + '">'
@@ -18041,10 +18054,54 @@ async function copyKeyValue(name, btn) {
   } catch (e) {}
 }
 /* ---- rules + workspace (JAG-114/115): global / project + per-session folder ---- */
-let _rulePathGlobal = null, _rulePathProject = null;
+let _rulePathGlobal = null;
 function openRule(scope) {
-  const p = scope === "global" ? _rulePathGlobal : _rulePathProject;
-  if (p && window.SparkEditor) window.SparkEditor.open(p);
+  if (scope === "global" && _rulePathGlobal && window.SparkEditor) window.SparkEditor.open(_rulePathGlobal);
+}
+/* ROUND 179: the project scope is a FOLDER — the path opens it in the editor tree,
+   and every `.md` inside is a row of its own (Trae's Rules list). */
+async function openRulesDir(dir) {
+  if (!dir) return;
+  try { openPanel("files", { scroll: false }); } catch (e) {}
+  const ed = window.SparkEditor;
+  if (!ed) return;
+  if (ed.ensureOpen) await ed.ensureOpen();
+  if (ed.revealInTree) ed.revealInTree(dir);
+}
+function _rulesProjectRows(rows) {
+  const box = $("rulesProjectList");
+  if (!box) return;
+  const base = ($("wsPath").value || "").replace(/\/+$/, "");
+  const rel = p => (base && p.startsWith(base + "/")) ? p.slice(base.length + 1) : p;
+  box.innerHTML = (rows || []).length ? rows.map(r =>
+    '<div class="rule-row">'
+    + '<button type="button" class="rfile" data-rulepath="' + esc(r.path)
+    + '" title="open ' + esc(r.path) + ' in the editor">'
+    + '<span class="rule-txt"><span class="rfile-n">' + esc(r.name) + '</span>'
+    + '<span class="rfile-sub">' + esc(rel(r.path)) + '</span></span></button>'
+    + (r.fixed
+        ? '<span class="rule-fixed" title="harness overlay — always loaded">always</span>'
+        : '<label class="rule-aa" title="load this rule in every message"><input type="checkbox"'
+          + ' data-rulealways="' + esc(r.path) + '"' + (r.always_apply ? " checked" : "")
+          + "> always apply</label>")
+    + "</div>").join("") : '<div class="remaining">no .md in this folder</div>';
+  box.querySelectorAll("[data-rulepath]").forEach(b => {
+    b.onclick = () => openInEditor(b.dataset.rulepath);
+  });
+  box.querySelectorAll("[data-rulealways]").forEach(chk => {
+    chk.onchange = async () => {
+      const body = { scope: "project", path: chk.dataset.rulealways, always_apply: chk.checked };
+      if (sessionId) body.session = sessionId;
+      const r = await api("POST", "/api/rules", body);
+      if (r.error) {
+        chk.checked = !chk.checked;
+        if (typeof toast === "function") toast("rule switch: " + r.error, "err");
+        return;
+      }
+      loadRules();
+      if (typeof loadRulesPanel === "function") loadRulesPanel();   // the RH list follows
+    };
+  });
 }
 async function loadRules() {
   try {
@@ -18052,45 +18109,30 @@ async function loadRules() {
     const d = await api("GET", "/api/rules" + qs);
     const g = d.global || {}, p = d.project || {};
     _rulePathGlobal = g.path || null;
-    _rulePathProject = p.path || null;
     $("wsPath").value = d.workspace || "";
     gateEnroll($("wsCard"));   // JAG-496: this is the baseline the workspace Save compares against
     _isum("sWorkspace", _base(d.workspace), "");
     $("rulesGlobalPath").textContent = "file: " + (g.path || "—") + (g.exists ? "" : " (does not exist)");
-    // ROUND 178: the project scope is a FOLDER of `.md` files, so the card names the
-    // folder too; the textarea edits the native overlay only.
-    const _pdirs = p.dirs || [];
-    $("rulesProjectPath").innerHTML = "file: " + esc(p.path || "—")
-      + (p.exists ? "" : " (does not exist)")
-      + (_pdirs.length ? '<br>folder: ' + _pdirs.map(esc).join("  ·  ") : "");
-    // ROUND 178 (A54): the editor shows the native file's OWN bytes (`file_text`), never
-    // the composed corpus (`text` = native + every folder `.md` + AGENTS.md): saving the
-    // composed text into one file would duplicate all the other files' rules.
+    // ROUND 178 (A54): the global editor shows the file's OWN bytes (`file_text`), never
+    // the composed corpus (`text` = Global_rules.md + AGENTS.md).
     $("rulesGlobalText").value = g.file_text || "";
-    $("rulesProjectText").value = p.file_text || "";
-    gateEnroll($("rulesGlobalCard"));     // JAG-496: Global_rules.md / Project_rules.md Save buttons follow the shared dirty-gate
-    gateEnroll($("rulesProjectCard"));
-    // K-5: each rules textarea gets its OWN ✨ (the registry surface `rules.global` /
-    // `rules.project`), bound to THAT field, so one click drafts the paragraph and the
-    // operator saves what they keep. One control per card, as before.
-    [["rulesGlobalCard", "rulesGlobalText", "rules.global"],
-     ["rulesProjectCard", "rulesProjectText", "rules.project"]].forEach(([cid, tid, sid]) => {
+    gateEnroll($("rulesGlobalCard"));     // JAG-496: Global_rules.md Save follows the shared dirty-gate
+    // K-5: the ONE remaining rules ✨ (registry surface `rules.global`) drafts into the
+    // global field; project rules are FILES, so no generated field exists for them.
+    [["rulesGlobalCard", "rulesGlobalText", "rules.global"]].forEach(([cid, tid, sid]) => {
       const c = $(cid), ta = $(tid);
       if (c && ta) mountSparkle(c, sid, { field: ta });
     });
-    // v641: "G " glued to a path rendered as the fake drive `G:/home/…` in the
-    // panel. The scope is a LABEL, the path stays a path.
-    // ROUND 178: every row is a LINK that opens the real file in the editor (same
-    // `data-rulepath` contract as the RH panel), not a dead path string.
-    const _rf = (scope, f) => '<button type="button" class="rfile" data-rulepath="' + esc(f)
-      + '" title="open ' + esc(f) + ' in the editor"><b>' + scope
-      + '</b><span class="rfile-n">' + esc(f) + "</span></button>";
-    const rows = (g.files || []).map(f => _rf("G", f)).concat((p.files || []).map(f => _rf("P", f)));
-    const _rfBox = $("rulesFiles");
-    _rfBox.innerHTML = rows.length ? rows.join("") : "no rule files";
-    _rfBox.querySelectorAll("[data-rulepath]").forEach(b => {
-      b.onclick = () => openInEditor(b.dataset.rulepath);
-    });
+    // ROUND 179: ONE clickable folder path, then the rule files with their switches.
+    const _dir = p.rules_dir || "";
+    const _rp = $("rulesProjectPath");
+    _rp.innerHTML = _dir
+      ? '<button type="button" class="lnk rule-dir" data-rulesdir="' + esc(_dir)
+        + '" title="open the rules folder in the editor">' + esc(_dir) + "</button>"
+      : '<span class="remaining">no rules folder</span>';
+    const _rd = _rp.querySelector("[data-rulesdir]");
+    if (_rd) _rd.onclick = () => openRulesDir(_dir);
+    _rulesProjectRows(p.all_rows || []);
     // HA-1 (lot H): the doctor travels in this SAME payload (`audit`). A clean corpus
     // renders NOTHING (the card is hidden), so advice never costs space until it exists.
     const _a = d.audit || {};
@@ -18115,7 +18157,9 @@ async function loadRules() {
   } catch (e) { if (typeof toast === "function") toast("rules load error: " + e, "err"); }
 }
 async function saveRules(scope) {
-  const content = $(scope === "global" ? "rulesGlobalText" : "rulesProjectText").value;
+  const ta = $("rulesGlobalText");
+  if (scope !== "global" || !ta) return;   // ROUND 179: project rules are FILES, not a field
+  const content = ta.value;
   const body = { scope, content };
   if (sessionId) body.session = sessionId;
   const r = await api("POST", "/api/rules", body);

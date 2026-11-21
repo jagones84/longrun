@@ -131,16 +131,17 @@ check("E7 the RH panel renders the file LINKS and drops the single editable text
       'data-rulepath="' in UI and 'b.onclick = () => openInEditor(b.dataset.rulepath);' in UI
       and 'id="rule_project"' not in UI)
 
-# ---- F: Settings ▸ Rules edits the file it SAVES, not the composed corpus ---
-# A54 (round 177 verdict): the project editor showed the COMPOSED corpus (native +
-# every folder `.md` + AGENTS.md) while saving one file — the first save would have
-# duplicated every other file's rules. `file_text` is the native file's own bytes.
+# ---- F: Settings ▸ Rules is the FOLDER list, with a per-file always-apply switch --
+# A54 (round 177): the project editor showed the COMPOSED corpus while saving one file.
+# ROUND 179 (operator, Trae parity): project rules are FILES — one folder link, one row
+# per `.md`, each with an "always apply" switch; no single editable project file.
 from unittest import mock  # noqa: E402
 
 _tmp = tempfile.mkdtemp(prefix="lr-v1261-f-")
 _fd = os.path.join(_tmp, ".trae", "rules")
 os.makedirs(_fd, exist_ok=True)
-with open(os.path.join(_fd, "one.md"), "w", encoding="utf-8") as f:
+_one = os.path.join(_fd, "one.md")
+with open(_one, "w", encoding="utf-8") as f:
     f.write("FOLDER RULE\n")
 _native = os.path.join(_tmp, "native_project.md")
 with open(_native, "w", encoding="utf-8") as f:
@@ -151,14 +152,43 @@ check("F1 file_text is the native file only, while text is the composed corpus",
       _st["project"]["file_text"] == "NATIVE RULE\n"
       and "FOLDER RULE" in _st["project"]["text"]
       and _st["project"]["file_text"] != _st["project"]["text"])
+with mock.patch.object(rules, "always_apply_map",
+                       lambda ws=None: {os.path.abspath(_one): False}), \
+        mock.patch.object(rules, "project_rules_path", lambda ws=None: _native):
+    _col = rules.collect(ws=_tmp)
+check("F2 a file switched OFF leaves the prompt (and the loaded list)",
+      "FOLDER RULE" not in _col["project"]["text"]
+      and "NATIVE RULE" in _col["project"]["text"]
+      and all(not p.endswith("/one.md") for p in _col["project"]["files"]))
+_state = tempfile.mkdtemp(prefix="lr-v1261-state-")
+with mock.patch.object(rules, "project_dir", lambda ws=None: _state), \
+        mock.patch.object(rules, "project_rules_path", lambda ws=None: _native):
+    _r1 = rules.set_always_apply(_one, False, ws=_tmp)
+    _r2 = rules.set_always_apply("/etc/passwd", False, ws=_tmp)
+    _st2 = rules.status(ws=_tmp)
+check("F3 the switch persists and refuses a path outside the rules",
+      _r1.get("ok") is True and _r1.get("always_apply") is False
+      and _r2.get("ok") is False
+      and [r["always_apply"] for r in _st2["project"]["all_rows"]
+           if r["name"] == "one.md"] == [False]
+      and os.path.isfile(os.path.join(_state, "rules_state.json")))
+ROWS = between(UI, "function _rulesProjectRows(rows) {", "async function loadRules()")
+check("F4 every rule row is a link plus its own always-apply checkbox",
+      'class="rfile" data-rulepath="' in ROWS and 'data-rulealways="' in ROWS
+      and "always apply" in ROWS and "always_apply: chk.checked" in ROWS
+      and 'api("POST", "/api/rules"' in ROWS)
 LOAD = between(UI, "async function loadRules() {", "async function saveRules(")
-check("F2 both Settings editors load `file_text`, never the composed `text`",
-      '$("rulesGlobalText").value = g.file_text || "";' in LOAD
-      and '$("rulesProjectText").value = p.file_text || "";' in LOAD
-      and "= g.text" not in LOAD and "= p.text" not in LOAD)
-check("F3 the loaded-files card links every file to the editor like the RH panel",
-      'const _rf = (scope, f) =>' in LOAD and 'class="rfile" data-rulepath="' in LOAD
-      and "openInEditor(b.dataset.rulepath)" in LOAD)
+check("F5 the project card is ONE clickable folder path and has NO project textarea",
+      'data-rulesdir="' in LOAD and "openRulesDir(_dir)" in LOAD
+      and "rulesProjectText" not in UI and "rulesFiles" not in UI)
+RR = between(UI, "function _rulesRefRow(kind, label, src) {", "function _rulesRow(")
+check("F6 the RH panel shows one folder link and drops the green footer sentence",
+      'data-rulesdir="' in RR and "every .md is loaded in this session" not in RR
+      and "folder · " not in RR)
+EDITOR = src("webui", "assets", "editor.js")
+check("F7 the folder link opens that folder in the editor tree",
+      "async function openRulesDir(dir)" in UI and "ed.revealInTree(dir)" in UI
+      and "\n  revealInTree,\n" in EDITOR)
 
 print("\n---\nv1261: %d/%d PASS" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

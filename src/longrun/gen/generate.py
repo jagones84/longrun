@@ -265,7 +265,6 @@ _GATHER = {
     "session.title": lambda e: _session_ctx((e or {}).get("session")),
     "memory.content": lambda e: dict(_session_ctx((e or {}).get("session")), **_memory(e)),
     "rules.global": _rules,
-    "rules.project": _rules,
     "agent.role": _agent,
     "subagent.brief": _subagent,
     "subagent.new": _subagent,
