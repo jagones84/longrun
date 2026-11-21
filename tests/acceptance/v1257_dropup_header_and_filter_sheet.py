@@ -82,6 +82,10 @@ check("D1 new + search are SVG glyphs, not text/emoji",
       and "M12 5v14M5 12h14" in _RAIL and "m19.5 19.5-3.6-3.6" in _RAIL)
 check("D2 both keep their names",
       'aria-label="new session"' in _RAIL and 'aria-label="search sessions"' in _RAIL)
+_CHATSEARCH = HTML.split('id="chatSearchToggle"')[1].split("</button>")[0]
+check("D3 the in-chat search is the same SVG lens, not the emoji either",
+      "🔍" not in _CHATSEARCH and "m19.5 19.5-3.6-3.6" in _CHATSEARCH
+      and 'aria-label="search this chat"' in _CHATSEARCH)
 
 print("\n---\nv1257: %d/%d PASS" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)
