@@ -7,6 +7,19 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Three harness-engineering levers the turn loop was missing.** Round 168 applies the only
+  empirically measured harness levers in the LangChain article (2026-02-17: a fixed
+  `gpt-5.2-codex` moved 52.8% → 66.5% on Terminal-Bench 2.0, +13.7 points, by changing only the
+  harness). `harness/env_card.py` maps the session's workspace on its FIRST turn — root,
+  top-level dirs/files, and the project's own check from `workspace_check.detect` (one scandir,
+  bounded, silent without a workspace); `harness/edit_loop.py` counts writes per FILE and returns
+  a "step back" note at every 3rd write (an identical-call guard cannot see a run that makes a
+  different edit each time); `harness/time_budget.py` announces 75% and 90% of the wall clock
+  `keepgoing` already enforces but never told the model. All three are deterministic, fail-open,
+  import nothing from the app, and only add notes — none ends a turn or touches an approval. The
+  +13.7 points are Terminal-Bench-specific and are not claimed here. Locked by `v1269` (32/32);
+  fast battery 939/951 (the 12 reds are pre-existing, in files this round does not touch);
+  acceptance suite 957 files.
 - **Stop exploring once a recorded check establishes the work.** Round 167 reads four papers from
   the 2026-11-18/19 batch. `harness/completion_signal.py` recognises a verification command the
   agent already ran (`memory/anchors.CHECK_RE`, one owner), requires a pass marker in its own output

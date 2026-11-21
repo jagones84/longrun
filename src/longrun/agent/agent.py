@@ -3818,6 +3818,20 @@ def user_turn_context(session_id=None, sess=None, history=None):
             parts.append(_state)
     except Exception:  # noqa: BLE001
         pass
+    # Round 168 (harness engineering, LangChain 2026-02-17): the session's FIRST
+    # turn gets a small OBSERVED map of its workspace — root, top-level entries,
+    # the project's own check. Discovery through `fs.read`/`shell` is error prone
+    # and pays a wrong first guess; this is one scandir and stays out of the
+    # system prompt (prefix cache). The same owner builds it, so the context
+    # meter counts exactly the block the turn sends.
+    try:
+        if len((sess or {}).get("messages") or []) <= 1:
+            from longrun.harness import env_card as _env
+            _card = _env.build((sess or {}).get("workspace"))
+            if _card:
+                parts.append(_card)
+    except Exception:  # noqa: BLE001 — a prompt block must never break a turn
+        pass
     if history and parts:
         try:
             from longrun.model import context_engine as _ce
@@ -5639,6 +5653,11 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     # the harness instead of finishing).
     _call_obs = {}                 # hash -> the last observation of that call
     _same_obs_n = Counter()        # hash -> how many times the SAME obs repeated
+    # Round 168 (harness engineering): writes per FILE this turn (a DIFFERENT
+    # edit every time is invisible to `_same_obs_n`), and the wall-clock stages
+    # already announced to the model.
+    _edit_counts = {}
+    _time_warned = set()
     # JAG-272: a weak model can emit NONSENSE turns forever (malformed JSON /
     # unknown action / a bare promise). Without a cap it burned the whole iteration
     # budget. Stop after a few consecutive invalid turns with a clear reason.
@@ -6969,6 +6988,26 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                     # Only THAT tool's own success closes its failure: a later
                     # success of a different tool hides nothing (FTA, 2609.35732).
                     _open_failures.pop(tool, None)
+            # Round 168 (harness engineering): two deterministic notes for the
+            # observation below — a per-FILE edit loop (a run that keeps making
+            # DIFFERENT edits to the same file is invisible to `_stuck_note`,
+            # which only sees an identical call) and the wall-clock budget the
+            # model is otherwise never told about until the turn is cut off.
+            _loop_note, _time_note = "", ""
+            if not _gate_only:
+                try:
+                    from longrun.harness import edit_loop as _el
+                    _edit_counts, _loop_note = _el.observe(_edit_counts, tool, args)
+                except Exception:  # noqa: BLE001 — a note must never kill a turn
+                    pass
+            try:
+                from longrun.harness import time_budget as _tb
+                _t_stage, _time_note = _tb.check(_kg_started, time.time(),
+                                                 _kg_wall_secs, _time_warned)
+                if _t_stage:
+                    _time_warned.add(_t_stage)
+            except Exception:  # noqa: BLE001
+                pass
             if _gate_only and status == "blocked":
                 # A POLICY block did not execute and is NOT an argument problem, so
                 # the generic failure note ("fix the arguments and call again") sent
@@ -7034,6 +7073,10 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                                     step=_sig.get("step"))
                 except Exception:  # noqa: BLE001 — a signal must never kill a turn
                     pass
+            if _loop_note:
+                note = note + "\n\n" + _loop_note
+            if _time_note:
+                note = note + "\n\n" + _time_note
             # Round 163 (arXiv:2611.26553, ROGUE-AI): a note attached to the tool
             # output that names the HAZARD and its CONSEQUENCE lowered harm for all
             # five tested models; a fact-only or rule-restating note of the same

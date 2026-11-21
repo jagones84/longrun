@@ -224,6 +224,18 @@ headless run (`api_v02._run_observation`) paste an observation verbatim up to
 `tool_obs_limit` and offload the rest through the same `_offload_observation` owner, so
 "one observation" has one size and one spill file wherever it is produced (2026-11-14).
 
+**Three harness-engineering levers close the measured gaps** (2026-11-22, round 168).
+LangChain's harness-only run moved a fixed `gpt-5.2-codex` from 52.8% to 66.5% on
+Terminal-Bench 2.0 (89 tasks) by changing three things the turn loop lacked.
+`harness/env_card.py` gives a session's FIRST user turn an OBSERVED map of its workspace —
+root, top-level dirs/files, and the project's own check from `workspace_check.detect`; one
+scandir, bounded, silent without a workspace, and built by `user_turn_context` so the context
+meter counts exactly what is sent. `harness/edit_loop.py` counts writes per FILE this turn and
+returns a "step back" note at every 3rd write: a run that makes a DIFFERENT edit each time is
+invisible to `_same_obs_n`, which only sees an identical call. `harness/time_budget.py`
+announces 75% and 90% of the wall clock `keepgoing` already enforces but never told the model.
+All three are deterministic, fail-open and pinned by `v1269` (32/32).
+
 **Four read-only audit surfaces say whether the harness's own scaffolding still earns
 its place** (lot H, 2026-11-07). None of them writes anything or adds a second ledger:
 `memory.rules.audit()` reports contradictions, stale paths, duplicates and an
@@ -351,10 +363,10 @@ Layout (2026-11-20), by runtime role:
   `compose`, `contrast`, `whole`, `snapshot`, `gateway`, `unixshim`). Only
   `cycle` (with `dry_run=False`) reaches them, and only after
   `whole.readiness()` passes; tests inject a fake runner.
-* `harness/` root — the 26 modules the running app imports (live turn seams,
+* `harness/` root — the 29 modules the running app imports (live turn seams,
   read-only HTTP surfaces and their support, including `hazard_notice`,
-  `work_report`, `effect_state`, `compaction_brief`, `model_cascade` and
-  `completion_signal` below).
+  `work_report`, `effect_state`, `compaction_brief`, `model_cascade`,
+  `completion_signal`, `env_card`, `edit_loop` and `time_budget` below).
 
 ### Wired vs report-only
 

@@ -20,10 +20,11 @@ Layout (2026-11-20), by runtime role rather than by paper:
   run and are reachable only through `cycle` with `dry_run=False`, which
   refuses unless `whole.readiness()` is satisfied. The acceptance tests inject
   a fake runner/call to exercise them.
-* this root — the 20 modules the running app actually imports: the live turn
+* this root — the 23 modules the running app actually imports: the live turn
   seams (`shellread`, `observation`, `workspace_check`, `effect_types`,
   `effect_recovery`, `intent_audit`, `memory_authority`, `memory_channel`,
-  `counterfactual`, `modelcf`), the read-only HTTP surfaces (`cycle`,
-  `manifest`, `invariants`, `backtrace`, `reuse`, `verification_transport`,
-  `skills_maintenance`) and their support (`record`, `library`, `tool_policy`).
+  `counterfactual`, `modelcf`, `env_card`, `edit_loop`, `time_budget`), the
+  read-only HTTP surfaces (`cycle`, `manifest`, `invariants`, `backtrace`,
+  `reuse`, `verification_transport`, `skills_maintenance`) and their support
+  (`record`, `library`, `tool_policy`).
 """
