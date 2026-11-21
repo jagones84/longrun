@@ -9283,6 +9283,9 @@ function _toggleGroup(key) {
   loadSessions();
 }
 let _lastGroupKeys = [];   // JAG-2.1: the group keys the current rail render produced
+// 2026-11-22: the team scope of the previous render, so a SCOPE CHANGE opens its one
+// group without re-expanding it on every later render (a collapse must survive).
+let _lastTeamScope = null;
 /* JAG-2.1: collapse / expand EVERY group at once (all group keys). */
 function _setAllGroups(collapse) {
   _setOpenGroups(collapse ? [] : (_lastGroupKeys || []).slice());
@@ -9720,6 +9723,16 @@ async function _loadSessionsOnce() {
       open = sessionId ? (at.length ? at : ["__none__"]) : [];
       _setOpenGroups(open);
     }
+    // 2026-11-22 (operator): *"if I filter a team I want only that team"*. A member can
+    // belong to SEVERAL teams (that membership is maintained), and a session is drawn
+    // once under the FIRST group that claims it — so scoping to T3 still showed the T1
+    // header and its multi-team rows. A scope now renders exactly ONE group, and the
+    // scope change opens it once (a collapse by the operator is not fought afterwards).
+    const scoped = teamScope !== "ALL";
+    if (teamScope !== _lastTeamScope) {
+      _lastTeamScope = teamScope;
+      if (scoped && open.indexOf(teamScope) < 0) { open = open.concat([teamScope]); _setOpenGroups(open); }
+    }
     if (_forceExpandActive && sessionId) {
       const actTeams = teamsOf({ id: sessionId });   // team IDS this session belongs to
       const actGroups = actTeams.length ? actTeams : ["__none__"];
@@ -9738,18 +9751,21 @@ async function _loadSessionsOnce() {
     const pinGroup = _sidebarOrdered(visible.filter(s => isPinned(s.id)).sort(_sessSort),
       _stored("__pinned__"), s => s.id, _sessSort, true);
     pinGroup.forEach(s => _drawn.add(s.id));
-    if (pinGroup.length) groups.push({ key: "__pinned__", symbol: "📌", name: "Pinned", col: "var(--warn)", sessions: pinGroup });
+    // A scoped team owns its rows, pinned or not: the cross-team Pinned bucket is not a
+    // team and would show rows the operator asked to exclude (2026-11-22).
+    if (!scoped && pinGroup.length) groups.push({ key: "__pinned__", symbol: "📌", name: "Pinned", col: "var(--warn)", sessions: pinGroup });
     // JAG-415: "No team" sits right BELOW Pinned, before the teams.
     const adhocAll = _sidebarOrdered(_all.filter(s => teamsOf(s).length === 0 && !_drawn.has(s.id)).sort(_sessSort),
       _stored("__none__"), s => s.id, _sessSort);
     _sessionOrderBase.__none__ = adhocAll.map(s => s.id);
     const adhoc = onlyVisible(adhocAll);
     adhoc.forEach(s => _drawn.add(s.id));
-    if (adhoc.length) groups.push({ key: "__none__", symbol: "◇", name: "No team", col: "var(--dim)", sessions: adhoc });
+    if ((!scoped || teamScope === "__none__") && adhoc.length) groups.push({ key: "__none__", symbol: "◇", name: "No team", col: "var(--dim)", sessions: adhoc });
     teams.forEach(t => {
       const allMembers = _sidebarOrdered(_all.filter(s => teamsOf(s).includes(t.id) && !_drawn.has(s.id)).sort(_sessSort),
         _stored(t.id), s => s.id, _sessSort);
       _sessionOrderBase[t.id] = allMembers.map(s => s.id);
+      if (scoped && t.id !== teamScope) return;   // one scope = one group (2026-11-22)
       const ss = onlyVisible(allMembers);
       ss.forEach(s => _drawn.add(s.id));
       // v752: a scoped team stays visible even when the filters emptied it, so the
@@ -9807,8 +9823,13 @@ async function _loadSessionsOnce() {
   if (!visible.length) {
     // v752: distinguish "nothing exists" from "the filter hides everything".
     const filtered = teamScope !== "ALL" || hideEmpty || fs.running || !!q;
+    // 2026-11-22: a team scope names itself in the empty state, so "nothing here" is
+    // never mistaken for "the rail is broken".
+    const _scopeName = (teamScope === "__none__") ? "No team"
+      : ((_teamsById[teamScope] && (_teamsById[teamScope].name || _teamsById[teamScope].id)) || teamScope);
     box.innerHTML = '<div class="remaining">' +
-      (filtered ? "no sessions match this filter" : "no sessions yet") + '</div>';
+      (filtered ? ("no sessions match this filter" + (teamScope !== "ALL" ? " in " + esc(_scopeName) : ""))
+                : "no sessions yet") + '</div>';
   }
   updateSessBadge();   // JAG-357: keep the topbar badge in sync with the active session
   renderChatHead();   // JAG-480: the chat header names the session you are reading
@@ -24134,12 +24155,11 @@ $("inp").addEventListener("paste", e => {
    path keeps working unchanged. */
 let _sessFs = null;
 function _sessTeamOptions() {
-  const list = [{ id: "ALL", label: "ALL teams" }, { id: "__none__", label: "No team" }];
-  Object.values(_teamsById).sort((a, b) => (a.n || 0) - (b.n || 0)).forEach(t => {
-    const n = Array.isArray(t.members) ? " (" + t.members.length + ")" : "";
-    list.push({ id: t.id, label: (t.symbol ? t.symbol + " " : "") + (t.name || t.id) + n });
-  });
-  return list;
+  // 2026-11-22: the option SPEC is the shared module's (`FilterSort.teamOptions`), the
+  // same one the deck's AGENTS table renders — the rail supplies its own team list only.
+  return window.FilterSort
+    ? FilterSort.teamOptions(Object.values(_teamsById))
+    : [{ id: "ALL", label: "ALL teams" }, { id: "__none__", label: "No team" }];
 }
 (function bindSessionFilter() {
   const btn = $("hideEmptyBtn"), cb = $("hide-empty");

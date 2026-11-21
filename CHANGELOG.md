@@ -126,6 +126,20 @@ All notable changes to Longrun are documented here. The format follows
   browser-rebuilt `/data/sessions/<id>.json` would be a guess.) Locked by `v1067` A1–A6, B1–B10.
 
 ### Changed
+- **A team scope shows ONE team in the Sessions rail; the team option list has one builder.** Operator: *"if I
+  filter a team I want only that team not also other teams (it happens because a member can have multiple teams
+  that shall be maintained). Filtering a team will show only that TEAM."* A session is drawn once, under the
+  FIRST group that claims it, and the cross-team Pinned bucket and the No-team bucket were unconditional — so
+  scoping to T3 left the T1 header on screen carrying its T1+T3 members. Under a scope the rail now renders
+  exactly ONE group (its own, pinned rows included), expands it once when the scope CHANGES (a later collapse is
+  not fought), and the empty state names the team (`no sessions match this filter in Incident Response`).
+  Multi-team membership is preserved: an agent keeps every team it belongs to and appears under the scoped one.
+  The team OPTION list was built twice (rail + deck); it now lives once in `webui/assets/filtersort.js` as
+  `FilterSort.teamOptions(list)`, and both pages pass their own list — the agents panel keeps its funnel button
+  (the same icon) mounting the SAME module under key `agents`, and the rail's scope is pushed to it. Also fixed
+  the shared panel's hide-empty checkbox getting the literal id `undefined` (`ids.hide` → `ids.hideEmpty`).
+  Measured on the render: scope T3 → one group `Incident Response T3`, 10 rows, 0 off-scope, a T1+T3 session
+  under T3; ALL → 9 groups, 98 rows. Locked by `v1251` (19/19, added to `UI_GUARD`).
 - **File-operation cards, ONE rail-head surface, every spawning window movable.** Operator: *"i don't like edit
   read write … shall have a different format colour … adequate to THEME selected … maybe italic"*; *"why
   session and inspector bars are in a different background? … uniform … minimise contrast"*; *"all the

@@ -84,6 +84,20 @@
     });
   }
 
+  /* The team option list — ONE spec for both pages (2026-11-22). The Sessions rail and
+     the deck's AGENTS table used to build it in their own document; the shape (ALL,
+     No team, then the teams by their number, symbol + name + member count) lives here so
+     the two scopes cannot disagree. A caller passes its own team list. */
+  function teamOptions(list) {
+    return [{id: "ALL", label: "ALL teams"}, {id: "__none__", label: "No team"}].concat(
+      (list || []).slice().sort(function (a, b) { return (a.n || 0) - (b.n || 0); })
+        .map(function (t) {
+          var members = Array.isArray(t.members) ? " (" + t.members.length + ")" : "";
+          return {id: t.id,
+                  label: (t.symbol ? t.symbol + " " : "") + (t.name || t.id) + members};
+        }));
+  }
+
   /* The panel markup exists in this one place: the pages never carry a copy. */
   function panelHtml(ids) {
     return '<div class="fs-row"><span class="fs-l">team</span>' +
@@ -97,7 +111,7 @@
         'title="descending">\u2193</button></div>' +
       '<div class="fs-row fs-toggles">' +
         '<label class="fs-chk" title="hide the rows with no content yet (no messages / no prompt)">' +
-          '<input type="checkbox" id="' + ids.hide + '" data-fs="hideEmpty"> hide empty</label>' +
+          '<input type="checkbox" id="' + ids.hideEmpty + '" data-fs="hideEmpty"> hide empty</label>' +
         '<label class="fs-chk" title="only the rows with a turn in flight">' +
           '<input type="checkbox" id="' + ids.running + '" data-fs="running"> running only</label>' +
       "</div>";
@@ -232,5 +246,6 @@
     };
   }
 
-  window.FilterSort = {SORTS: SORTS, DEFAULTS: DEFAULTS, load: load, get: get, save: save, mount: mount};
+  window.FilterSort = {SORTS: SORTS, DEFAULTS: DEFAULTS, load: load, get: get, save: save,
+                       mount: mount, teamOptions: teamOptions};
 })();

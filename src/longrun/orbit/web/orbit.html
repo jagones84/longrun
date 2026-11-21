@@ -4137,9 +4137,10 @@ class OrbitApp {
   teamOptions(){
     // JAG-513: the "No team" bucket the AGENTS table already shows (stray agents)
     // must have a voice in the scope filter, else those agents can never be isolated.
-    return [{ id: "ALL", label: "ALL teams" }, { id: "__none__", label: "No team" }].concat(
-      (this.teams || []).map(t => ({ id: t.id,
-        label: (t.symbol || "") + " " + t.name + " (" + ((t.members || []).length) + ")" })));
+    // 2026-11-22: the option SPEC is the shared module's (`FilterSort.teamOptions`) —
+    // the same one the Sessions rail renders — so the two scopes name teams identically.
+    return window.FilterSort ? FilterSort.teamOptions(this.teams)
+      : [{ id: "ALL", label: "ALL teams" }, { id: "__none__", label: "No team" }];
   }
   renderTeams(){
     if (!this.fs) return;
