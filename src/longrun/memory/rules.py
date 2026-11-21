@@ -216,6 +216,23 @@ def project_rules_path(ws=None):
     return os.path.join(project_dir(ws), "Project_rules.md")
 
 
+def workspace_rules_dir(ws=None):
+    """The OPERATOR's own rules folder for the workspace: `<ws>/.trae/rules`.
+
+    2026-11-22 ROUND 177 (operator: *"anche longrun deve farlo per le rules che stanno
+    nella cartella (vengono caricate tutte, non solo project_rules … proprio come fa
+    trae)"*). Every `.md` inside is a project rule, exactly like Trae's Reference list.
+    """
+    return os.path.join(ws or get_workspace(), ".trae", "rules")
+
+
+def project_rules_dirs(ws=None):
+    """Both project rules FOLDERS: the operator's `<ws>/.trae/rules` first (their own
+    files, the Trae convention), then the harness-owned `<state>/rules`."""
+    ws = ws or get_workspace()
+    return [workspace_rules_dir(ws), os.path.join(project_dir(ws), "rules")]
+
+
 def project_agents_path(ws=None):
     return os.path.join(ws or get_workspace(), "AGENTS.md")
 
@@ -228,22 +245,31 @@ def _read(path):
         return ""
 
 
-def _collect_scope(native, agents, extra_dir=None):
-    """(text, files): the native Global_rules.md / Project_rules.md PLUS the AGENTS.md addendum.
+def _collect_scope(native, agents, extra_dirs=None):
+    """(text, files): the native Global_rules.md / Project_rules.md PLUS every `.md`
+    of the scope's rule FOLDERS and the AGENTS.md addendum.
 
     The scope's AGENTS.md is ADDITIVE, not a mere fallback: when the rules file exists
     its text is composed first and the AGENTS.md content is appended after it, so
-    BOTH instruction sources reach the model (JAG-128A).
+    BOTH instruction sources reach the model (JAG-128A). The folders (ROUND 177) are
+    additive too and deduped by path, so a file listed twice is loaded once.
     """
     files, parts = [], []
     if os.path.isfile(native):
         files.append(native)
         parts.append(_read(native))
-        if extra_dir and os.path.isdir(extra_dir):
-            for fn in sorted(os.listdir(extra_dir)):
-                if fn.endswith(".md"):
-                    files.append(os.path.join(extra_dir, fn))
-                    parts.append(_read(os.path.join(extra_dir, fn)))
+    # folders load even when the native file is absent: Trae parity is the folder
+    for extra_dir in (extra_dirs or []):
+        if not extra_dir or not os.path.isdir(extra_dir):
+            continue
+        for fn in sorted(os.listdir(extra_dir)):
+            if not fn.endswith(".md"):
+                continue
+            p = os.path.join(extra_dir, fn)
+            if p in files:
+                continue
+            files.append(p)
+            parts.append(_read(p))
     if os.path.isfile(agents) and agents not in files:
         agents_text = _read(agents)
         if agents_text.strip():
@@ -261,7 +287,7 @@ def collect(ws=None):
     gtext, gfiles = _collect_scope(global_rules_path(), global_agents_path())
     ws = ws or get_workspace()
     ptext, pfiles = _collect_scope(project_rules_path(ws), project_agents_path(ws),
-                                   extra_dir=os.path.join(project_dir(ws), "rules"))
+                                   extra_dirs=project_rules_dirs(ws))
     return {
         "workspace": ws,
         "global": {"text": gtext, "files": gfiles, "path": global_rules_path()},
@@ -290,7 +316,7 @@ def rules_block(max_bytes=None, ws=None):
 
 
 def prompt_paths(ws=None):
-    """The four rule-file locations the model should know (JAG-125).
+    """The rule files and FOLDERS the model should know (JAG-125, ROUND 177).
 
     Any value shown to the model must be an ABSOLUTE path so it can `cat`/edit
     the file directly, instead of guessing where its own rules live.
@@ -302,7 +328,7 @@ def prompt_paths(ws=None):
         "global_fallback": global_agents_path(),
         "project_rules": project_rules_path(ws),
         "project_fallback": project_agents_path(ws),
-        "project_extra_dir": os.path.join(project_dir(ws), "rules"),
+        "project_extra_dirs": project_rules_dirs(ws),
     }
 
 
@@ -310,10 +336,10 @@ def rules_prompt_block(max_bytes=None, ws=None):
     """Prompt block that ALWAYS carries the rule-file paths (JAG-125).
 
     Unlike `rules_block` (empty when no rules), this always renders the header
-    with the absolute paths of the global + project rule files and their
-    AGENTS.md additions (also loaded, additive), so the agent knows WHERE its
-    instructions live and can read or edit them with the fs tools. The rules
-    text, when present, follows.
+    with the absolute paths of the global + project rule files, their AGENTS.md
+    additions (also loaded, additive) and the project rules FOLDERS — every `.md`
+    inside them is loaded (ROUND 177: "vengono caricate tutte, non solo
+    project_rules"). The rules text, when present, follows.
     """
     cap = max_bytes or MAX_BYTES
     c = collect(ws)
@@ -323,7 +349,8 @@ def rules_prompt_block(max_bytes=None, ws=None):
         head = ("### %s\n- file: %s\n- AGENTS.md (also loaded, additive): %s\n"
                 % (title, sc["path"], fallback))
         if extra:
-            head += "- extra: %s/*.md\n" % extra
+            head += "- folders (every .md loaded): %s\n" % ", ".join(
+                d + "/*.md" for d in extra)
         head += "- loaded: %s\n" % (", ".join(sc["files"]) or "(none yet)")
         body = (sc["text"] or "").strip()
         return head + (body if body else "_(no rules set here yet)_")
@@ -333,16 +360,18 @@ def rules_prompt_block(max_bytes=None, ws=None):
              "need to open these files (read them only if you intend to edit). Global "
              "rules apply to every project; project rules win on "
              "conflict. Within each scope Global_rules.md/Project_rules.md and AGENTS.md are BOTH loaded "
-             "(additive, not a fallback).\n"
+             "(additive, not a fallback), and EVERY `.md` of the project rules folders "
+             "is loaded too (additive).\n"
              "- GLOBAL file: %s   (AGENTS.md also loaded, additive: %s)\n"
              "- PROJECT file: %s   (AGENTS.md also loaded, additive: %s)\n"
-             "- PROJECT extra: %s/*.md\n"
+             "- PROJECT folders: %s\n"
              % (pp["global_rules"], pp["global_fallback"],
-                pp["project_rules"], pp["project_fallback"], pp["project_extra_dir"]))
+                pp["project_rules"], pp["project_fallback"],
+                ", ".join(d + "/*.md" for d in pp["project_extra_dirs"])))
     chunks = [
         _scope("GLOBAL rules (user, all projects)", c["global"], pp["global_fallback"]),
         _scope("PROJECT rules (workspace: %s)" % c["workspace"], c["project"],
-               pp["project_fallback"], pp["project_extra_dir"]),
+               pp["project_fallback"], pp["project_extra_dirs"]),
     ]
     block = intro + "\n" + "\n\n".join(chunks)
     if len(block) > cap:
@@ -378,18 +407,40 @@ def append(scope, content, ws=None):
     return save(scope, cur + sep + (content or ""), ws=ws)
 
 
+def _file_rows(paths):
+    """[{path, name, chars}] for the panel's link list — the SAME files the prompt loads."""
+    out = []
+    for p in paths or []:
+        try:
+            n = os.path.getsize(p)
+        except OSError:
+            n = 0
+        out.append({"path": p, "name": os.path.basename(p), "chars": n})
+    return out
+
+
 def status(ws=None):
-    """UI-friendly snapshot: paths, existence and sizes for both scopes."""
+    """UI-friendly snapshot: paths, existence, sizes and the loaded FILE LIST.
+
+    ROUND 177: `file_rows` is what the RH panel renders as one link per `.md` — the
+    project scope is no longer a single editable file but every `.md` of the rules
+    folders (`project_rules_dirs`), so the panel must be able to name each of them.
+    """
     c = collect(ws)
+
     def _scope(key, path, files):
         return {"path": path, "exists": os.path.isfile(path),
-                "chars": len(c[key]["text"]), "text": c[key]["text"], "files": files}
+                "chars": len(c[key]["text"]), "text": c[key]["text"], "files": files,
+                "file_rows": _file_rows(files), "prompt_cap": MAX_BYTES}
+    proj = _scope("project", project_rules_path(ws), c["project"]["files"])
+    proj["dirs"] = project_rules_dirs(ws)   # the folder model the panel renders
     return {
         "workspace": c["workspace"],
         "config_dir": _config_dir(),
         "global": _scope("global", global_rules_path(), c["global"]["files"]),
-        "project": _scope("project", project_rules_path(ws), c["project"]["files"]),
+        "project": proj,
         "total_chars": c["total_chars"],
+        "prompt_cap": MAX_BYTES,
     }
 
 

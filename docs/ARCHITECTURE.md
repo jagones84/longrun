@@ -788,7 +788,9 @@ notebook index + its cost log) · `costs/` (per-session model-call ledger) · `p
 `tls/` (auto self-signed cert for HTTPS) · `agents.json` · `teams.json` · `jobs.json` ·
 `session_jobs/` (one in-chat SJ ledger per session) ·
 `events.db` (durable SSE feed) · `projects/` (per-workspace Project_rules.md, rules/,
-prompt.d/). Writes are atomic (`tmp` + `os.replace`). The root is resolved by
+prompt.d/ — the project scope ALSO loads every `.md` of `<workspace>/.trae/rules/`, the
+operator's own rules folder, exactly like Trae's Reference list; see
+`memory/rules.py:project_rules_dirs`). Writes are atomic (`tmp` + `os.replace`). The root is resolved by
 `util/paths.py` (`LONGRUN_DATA_HOME` → `data_home` in `~/.longrun/config/config.json`
 → platform default) and can be moved from Settings ▸ Info.
 

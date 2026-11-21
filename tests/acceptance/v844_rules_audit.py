@@ -31,7 +31,7 @@ from longrun.memory import rules as R  # noqa: E402
 
 WS = os.path.join(TMP, "workspace")
 os.makedirs(WS, exist_ok=True)
-os.makedirs(R.prompt_paths(WS)["project_extra_dir"], exist_ok=True)
+os.makedirs(R.prompt_paths(WS)["project_extra_dirs"][-1], exist_ok=True)
 
 results = []
 

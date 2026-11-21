@@ -1613,6 +1613,52 @@ def append_message(sess, role, content, reasoning=None, meta=None):
     return msg
 
 
+#: 2026-11-22 ROUND 177: the card's `args` must stay VALID JSON under the cap. The old
+#: `args_str[:4000]` cut the blob mid-string, so the WebUI's `JSON.parse` threw, `_argsObj`
+#: returned {} and an `fs.write` lost its path — no file name, no +A/−D, no open/diff
+#: button on the row, while a short `fs.edit` kept all three (measured on a 4 KB write:
+#: 14 of 24 file cards had unparseable args). Clip the big VALUES, never the blob.
+_CARD_ARGS_MAX = 4000
+_CARD_ARG_VALUE_MAX = 800
+
+
+def _clip_arg_value(v, budget):
+    """A copy of `v` whose strings are at most `budget` chars (containers walked)."""
+    if isinstance(v, str):
+        return v if len(v) <= budget else v[:budget] + "…"
+    if isinstance(v, dict):
+        return {k: _clip_arg_value(x, budget) for k, x in v.items()}
+    if isinstance(v, (list, tuple)):
+        return [_clip_arg_value(x, budget) for x in list(v)[:20]]
+    return v
+
+
+def _card_args(args):
+    """`args` serialized for the tool card: valid JSON, big values clipped."""
+    raw = args if isinstance(args, str) else json.dumps(args or {}, ensure_ascii=False)
+    if len(raw) <= _CARD_ARGS_MAX:
+        return raw
+    try:
+        obj = json.loads(raw)
+    except Exception:  # noqa: BLE001 — a raw non-JSON string has no structure to keep
+        return raw[:_CARD_ARGS_MAX]
+    if not isinstance(obj, dict):
+        obj = {"value": obj}
+    budget = _CARD_ARG_VALUE_MAX
+    while True:
+        out = json.dumps({k: _clip_arg_value(v, budget) for k, v in obj.items()},
+                         ensure_ascii=False)
+        if len(out) <= _CARD_ARGS_MAX or budget <= 120:
+            break
+        budget //= 2
+    if len(out) <= _CARD_ARGS_MAX:
+        return out
+    # Pathological object (dozens of big values): keep the scalars readable, the rest as
+    # a marker. Still valid JSON — a second truncation is what this function exists to end.
+    return json.dumps({k: (_clip_arg_value(v, 120) if isinstance(v, str) else "…")
+                       for k, v in list(obj.items())[:20]}, ensure_ascii=False)
+
+
 def persist_tool_card(sess, tool, ok, args=None, result="", error="",
                       exit_code=None, backend=None, node=None, think=None, after=None,
                       data=None):
@@ -1643,7 +1689,7 @@ def persist_tool_card(sess, tool, ok, args=None, result="", error="",
             "id": uuid.uuid4().hex[:8],
             "tool": str(tool),
             "ok": bool(ok),
-            "args": args_str[:4000],
+            "args": _card_args(args),
             "result": str(result or "")[:4000],
             "error": str(error or "")[:2000],
             "exit_code": exit_code,

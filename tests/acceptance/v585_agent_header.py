@@ -33,9 +33,9 @@ check("A3 an answer's who line carries ONLY the copy control",
       'const _label = sender ? (sender + (subjob ? " · " + subjob : ""))' in HTML
       and ': (role === "user" ? "YOU" : "");' in HTML
       and 'class="who${_label ? "" : " who-bare"}' in HTML)
-check("A4 a user turn keeps YOU + its date/time stamp",
-      '(role === "user" ? "YOU" : "")' in HTML and "_tsSpan(ts)" in HTML
-      and '(_label ? esc(_label) + _tsSpan(ts) : "")' in HTML)
+check("A4 a user turn keeps YOU and BOTH messages carry the date on the LEFT",
+      '(role === "user" ? "YOU" : "")' in HTML and "_dateSpan(ts)" in HTML
+      and "_dateSpan(ts) +" in HTML)
 check("A5 a delegated turn keeps its sender + subjob attribution",
       "DELEGATED turn keeps its sender + subjob attribution" in HTML
       and 'sender + (subjob ? " · " + subjob : "")' in HTML)

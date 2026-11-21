@@ -995,16 +995,29 @@
   #nowbar .nlbl { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   #nowbar .nlast { color: var(--dim); font-size: 10px; flex-shrink: 0; max-width: 40%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .msg { margin-bottom: 16px; max-width: 100%; }
+  /* ROUND 177 (operator): *"perché dopo thought aumenta la spaziatura nel thread?"* — a
+     Thought row is a `.msg` wrapper, so the message margin (16px) stacked on top of a
+     28px row while every tool row beside it is gapless. The wrapper is `think` and it
+     keeps the transcript rhythm; a message is the only thing that gets the big gap. */
+  .msg.think { margin-bottom: 0; }
   .msg .who { font-size: 10px; letter-spacing: .12em; color: var(--dim); margin-bottom: 5px;
     text-transform: uppercase; }
+  /* the date is LEFT of the label and never wears the user accent */
+  .msg .who .mts { color: var(--dim); }
   .msg.user .who { color: var(--acc); }
   /* 2026-11-22 (operator): *"perché devi continuamente scrivere A54 · LONGRUN?"* — an
      answer carries NO header. The copy control survives on the same line, right-aligned
      and revealed only on hover/focus, so the answer starts where TRAE's does. */
-  .msg.ai .who { justify-content: flex-end; min-height: 24px; margin-bottom: 2px; }
+  .msg.ai .who { justify-content: flex-start; min-height: 24px; margin-bottom: 2px; }
   .msg.ai.deleg .who { justify-content: flex-start; }
   .msg.ai .who .copy { opacity: 0; transition: opacity .12s; }
   .msg.ai:hover .who .copy, .msg.ai:focus-within .who .copy { opacity: 1; }
+  /* ROUND 177: a user row wore two permanent buttons next to its date ("YOU ↻ ⧉") — the
+     same hover-reveal as an answer keeps the line to the date + the label, and both
+     controls stay focusable for the keyboard. */
+  .msg.user .who .copy, .msg.user .who .retry { opacity: 0; transition: opacity .12s; }
+  .msg.user:hover .who .copy, .msg.user:hover .who .retry,
+  .msg.user:focus-within .who .copy, .msg.user:focus-within .who .retry { opacity: 1; }
   /* 2026-11-22 ROUND 171 (operator): *"il font size … deve essere uguale e uniforme,
      rimpicciolirei il font risposte e thought"* and *"perché il testo di risposta è BOLD di
      default?"*. The transcript text is ONE typography: 12.5px, weight 400, 1.55 — the
@@ -1089,8 +1102,13 @@
   /* The file name is the row's primary action (TRAE: click the name to open). */
   .toolcard .tc-link { cursor: pointer; }
   .toolcard .tc-link:hover { text-decoration: underline; text-underline-offset: 2px; }
-  .toolcard .tc-meta { color: var(--dim); font-size: 10.5px; margin-left: auto; }
-  .toolcard .tc-stat { font-size: 10.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  /* ROUND 177 (operator): *"la roba a destra nel chat stream elimina tutto"* — the row's
+     right side is the diff stat only (`+A −D`, a click opens the diff); the old
+     `.tc-meta` printed exit codes / backend / summary and the stamp printed the clock,
+     and both are gone. An in-flight row pulses its glyph instead of spelling "running…". */
+  .toolcard .tc-stat { margin-left: auto; font-size: 10.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .toolcard.pending .tc-ic { animation: thpulse 1.1s ease-in-out infinite; }
+  @media (prefers-reduced-motion: reduce) { .toolcard.pending .tc-ic { animation: none; } }
   .toolcard .tc-stat .del { color: var(--err); }
   .toolcard.pending { opacity: .7; }
   /* 2026-11-01: the tool-card verdict is a PIP, not a colour emoji. The row already
@@ -3125,6 +3143,17 @@
   .rpath .lnk.dirty { color: var(--warn); font-weight: 600; }
   .rrow { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
   .rrow:empty { display: none; }
+  /* ROUND 177 (operator): *"non è più un singolo file editabile, sono tutti i file .md
+     che compaiono in quella cartella … hyperlink che me li apre nell'editor"*. One row
+     per loaded rule file: the name is the link (the code editor), the size on the right. */
+  .rlist { display: flex; flex-direction: column; gap: 1px; margin: 2px 0 4px; }
+  .rfile { display: flex; align-items: center; gap: 8px; width: 100%; padding: 4px 6px;
+    border: 0; border-radius: 6px; background: transparent; color: var(--txt);
+    font: inherit; font-size: 11.5px; text-align: left; cursor: pointer; }
+  .rfile:hover { background: var(--hover); }
+  .rfile:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .rfile-n { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rfile .remaining { margin-left: auto; flex: none; }
   .rwho { font-size: 11px; color: var(--dim); margin-bottom: 6px; line-height: 1.4; }
   #inspector button.ghost.dirty { color: var(--acc); border-color: var(--acc); box-shadow: inset 0 0 0 1px var(--acc); }
   .rwho.agent { color: var(--txt); }
@@ -6528,13 +6557,23 @@ function fallbackCopy(text, done) {
   try { document.execCommand("copy"); } catch {}
   document.body.removeChild(ta); done && done();
 }
-/* JAG-275: small "MM-DD HH:MM:SS" stamp (date + time) for a chat item. `ts` is
-   epoch seconds from the server; a missing ts (a live event) falls back to now. */
-function _tsSpan(ts) {
-  const d = (typeof ts === "number" && isFinite(ts)) ? new Date(ts * 1000) : new Date();
+/* ROUND 177 (operator): *"gli orari … elimina tutto. la data va messa sulla sinistra e
+   solo degli user messages e risposte dell'agente, non delle fasi intermedie"*. ONE
+   date-only stamp, from the server ts, at the LEFT of a message header; the tool and
+   thought rows carry no time at all (`_tsSpan` printed MM-DD HH:MM:SS on every row). */
+function _dateSpan(ts) {
+  if (typeof ts !== "number" || !isFinite(ts)) return "";
+  const d = new Date(ts * 1000);
   const p = n => String(n).padStart(2, "0");
-  const txt = p(d.getMonth() + 1) + "-" + p(d.getDate()) + " " + p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds());
-  return '<span class="mts" title="' + esc(d.toString()) + '">' + txt + "</span>";
+  const day = d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
+  return '<span class="mts" title="' + esc(d.toString()) + '">' + day + "</span>";
+}
+/* A live answer is created BEFORE its ts exists (`ensureAnswer`), so the stamp is
+   applied when the server finalizes the turn. No-op when it is already there. */
+function _stampWho(el, ts) {
+  const h = el && el.querySelector && el.querySelector(":scope > .who");
+  if (!h || h.querySelector(".mts")) return;
+  const s = _dateSpan(ts); if (s) h.insertAdjacentHTML("afterbegin", s);
 }
 /* 2026-11-22 (operator): *"perché devi continuamente scrivere A54 · LONGRUN? a cosa serve?
    rimuovi quella cosa"* — TRAE stamps nothing above an answer. The assistant header is
@@ -6553,7 +6592,8 @@ function who(role, text, ts, sender, subjob, chapter, senderSession, rawText) {
   const _label = sender ? (sender + (subjob ? " · " + subjob : ""))
                         : (role === "user" ? "YOU" : "");
   d.innerHTML = `<div class="who${_label ? "" : " who-bare"}">` +
-    (_label ? esc(_label) + _tsSpan(ts) : "") +
+    _dateSpan(ts) +
+    (_label ? '<span class="who-lbl">' + esc(_label) + "</span>" : "") +
     `<button class="copy" title="copy message">⧉</button></div><div class="bubble"></div>`;
   // 2026-11-16: ↻ re-runs THIS request. It sends the model-facing text (the stored
   // raw, attachments included) and keeps the clean text as the bubble, so a retry
@@ -6950,7 +6990,7 @@ function _fillEditStat(card, path) {
     .catch(() => {})
     .finally(() => { delete slot.dataset.pending; });
 }
-function toolCard(tool, args, ts) {
+function toolCard(tool, args) {
   const name = tool || "tool";
   const ui = _toolUI(name, args);
   _turnBump(name);
@@ -6959,7 +6999,7 @@ function toolCard(tool, args, ts) {
   wrap.innerHTML = `<div class="toolcard" data-tool="${esc(name)}">` +
     `<div class="toolcard-head"><button type="button" class="tc-toggle" aria-expanded="false" aria-controls="${id}">` +
     `<span class="tc-ic" aria-hidden="true">${ui.icon}</span>` +
-    `<span class="tc-name">${_toolNameHTML(ui)}</span><span class="tc-stat"></span><span class="tc-meta">running…</span>${_tsSpan(ts)}</button></div>` +
+    `<span class="tc-name">${_toolNameHTML(ui)}</span><span class="tc-stat"></span></button></div>` +
     `<div class="toolcard-body" id="${id}"><div class="webhits"></div><pre class="tc-args"></pre><pre class="tc-out"></pre></div></div>`;
   const d = wrap.firstElementChild;
   _wireToolName(d, name, args);
@@ -7049,21 +7089,6 @@ function updateToolCard(data) {
     _o.onclick = e => { e.stopPropagation(); openInEditor(_fp); };
     card.querySelector(".toolcard-head").appendChild(_o);
   }
-  const isMtx = data.origin === "matrix" || data.backend === "matrix" || tool === "matrix" || String(tool).startsWith("matrix.");
-  let meta;
-  if (data.data && typeof data.data === "object" && (tool === "web" || String(tool).startsWith("web."))) {
-    const _d = data.data;
-    const _okPages = (_d.pages || []).filter(p => p && p.ok).length;
-    const _n = (_d.action === "fetch")
-      ? (_okPages + " page" + (_okPages === 1 ? "" : "s"))
-      : (((_d.groups || []).reduce((a, g) => a + ((g && g.results) || []).length, 0)) + " results");
-    meta = [_n, _d.engine || "", (_d.duration_ms != null ? Math.round(_d.duration_ms) + "ms" : ""),
-            (_d.partial ? "partial" : "")].filter(Boolean).join(" · ");
-  } else {
-    meta = [(isMtx ? "[MATRIX]" : ""), (data.exit_code != null ? "exit " + data.exit_code : ""), (data.backend || ""),
-            (data.summary || "")].filter(Boolean).join(" · ");
-  }
-  card.querySelector(".tc-meta").textContent = meta;
   const argsEl = card.querySelector(".tc-args");
   if (argsEl && data.args) argsEl.textContent = "input: " + (typeof data.args === "string" ? data.args : JSON.stringify(data.args));
   const outEl = card.querySelector(".tc-out");
@@ -7104,8 +7129,11 @@ function liveToolOutput(data) {
     }
   }
   const last = text.replace(/\s+$/, "").split("\n").filter(Boolean).pop() || "";
-  const meta = card.querySelector(".tc-meta");
-  if (meta && last) { meta.textContent = "running… " + last.slice(0, 80); meta.title = last; }
+  // ROUND 177: the streaming line used to be written into the row's right meta; the row
+  // now shows ONLY the glyph (pulsing while pending) and the diff stat, so the last line
+  // stays in the row's own body and in the tooltip of the toggle.
+  const _tg = card.querySelector(".tc-toggle");
+  if (_tg && last) _tg.title = last;
   scroll();
 }
 function _tidyThink() {
@@ -7121,7 +7149,7 @@ function _tidyThink() {
 function ensureThink() {
   if (!curThink) {
     _tidyThink();
-    const d = document.createElement("div"); d.className = "msg ai";
+    const d = document.createElement("div"); d.className = "msg ai think";
     // JAG-513: a live chain-of-thought is COLLAPSED like a persisted one. It used
     // to open itself, so a reasoning model buried the actual answer under a wall
     // of text that kept growing. Only the user opens it (click on the summary).
@@ -7474,7 +7502,7 @@ function _applyFinalReply(d) {
   const _foot = el => { _attachSources(el, t); _turnFoot(el, d); _turnEnd(d.duration_s); };
   if (curAns) {
     const b = curAns.querySelector(".bubble");
-    if (b) { b.dataset.raw = t; renderAnswerBubble(b); _foot(curAns); return; }
+    if (b) { _stampWho(curAns, d.ts || (Date.now() / 1000)); b.dataset.raw = t; renderAnswerBubble(b); _foot(curAns); return; }
   }
   // The feed may echo a turn this tab already finalized: same text, no second bubble.
   // (`_foot` is not re-applied here: the call that drew the bubble already did it.)
@@ -7634,8 +7662,7 @@ function harnessInject(d) {
   det.className = "hinj";
   det.dataset.k = kind + "\u0000" + text;
   det.innerHTML = '<summary><span class="tc-ic" aria-hidden="true">' + TOOL_SVG.inbox + '</span>' +
-    'harness<span class="hrole"></span><span class="hsupp"></span>' +
-    (d.ts === null ? "" : _tsSpan(d.ts)) + '</summary><pre class="hbody"></pre>';
+    'harness<span class="hrole"></span><span class="hsupp"></span></summary><pre class="hbody"></pre>';
   det.querySelector(".hrole").textContent =
     _harnessScope(kind) + " · " + (d.role || (kind === "system" || kind === "compacted history" ? "system" : "user"));
   det.querySelector(".hbody").textContent = text;   // verbatim wire content
@@ -7660,7 +7687,7 @@ function harnessDrop(d) {
    tool call) so the COTs BETWEEN tools survive a reload, exactly like live. */
 function renderThink(text) {
   if (!text) return;
-  const d = document.createElement("div"); d.className = "msg ai";
+  const d = document.createElement("div"); d.className = "msg ai think";
   d.innerHTML = `<details class="think"><summary><span class="tc-ic" aria-hidden="true">${TOOL_SVG.thought}</span>Thought</summary><div class="t"></div></details>`;
   d.querySelector(".t").textContent = text;
   _logAppend(d); scroll();
@@ -9067,7 +9094,7 @@ function _bindRenderStream(es, live, adopt) {
   // JAG-1: the `tool.call` event carries the ARGS — pass them so the card shows
   // WHAT was launched (and with which input) the moment it starts, not only when
   // the result lands. `tool.output` then streams the output live into the same card.
-  es.addEventListener("tool.call", e => { const d = JSON.parse(e.data); if (live()) { _atNode(d.node); toolCard(d.tool, d.args, d.ts); } });
+  es.addEventListener("tool.call", e => { const d = JSON.parse(e.data); if (live()) { _atNode(d.node); toolCard(d.tool, d.args); } });
   es.addEventListener("tool.result", e => { if (live()) updateToolCard(JSON.parse(e.data)); });
   es.addEventListener("tool.output", e => { if (live()) liveToolOutput(JSON.parse(e.data)); });
   /* v648: approval.request and improve.proposal are NOT bound here. connectFeed
@@ -10563,7 +10590,7 @@ async function loadHistory() {
       const cot = m.reasoning || tail;
       if (cot) {
         // JAG-240: the CoT belongs ABOVE its answer, exactly like the live stream.
-        const t = document.createElement("div"); t.className = "msg ai";
+        const t = document.createElement("div"); t.className = "msg ai think";
         t.innerHTML = `<details class="think"><summary><span class="tc-ic" aria-hidden="true">${TOOL_SVG.thought}</span>Thought</summary><div class="t"></div></details>`;
         t.querySelector(".t").textContent = cot;
         if (d && d.parentNode) d.parentNode.insertBefore(t, d); else _logAppend(t);
@@ -10592,7 +10619,7 @@ async function loadHistory() {
     _activeNodeId = _nid(v.node); _activeScope = null;
     if (e.t === "c") {
       if (v.think) renderThink(v.think);   // JAG-170: the CoT that led here
-      toolCard(v.tool, undefined, v.ts);
+      toolCard(v.tool, undefined);
       updateToolCard({ tool: v.tool, ok: v.ok, exit_code: v.exit_code,
                        backend: v.backend, result: v.result, error: v.error,
                        args: v.args, data: v.data, summary: v.error ? "error" : "" });
@@ -10742,6 +10769,11 @@ async function loadRulesPanel() {
     rows.push(_rulesRefRow("project", "project rules", d.project));
   }
   box.innerHTML = rows.join("");
+  // ROUND 177: one link per loaded project rule file — the click opens the REAL file in
+  // the editor dock (`openInEditor`), so the panel never shows a stale copy of it.
+  box.querySelectorAll("[data-rulepath]").forEach(b => {
+    b.onclick = () => openInEditor(b.dataset.rulepath);
+  });
   // K-5: the ✨ of THIS session's ROLE.md — bound to the field above, so one click
   // drafts the brief with the agent's real identity/team/reporting line as context.
   // The ✨ rides the PATH row (right of the path, beside `save`) instead of taking
@@ -10754,16 +10786,40 @@ async function loadRulesPanel() {
     mountSparkle(_pathRow || _roleTa.parentElement, "agent.role", _genOpts);
   }
 }
-/* JAG-2.8: read-only reference row for global/project Global_rules.md / Project_rules.md — shows the
-   path, char count, and a preview of the text. Edit in Settings > Rules. */
+/* JAG-2.8: read-only reference row for global/project Global_rules.md / Project_rules.md.
+   ROUND 177 (operator): the PROJECT scope is no longer one editable file — every `.md`
+   of the project rules folders is loaded (Trae parity), so the row is a LIST of links,
+   one per file, and a click opens it in the editor. Edited in the code editor, not in a
+   second textarea that would only own one of the files. */
 function _rulesRefRow(kind, label, src) {
   const id = "rule_" + kind;
   const chars = src.chars || 0;
-  const badge = src.exists ? (chars + " chars") : "does not exist";
   const ok = src.exists && chars > 0;
+  const _kb = n => n >= 1024 ? (n / 1024).toFixed(1) + " KB" : (n || 0) + " B";
+  if (kind === "project") {
+    const rows = src.file_rows || (src.files || []).map(p =>
+      ({path: p, name: String(p).split("/").pop(), chars: 0}));
+    const over = (src.chars || 0) > (src.prompt_cap || 0) && src.prompt_cap;
+    return '<details class="rulesrc" open>'
+      + '<summary><b>' + esc(label) + '</b><span class="rbadge' + (rows.length ? " ok" : "") + '">'
+      + esc(rows.length + (rows.length === 1 ? " file" : " files") + " · " + _kb(chars)) + '</span></summary>'
+      + '<div class="rpath" title="' + esc((src.dirs || []).join("  ·  ") || src.path) + '">'
+      + '<span>' + esc((src.dirs || []).length ? "folder · " + src.dirs.join("  ·  ") : src.path)
+      + '</span></div>'
+      + '<div class="rlist">' + rows.map(r =>
+          '<button type="button" class="rfile" data-rulepath="' + _attr(r.path) + '" '
+          + 'title="open ' + _attr(r.path) + ' in the editor">'
+          + '<span class="rfile-n">' + esc(r.name) + '</span>'
+          + '<span class="remaining">' + esc(_kb(r.chars)) + '</span></button>').join("")
+      + '</div>'
+      + '<div class="rrow"><span class="remaining">'
+      + (over ? 'over the ' + esc(String(Math.round((src.prompt_cap || 0) / 1024))) + ' KB prompt cap — the tail is cut'
+              : 'every .md is loaded in this session&#39;s prompt')
+      + ' — click a file to open it in the editor</span></div></details>';
+  }
   return '<details class="rulesrc">'
     + '<summary><b>' + esc(label) + '</b><span class="rbadge' + (ok ? " ok" : "") + '">'
-    + esc(badge) + '</span></summary>'
+    + esc(src.exists ? (chars + " chars") : "does not exist") + '</span></summary>'
     + '<div class="rpath" title="' + esc(src.path) + '">' + esc(src.path) + '</div>'
     + '<textarea class="inp" id="' + id + '" readonly style="width:100%;min-height:80px;font-size:12px;'
     + 'font-family:ui-monospace,monospace;opacity:0.7">' + esc(src.text || "") + '</textarea>'

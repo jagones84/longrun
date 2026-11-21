@@ -44,7 +44,7 @@ DEFAULTS = {
     "memory_prompt_max_chars": 1200,
     "memory_item_chars": 120,
     "memory_lessons_cap": 4,
-    "rules_prompt_max_bytes": 32768,
+    "rules_prompt_max_bytes": 131072,
     "shell_capture_max": 200000,
     "fs_read_max_bytes": 65536,
     "sandbox_max_output_bytes": 2 * 1024 * 1024,

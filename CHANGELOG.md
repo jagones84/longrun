@@ -325,6 +325,26 @@ All notable changes to Longrun are documented here. The format follows
   tool gate. (Locked by `v1052` B1/B1b, N9d/N9d2, N11b/N11b2, O1–O7; `v785` K1–K5; `v763` F1–F2.)
 
 ### Fixed
+- **The transcript is TRAE-clean, and the project rules FOLDER is loaded whole.** Operator: *"guarda che
+  orrore gli orari e gli exit code e la roba a destra nel chat stream elimina tutto. la data va messa sulla
+  sinistra e solo degli user messages e risposte dell'agente, non delle fasi intermedie"*; *"perché dopo
+  thought aumenta la spaziatura nel thread? perché wrote non ha sulla destra il file che ha scritto come
+  edit e read?"*; *"vengono caricate tutte, non solo project_rules … proprio come fa trae … nel RH panel
+  hyperlink che me li apre nell'editor"*. (1) Every row's right meta is gone (`exit N · backend · summary`
+  and the live "running… …"), the clock is gone everywhere, and ONE date-only stamp (`YYYY-MM-DD`, from the
+  server ts) sits at the LEFT of user messages and agent answers; a live answer is stamped when the server
+  finalizes it. An in-flight row now pulses its glyph instead of spelling a state. (2) A Thought row was a
+  `msg` wrapper, so the 16px message margin stacked on a 28px row — the wrapper is `msg ai think` with
+  margin 0, so the thought keeps the transcript rhythm. (3) `fs.write` cards lost their file name and
+  `+A −D` because `persist_tool_card` cut `args` at 4000 chars mid-JSON: `JSON.parse` threw, `_argsObj`
+  returned {} and the row had no path (14 of 24 file cards measured unparseable). `_card_args` now clips the
+  big VALUES and keeps valid JSON, so the path (and the diff/open affordances) survive. (4) The project
+  rules scope loads EVERY `.md` of `<workspace>/.trae/rules/` (the operator's rules folder — what Trae shows
+  as its Reference) plus the harness `<state>/rules/`, additive and deduped, and the RH panel renders one
+  link per file that opens it in the editor (`openInEditor`) instead of a single textarea; the native
+  `Project_rules.md` stays supported. `rules_prompt_max_bytes` 32 KB → 128 KB so this workspace's 85 KB
+  corpus is not cut mid-file. Measured: block 89,081 chars, no truncation, live `system_tokens` 10,974 →
+  31,107. Locked by `v1261` A1–A5/B1–B4/C1–C2/D1–D3/E1–E7.
 - **The composer context ring opens where the finger is at ANY UI zoom, and a themed `<select>`
   survives the click that opened it.** Operator: *"the context circle down in msg doesn't open the UI
   and the filter in the agents panel doesn't maintain the menu when clicking on the selecting the team,

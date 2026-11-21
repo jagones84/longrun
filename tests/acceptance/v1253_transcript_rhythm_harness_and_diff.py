@@ -65,10 +65,10 @@ check("A5 the hover tint is shared by the three row types",
 check("B1 the old wire chip is gone (no plug+arrow label, no uppercase pill)",
       "🔌 harness &rarr; LLM" not in HTML and "harness &rarr; LLM" not in HTML
       and ".hkind" not in HTML)
-check("B2 it reads 'harness' plus a named scope, with the inbox glyph",
+check("B2 it reads 'harness' plus a named scope, with the inbox glyph (and no clock)",
       "TOOL_SVG.inbox" in HTML and "function _harnessScope(k)" in HTML
       and 'observation: "Observation"' in HTML
-      and '\'harness<span class="hrole"></span><span class="hsupp"></span>\'' in HTML)
+      and '\'harness<span class="hrole"></span><span class="hsupp"></span></summary>' in HTML)
 check("B3 the scope is soft text, not a stamp: lowercase, 10.5px, dim",
       ".hinj .hrole { font-size: 10.5px; letter-spacing: 0; text-transform: none;" in HTML
       and "color: var(--dim); margin-left: 0; }" in HTML)
