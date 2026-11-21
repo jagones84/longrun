@@ -57,7 +57,7 @@ check("A3 the tints use color-mix on THEME vars, never a hard-coded colour",
       "rgb(" not in _SKIN and "color-mix(in srgb, var(--" in _SKIN)
 check("A4 ONLY the file name is italic (one rule, `.tc-file`)",
       _SKIN.count("font-style: italic") == 1
-      and ".toolcard .tc-file { font-style: italic; }" in _SKIN
+      and ".toolcard .tc-file { font-style: italic; font-size: 11.5px; }" in _SKIN
       and ".tc-name { font-style: italic" not in HTML)
 check("A5 the verdict colour still owns `.tc-ic` for errors (a state is an icon)",
       # 2026-11-22: the glyph now also carries the TOOL tint (a file op is recognisable

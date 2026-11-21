@@ -82,7 +82,7 @@ check("B5 a suppressed repeat is still a counter on the row",
 _BUB = block(".msg .bubble {", ".msg .turnfoot")
 check("C1 an answer carries no frame (no surface, no border, no radius, no padding)",
       "background: transparent; border: 0; border-radius: 0; padding: 0;" in _BUB
-      and "font-size: 13px; line-height: 1.55;" in _BUB, _BUB[:240])
+      and "font-size: 12.5px; font-weight: 400; line-height: 1.55;" in _BUB, _BUB[:240])
 check("C2 a user prompt keeps ONE accent rule (a quote mark, not a box)",
       ".msg.user .bubble { border-left: 2px solid color-mix(" in HTML
       and "padding-left: 12px;" in HTML)
@@ -92,7 +92,7 @@ check("C3 the reveal flash no longer draws a box around the answer",
 
 # ---- D: the thought is message text --------------------------------------
 check("D1 the thought body uses the message typography",
-      "details.think .t { color: var(--txt); font-size: 13px; line-height: 1.55;" in HTML)
+      "details.think .t { color: var(--txt); font-size: 12.5px; font-weight: 400; line-height: 1.55;" in HTML)
 check("D2 the row glyph is drawn by every render path (live, persisted, replay)",
       HTML.count('aria-hidden="true">${TOOL_SVG.thought}</span>Thought') == 3
       and "thought: '<svg viewBox=\"0 0 20 20\">" in HTML,
@@ -107,7 +107,10 @@ check("E1 the edit/write row carries a +A −D slot filled from the diff endpoin
       and '"/api/edits/diff?session="' in HTML)
 check("E2 the name opens the FILE for a read and the DIFF for an edit/write",
       "function _wireToolName(card, tool, args)" in HTML
-      and 'if (tool === "fs.read") openInEditor(path); else showDiff(path);' in HTML)
+      and 'if (tool === "fs.read") {' in HTML
+      and "!ed.inWorkspace(path)) openPreview(path);" in HTML
+      and "else openInEditor(path);" in HTML
+      and "else showDiff(path);" in HTML)
 check("E3 the row stays clean: action icons appear on hover/focus only",
       "opacity: 0; transition: opacity .12s;" in HTML
       and ".toolcard:hover .tc-action, .toolcard:focus-within .tc-action { opacity: 1; }" in HTML)

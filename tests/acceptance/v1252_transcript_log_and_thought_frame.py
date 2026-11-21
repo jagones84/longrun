@@ -77,7 +77,7 @@ check("B2 the file tools return verb + file (the verb is not part of the label)"
 check("B3 BOTH renderers (new card and live update) use the same builder",
       HTML.count("_toolNameHTML(") == 3, HTML.count("_toolNameHTML("))
 check("B4 `.tc-name` is never italic — the italic rule is `.tc-file` only",
-      ".toolcard .tc-file { font-style: italic; }" in HTML
+      ".toolcard .tc-file { font-style: italic; font-size: 11.5px; }" in HTML
       and ".tc-name { font-style: italic" not in HTML)
 check("B5 the tool keeps a colour on its glyph (read/edit/write differ by token)",
       all('.toolcard[data-tool="%s"] .tc-ic {' % t in HTML
@@ -104,7 +104,7 @@ check("C3 the live block pulses, and stops when the turn moves on",
 check("C4 reduced motion turns the pulse off",
       "@media (prefers-reduced-motion: reduce) { details.think > summary .tdot { animation: none; } }" in HTML)
 check("C5 the body text is ordinary message text (same family, size and leading)",
-      "details.think .t { color: var(--txt); font-size: 13px; line-height: 1.55;" in HTML
+      "details.think .t { color: var(--txt); font-size: 12.5px; font-weight: 400; line-height: 1.55;" in HTML
       and ".msg .bubble { background: transparent; border: 0; border-radius: 0; padding: 0;" in HTML)
 
 # ---- D: the rail heads are labels -----------------------------------------

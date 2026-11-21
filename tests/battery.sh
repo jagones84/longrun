@@ -65,7 +65,8 @@ v778_session_ids_and_sparkle_cache v851_ui_a11y_gate v888_team_click_and_page_fi
 v890_rail_groups_team_colour_and_compact_rows v891_deck_fit_and_row_menus v910_no_team_bulk
 v934_composer_session_drafts v955_queued_message_visible v1250_file_cards_heads_drag_slash
 v1251_team_scope_one_group v1252_transcript_log_and_thought_frame
-v1253_transcript_rhythm_harness_and_diff v1254_title_and_context_ring"
+v1253_transcript_rhythm_harness_and_diff v1254_title_and_context_ring
+v1255_typography_superbar_and_links"
 
 # TARGETED run (the fix under test): `LONGRUN_BATTERY_TESTS="v753_x v750_y"` runs
 # ONLY those files (plus the UI guard below). The launcher is tests/battery_tmp.sh,

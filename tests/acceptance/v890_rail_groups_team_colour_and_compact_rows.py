@@ -78,8 +78,8 @@ check("B2 feed and terminal are their OWN group, not panel jumps",
       and "(INSP_JUMP_RUNTIME.indexOf(key) >= 0 ? runt : main).appendChild(b);" in UI)
 check("B3 an empty runtime group takes no space",
       "#toolsBar #inspJumpRuntime:empty { display: none; }" in UI)
-check("B4 the ✨ acts on the draft: it rides the chat group, not the foot",
-      '["chat.prompt", "#inp", "#toolsBar #chatViewSec", null,' in UI
+check("B4 the ✨ acts on the draft: it is mounted in the composer, not the foot",
+      '["chat.prompt", "#inp", "#cmpSpark", null,' in UI
       and '"chat.prompt", "#inp", "#toolsBar .tb-foot"' not in UI)
 check("B5 the ⋯ stays the rail's LAST control (reset/new out of the way)",
       RAIL.index('class="tb-foot"') < RAIL.index('id="moreBtn"')

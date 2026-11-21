@@ -126,6 +126,28 @@ All notable changes to Longrun are documented here. The format follows
   browser-rebuilt `/data/sessions/<id>.json` would be a guess.) Locked by `v1067` A1–A6, B1–B10.
 
 ### Changed
+- **One transcript typography, a Workspace/Plan bar above the message box, the ✨ inside the box, and
+  `+A −D` opens the diff.** Operator, with TRAE screenshots: *"trae li ha [workspace e plan] come sovrabar
+  intercambiabile sopra la msg box … implementalo anche tu (non distruggere il RH panel), non duplicare
+  codice"*; *"l'autogenerate … dentro la msg box piccolo in alto a dx … rimuovilo dalla sidebar"*; *"i diff del
+  wrote/edit non si aprono nel diff panel ma espandono l'edit — se clicco proprio dove dice +48 −5 deve aprirsi
+  il diff"*; *"il nome file deve essere piccolino come le righe di harness"*; *"command executed è bold e font
+  diverso … perché il testo di risposta è BOLD di default? … il font size deve essere uguale e uniforme,
+  rimpicciolirei risposte e thought"*; *"i file out of workspace in read > nomefile non li apre nell'editor —
+  risolvi"*. (1) The transcript is ONE typography: answer and Thought body **12.5px / 400 / 1.55**, the
+  file name **11.5px italic** under a 12px/400 verb, the harness scope 10.5px — and the "bolder text"
+  preference no longer reaches the transcript at all (`html.bold-text .bubble` and its `p, li, td` rule are
+  gone; only explicit `<b>/<strong>` inside a bubble still gets 800). (2) A **bar above the composer** with
+  two toggle buttons, **Workspace** and **Plan**; it **borrows the live `.insp-body`** of the RH inspector
+  (`_csOpen`/`_csReturn` move the same node, same ids, same renderers, same listeners, and hand it back on
+  close) so there is no second panel, and its summary is the inspector's own `.ihd-s` line through a
+  MutationObserver — no second count. The lent section says "· above ↗" and its header still works. (3) The
+  chat ✨ (`chat.prompt`) mounts in `#cmpSpark`, top-right inside the message box; the sidebar host no longer
+  carries it. (4) The `+A −D` stat is its own link: clicking it calls `showDiff(path)` with
+  `stopPropagation`, so the row does not expand. (5) A `fs.read` outside the workspace opens the **preview
+  window** instead of a dock tab with "⚠ outside the workspace", through the dock's own predicate
+  (`SparkEditor.inWorkspace`, one rule, no second copy of the root logic). Locked by `v1255` (14/14), with
+  `v1250`, `v1252`, `v1253`, `v352` and `v890` re-pointed to the new contract (dated comments).
 - **The tab is just "Longrun", an answer carries no agent label, and the composer context ring opens the
   compact context card.** Operator: *"perché si chiama longrun dgx harness? non si può chiamare solo longrun?"*;
   *"perché devi continuamente scrivere A54 · LONGRUN? a cosa serve? rimuovi quella cosa"*; *"se clicco sul cerchio

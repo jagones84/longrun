@@ -967,12 +967,12 @@
   .msg.ai.deleg .who { justify-content: flex-start; }
   .msg.ai .who .copy { opacity: 0; transition: opacity .12s; }
   .msg.ai:hover .who .copy, .msg.ai:focus-within .who .copy { opacity: 1; }
-  /* 2026-11-22 ROUND 169 (operator): *"anche risposte LLM no vanno in frame, manco messaggi
-     utente"*. A message is TEXT, not a box: the small label says who speaks, and the body
-     sits in the log column with the normal message typography. A user prompt keeps ONE
-     accent rule (not a frame) so a pasted brief is still recognisable at a glance. */
+  /* 2026-11-22 ROUND 171 (operator): *"il font size … deve essere uguale e uniforme,
+     rimpicciolirei il font risposte e thought"* and *"perché il testo di risposta è BOLD di
+     default?"*. The transcript text is ONE typography: 12.5px, weight 400, 1.55 — the
+     "bolder text" preference no longer reaches it (it is a UI-chrome preference). */
   .msg .bubble { background: transparent; border: 0; border-radius: 0; padding: 0;
-    white-space: pre-wrap; word-break: break-word; font-size: 13px; line-height: 1.55;
+    white-space: pre-wrap; word-break: break-word; font-size: 12.5px; font-weight: 400; line-height: 1.55;
     /* RH-13 (operator, 2026-11-03): "perché tutto sto spazio per il messaggio? le
        dimensioni finestra si adattino al messaggio! (con un massimo ovviamente)".
        It hugs its text and stops at the log width. */
@@ -1013,9 +1013,9 @@
   details.think:not(.live) > summary .tdot { display: none; }
   @keyframes thpulse { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
   @media (prefers-reduced-motion: reduce) { details.think > summary .tdot { animation: none; } }
-  /* The thought body is ORDINARY message text (same family, size and leading) — the
-     operator asked for uniformity, not a second typography. */
-  details.think .t { color: var(--txt); font-size: 13px; line-height: 1.55; white-space: pre-wrap;
+  /* The thought body is the SAME text as a message — 12.5px, weight 400 — never a
+     second typography. */
+  details.think .t { color: var(--txt); font-size: 12.5px; font-weight: 400; line-height: 1.55; white-space: pre-wrap;
     padding: 2px 0 12px; margin: 0; max-height: 320px; overflow-y: auto; }
   /* v1.6.3 (JAG-55): copy affordance + inline tool-call mini-cards */
   .msg .who { display: flex; align-items: center; gap: 6px; }
@@ -1069,7 +1069,11 @@
      *"non voglio read edit tutto italico, solo il nome file — il Read no"*. The TOOL
      owns the GLYPH and the FILE NAME only; the verb is normal text like every other log
      line, and the row has no surface of its own (the timeline is the shape). */
-  .toolcard .tc-file { font-style: italic; }
+  /* 2026-11-22 ROUND 171 (operator): *"read/edit/wrote nomefile: il nomefile deve essere
+     piccolino come i lunghi di harness, stesso stile … uniforma"*. The verb is the row's
+     normal 12px/400 text; the file name is one step SMALLER (11.5px), still italic + tinted
+     by the tool. No weight bump in either bold-text mode. */
+  .toolcard .tc-file { font-style: italic; font-size: 11.5px; }
   .toolcard[data-tool="fs.read"] .tc-file { color: color-mix(in srgb, var(--acc2) 70%, var(--txt)); }
   .toolcard[data-tool="fs.edit"] .tc-file { color: color-mix(in srgb, var(--acc) 70%, var(--txt)); }
   .toolcard[data-tool="fs.write"] .tc-file { color: color-mix(in srgb, var(--info) 70%, var(--txt)); }
@@ -3002,14 +3006,17 @@
   /* bolder text preference (default on) */
   /* JAG-356: Bolder text — a real, app-wide weight bump. `body` cascades to the
      whole UI and the chat bubble is forced, so long answers visibly change. */
-  html.bold-text body, html.bold-text .bubble, html.bold-text .card, html.bold-text .sw-main,
+  html.bold-text body, html.bold-text .card, html.bold-text .sw-main,
   html.bold-text #modelMenu .mi, html.bold-text .themecard, html.bold-text .sess .t,
   html.bold-text .ctxitem, html.bold-text .costrow, html.bold-text input,
   html.bold-text select, html.bold-text textarea, html.bold-text button { font-weight: 600; }
   html.bold-text .remaining, html.bold-text .pill, html.bold-text .sub, html.bold-text .mh,
   html.bold-text #modelMenu .mh, html.bold-text .sess .n, html.bold-text .ctxlegend,
   html.bold-text .toolcard-meta { font-weight: 600; }
-  html.bold-text .bubble p, html.bold-text .bubble li, html.bold-text .bubble td { font-weight: 600; }
+  /* 2026-11-22 (operator): *"perché il testo di risposta è BOLD di default?"* — the
+     transcript body never follows the bolder-text preference: it stays 400 so an answer
+     and a thought look the same whether the preference is on or off. Explicit `<strong>`
+     inside markdown still bolds. */
   html.bold-text .bubble b, html.bold-text .bubble strong { font-weight: 800; }
   html.bold-text header .logo { font-weight: 800; }
   html.bold-text h2, html.bold-text h3, html.bold-text .insp-hd { font-weight: 700; }
@@ -3024,7 +3031,6 @@
   html:not(.bold-text) .ctxlegend .bdrow b,
   html:not(.bold-text) .ctxdonut .dc,
   html:not(.bold-text) .costrow .cu,
-  html:not(.bold-text) .toolcard .tc-name,
   html:not(.bold-text) .toolcard-meta,
   html:not(.bold-text) .tctree > summary,
   html:not(.bold-text) .hitl-title,
@@ -3256,6 +3262,35 @@
   .imp-card { border-radius: 10px; background: var(--bg-2); }
   .imp-diff { border-radius: 8px; }
   .lnk { color: var(--acc); }
+
+  /* 2026-11-22 ROUND 171 (operator, TRAE reference): the switchable Workspace/Plan bar
+     ABOVE the message box, and the chat ✨ inside the message box (top-right). The bar does
+     not own a second panel: it hosts the live inspector body while a tab is open. */
+  #cmpSuper { display: flex; flex-direction: column; min-width: 0; }
+  .cs-tabs { display: flex; align-items: center; gap: 4px; min-height: 26px; min-width: 0; }
+  .cs-tab { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 8px;
+    border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--dim);
+    font: inherit; font-size: 11.5px; cursor: pointer; white-space: nowrap; }
+  .cs-tab svg { width: 13px; height: 13px; fill: none; stroke: currentColor;
+    stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex: 0 0 auto; }
+  .cs-tab:hover { background: var(--hover); color: var(--txt); }
+  .cs-tab[aria-pressed="true"] { color: var(--txt); border-color: var(--line); background: var(--panel2); }
+  .cs-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .cs-sum { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap;
+    text-overflow: ellipsis; font-size: 10.5px; color: var(--dim); padding-left: 6px; }
+  .cs-x { flex: 0 0 auto; border: 0; background: none; color: var(--dim); cursor: pointer;
+    font-size: 12px; padding: 2px 4px; }
+  .cs-x:hover { color: var(--txt); }
+  .cs-body { max-height: 300px; overflow: auto; padding: 4px 0 2px; }
+  .cs-body[hidden] { display: none; }
+  .cs-body .insp-body { padding: 0; }
+  .cs-body .card { margin: 0 0 6px; }
+  #inspector section.cs-lent > .insp-hd::after { content: " · above ↗"; color: var(--dim);
+    font-weight: 400; font-size: 10px; letter-spacing: 0; text-transform: none; }
+  #inpWrap { position: relative; display: flex; min-width: 0; }
+  #inpWrap #inp { flex: 1 1 auto; }
+  #composer #inpWrap #inp { padding-right: 36px; }
+  #cmpSpark { position: absolute; top: 6px; right: 8px; display: flex; align-items: center; }
 
   /* --- menus, dialogs, settings ---------------------------------------- */
   #plusMenu, #moreMenu, #qmodeMenu, #modelMenu, .smodal, #newSessDlg, #rwDlg, #dirPicker,
@@ -4157,7 +4192,31 @@
         <div id="goalVerdictText"></div>
       </div>
       <input aria-label="attach files" type="file" id="attachInput" multiple hidden>
-      <textarea aria-label="message" id="inp" rows="1" placeholder="Message…" autofocus></textarea>
+      <!-- 2026-11-22 ROUND 171 (operator): *"trae li ha come sovrabar intercambiabile sopra la
+           msg box … implementalo anche tu, non distruggere il RH panel, non duplicare codice"*.
+           The bar BORROWS the live inspector body for the chosen tab (same ids, same
+           renderers, same listeners) and puts it back when closed — there is no second copy
+           of the Workspace or Plan panel. -->
+      <div id="cmpSuper">
+        <div class="cs-tabs" role="group" aria-label="workspace and plan">
+          <!-- Two TOGGLE buttons, not tabs: each one opens the borrowed panel and a second click
+               closes it (a tab cannot close itself). axe 2026-11-21: the tab role plus a selection
+               attribute together with aria-pressed is `aria-allowed-attr`, and a tablist holding the
+               summary span is `aria-required-children`. aria-pressed is the honest state here. -->
+          <button type="button" class="cs-tab" data-cs="files" aria-pressed="false" title="the workspace and this session's changed files"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2.75 5.75h5l1.5 2h7.5v7.5a1 1 0 0 1-1 1h-12a1 1 0 0 1-1-1z"/></svg>Workspace</button>
+          <button type="button" class="cs-tab" data-cs="plan" aria-pressed="false" title="the session plan and its tasks"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 5.5h12M4 10h12M4 14.5h8"/></svg>Plan</button>
+          <span class="cs-sum" id="csSum"></span>
+          <button type="button" class="cs-x" id="csClose" aria-label="close the panel" title="close" hidden>✕</button>
+        </div>
+        <div class="cs-body" id="csBody" role="region" aria-label="workspace and plan panel" hidden></div>
+      </div>
+      <div id="inpWrap">
+        <textarea aria-label="message" id="inp" rows="1" placeholder="Message…" autofocus></textarea>
+        <!-- 2026-11-22 (operator): *"l'autogenerate … lo ha dentro la msg box piccolo in alto a
+             dx … rimuovilo dalla sidebar"*. The chat.prompt ✨ mounts HERE (same registry,
+             same control); the sidebar host no longer carries it. -->
+        <span id="cmpSpark"></span>
+      </div>
       <div id="queueBar" hidden></div>
       <div id="composerBar">
         <div class="cb-left">
@@ -6780,8 +6839,30 @@ function _wireToolName(card, tool, args) {
   nm.addEventListener("click", e => {
     const path = nm.dataset.path; if (!path) return;
     e.preventDefault(); e.stopPropagation();
-    if (tool === "fs.read") openInEditor(path); else showDiff(path);
+    // 2026-11-22 (operator): a file OUTSIDE the workspace must not land in the editor
+    // dock with an "outside the workspace" warning — the read-only preview window (v1002)
+    // is the viewer that can show it. `SparkEditor.inWorkspace` is the SAME rule the dock
+    // uses, so the two surfaces can never disagree.
+    if (tool === "fs.read") {
+      const ed = window.SparkEditor;
+      if (ed && typeof ed.inWorkspace === "function" && !ed.inWorkspace(path)) openPreview(path);
+      else openInEditor(path);
+    } else showDiff(path);
   });
+  // 2026-11-22 (operator): *"se clicco proprio dove dice +48 −5 deve aprirsi il diff, non
+  // vale più l'espansione"*. The stat is the diff's own affordance, so it opens the SAME
+  // window and never toggles the row.
+  const st = card.querySelector(".tc-stat");
+  if (st && !st.dataset.wired) {
+    st.dataset.wired = "1";
+    st.classList.add("tc-link");
+    st.title = "show the diff for " + p;
+    st.addEventListener("click", e => {
+      const path = nm.dataset.path; if (!path) return;
+      e.preventDefault(); e.stopPropagation();
+      showDiff(path);
+    });
+  }
 }
 const _editStatSeen = new Map();
 /* One diff read per session+path feeds the row's +A −D (TRAE's edit row), and the SAME
@@ -19360,7 +19441,10 @@ async function mountStaticSparkles() {
     // 2026-11-11 (operator): the empty-state name said "write this field with AI", so a
     // draft that came back as the AGENT's question looked like a prompt for the agent.
     // The composer's ✨ writes the OPERATOR's next message — the name says so.
-    ["chat.prompt", "#inp", "#toolsBar #chatViewSec", null,
+    // 2026-11-22 ROUND 171 (operator): *"l'autogenerate … dentro la msg box piccolo in alto a
+    // dx … rimuovilo dalla sidebar"*. The control is the SAME registry entry; only its host
+    // moved (#cmpSpark, inside the message box). The sidebar no longer mounts it.
+    ["chat.prompt", "#inp", "#cmpSpark", null,
      "optimize what I typed — same intent, clearer and more complete",
      "draft MY next message to the agent — it answers the agent's open question, it never writes the agent's words"],
     ["goal.objective", "#goalEditBox", "#goalEditPanel .gb-editor-ft", ".gb-editor-hint",
@@ -19839,6 +19923,8 @@ function toggleInsp(name) {
   const sec = document.querySelector('#inspector section[data-insp="' + name + '"]');
   if (!sec) return;
   const body = sec.querySelector(".insp-body");
+  // 2026-11-22: the body may be on loan to the composer bar — bring it back first.
+  if (!body) { _csReturn(); return; }
   body.hidden = !body.hidden;
   sec.classList.toggle("insp-open", !body.hidden);
   localStorage.setItem("sf_insp_" + name, body.hidden ? "0" : "1");
@@ -19846,6 +19932,60 @@ function toggleInsp(name) {
   _paintInspToggle();   // v879: one section changed -> the aggregate glyph follows
   _paintInspJump();   // v885: so does the jump list's current-section mark
 }
+/* 2026-11-22 ROUND 171 (operator): *"trae li ha come sovrabar intercambiabile sopra la msg
+   box … non distruggere il RH panel, non duplicare codice"*. The bar BORROWS the live
+   inspector body (same ids, same renderers, same listeners) and returns it on close, so the
+   Workspace and Plan panels have ONE implementation. */
+const _cs = { key: null, node: null, parent: null, next: null, wasHidden: false };
+function _csSec(key) { return document.querySelector('#inspector section[data-insp="' + key + '"]'); }
+function _csPaint() {
+  const on = _cs.key;
+  document.querySelectorAll("#cmpSuper .cs-tab").forEach(b => {
+    const p = String(b.dataset.cs === on);
+    b.setAttribute("aria-pressed", p);
+  });
+  const x = $("csClose"); if (x) x.hidden = !on;
+  const sum = $("csSum");
+  if (sum) {
+    const sec = on ? _csSec(on) : null;
+    const s = sec ? sec.querySelector(".ihd-s") : null;
+    sum.textContent = s ? s.textContent : "";
+  }
+}
+function _csReturn() {
+  if (!_cs.node) return;
+  if (_cs.parent) _cs.parent.insertBefore(_cs.node, _cs.next || null);
+  _cs.node.hidden = _cs.wasHidden;
+  const sec = _csSec(_cs.key); if (sec) sec.classList.remove("cs-lent");
+  _cs.key = _cs.node = _cs.parent = _cs.next = null;
+  const body = $("csBody"); if (body) { body.hidden = true; body.innerHTML = ""; }
+  _csPaint();
+}
+function _csOpen(key) {
+  if (_cs.key === key) { _csReturn(); return; }
+  const sec = _csSec(key); if (!sec) return;
+  const body = sec.querySelector(".insp-body"); if (!body) return;
+  _csReturn();
+  _cs.key = key; _cs.node = body; _cs.parent = body.parentNode; _cs.next = body.nextSibling;
+  _cs.wasHidden = body.hidden;
+  sec.classList.add("cs-lent");
+  body.hidden = false;
+  $("csBody").appendChild(body);
+  $("csBody").hidden = false;
+  _csPaint();
+}
+document.addEventListener("click", e => {
+  const tab = e.target.closest && e.target.closest("#cmpSuper .cs-tab");
+  if (tab) { e.preventDefault(); _csOpen(tab.dataset.cs); return; }
+  const x = e.target.closest && e.target.closest("#csClose");
+  if (x) { e.preventDefault(); _csReturn(); }
+});
+/* The bar summary is the panel's OWN summary line (one truth, no second count). */
+["sPlan", "sWorkspace"].forEach(id => {
+  const el = $(id);
+  if (el && window.MutationObserver) new MutationObserver(() => { if (_cs.key) _csPaint(); })
+    .observe(el, { childList: true, characterData: true, subtree: true });
+});
 function _setAllInspector(open) {
   document.querySelectorAll("#inspector section[data-insp]").forEach(section => {
     const body = section.querySelector(".insp-body");

@@ -1440,6 +1440,10 @@ window.SparkEditor = {
   refresh,
   refreshAll,
   reloadTree: () => loadTree(),   // JAG-501: workspace changed -> re-root the tree
+  // 2026-11-22: the SAME rule the dock uses to mark a tab "outside the workspace" is
+  // exposed so a caller (e.g. a chat tool row) can send such a file to the preview window
+  // instead of the workspace editor. One predicate, no second copy of the root logic.
+  inWorkspace: _inWorkspace,
   closePath,
   has,
   close,

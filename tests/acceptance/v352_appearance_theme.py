@@ -158,9 +158,14 @@ check("J1 the instructional paragraphs are gone from the panels/subwindows",
 check("J2 the Harness tab keeps its detailed explanations",
       "keeps long jobs alive without getting stuck forever" in HTML
       and "applies them only if it passes" in HTML, "")
-check("J3 bolder text really bumps the whole app (body + chat + inputs)",
-      "html.bold-text body, html.bold-text .bubble" in HTML
-      and "html.bold-text input," in HTML and "font-weight: 600" in HTML, "")
+check("J3 bolder text bumps the app chrome, never the transcript body",
+      # 2026-11-22 (operator: "perché il testo di risposta è BOLD di default?"): the
+      # preference no longer reaches `.bubble`; the answer/thought body is pinned at 400.
+      "html.bold-text body, html.bold-text .card" in HTML
+      and "html.bold-text input," in HTML and "font-weight: 600" in HTML
+      and "html.bold-text body, html.bold-text .bubble" not in HTML
+      and "html.bold-text .bubble p" not in HTML
+      and "font-size: 12.5px; font-weight: 400; line-height: 1.55;" in HTML, "")
 
 # --- K: handles stay glued + the collapsed session name (JAG-357/358) --------
 check("K1 the pane state is repainted while a panel is being resized",
