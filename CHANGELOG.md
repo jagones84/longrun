@@ -325,6 +325,22 @@ All notable changes to Longrun are documented here. The format follows
   tool gate. (Locked by `v1052` B1/B1b, N9d/N9d2, N11b/N11b2, O1–O7; `v785` K1–K5; `v763` F1–F2.)
 
 ### Fixed
+- **The composer context ring opens where the finger is at ANY UI zoom, and a themed `<select>`
+  survives the click that opened it.** Operator: *"the context circle down in msg doesn't open the UI
+  and the filter in the agents panel doesn't maintain the menu when clicking on the selecting the team,
+  it disappears immediately after the loaded menu."* Two separate causes, both measured on the render:
+  (1) the ring's card was placed with the ring's **visual** rect inside the app's CSS root zoom
+  (`_uiZoom`, JAG-359) — at 125% (persisted `sf_zoom`) it landed at visual y=1364 on a 1279 px window,
+  i.e. **below the viewport**, so the click looked dead while the card existed; it now divides the rect
+  by the zoom and clamps in layout px (visual y=1083 after). The same zoom correction now guards the
+  shared FilterSort panel and the ThemedSelect list (`pageZoom()`), which had the same arithmetic.
+  (2) A real press fires `pointerdown` (opens the list) and then `click` on the SAME select, and the
+  click handler read that as "second click = cancel" — the round-175 probe dispatched `pointerdown`
+  alone, so it never saw the menu close itself in the opening gesture. `_tsOpenedByPointer` /
+  `_tsEatOpeningClick` swallow exactly that click once; a later click still cancels. Also, an
+  unpainted ring kept a 24 px empty slot because `#composerBar .cb-right > button` (an ID rule) beat
+  `[hidden]`. Measured: deck Agents panel `#teamSel` still open at t+2.0 s (10 options) and the pick
+  writes `__none__`; rail team select open at t+2.0 s at zoom 1.25. Locked by `v1260` A1–A4/B1–B4/C1–C2.
 - **The Workspace/Plan menu drops UP: opening a tab no longer lifts the composer.** Operator: *"ma perché
   la barra sopra msg box plan e workspace si alzano? devono rimanere in basso, se clicco si apre il menu
   sopra"*. Measured on a 390×844 phone: opening Plan moved `#composer` from y=618 to y=318 — the borrowed

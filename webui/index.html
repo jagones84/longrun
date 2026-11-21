@@ -105,6 +105,10 @@
   .cmp-ctx:hover { background: var(--hover); }
   .cmp-ctx:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .cmp-ctx[hidden] { display: none; }
+  /* the `#composerBar .cb-right > button` rule below carries an ID and beat the line
+     above, so an unpainted ring kept its 24px slot and an empty clickable box; collapse
+     it with the same specificity as the rule that laid it out. */
+  #composerBar .cb-right > #cmpCtx[hidden] { display: none; }
   .cmp-ctx .mring { width: 13px; height: 13px; }
   .cmp-ctx .mring .mtrk { stroke-width: 4.5; }
   .cmp-ctx .mfill { stroke-width: 4.5; }
@@ -9695,9 +9699,17 @@ function _ctxPopover(anchor) {
   // 2026-11-22 ROUND 172: anchor to the ring that was CLICKED (never to "the first node
   // with this id", which a transcript could own) — the menu opens where the operator's
   // finger is, or it does not open at all.
+  // 2026-11-22 ROUND 176 (operator: *"the context circle down in msg doesn't open the UI"*):
+  // the card was placed with the ring's VISUAL rect inside the app's CSS root zoom
+  // (`_uiZoom`, JAG-359). At 125% it landed at visual y=1364 on a 1279px window — below
+  // the viewport, so the click really looked dead (measured with the zoom persisted in
+  // `sf_zoom`). Divide the rect by the zoom and clamp in LAYOUT px, like `_placeMenu`.
+  const z = _uiZoom();
+  const vw = window.innerWidth / z, vh = window.innerHeight / z;
+  const pw = pop.offsetWidth, ph = pop.offsetHeight;
   const r = (anchor || $("cmpCtx") || pop).getBoundingClientRect();
-  pop.style.left = Math.max(8, Math.min(r.left, window.innerWidth - pop.offsetWidth - 8)) + "px";
-  pop.style.top = Math.max(8, r.top - pop.offsetHeight - 8) + "px";
+  pop.style.left = Math.max(8, Math.min(r.left / z, vw - pw - 8)) + "px";
+  pop.style.top = Math.max(8, Math.min(r.top / z - ph - 8, vh - ph - 8)) + "px";
   pop.querySelector(".cp-compact").onclick = () => { _closeCtxPop(); compactNow(); };
   pop.querySelector(".cp-settings").onclick = () => { _closeCtxPop(); openSettings("compaction"); };
   _ctxPopEl = pop;

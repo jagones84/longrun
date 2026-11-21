@@ -120,6 +120,18 @@
       "</div>";
   }
 
+  /* The WebUI scales the ROOT with CSS `zoom` (`_uiZoom`, JAG-359): a rect arrives in
+     VISUAL px while `left`/`top` are laid out in CSS px, so placing a body-level popup
+     with the raw rect drifts by the zoom — at 125% it can leave the viewport entirely
+     (measured 2026-11-22 on the composer's context card: top 1364 on a 1279px window).
+     The deck has no root zoom, so this returns 1 there. */
+  function pageZoom() {
+    try {
+      var z = parseFloat(getComputedStyle(document.documentElement).zoom);
+      return isFinite(z) && z > 0 ? z : 1;
+    } catch (e) { return 1; }
+  }
+
   /* mount(opts) -> handle
        opts.key        localStorage namespace ("sessions" | "agents")
        opts.button     the icon button that toggles the panel
@@ -214,9 +226,12 @@
     runCb.onchange = function () { st.running = runCb.checked; commit(); };
 
     function place() {
+      var z = pageZoom();
       var r = btn.getBoundingClientRect();
-      pop.style.left = Math.max(8, Math.min(r.left, window.innerWidth - pop.offsetWidth - 8)) + "px";
-      pop.style.top = Math.max(8, Math.min(r.bottom + 4, window.innerHeight - pop.offsetHeight - 8)) + "px";
+      var vw = window.innerWidth / z, vh = window.innerHeight / z;
+      var pw = pop.offsetWidth, ph = pop.offsetHeight;
+      pop.style.left = Math.max(8, Math.min(r.left / z, vw - pw - 8)) + "px";
+      pop.style.top = Math.max(8, Math.min(r.bottom / z + 4, vh - ph - 8)) + "px";
     }
     function open(on) {
       pop.hidden = !on;
@@ -273,7 +288,7 @@
    * One implementation for both pages: this file is loaded by the WebUI and by the deck.
    * Auto-installed, because a menu that forgets to opt in is exactly the defect above.
    * ------------------------------------------------------------------ */
-  var _ts = {sel: null, pop: null, list: null, items: [], at: -1};
+  var _ts = {sel: null, pop: null, list: null, items: [], at: -1, openedBy: null, openedAt: 0};
 
   function _tsEsc(s) {
     return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
@@ -289,6 +304,7 @@
     if (st.sel) st.sel.setAttribute("aria-expanded", "false");
     var was = st.sel;
     st.sel = null; st.pop = null; st.list = null; st.items = []; st.at = -1;
+    st.openedBy = null;
     if (refocus && was) { try { was.focus({preventScroll: true}); } catch (e) {} }
   }
   function _tsPaint() {
@@ -302,6 +318,23 @@
         try { el.scrollIntoView({block: "nearest"}); } catch (e) {}
       }
     });
+  }
+  /* Anchored under the control, flipped up and clamped — the rect is in VISUAL px,
+     which is what a body-level popup needs even when the page carries a zoom. */
+  function _tsPlace(sel, pop) {
+    if (!sel || !pop) return;
+    var z = pageZoom();
+    var r = sel.getBoundingClientRect();
+    var vw = window.innerWidth / z, vh = window.innerHeight / z;
+    /* never wider than the menu's own cap: a full-width toolbar select would otherwise
+       stretch a one-word list across the page (min-width beats max-width in CSS). */
+    pop.style.minWidth = Math.min(420, Math.max(150, Math.round(r.width / z))) + "px";
+    var pw = pop.offsetWidth, ph = pop.offsetHeight;
+    var left = Math.min(Math.max(8, r.left / z), Math.max(8, vw - pw - 8));
+    var top = r.bottom / z + 4;
+    if (top + ph > vh - 8) top = Math.max(8, r.top / z - ph - 4);
+    pop.style.left = Math.round(left) + "px";
+    pop.style.top = Math.round(top) + "px";
   }
   function _tsOpen(sel) {
     if (!sel || sel.disabled || sel.multiple || sel.size > 1) return;
@@ -331,22 +364,7 @@
     _ts.at = at;
     sel.setAttribute("aria-haspopup", "listbox");
     sel.setAttribute("aria-expanded", "true");
-    if (!_tsPhone()) {
-      /* anchored under the control, flipped up and clamped — the rect is in VISUAL px,
-         which is what a body-level popup needs even when the page carries a zoom. */
-      var r = sel.getBoundingClientRect();
-      /* never wider than the menu's own cap: a full-width toolbar select would otherwise
-         stretch a one-word list across the page (min-width beats max-width in CSS). */
-      pop.style.minWidth = Math.min(420, Math.max(150, Math.round(r.width))) + "px";
-      pop.style.visibility = "hidden";
-      var pr = pop.getBoundingClientRect();
-      var left = Math.min(Math.max(8, r.left), Math.max(8, window.innerWidth - pr.width - 8));
-      var top = r.bottom + 4;
-      if (top + pr.height > window.innerHeight - 8) top = Math.max(8, r.top - pr.height - 4);
-      pop.style.left = Math.round(left) + "px";
-      pop.style.top = Math.round(top) + "px";
-      pop.style.visibility = "";
-    }
+    if (!_tsPhone()) _tsPlace(sel, pop);
     _tsPaint();
     try { (_ts.list || pop).focus({preventScroll: true}); } catch (e) {}
   }
@@ -364,19 +382,38 @@
     st.at = (st.at + step + st.items.length) % st.items.length;
     _tsPaint();
   }
+  /* ROUND 176 (operator: *"the filter in the agents panel … disappears immediately after
+     the menu is loaded"*): a real press fires `pointerdown` (opens) and then `click` on the
+     SAME select, and the click handler read that as "a second click = cancel" — so every
+     mouse open closed itself in the same gesture (the probe that opened it dispatched
+     `pointerdown` alone and never saw this). `_ts.openedBy/at` mark the press that opened
+     the list; the click that closes that gesture is swallowed ONCE, a later click still
+     cancels. */
+  function _tsOpenedByPointer(sel) { _ts.openedBy = sel; _ts.openedAt = Date.now(); }
+  function _tsEatOpeningClick(sel) {
+    if (_ts.openedBy !== sel) return false;
+    _ts.openedBy = null;
+    return Date.now() - _ts.openedAt < 600;
+  }
   document.addEventListener("pointerdown", function (e) {
     var sel = e.target && e.target.closest && e.target.closest("select");
     if (!sel || sel.disabled || sel.multiple || sel.size > 1) return;
     e.preventDefault();
     if (_ts.sel === sel) { _tsClose(true); return; }   // a second tap is a cancel
     _tsOpen(sel);
+    _tsOpenedByPointer(sel);
   }, true);
   /* A second click on the OPEN control is a cancel, never a native popup. */
   document.addEventListener("click", function (e) {
     var sel = e.target && e.target.closest && e.target.closest("select");
     if (!sel) return;
-    if (_ts.sel === sel) { e.preventDefault(); _tsClose(true); return; }
-    if (_ts.sel) { e.preventDefault(); _tsOpen(sel); }
+    if (_ts.sel === sel) {
+      e.preventDefault();
+      if (_tsEatOpeningClick(sel)) return;   // the click of the press that opened it
+      _tsClose(true);
+      return;
+    }
+    if (_ts.sel) { e.preventDefault(); _tsOpen(sel); _tsOpenedByPointer(sel); }
   }, true);
   document.addEventListener("keydown", function (e) {
     if (!_ts.pop) {
@@ -418,8 +455,20 @@
     e.preventDefault();
     _tsPick(Number(opt.dataset.i));
   });
-  window.addEventListener("resize", function () { if (_ts.pop) _tsClose(false); });
-  window.addEventListener("scroll", function () { if (_ts.pop) _tsClose(false); }, true);
+  /* ROUND 176 (operator: *"the filter in the agents panel … disappears immediately after
+     the menu is loaded"*): the popup used to CLOSE on any scroll — and `_tsPaint()` scrolls
+     the chosen row into view while opening, so the very first open closed itself wherever a
+     scrollable ancestor existed (the deck's panel). The list now follows its control on
+     scroll instead of vanishing; the phone sheet does not move. */
+  window.addEventListener("scroll", function () {
+    if (!_ts.pop || !_ts.sel || _tsPhone()) return;
+    _tsPlace(_ts.sel, _ts.pop);
+  }, true);
+  window.addEventListener("resize", function () {
+    if (!_ts.pop || !_ts.sel) return;
+    if (_tsPhone()) { _tsClose(false); return; }
+    _tsPlace(_ts.sel, _ts.pop);
+  });
 
   window.ThemedSelect = {open: _tsOpen, close: _tsClose};
 })();
