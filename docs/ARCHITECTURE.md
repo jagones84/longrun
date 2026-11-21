@@ -319,7 +319,7 @@ and guessing. `util/runtree.py` is the read model over those stores, and
 | `agent/` | `agent.py`, `agents.py`, `subagent.py`, `bridge.py`, `agency.py`, `swarm.py`, `session_jobs.py`, `architect.py`, `acceptance.py`, `trace_policy.py` |
 | `orchestrate/` | `jobs.py`, `orchestration.py`, `teams.py`, `routines.py`, `roles.py` |
 | `plan/` | `taskgraph.py`, `keepgoing.py`, `goal.py`, `difficulty.py`, `bestofn.py`, `prm.py`, `heldout.py`, `verify.py`, `commitment.py` (repair/replan/abandon by damage depth, arXiv:2611.19663), `docs.py` (the `/plan` and `/spec` markdown documents under `<workspace>/.longrun/documents/`, with the plan-mode gate) |
-| `tools/` | `tools.py`, `registry.py` (publishes `TOOL_EFFECTS`: the declared effect, idempotency and read/write resources of a tool, consumed by `harness.effect_types`), `approvals.py`, `sandbox.py`, `hooks.py`, `edits.py`, `term.py`, `bgjobs.py` (detached shell jobs: start/status/stop), `diag.py`, `matrix_guard.py` |
+| `tools/` | `tools.py`, `registry.py` (publishes `TOOL_EFFECTS`: the declared effect, idempotency and read/write resources of a tool, consumed by `harness.effect_types`), `approvals.py`, `sandbox.py`, `hooks.py`, `edits.py`, `term.py`, `bgjobs.py` (detached shell jobs: start/status/stop/listing — the composer strip's background list), `diag.py`, `matrix_guard.py` |
 | `model/` | `providers.py`, `routing.py`, `context_engine.py`, `prompt.py`, `runmetrics.py`, `otel_tracing.py`, `rllm.py`, `keys.py`, `costs.py`, `embed.py`, `compaction_config.py`, `structured.py`, `vision.py`, `decision.py`, `rerank.py` |
 | `memory/` | `memory.py`, `anchors.py`, `skills.py`, `rules.py`, `checkpoints.py`, `stores.py`, `knowledge.py`, `codeindex.py`, `vectors.py`, `embedcfg.py`, `indexcfg.py`, `chunk.py`, `costlog.py`, `docio.py`, `autoidx.py`, `rewind.py`, `threads.py`, `sqlkit.py`, `rule_surface.py`, `read_boundary.py`, `conflict_surface.py`, `fact_ledger.py` (rounds 110–119: render order, epoch-validated reads, preserved disagreement, versioned facts) |
 | `interop/` | `mcp.py`, `mcp_client.py`, `mcp_server.py`, `acp.py` |
@@ -873,6 +873,11 @@ operator-selected `none`). This is not whole-agent confinement. Hard-denied patt
 ## Interfaces
 
 - **WebUI** `webui/index.html` — one file, no build step; chat + CoT, task graph, feed.
+  The composer's top row is the **session status strip** (`#cmpSuper`): five icon toggles
+  (tasks · files · queued messages · background shell commands · goal), a live status label
+  and one dropup panel that BORROWS the real node (the inspector body, `#queueBar` or
+  `#goalBar`) so no panel has a second implementation; the background list reads
+  `GET /api/bgjobs` (`tools/bgjobs.py:listing`) and stops a job with `POST /api/bgjobs`.
   Three top-level pages share one tab strip (`TAB_IDS`): **Sessions** (`#app`), **Control**
   (the Orbit deck in an iframe) and **My Artifacts** (`#artifactsView`, fed by
   `GET /api/artifacts` — the edit journal read as one cross-session index of produced files).

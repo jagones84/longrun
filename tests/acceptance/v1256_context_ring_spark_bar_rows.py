@@ -78,7 +78,7 @@ check("C2 the strip carries no summary line — that count belongs to the panel 
       and 'sec.querySelector(".ihd-s")' not in HTML)
 check("C3 the strip paints only its own state (pressed + close), never a copied count",
       'document.querySelectorAll("#cmpSuper .cs-tab").forEach(b => {' in HTML
-      and 'b.setAttribute("aria-pressed", p);' in HTML)
+      and 'b.setAttribute("aria-pressed", String(k === on));' in HTML)
 
 # ---- D: one-line session rows ----------------------------------------------
 check("D1 the row does not wrap and the name shrinks instead",

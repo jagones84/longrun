@@ -2581,6 +2581,13 @@ def handle(handler, method, path, qs, body):
                                      "approvals": approvals.stats()})
         if path == "/api/tools/running":
             return _r(handler, 200, {"running": sandbox.running()})
+        # ROUND 180: the composer strip lists the SHELL background jobs (the ones a
+        # `shell {background:true}` call detaches). Tool jobs and agent runs keep
+        # their own endpoints (the RH Feed section) — one list per object kind.
+        if path == "/api/bgjobs":
+            from longrun.tools import bgjobs as _bgj
+            return _r(handler, 200, _bgj.listing(qs.get("session"),
+                                                qs.get("tail") or 600))
         if path == "/api/hooks":
             from longrun.tools import hooks
             return _r(handler, 200, {"hooks": hooks.load(reload=qs.get("reload") == "1"),
@@ -3776,6 +3783,12 @@ def handle(handler, method, path, qs, body):
         # --- JAG-114: global/project rules + workspace selection --------------
         if path == "/api/rules":
             res = rules_save(body)
+            return _r(handler, 200 if res.get("ok") else 400, res)
+        # ROUND 180: stop ONE background shell job — the same door the shell tool uses.
+        if path == "/api/bgjobs":
+            from longrun.tools import bgjobs as _bgj
+            res = _bgj.stop(body.get("job"))
+            _publish("bgjob.stop", job=body.get("job"), ok=bool(res.get("ok")))
             return _r(handler, 200 if res.get("ok") else 400, res)
         # JAG-533: change the data home; the move runs in the BACKGROUND (its
         # progress is polled at GET /api/home and pushed as `home.move`).

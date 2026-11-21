@@ -38,7 +38,7 @@ def check(name, ok, detail=""):
 
 # ---- A: the strip ---------------------------------------------------------
 check("A1 the two toggles are ICONS with a name, not the words workspace/plan",
-      'aria-label="workspace"' in STRIP and 'aria-label="plan"' in STRIP
+      'aria-label="tasks and todos"' in STRIP and 'aria-label="files this session changed"' in STRIP
       and "<svg" in STRIP
       and ">workspace<" not in STRIP and ">plan<" not in STRIP)
 check("A2 no summary line survives (the panel's count is the only count)",

@@ -291,8 +291,55 @@ def action(verb, job):
     return {"ok": False, "error": "unknown background action %r" % verb}
 
 
+def listing(session=None, tail_chars=600):
+    """Every background shell job this process knows, for the composer strip.
+
+    ROUND 180 (operator, TRAE reference): the message-box strip shows "N background
+    command(s) running" and a compact list — until now a job was readable ONLY by its
+    handle (`status(job)`), so nothing could list them. Host execution only, in-process
+    registry: a service restart forgets the handles (the logs stay on disk), exactly
+    like the shell tool already documents.
+
+    Running first (newest first), then finished (newest first); `session` filters the
+    jobs started by that chat's turns.
+    """
+    sid = str(session or "").strip()
+    try:
+        tc = max(0, int(tail_chars))
+    except (TypeError, ValueError):
+        tc = 600
+    with _LOCK:
+        jobs = list(_JOBS.items())
+    out = []
+    for job, rec in jobs:
+        if sid and str(rec.get("session") or "") != sid:
+            continue
+        try:
+            code = _exit_of(job, rec)
+        except Exception:  # noqa: BLE001 — a vanished process still has a record
+            code = rec.get("exit_code")
+        ended = rec.get("ended")
+        out.append({
+            "job": job,
+            "command": rec.get("cmd") or "",
+            "label": rec.get("label") or "",
+            "pid": (rec.get("proc").pid if rec.get("proc") else None),
+            "cwd": rec.get("cwd") or "",
+            "session": rec.get("session") or "",
+            "seconds": round((ended or time.time()) - rec.get("started", time.time()), 1),
+            "started": rec.get("started"),
+            "running": code is None,
+            "exit_code": None if code is None else int(code),
+            "tail": _tail(rec.get("log") or "", tc),
+        })
+    out.sort(key=lambda j: (not j["running"], -(j.get("started") or 0)))
+    return {"jobs": out}
+
+
 def _tail(path, limit=TAIL_CHARS):
     """The LAST `limit` chars of the log (a huge build log must not flood the model)."""
+    if not path or not limit:
+        return ""
     try:
         size = os.path.getsize(path)
         with open(path, "rb") as f:

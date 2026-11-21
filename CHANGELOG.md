@@ -7,6 +7,19 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **One composer status strip, Trae-style: five icons, one label, one panel above.** Operator:
+  *"vedi la barra sopra msg box di trae come è strutturata? le icone … tasks process, file
+  review, messages (queued), background command processes, goal, cliccando su ognuna mostra
+  sopra la barra ciò che va mostrato … mi piace molto molto compatto"*. The message box's top
+  row is now the session status strip: **tasks** (the plan body), **files** (the session's
+  changed files), **queued messages**, **background shell commands** and **goal**, then a live
+  status label (`4/4 tasks Completed`, `2 files changed`, `1 waiting to send`, `1 background
+  command running`, `Goal paused`) and the existing ✨ + close. The goal bar and the queue
+  chips are no longer rows: they are BORROWED into the dropup, so verify/pause/edit/delete and
+  ✎/⇢/× keep working with no second implementation. Background means the **shell** jobs
+  (`shell {background:true}`): `bgjobs.listing()` + `GET /api/bgjobs?session=` (running first,
+  log tail) and `POST /api/bgjobs {job}` to stop one; the tool jobs and agent runs stay in
+  RH ▸ Feed. Locked by `v1262` (19/19, in `UI_GUARD`); `v1255`/`v1256`/`v1258` re-pointed.
 - **Settings ▸ Rules is Trae's Rules list: one folder path, one row per rule file, and a
   per-file "always apply" switch.** Operator: *"metti solo il path delle rules non ogni
   singola rules lì in alto così apri magari il path in hyperlink … se vai in settings rules

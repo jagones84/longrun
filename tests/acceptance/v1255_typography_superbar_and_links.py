@@ -56,9 +56,9 @@ check("B1 the bar sits ABOVE the message box with the two tabs",
       '<div id="cmpSuper">' in HTML and 'data-cs="files"' in HTML and 'data-cs="plan"' in HTML
       and HTML.index('id="cmpSuper"') < HTML.index('id="inpWrap"'))
 check("B2 it BORROWS the live inspector body and returns it (no second panel)",
-      "const _cs = { key: null, node: null, parent: null, next: null, wasHidden: false };" in HTML
+      "var _cs = { key: null, node: null, parent: null, next: null, wasHidden: false };" in HTML
       and '_cs.parent.insertBefore(_cs.node, _cs.next || null);' in HTML
-      and '$("csBody").appendChild(body);' in HTML)
+      and '$("csBody").appendChild(node);' in HTML)
 check("B3 the inspector keeps working (a lent body is returned by its header)",
       "if (!body) { _csReturn(); return; }" in HTML)
 _CMSUPER = HTML[HTML.index('<div id="cmpSuper">'):HTML.index('<div id="inpWrap">')]
@@ -66,8 +66,8 @@ check("B4 the strip carries NO summary line and NO copied count (round 174)",
       'id="csSum"' not in _CMSUPER and 'class="cs-sum"' not in HTML
       and '["sPlan", "sWorkspace"].forEach' not in HTML)
 check("B5 one control is pressed at a time and close is explicit",
-      'b.setAttribute("aria-pressed", p);' in HTML and 'aria-selected' not in _CMSUPER
-      and 'role="group" aria-label="workspace and plan"' in _CMSUPER
+      'b.setAttribute("aria-pressed", String(k === on));' in HTML and 'aria-selected' not in _CMSUPER
+      and 'role="group" aria-label="session status"' in _CMSUPER
       and 'id="csClose"' in HTML)
 
 # ---- C: the spark inside the box -----------------------------------------

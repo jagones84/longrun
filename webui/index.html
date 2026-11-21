@@ -3371,6 +3371,26 @@
   .cs-tab:hover { background: var(--hover); color: var(--txt); }
   .cs-tab[aria-pressed="true"] { color: var(--txt); border-color: var(--line); background: var(--panel2); }
   .cs-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  /* ROUND 180 (operator, TRAE reference): the status label sits right after the five
+     icons and shrinks before anything wraps; empty means no status, so it collapses. */
+  .cs-tab:disabled { opacity: .4; cursor: default; }
+  .cs-tab:disabled:hover { background: transparent; color: var(--dim); }
+  .cs-label { flex: 1 1 auto; min-width: 0; margin-left: 2px; font-size: 11.5px; color: var(--dim);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cs-label:empty { display: none; }
+  /* The borrowed goal bar / queue chips are the panel's content: no second card frame. */
+  .cs-body #goalBar, .cs-body #queueBar { border: 0; padding: 0; background: transparent; }
+  .cs-bg { display: flex; flex-direction: column; gap: 2px; font-size: 11.5px; }
+  .cs-bgrow { display: flex; align-items: center; gap: 7px; min-width: 0; }
+  .cs-bgrow .cs-bgcmd { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; font-family: ui-monospace, monospace; }
+  .cs-bgrow .cs-bgmeta { flex: 0 0 auto; color: var(--dim); }
+  .cs-bgtail { margin: 2px 0 4px; max-height: 120px; overflow: auto; white-space: pre-wrap;
+    word-break: break-word; font-size: 10.5px; color: var(--dim); background: rgba(0,0,0,.25);
+    border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; }
+  .cs-bgtail[hidden] { display: none; }
+  .cs-bgfoot { display: flex; justify-content: flex-end; margin-top: 4px; }
+  .cs-empty { color: var(--dim); font-size: 11.5px; }
   .cs-x { flex: 0 0 auto; border: 0; background: none; color: var(--dim); cursor: pointer;
     font-size: 12px; padding: 2px 4px; }
   .cs-x:hover { color: var(--txt); }
@@ -4309,22 +4329,26 @@
            renderers, same listeners) and puts it back when closed — there is no second copy
            of the Workspace or Plan panel. -->
       <div id="cmpSuper">
-        <div class="cs-tabs" role="group" aria-label="workspace and plan">
-          <!-- Two TOGGLE buttons, not tabs: each one opens the borrowed panel and a second click
-               closes it (a tab cannot close itself). axe 2026-11-21: the tab role plus a selection
-               attribute together with aria-pressed is `aria-allowed-attr`, and a tablist holding the
-               summary span is `aria-required-children`. aria-pressed is the honest state here.
-               ROUND 174 (operator: *"invece di scrivere workspace and plan … metti le icone,
-               risparmi spazio e togli il riassunto"*): ICON-ONLY toggles, the name lives in
-               aria-label + title; the summary line is gone. -->
-          <button type="button" class="cs-tab" data-cs="files" aria-pressed="false" aria-label="workspace" title="workspace — the workspace and this session's changed files"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2.75 5.75h5l1.5 2h7.5v7.5a1 1 0 0 1-1 1h-12a1 1 0 0 1-1-1z"/></svg></button>
-          <button type="button" class="cs-tab" data-cs="plan" aria-pressed="false" aria-label="plan" title="plan — the session plan and its tasks"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 5.5h12M4 10h12M4 14.5h8"/></svg></button>
+        <div class="cs-tabs" role="group" aria-label="session status">
+          <!-- ROUND 180 (operator, TRAE reference): ONE compact strip above the message box.
+               Five icon toggles (tasks · files · queue · background shell · goal), the status
+               label after them, and the panel opens ABOVE. The goal bar and the queue chips
+               no longer take a row of their own: they are BORROWED into the panel, so their
+               actions (verify/pause/edit/delete, ✎/⇢/×) keep working with no second copy.
+               Every icon carries aria-label + title (graphics rule 2), and a second click
+               closes its panel. -->
+          <button type="button" class="cs-tab" data-cs="plan" aria-pressed="false" aria-label="tasks and todos" title="tasks — this session's plan and todo progress"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 5.5h12M4 10h12M4 14.5h8"/></svg></button>
+          <button type="button" class="cs-tab" data-cs="files" aria-pressed="false" aria-label="files this session changed" title="files this session changed — review, diff, approve or reject"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2.75 5.75h5l1.5 2h7.5v7.5a1 1 0 0 1-1 1h-12a1 1 0 0 1-1-1z"/></svg></button>
+          <button type="button" class="cs-tab" data-cs="queue" aria-pressed="false" aria-label="messages waiting to send" title="messages waiting to send — edit, steer or remove them"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 4.75h13v7.5h-7.6l-3.1 2.9v-2.9H3.5z"/><path d="M6.6 7.5h6.8M6.6 10h4.4"/></svg></button>
+          <button type="button" class="cs-tab" data-cs="bg" aria-pressed="false" aria-label="background shell commands" title="background shell commands — what is still running"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="4.5" width="14" height="11" rx="1.6"/><path d="m6.6 8 2 2-2 2M10.6 12h3"/></svg></button>
+          <button type="button" class="cs-tab" data-cs="goal" aria-pressed="false" aria-label="goal" title="goal — objective, progress and actions"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="6.2"/><circle cx="10" cy="10" r="2.1"/><path d="M10 2.4v2M10 15.6v2M2.4 10h2M15.6 10h2"/></svg></button>
+          <span id="csLabel" class="cs-label" aria-live="polite"></span>
           <!-- ROUND 174 (operator: *"li in alto a destra metti l'autogeneration icon IA"*): the
                chat.prompt ✨ moved from the message box to the right end of this strip. -->
           <span id="cmpSpark"></span>
           <button type="button" class="cs-x" id="csClose" aria-label="close the panel" title="close" hidden>✕</button>
         </div>
-        <div class="cs-body" id="csBody" role="region" aria-label="workspace and plan panel" hidden></div>
+        <div class="cs-body" id="csBody" role="region" aria-label="session status panel" hidden></div>
       </div>
       <div id="inpWrap">
         <textarea aria-label="message" id="inp" rows="1" placeholder="Message…" autofocus></textarea>
@@ -7884,7 +7908,14 @@ function _attMark(atts) {
 function renderQueue() {
   const bar = $("queueBar"); if (!bar) return;
   const q = _q();
-  bar.innerHTML = ""; bar.hidden = !q.length;
+  // ROUND 180: the chips are the strip's queue panel, never a row of their own.
+  if (!q.length && _csIsOpen("queue")) _csReturn();
+  bar.innerHTML = "";
+  bar.hidden = !(q.length && _csIsOpen("queue"));
+  if (q.length && _csIsOpen("queue")) {
+    const e = $("csBody") && $("csBody").querySelector(".cs-empty");
+    if (e) e.remove();   // the borrowed chips replace the empty hint
+  }
   refreshSendBtn();   // JAG-463: keep the queue dot on the composer button in sync
   q.forEach((m, i) => {
     const it = _qNorm(m);
@@ -7907,6 +7938,7 @@ function renderQueue() {
     x.onclick = () => { q.splice(i, 1); _qSave(); renderQueue(); };
     chip.appendChild(ed); chip.appendChild(st); chip.appendChild(x); bar.appendChild(chip);
   });
+  _csLabel();   // ROUND 180: the strip follows the queue
 }
 /* The ✎ of a queue chip: the message goes BACK into the composer instead of
    opening a second editor (that is what "editable like the goal" means here), and
@@ -9182,6 +9214,7 @@ function selectSession(s) {
   refreshSendBtn();   // JAG-424: the button mirrors THIS session's running state
   _goalVerdictOpen = false;   // JAG-2: another session's open detail must not carry over
   loadGoal();         // G-1: the Active-goal bar follows the session, from the backend
+  _loadBgJobs();      // ROUND 180: the strip's background-command count follows it too
   loadSlashCatalog(); // v1051: plugins/docs are session-scoped
   _docBarForget();    // v1051c: never carry the previous session's bar, not even for a frame
   loadDocBar();       // v1051: the plan/spec bar follows the session, from the backend
@@ -11957,10 +11990,12 @@ function renderGoal() {
   const g = goalVisible() ? goalRec.goal : null;
   if (!g) {
     bar.hidden = true;
+    if (_csIsOpen("goal")) _csReturn();
     if ($("goalVerdict")) $("goalVerdict").hidden = true;
     if ($("goalVerdictBadge")) $("goalVerdictBadge").hidden = true;
     goalMenuClose();
     goalEditCancel();   // a session without a goal must never keep the editor open
+    _csPaint();         // ROUND 180: the goal icon follows goalVisible()
     return;
   }
   const p = goalRec.progress || {};
@@ -11969,7 +12004,7 @@ function renderGoal() {
   const st = String(goalRec.effective_status || g.status || "");
   const paused = st === "paused";
   const done = st === "completed";
-  bar.hidden = false;
+  bar.hidden = !_csIsOpen("goal");   // ROUND 180: the row lives in the strip's panel only
   bar.classList.toggle("paused", paused);
   bar.classList.toggle("done", done);
   bar.classList.toggle("reopened", st === "reopened");
@@ -11994,6 +12029,7 @@ function renderGoal() {
   if ($("goalEdit")) $("goalEdit").disabled = done;
   if ($("goalDel")) $("goalDel").disabled = false;
   renderGoalVerdict();
+  _csPaint();   // ROUND 180: the strip label + the goal icon's enabled state
 }
 
 /* JAG-1/2: the verdict is the HARNESS's INDEPENDENT check — the acceptance command's
@@ -12535,6 +12571,7 @@ function renderGraph() {
       (_staleGoal ? ' <span class="stale-goal" title="this run started with this goal; the plans above moved on since">· run-start goal</span>' : "") +
       '</summary><div class="goalfull-body">' + esc(_goalFull) + "</div></details>" : "");
   $("taskCount").textContent = (c.done || 0) + "/" + _nodes.length;
+  _csLabel();   // ROUND 180: the strip's "X/Y tasks Completed" follows the plan
   _isum("sPlan", planSummary(c, graph.run_id), (c.todo || c.doing || c.blocked) ? "" : "ok");
   let _olderHtml = "";
   if (_older.length) {
@@ -15732,7 +15769,7 @@ function connectFeed() {
     if (d.session && d.session === sessionId) _turnEnd(d.duration_s);
     setRunning(d.session, false);   // JAG-323: any session's turn ended -> clear its busy marker
     // G-1: a goal turn may have completed (the plan decides) — re-read the bar.
-    if (d.session && d.session === sessionId) loadGoal();
+    if (d.session && d.session === sessionId) { loadGoal(); _loadBgJobs(); }
     // JAG-415: a turn that ended while the user was on ANOTHER session gets the
     // "finished" bell + toast (same mechanism as in-tab turns), so a background
     // agent/team turn is never silently missed.
@@ -20132,49 +20169,204 @@ function toggleInsp(name) {
 /* 2026-11-22 ROUND 171 (operator): *"trae li ha come sovrabar intercambiabile sopra la msg
    box … non distruggere il RH panel, non duplicare codice"*. The bar BORROWS the live
    inspector body (same ids, same renderers, same listeners) and returns it on close, so the
-   Workspace and Plan panels have ONE implementation. */
-const _cs = { key: null, node: null, parent: null, next: null, wasHidden: false };
+   Workspace and Plan panels have ONE implementation.
+   ROUND 180 (operator, TRAE reference): the same bar is now the SESSION STATUS strip —
+   five icon toggles (tasks · files · queue · background shell · goal), a status label,
+   and the panel opens above. `queue` and `goal` borrow their REAL nodes (#queueBar,
+   #goalBar), so edit/steer/remove and verify/pause/edit/delete keep working; `bg` is a
+   compact list read from GET /api/bgjobs. */
+/* `var`, not `const`: renderGoal/renderQueue call `_csPaint()`/`_csLabel()` during boot
+   and the guards below tolerate the pre-initialisation window. */
+var _cs = { key: null, node: null, parent: null, next: null, wasHidden: false };
+const _CS_NODES = { queue: "queueBar", goal: "goalBar" };
+function _csIsOpen(key) { return !!(_cs && _cs.key === key); }
 function _csSec(key) { return document.querySelector('#inspector section[data-insp="' + key + '"]'); }
 function _csPaint() {
+  if (!_cs) return;
   const on = _cs.key;
   document.querySelectorAll("#cmpSuper .cs-tab").forEach(b => {
-    const p = String(b.dataset.cs === on);
-    b.setAttribute("aria-pressed", p);
+    const k = b.dataset.cs;
+    b.setAttribute("aria-pressed", String(k === on));
+    if (k === "goal") {
+      const ok = goalVisible();
+      b.disabled = !ok;
+      b.setAttribute("aria-disabled", ok ? "false" : "true");
+      b.title = ok ? "goal — objective, progress and actions" : "no active goal";
+    }
   });
   const x = $("csClose"); if (x) x.hidden = !on;
+  _csLabel();
+}
+/* One label, one place: the active panel's status, else the most urgent live state
+   (background command > queued message > goal > open tasks). Empty = nothing to say. */
+function _goalStatusText() {
+  if (!goalVisible()) return "";
+  const g = goalRec.goal || {};
+  const st = String(goalRec.effective_status || g.status || "");
+  if (st === "paused") return "Goal paused";
+  if (st === "completed") return "Goal completed";
+  if (st === "reopened") return "Goal reopened";
+  return "Goal active";
+}
+function _taskStatusText(onlyOpen) {
+  const tc = $("taskCount");
+  const t = tc ? String(tc.textContent || "").trim() : "";
+  const m = /^(\d+)\/(\d+)$/.exec(t);
+  if (!m) return "";
+  const done = Number(m[1]), total = Number(m[2]);
+  if (!total) return "";
+  if (onlyOpen && done >= total) return "";
+  return done + "/" + total + " tasks Completed";
+}
+function _filesStatusText() {
+  const b = $("editsBtnBadge");
+  const n = b && !b.hidden ? Number(b.textContent || 0) : 0;
+  return n ? n + (n === 1 ? " file changed" : " files changed") : "no changes";
+}
+function _bgStatusText() {
+  const n = (_bgJobs || []).filter(j => j.running).length;
+  return n ? n + (n === 1 ? " background command running" : " background commands running") : "nothing running";
+}
+function _csLabel() {
+  const el = $("csLabel");
+  if (!el || !_cs) return;
+  const q = _q().length;
+  let txt = "";
+  if (_cs.key === "plan") txt = _taskStatusText(false);
+  else if (_cs.key === "files") txt = _filesStatusText();
+  else if (_cs.key === "queue") txt = q ? q + " waiting to send" : "no messages waiting";
+  else if (_cs.key === "bg") txt = _bgStatusText();
+  else if (_cs.key === "goal") txt = _goalStatusText() || "no goal";
+  else {
+    const bg = _bgStatusText();
+    if (bg !== "nothing running") txt = bg;
+    else if (q) txt = q + " waiting to send";
+    else txt = _goalStatusText() || _taskStatusText(true);
+  }
+  if (el.textContent !== txt) el.textContent = txt;
 }
 function _csReturn() {
-  if (!_cs.node) return;
-  if (_cs.parent) _cs.parent.insertBefore(_cs.node, _cs.next || null);
-  _cs.node.hidden = _cs.wasHidden;
-  const sec = _csSec(_cs.key); if (sec) sec.classList.remove("cs-lent");
+  const key = _cs.key;
+  if (_cs.node) {
+    if (_cs.parent) _cs.parent.insertBefore(_cs.node, _cs.next || null);
+    _cs.node.hidden = _cs.wasHidden;
+  }
+  const sec = key ? _csSec(key) : null; if (sec) sec.classList.remove("cs-lent");
   _cs.key = _cs.node = _cs.parent = _cs.next = null;
   const body = $("csBody"); if (body) { body.hidden = true; body.innerHTML = ""; }
+  if (key === "bg") _bgPollStop();
+  if (key === "queue") renderQueue();
+  if (key === "goal") renderGoal();
   _csPaint();
 }
 function _csOpen(key) {
   if (_cs.key === key) { _csReturn(); return; }
-  const sec = _csSec(key); if (!sec) return;
-  const body = sec.querySelector(".insp-body"); if (!body) return;
+  if (key === "goal" && !goalVisible()) return;
+  if (key === "bg") {
+    _csReturn();
+    _cs.key = "bg";
+    $("csBody").hidden = false;
+    _renderBgPanel();
+    _bgPollStart();
+    _loadBgJobs();
+    _csPaint();
+    return;
+  }
+  let node = null, sec = null;
+  if (_CS_NODES[key]) {
+    node = $(_CS_NODES[key]);
+    if (!node) return;
+  } else {
+    sec = _csSec(key);
+    if (!sec) return;
+    node = sec.querySelector(".insp-body");
+    if (!node) return;
+  }
   _csReturn();
-  _cs.key = key; _cs.node = body; _cs.parent = body.parentNode; _cs.next = body.nextSibling;
-  _cs.wasHidden = body.hidden;
-  sec.classList.add("cs-lent");
-  body.hidden = false;
-  $("csBody").appendChild(body);
+  _cs.key = key; _cs.node = node;
+  _cs.parent = node.parentNode; _cs.next = node.nextSibling; _cs.wasHidden = node.hidden;
+  if (sec) sec.classList.add("cs-lent");
+  node.hidden = false;
+  $("csBody").appendChild(node);
   $("csBody").hidden = false;
+  if (key === "queue" && !_q().length) {
+    const e = document.createElement("div");
+    e.className = "cs-empty";
+    e.textContent = "no messages waiting";
+    $("csBody").appendChild(e);
+  }
+  // The borrowed body must be fresh: the same loaders the inspector itself calls.
+  if (key === "plan") { loadPlan(); loadGraph(); }
+  else if (key === "files") loadEdits();
   _csPaint();
 }
 document.addEventListener("click", e => {
   const tab = e.target.closest && e.target.closest("#cmpSuper .cs-tab");
-  if (tab) { e.preventDefault(); _csOpen(tab.dataset.cs); return; }
+  if (tab) { e.preventDefault(); if (!tab.disabled) _csOpen(tab.dataset.cs); return; }
   const x = e.target.closest && e.target.closest("#csClose");
   if (x) { e.preventDefault(); _csReturn(); }
 });
-/* ROUND 174: the strip carries no summary any more (operator: *"togli il riassunto 4 done,
-   run id"*), so there is nothing to keep in sync with the inspector's line — the
-   MutationObserver that fed it is gone with it. */
+/* ROUND 180: shell background jobs — the strip's "N background commands running" and
+   its panel. One cache, one poll (5 s, visible tab only), no second renderer. */
+var _bgJobs = [], _bgTimer = null;
+async function _loadBgJobs() {
+  if (!sessionId) { _bgJobs = []; _csLabel(); return; }
+  try {
+    const d = await api("GET", "/api/bgjobs?session=" + encodeURIComponent(sessionId));
+    if (d && Array.isArray(d.jobs)) _bgJobs = d.jobs;
+  } catch (e) { /* a strip must never break the chat */ }
+  _csLabel();
+  if (_cs.key === "bg") _renderBgPanel();
+}
+function _bgPollStart() {
+  if (_bgTimer) return;
+  _bgTimer = setInterval(() => {
+    if (document.visibilityState === "visible") _loadBgJobs();
+  }, 5000);
+}
+function _bgPollStop() {
+  if (_bgTimer) { clearInterval(_bgTimer); _bgTimer = null; }
+}
+function _renderBgPanel() {
+  const box = $("csBody");
+  if (!box || _cs.key !== "bg") return;
+  const jobs = _bgJobs || [];
+  const rows = jobs.map((j, i) => {
+    const st = j.running ? Math.round(Number(j.seconds) || 0) + "s"
+      : (j.exit_code == null ? "done" : "exit " + j.exit_code);
+    return '<div class="cs-bgrow">'
+      + '<span class="cs-bgcmd" title="' + _attr(j.command || j.job) + '">' + esc(j.command || j.job) + '</span>'
+      + '<span class="cs-bgmeta">' + esc(st) + '</span>'
+      + '<button type="button" class="ghost" data-bgtail="' + i + '" title="show the end of the log" aria-label="show the log">▸</button>'
+      + (j.running ? '<button type="button" class="ghost" data-bgstop="' + _attr(j.job) + '" title="stop this command">stop</button>' : "")
+      + '</div><pre class="cs-bgtail" data-bgt="' + i + '" hidden>' + esc(j.tail || "") + "</pre>";
+  });
+  box.innerHTML = '<div class="cs-bg">'
+    + (rows.length ? rows.join("") : '<div class="cs-empty">nothing running</div>')
+    + '<div class="cs-bgfoot"><button type="button" class="lnk" data-bgfeed="1">all processes ↗</button></div></div>';
+  box.querySelectorAll("[data-bgtail]").forEach(b => {
+    b.onclick = () => {
+      const t = box.querySelector('[data-bgt="' + b.dataset.bgtail + '"]');
+      if (!t) return;
+      t.hidden = !t.hidden;
+      b.textContent = t.hidden ? "▸" : "▾";
+    };
+  });
+  box.querySelectorAll("[data-bgstop]").forEach(b => {
+    b.onclick = async () => {
+      const r = await api("POST", "/api/bgjobs", { job: b.dataset.bgstop });
+      if (r && r.error && typeof toast === "function") toast("stop: " + r.error, "err");
+      _loadBgJobs();
+    };
+  });
+  const f = box.querySelector("[data-bgfeed]");
+  if (f) f.onclick = () => { _csReturn(); focusInsp("feed"); };
+}
+/* ROUND 174 removed the copied plan summary; ROUND 180 brings a DIFFERENT line — the
+   live status of the selected item (or the most urgent state), owned by `_csLabel`. */
 _csPaint();
+_bgPollStart();   // ROUND 180: the background-command count every 5 s (visible tab only)
+_loadBgJobs();
 function _setAllInspector(open) {
   document.querySelectorAll("#inspector section[data-insp]").forEach(section => {
     const body = section.querySelector(".insp-body");
@@ -22557,6 +22749,7 @@ function _renderEditsList(cur) {
   const box = $("editsList"); if (!box) return;
   const files = (cur && cur.files) || [];
   _setRailBadge("editsBtn", files.length);
+  _csLabel();   // ROUND 180: the strip's "N files changed" follows the list
   $("editsStat").innerHTML = files.length ? (files.length + " file" + (files.length > 1 ? "s" : "") + " · " + _editLine(files)) : "no changes";
   if (!files.length) { box.innerHTML = '<div class="remaining">no changes recorded in this session</div>'; return; }
   box.innerHTML = "";
