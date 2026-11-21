@@ -39,15 +39,18 @@ def check(name, ok, detail=""):
 
 
 # ---- A: one head, one row ----------------------------------------------------
+# 2026-11-22 (round 183): the operator asked for less vertical waste in the sessions
+# rail. The head is one 24px control row, so its metric dropped 36px → 28px.
 check("A1 the two rail heads are declared together and share one height token",
-      ":root { --rail-hd: 36px; --rail-row: 29px;" in UI
+      ":root { --rail-hd: 28px; --rail-row: 29px;" in UI
       and "aside .rail-head, #inspector .insp-tools {" in UI
       and "height: var(--rail-hd)" in UI)
 check("A2 both heads use the same label typography (11px, spaced, uppercase)",
       "aside .rail-head h2, #inspector .insp-tools h2 {" in UI
       and "letter-spacing: .09em" in UI and "text-transform: uppercase" in UI)
 check("A3 the sessions toolbar is a compact strip, not a second band",
-      "aside .rail-tools { gap: 4px; padding: 4px 12px 8px;" in UI
+      # round 183: one 6px strip under the label, starting on the label's own edge.
+      "aside .rail-tools { gap: 4px; padding: 0 0 6px;" in UI
       and "aside .rail-tools .rail-btn { width: 24px; height: 24px;" in UI)
 check("A4 every inspector row uses the shared row height",
       "#inspector .insp-hd {" in UI and "height: var(--rail-row)" in UI
@@ -142,9 +145,11 @@ check("F4 both heads are the SAME frameless label on the rail body",
       # 2026-11-22 (operator, second pass): *"io li toglierei dal frame oltre che
       # allinearli verticalmente"* — the head is a LABEL now: no surface, no border, no
       # radius, both under the same one rule. Re-pointed, not weakened.
+      # round 183: the strip under the sessions label lost its 12px side gutter and
+      # its 8px of air (the operator's "space wasted" pass).
       "aside .rail-head, #inspector .insp-tools {" in UI
       and "background: transparent; border: 0; border-radius: 0;" in UI
-      and "aside .rail-tools { gap: 4px; padding: 4px 12px 8px; border-bottom: 0; }" in UI)
+      and "aside .rail-tools { gap: 4px; padding: 0 0 6px; border-bottom: 0; }" in UI)
 
 print("\n---\nv758: %d/%d PASS" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

@@ -313,11 +313,13 @@
     background: var(--bg); display: flex; flex-direction: column; gap: 10px;
     min-height: 0;
   }
-  /* v629: the rail is organised as named BLOCKS with ONE rhythm (10px between
-     blocks, 8px inside): title row → workspace (new + search + activity +
-     filter) → list. Before, every control carried its own margin, so the panel
-     read as a loose pile of widgets. */
-  aside .rail { display: flex; flex-direction: column; gap: 10px; min-height: 0;
+  /* v629: the rail is organised as named BLOCKS with ONE rhythm: title row →
+     workspace (new + search + activity + filter) → list. Before, every control
+     carried its own margin, so the panel read as a loose pile of widgets.
+     2026-11-22 (operator, round 183): *"thers to much space in session bar and below
+     vert space wasted"* — the 10px block gap was the third layer of the same
+     whitespace (head min-height + head margin + gap). One 6px gap now. */
+  aside .rail { display: flex; flex-direction: column; gap: 6px; min-height: 0;
     flex: 1 1 auto; }
   aside .rail-head { display: flex; align-items: center; min-height: 20px; flex: 0 0 auto; }
   /* v631: ONE tight toolbar row in editor/sidebar rhythm — ＋ · 🔍 · activity ·
@@ -614,19 +616,22 @@
   .fold-tg svg { display: block; transition: transform .15s ease; }
   .fold-tg.is-open svg { transform: rotate(180deg); }
   /* 2026-11-16 (operator): "the collapse icons shall be put in a position that is
-     clear and visible … always used". The fold control now sits NEXT TO the section
-     name — not lost among the panel icons — and reads as a button: bordered, full
-     contrast and a 26px target. It is the same control in both rails. */
-  .hd-left { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
+     clear and visible … always used". The fold control sits NEXT TO the section name,
+     not lost among the panel icons. It is the same control in both rails.
+     2026-11-22 (operator, round 183): *"i dont like the collapse/expand button
+     framed"* — the bordered 26px box read as a widget of its own beside the label.
+     Same place and a 24px target, but NO frame: the glyph carries the state and the
+     hover is the only surface. */
+  .hd-left { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
   aside .rail-head h2 .fold-tg, #inspector .insp-tools h2 .fold-tg {
-    width: 26px; height: 26px; padding: 0; flex: 0 0 auto;
+    width: 24px; height: 24px; padding: 0; flex: 0 0 auto;
     display: inline-flex; align-items: center; justify-content: center;
-    border: 1px solid var(--line-2); border-radius: 7px;
-    background: var(--hover); color: var(--txt); cursor: pointer; }
+    border: 0; border-radius: 6px;
+    background: transparent; color: var(--dim); cursor: pointer; }
   aside .rail-head h2 .fold-tg:hover, #inspector .insp-tools h2 .fold-tg:hover {
-    border-color: var(--acc); color: var(--acc); }
+    background: var(--hover); color: var(--txt); }
   aside .rail-head h2 .fold-tg.is-open, #inspector .insp-tools h2 .fold-tg.is-open {
-    border-color: var(--acc); color: var(--txt); }
+    background: transparent; color: var(--txt); }
   #toolsBar button .ic-slash { opacity: 0; transition: opacity .12s; }
   #toolsBar button.is-off .ic-slash { opacity: 1; }
   @media (prefers-reduced-motion: reduce) {
@@ -3293,7 +3298,8 @@
 
   /* --- sessions rail ---------------------------------------------------- */
   aside { padding: 14px 12px; }
-  aside .rail { gap: 8px; }
+  /* round 183: the block gap lives ONCE (the v629 rhythm above, now 6px). This
+     second `aside .rail { gap: 8px }` was the value that actually won by source order. */
   .rail-head { padding-bottom: 2px; }
   .rail-head h2 { font-size: 12.5px; }
   /* 2026-11-01: 24x24 (WCAG 2.2 AA). Measured before: 22x22 — two pixels short, on the
@@ -3513,14 +3519,17 @@
      So: a 36px head with an 11px letter-spaced label, a 29px section row whose
      summary (`ihd-s`) is the collapsed state's status line, and a drag grip in
      the row's left gutter that appears on hover only. */
-  :root { --rail-hd: 36px; --rail-row: 29px; --rail-x: 10px; }
+  /* 2026-11-22 (round 183): the head is a LABEL on one 24px control row, so 28px is
+     the whole metric — the old 36px held air above and below the label (operator:
+     "thers to much space in session bar and below"). */
+  :root { --rail-hd: 28px; --rail-row: 29px; --rail-x: 10px; }
   /* 2026-11-22 (operator): *"guarda inspector panel e sessions panel non hanno stesso
      margine dal TOP bar … poi io li toglierei dal frame oltre che allinearli"*. The frame
      is GONE: a head is a LABEL on the rail body, not a card. Both rails use the same
      12px gutter (the horizontal padding they already share) and the same anatomy, so
      the two labels sit on the same line and the rows under them start at the same edge. */
   aside .rail-head, #inspector .insp-tools {
-    height: var(--rail-hd); min-height: var(--rail-hd); margin: 0 0 6px;
+    height: var(--rail-hd); min-height: var(--rail-hd); margin: 0;
     padding: 0; gap: 6px;
     background: transparent; border: 0; border-radius: 0;
     display: flex; align-items: center; }
@@ -3532,10 +3541,12 @@
   /* RH-2: the HEAD carries the divider for both rails (see above), so the sessions
      tools strip is a compact row under it with no second hairline — one divider
      per rail, and the same one in both rails. */
-  aside .rail-tools { gap: 4px; padding: 4px 12px 8px; border-bottom: 0; }
+  /* 2026-11-22 (round 183): one 6px strip under the label instead of 12px of air,
+     and no second 12px side gutter: the strip starts on the LABEL's own edge. */
+  aside .rail-tools { gap: 4px; padding: 0 0 6px; border-bottom: 0; }
   aside .rail-tools .rail-btn { width: 24px; height: 24px; border-radius: 5px; }
   aside .rail-tools .runs-bar { padding: 2px 7px; }
-  aside .rail-search { padding: 6px 12px; border-bottom: 1px solid var(--line); }
+  aside .rail-search { padding: 4px 0 6px; border-bottom: 1px solid var(--line); }
   aside .rail-list { margin-top: 0; }
   /* RH-14: the head lives INSIDE the scrolling panel, so it is pinned with
      `position: sticky` — it stays at the top instead of scrolling away with the
@@ -3552,6 +3563,15 @@
   #rail { padding: 0 12px 14px; }
   #aside { padding-top: 12px; }
   #inspector .insp-tools { position: sticky; top: 12px; z-index: 3; margin-top: 12px; }
+  /* 2026-11-22 (round 183, operator's screenshot): *"inspector bar is overlapped in
+     scroll of rh panel"* — the pinned head is a LABEL with no surface (`background:
+     transparent`, see above), so a section scrolling under it showed THROUGH it ("clear
+     decided" printed above the word INSPECTOR). It stays frameless: it just paints the
+     panel's own background under itself and across the 12px gutter above it, which is
+     exactly the strip the scroll used to show in. */
+  #inspector .insp-tools { background: var(--bg); }
+  #inspector .insp-tools::before { content: ""; position: absolute; left: 0; right: 0;
+    top: -12px; height: 12px; background: var(--bg); }
   #inspector section { position: relative; border-bottom: 1px solid var(--line); }
   #inspector section:last-of-type { border-bottom: 0; }
   #inspector .insp-hd {
@@ -3961,7 +3981,7 @@
      the sessions head was `3px 10px 3px 12px` and the inspector `0 10px 0 12px`, so the
      two labels sat 3px apart — the same defect the surface fix addressed, one layer down. */
   aside .rail-head, #inspector .insp-tools { height: auto; min-height: var(--rail-hd);
-    padding-top: 3px; padding-bottom: 3px; }
+    padding-top: 2px; padding-bottom: 2px; }
   aside .rail-head h2, #inspector .insp-tools h2 { flex-wrap: wrap; row-gap: 4px; min-width: 0; }
   aside .rail-head h2 .hd-left { flex: 1 1 auto; min-width: 0; }
   aside .rail-head h2 .hd-name { min-width: 0; overflow: hidden;

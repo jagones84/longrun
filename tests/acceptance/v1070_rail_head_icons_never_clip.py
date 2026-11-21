@@ -12,15 +12,16 @@ default width the row already overflowed the `aside`'s `overflow: hidden` and th
 last buttons were CLIPPED. Two of four were simply not there.
 
 Contract pinned here (source — the browser geometry is measured by hand):
-  A1 the head may grow instead of clipping (height auto, min-height keeps 36px)
+  A1 the head may grow instead of clipping (height auto, min-height keeps the token)
   A2 the row wraps as the fallback, with the icon block `flex: 0 0 auto` so buttons
      can never shrink below their 24px target
   A3 the label is the thing that gives way below 250px (container query), so the
      head is ONE row of controls at the 220px default
   A4 the four buttons keep their 24x24 target (WCAG 2.2 AA) — nothing is shrunk
-  A5 the rule is declared AFTER the RH-2 head block that pins the old one-row 36px
-     geometry (a media/override placed before it would lose)
-  A6 the inspector head is untouched (the change is scoped to the sessions rail)
+  A5 the rule is declared AFTER the RH-2 head block that pins the old fixed-height
+     geometry (an override placed before it would lose)
+  A6 the grow rule is the SHARED one: 2026-11-22 gave both rail heads the same
+     anatomy (the inspector no longer keeps a private fixed height)
 
 Run: python3 tests/acceptance/v1070_rail_head_icons_never_clip.py
 """
@@ -41,13 +42,13 @@ def check(name, ok, detail=""):
 
 RH2 = ("aside .rail-head, #inspector .insp-tools {\n"
        "    height: var(--rail-hd);")
-I = HTML.find("aside .rail-head { height: auto; min-height: var(--rail-hd);")
+I = HTML.find("aside .rail-head, #inspector .insp-tools { height: auto; min-height: var(--rail-hd);")
 CQ = HTML.find("@container rail (max-width: 249px)")
 
 check("A1 the head may grow instead of clipping",
       I > 0 and "height: auto; min-height: var(--rail-hd);" in HTML, "offset=%d" % I)
 check("A2 the row wraps and the icon block cannot shrink",
-      "aside .rail-head h2 { flex-wrap: wrap; row-gap: 4px; min-width: 0; }" in HTML
+      "aside .rail-head h2, #inspector .insp-tools h2 { flex-wrap: wrap; row-gap: 4px; min-width: 0; }" in HTML
       and "aside .rail-head h2 .srail-tools { flex: 0 0 auto; margin-left: auto; }" in HTML
       and "aside .rail-head h2 .srail-tools button { flex: 0 0 auto; }" in HTML, "")
 check("A3 the label yields first below 250px (one row of controls at the 220px default)",
@@ -61,8 +62,9 @@ check("A4 the four panel buttons keep their 24x24 target",
       "")
 check("A5 declared AFTER the RH-2 head block it relaxes",
       I > 0 and RH2 in HTML and I > HTML.find(RH2), "rh2@%d" % HTML.find(RH2))
-check("A6 the inspector head keeps its pinned 36px geometry",
-      RH2 in HTML and "#inspector .insp-tools { height: auto" not in HTML, "")
+check("A6 both rail heads share the grow rule (no private fixed height left)",
+      I > 0 and HTML.count("aside .rail-head, #inspector .insp-tools { height: auto") == 1
+      and "\n  #inspector .insp-tools { height:" not in HTML, "")
 check("A7 the four buttons are still in the DOM, in order",
       all(('id="%s"' % i) in HTML for i in ("railAgents", "railJobs", "railOrg", "railConst"))
       and HTML.find('id="railAgents"') < HTML.find('id="railConst"'), "")

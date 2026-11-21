@@ -7,6 +7,24 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Fixed
+- **The inspector header no longer shows the sections scrolling through it; the fold control
+  loses its frame; the sessions rail stops paying three layers of vertical air.** Operator, with
+  two screenshots: *"see image inspector bar is overlapped in scroll of rh panel. fix."* /
+  *"i dont like the collapse/expand button framed. and there's too much space in session bar and
+  below, vertical space wasted."* (1) The pinned head is a frameless label (`background:
+  transparent`) above a panel that is the scroller, so a section scrolled THROUGH it — the
+  Approvals link printed above the word INSPECTOR. The head now paints the panel's own background
+  under itself and across the 12px gutter above it (`#inspector .insp-tools::before { top:-12px }`):
+  it masks the scroll instead of turning into a card. (2) The fold toggle is a bare 24px glyph
+  beside the section name — no border, no filled surface; hover is the only surface. (3) The
+  sessions rail paid three layers for the same gap: `--rail-hd` 36 → 28px, head bottom margin
+  6 → 0, block gap 10 → 6px (a second `gap: 8px` declared later and winning by source order is
+  gone), tools strip `padding: 4px 12px 8px` → `0 0 6px` starting on the label's own edge, and the
+  search row follows. Measured on the running page at 1440×900: both labels start at y=64, the
+  session list starts at y=134 (70px of chrome under the topbar), and the 12px band above the
+  pinned inspector label is ONE colour (no content bleeding through). Locked by `v1266` (16/16,
+  `UI_GUARD`); `v758` A1/A3/F4 and `v1070` A1/A2/A6 re-pointed to the new metric and to the shared
+  grow rule; badge 951 → 952.
 - **Resuming a goal now STARTS the turn that pursues it.** Operator: *"resume goal shall start
   the LLM to pursuit the goal; when paused simply ignores it and listens the user messages
   coming and does what the user currently asks."* `POST /api/goal {action:"resume"}` used to
