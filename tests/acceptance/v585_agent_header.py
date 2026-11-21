@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""v585 — assistant bubbles are stamped with the answering agent + date/time.
+"""v585 — an ANSWER carries no header; a user turn keeps "YOU"; a delegated turn keeps its
+sender.
 
-Every assistant reply header reads "<agent-id> · LONGRUN" (e.g. A51 · LONGRUN)
-when the session is designated, else plain LONGRUN; the date+time stamp
-(MM-DD HH:MM:SS) rides on every header as before.
+Originally (2026-11-05) every assistant reply was stamped "<agent-id> · LONGRUN". Operator
+(2026-11-22, TRAE screenshots): *"perché devi continuamente scrivere A54 · LONGRUN? a cosa
+serve? rimuovi quella cosa"*. The assistant header is gone; the per-message copy control
+survives on the same line (hover-revealed). A delegated turn still names its sender + subjob,
+because a worker must never look like the operator asked it directly.
 
 Deterministic static guards on webui/index.html.
 """
@@ -22,19 +25,26 @@ def check(name, ok, detail=""):
 
 HTML = open(os.path.join(REPO, "webui", "index.html"), encoding="utf-8").read()
 
-check("A1 agent-label helper exists and reads the session agent",
-      "function _aiLabel()" in HTML and "_agents" in HTML.split("function _aiLabel()")[1][:300]
-      and "sessionId" in HTML.split("function _aiLabel()")[1][:300])
-check("A2 label falls back to plain LONGRUN without designation",
-      '"LONGRUN"' in HTML.split("function _aiLabel()")[1][:400])
-check("A3 chat bubbles use the agent label",
-      "_aiLabel()" in HTML and 'role === "user" ? "YOU" : _aiLabel()' in HTML)
-check("A4 no hardcoded assistant LONGRUN header survives",
-      ">LONGRUN</div><details" not in HTML.replace(" ", "").replace("\n", "")
-      or HTML.count('>LONGRUN</div><details') == 0,
-      "hardcoded assistant headers must all route through _aiLabel()")
-check("A5 date+time stamp still rides on every header",
-      "MM-DD HH:MM:SS" in HTML and "_tsSpan" in HTML)
+check("A1 the assistant label helper is gone (no dead header builder)",
+      "function _aiLabel()" not in HTML and "_aiLabel()" not in HTML)
+check("A2 no hardcoded assistant header survives",
+      '>LONGRUN</div>' not in HTML and "· LONGRUN</div>" not in HTML)
+check("A3 an answer's who line carries ONLY the copy control",
+      'const _label = sender ? (sender + (subjob ? " · " + subjob : ""))' in HTML
+      and ': (role === "user" ? "YOU" : "");' in HTML
+      and 'class="who${_label ? "" : " who-bare"}' in HTML)
+check("A4 a user turn keeps YOU + its date/time stamp",
+      '(role === "user" ? "YOU" : "")' in HTML and "_tsSpan(ts)" in HTML
+      and '(_label ? esc(_label) + _tsSpan(ts) : "")' in HTML)
+check("A5 a delegated turn keeps its sender + subjob attribution",
+      "DELEGATED turn keeps its sender + subjob attribution" in HTML
+      and 'sender + (subjob ? " · " + subjob : "")' in HTML)
+check("A6 the copy control is hover-revealed on an answer, not a permanent row",
+      ".msg.ai .who .copy { opacity: 0; transition: opacity .12s; }" in HTML
+      and ".msg.ai:hover .who .copy, .msg.ai:focus-within .who .copy { opacity: 1; }" in HTML)
+check("A7 the THOUGHT blocks draw no who line at all",
+      '<div class="who">${esc(_aiLabel())}</div><details class="think' not in HTML
+      and HTML.count('<details class="think') >= 3)
 
 print("---")
 passed = sum(results)

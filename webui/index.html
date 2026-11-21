@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#06070c">
-<title>Longrun - DGX Harness</title>
+<title>Longrun</title>
 <!-- JAG-390: PWA. The manifest is injected at boot (setupPWA) so its start_url
      can carry the API token; icons are served from /assets. -->
 <link rel="icon" href="/assets/icon-192.png">
@@ -95,8 +95,15 @@
   /* 2026-11-21 (operator): the composer's own saturation ring — a tiny, NUMBERLESS
      circle to the LEFT of the model name, sharing the rail's ring geometry (`.mring`
      + `_ringCircles`). Colour only: green < 50%, amber < 70%, red ≥ 70%. */
-  .cmp-ctx { flex: 0 0 auto; display: inline-flex; align-items: center;
-    margin-right: 2px; cursor: help; }
+  /* 2026-11-22 (operator): *"se clicco sul cerchio del contesto … non succede nulla"*. The
+     ring was a 13px span with `cursor: help` — a near-miss target with no affordance. It is
+     a real BUTTON now with a 24x24 hit area around the same 13px ring, so the click that
+     opens the popover is the click that lands on the control. */
+  .cmp-ctx { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
+    width: 24px; height: 24px; padding: 0; margin-right: 2px; border: 0; border-radius: 6px;
+    background: none; color: inherit; cursor: pointer; }
+  .cmp-ctx:hover { background: var(--hover); }
+  .cmp-ctx:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .cmp-ctx[hidden] { display: none; }
   .cmp-ctx .mring { width: 13px; height: 13px; }
   .cmp-ctx .mring .mtrk { stroke-width: 4.5; }
@@ -953,6 +960,13 @@
   .msg .who { font-size: 10px; letter-spacing: .12em; color: var(--dim); margin-bottom: 5px;
     text-transform: uppercase; }
   .msg.user .who { color: var(--acc); }
+  /* 2026-11-22 (operator): *"perché devi continuamente scrivere A54 · LONGRUN?"* — an
+     answer carries NO header. The copy control survives on the same line, right-aligned
+     and revealed only on hover/focus, so the answer starts where TRAE's does. */
+  .msg.ai .who { justify-content: flex-end; min-height: 24px; margin-bottom: 2px; }
+  .msg.ai.deleg .who { justify-content: flex-start; }
+  .msg.ai .who .copy { opacity: 0; transition: opacity .12s; }
+  .msg.ai:hover .who .copy, .msg.ai:focus-within .who .copy { opacity: 1; }
   /* 2026-11-22 ROUND 169 (operator): *"anche risposte LLM no vanno in frame, manco messaggi
      utente"*. A message is TEXT, not a box: the small label says who speaks, and the body
      sits in the log column with the normal message typography. A user prompt keeps ONE
@@ -4171,7 +4185,7 @@
           <!-- 2026-11-21 (operator): a tiny, numberless saturation ring LEFT of the model
                name. It reuses the rail's ring geometry (`_ringCircles`) and is painted by
                `_setCmpRing` — green / amber / red, no percentage. -->
-          <span class="cmp-ctx" id="cmpCtx" title="context saturation" hidden></span>
+          <button type="button" class="cmp-ctx" id="cmpCtx" aria-label="context details" aria-haspopup="dialog" title="context details" hidden></button>
           <div class="model-wrap">
           <button class="ghost model-btn" id="model-btn" title="choose the LLM for this chat"><span class="mname">model</span> <span class="mc">▾</span></button>
           <div id="modelMenu" hidden></div>
@@ -6392,16 +6406,12 @@ function _tsSpan(ts) {
   const txt = p(d.getMonth() + 1) + "-" + p(d.getDate()) + " " + p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds());
   return '<span class="mts" title="' + esc(d.toString()) + '">' + txt + "</span>";
 }
-/* Assistant bubbles are stamped with the answering org-agent ("A51 · LONGRUN")
-   when the current session is designated, else plain "LONGRUN". The date+time
-   already rides on _tsSpan. */
-function _aiLabel() {
-  try {
-    const a = (_agents || {})[sessionId];
-    const id = a && (a.id || a.name);
-    return id ? (id + " · LONGRUN") : "LONGRUN";
-  } catch (e) { return "LONGRUN"; }
-}
+/* 2026-11-22 (operator): *"perché devi continuamente scrivere A54 · LONGRUN? a cosa serve?
+   rimuovi quella cosa"* — TRAE stamps nothing above an answer. The assistant header is
+   GONE: an answer is just its text. A user turn keeps its "YOU" label (it is how the prompt
+   is told apart), and a DELEGATED turn keeps its sender + subjob attribution (a worker must
+   never look like the operator asked it directly). The per-message copy button survives,
+   revealed on hover, so the new line costs no vertical space when nobody is looking. */
 function who(role, text, ts, sender, subjob, chapter, senderSession, rawText) {
   const d = document.createElement("div");
   d.className = "msg " + (role === "user" ? "user" : "ai") + (sender ? " deleg" : "");
@@ -6411,9 +6421,10 @@ function who(role, text, ts, sender, subjob, chapter, senderSession, rawText) {
   // ("A8 (Master) · J6.1") instead of "YOU" — a worker must never look like the
   // operator asked it directly.
   const _label = sender ? (sender + (subjob ? " · " + subjob : ""))
-                        : (role === "user" ? "YOU" : _aiLabel());
-  d.innerHTML = `<div class="who">${esc(_label)}` +
-    _tsSpan(ts) + `<button class="copy" title="copy message">⧉</button></div><div class="bubble"></div>`;
+                        : (role === "user" ? "YOU" : "");
+  d.innerHTML = `<div class="who${_label ? "" : " who-bare"}">` +
+    (_label ? esc(_label) + _tsSpan(ts) : "") +
+    `<button class="copy" title="copy message">⧉</button></div><div class="bubble"></div>`;
   // 2026-11-16: ↻ re-runs THIS request. It sends the model-facing text (the stored
   // raw, attachments included) and keeps the clean text as the bubble, so a retry
   // never dumps the attachment preamble into the chat. Only a REAL request gets
@@ -6968,7 +6979,7 @@ function ensureThink() {
     // 2026-11-22 (operator): the reasoning block is the ONE framed surface in the chat
     // (TRAE's "Thought"): a card with a header whose dot PULSES while it streams — the
     // state animates in place, the word never changes.
-    d.innerHTML = `<div class="who">${esc(_aiLabel())}</div><details class="think live"><summary><span class="tc-ic" aria-hidden="true">${TOOL_SVG.thought}</span>Thought<span class="tdot"></span></summary><div class="t"></div></details>`;
+    d.innerHTML = `<details class="think live"><summary><span class="tc-ic" aria-hidden="true">${TOOL_SVG.thought}</span>Thought<span class="tdot"></span></summary><div class="t"></div></details>`;
     // JAG-219b: keep the chain-of-thought ABOVE its answer regardless of which
     // channel streams first. A reasoning-first model put it above the answer, but
     // when the answer arrived first the CoT was appended BELOW — the position
@@ -7501,7 +7512,7 @@ function harnessDrop(d) {
 function renderThink(text) {
   if (!text) return;
   const d = document.createElement("div"); d.className = "msg ai";
-  d.innerHTML = `<div class="who">${esc(_aiLabel())}</div><details class="think"><summary><span class="tc-ic" aria-hidden="true">${TOOL_SVG.thought}</span>Thought</summary><div class="t"></div></details>`;
+  d.innerHTML = `<details class="think"><summary><span class="tc-ic" aria-hidden="true">${TOOL_SVG.thought}</span>Thought</summary><div class="t"></div></details>`;
   d.querySelector(".t").textContent = text;
   _logAppend(d); scroll();
 }
@@ -9473,7 +9484,8 @@ function _setCmpRing(pct) {
   _cmpRing = lvl;
   el.hidden = false;
   el.className = "cmp-ctx " + lvl;
-  el.title = "context saturation: " + Math.round(p) + "% of this model's window";
+  el.title = "context details · " + Math.round(p) + "% of this model's window";
+  el.setAttribute("aria-label", "context details: " + Math.round(p) + "% of this model's window");
   el.innerHTML = '<svg class="mring" viewBox="0 0 36 36" aria-hidden="true">'
     + _ringCircles(' id="cmpCtxRing"', p) + '</svg>';
 }
@@ -9524,6 +9536,9 @@ function _ctxCardHTML(d) {
     '</div>';
 }
 function _ctxPopover() {
+  // 2026-11-22: a stale element reference made the toggle a no-op (it thought the popover
+  // was open and "closed" a node no longer in the document). Trust the DOM, not the flag.
+  if (_ctxPopEl && !document.body.contains(_ctxPopEl)) _ctxPopEl = null;
   if (_ctxPopEl) { _closeCtxPop(); return; }
   const d = _ctxDisplay || {};
   const pop = document.createElement("div");
@@ -9543,7 +9558,14 @@ document.addEventListener("click", e => {
   if (_ctxPopEl && !_ctxPopEl.contains(e.target)
       && !(e.target.closest && e.target.closest("#cmpCtx"))) _closeCtxPop();
 });
-{ const _cc = $("cmpCtx"); if (_cc) { _cc.onclick = _ctxPopover; _cc.style.cursor = "pointer"; } }
+/* 2026-11-22 (operator): the ring opens the card on a DELEGATED click, so a re-rendered
+   composer can never leave the control without a handler. */
+document.addEventListener("click", e => {
+  const onRing = e.target && e.target.closest && e.target.closest("#cmpCtx");
+  if (!onRing) return;
+  e.preventDefault();
+  _ctxPopover();
+});
 /* 2026-11-16 (operator): the message COUNT is gone from the rail — it cost the width
    the ctx ring needs beside the A-id. Only the compact last-use age remains ("46m",
    "4h", "2d"); the full sentence ("215 messages · last used 46 min") stays in the
@@ -10379,7 +10401,7 @@ async function loadHistory() {
       if (cot) {
         // JAG-240: the CoT belongs ABOVE its answer, exactly like the live stream.
         const t = document.createElement("div"); t.className = "msg ai";
-        t.innerHTML = `<div class="who">${esc(_aiLabel())}` + _tsSpan(m.ts) + `</div><details class="think"><summary><span class="tc-ic" aria-hidden="true">${TOOL_SVG.thought}</span>Thought</summary><div class="t"></div></details>`;
+        t.innerHTML = `<details class="think"><summary><span class="tc-ic" aria-hidden="true">${TOOL_SVG.thought}</span>Thought</summary><div class="t"></div></details>`;
         t.querySelector(".t").textContent = cot;
         if (d && d.parentNode) d.parentNode.insertBefore(t, d); else _logAppend(t);
       }
@@ -14646,7 +14668,7 @@ function clearDone(sid) {
 }
 function updateDoneTitle() {
   const n = Object.keys(doneSessions).length;
-  const base = "⚡ Longrun — DGX Harness";
+  const base = "Longrun";
   document.title = n ? "(" + n + ") 🔔 " + base : base;
 }
 function showDoneToast(sid) {

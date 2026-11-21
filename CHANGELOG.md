@@ -126,6 +126,19 @@ All notable changes to Longrun are documented here. The format follows
   browser-rebuilt `/data/sessions/<id>.json` would be a guess.) Locked by `v1067` A1–A6, B1–B10.
 
 ### Changed
+- **The tab is just "Longrun", an answer carries no agent label, and the composer context ring opens the
+  compact context card.** Operator: *"perché si chiama longrun dgx harness? non si può chiamare solo longrun?"*;
+  *"perché devi continuamente scrivere A54 · LONGRUN? a cosa serve? rimuovi quella cosa"*; *"se clicco sul cerchio
+  del contesto in msg box si deve aprire un menu coi dettagli contesto e con la possibilità di compattare,
+  simile al RH panel ma più succinto — adesso se clicco non succede nulla."* The document title and the runtime
+  `updateDoneTitle()` both read **Longrun** (the boot helper used to overwrite the tab with "⚡ Longrun — DGX
+  Harness"). `_aiLabel()` is deleted: a user turn keeps its "YOU" label and a delegated turn keeps its
+  sender + subjob, while an answer is just its text — the copy control survives on the same line, revealed on
+  hover. The three Thought builders draw no header line. The context ring is a real `<button>` with a 24×24
+  hit area around the same 13px ring, a delegated click handler (a re-rendered composer cannot leave it dead),
+  a stale-node guard in the toggle, and the SAME context card as the `/context` window and the inspector —
+  with `compact` (one compaction door) and `settings`. Locked by `v1254` (11/11) and the rewritten `v585`
+  (7/7).
 - **One transcript rhythm — dotted rail, aligned 28px rows, no chevrons, plain "harness" row, frameless
   messages, edits that open their diff.** Operator, with TRAE screenshots: *"le cose non sono allineate …
   thought non è tutto nel block … harness è disallineato e diverso dagli altri … la freccetta per espandere
