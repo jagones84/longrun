@@ -40,7 +40,7 @@ All notable changes to Longrun are documented here. The format follows
   boundary average 56.7% after compaction (best 68.5%), with omissions causing repeated work and
   distortions early termination. arXiv:2611.26346 (a branch can pass while the merge fails),
   arXiv:2611.26427 (pruning loses evidence) and arXiv:2611.25583 (content is not causal) bound the
-  claim: this checks retention, never salience. Locked by `v1255` (22/22); battery 954/954.
+  claim: this checks retention, never salience. Locked by `v1255` (24/24); battery 954/954.
 - **A turn's report is audited against its own record, and a label travels with the file.**
   Round 164 reads four papers from the 2026-11-19 batch in full and lands two capabilities at
   live seams. (1) `harness/work_report.py` extracts the checkable claims of the final text
@@ -55,9 +55,32 @@ All notable changes to Longrun are documented here. The format follows
   Source: arXiv:2611.25599 (Tether) — one rule over declared paths, not its syscall guarantee.
   LoopRoute (arXiv:2611.25363) is parked: the selector is already the LLM.
   Pandora's Toolbox (arXiv:2611.25325) bounds the claim: enforcement, never verification.
-  Locked by `v1250` (28/28); battery 953/953.
+  Locked by `v1250` (32/32); battery 953/953.
 
 ### Fixed
+- **Review follow-up on rounds 164–165: every ledger line stays valid JSON, a URL is not a local
+  path, and a concise task is still the task.** Four defects an external review raised against the
+  round-164/165 commit, each now pinned by the test that used to miss it.
+  (1) `stores.append_report_audit` / `append_compaction_audit` bounded an oversized record by
+  slicing the *serialised* text at 8000 chars, which can cut a JSON string and leave a line
+  `json.loads` rejects — the append-only contract broken for every later reader. Both now go through
+  one `_bounded_json`: it shrinks the string leaves (shape and types kept) and falls back to the
+  identifying fields only when still too large, so the line is always parseable (`v1250` C3,
+  `v1255` D3).
+  (2) `harness/effect_state.py` treated a URL's path segment as a filesystem path, so
+  `curl https://api.example.com/secret` and an `http.fetch` whose URL ends in `token.json` were
+  refused with no prior read. URLs are now stripped before the local-path test; a tainted local file
+  beside a sensitive-looking URL is still blocked (`v1250` B9–B11).
+  (3) `compaction_brief._task` dropped any user turn shorter than 40 chars, so a concise instruction
+  ("Fix the crash in src/x.py") produced no task anchor at all and no carry-forward — the exact case
+  the feature exists for. The gate is gone; a substantive turn still wins over an opening
+  acknowledgement, and `[harness]` turns stay excluded (`v1255` A7).
+  (4) The review's claim that structured file tools copy without propagating taint was checked
+  against the live catalogue: there is no `fs.copy`/`fs.move` among the 165 tools and `fs.write`
+  carries no source path, so no such bypass is reachable today. Recorded as the module's written
+  limit (and the condition to revisit) instead of adding dead propagation code.
+  Evidence: `v1250` **32/32**, `v1255` **24/24**; targeted gate (`v1250`, `v1255`, `v1152`, `v1077`,
+  `v1252` + 36 UI guard) **41/41 GREEN**.
 - **The inspector header no longer shows the sections scrolling through it; the fold control
   loses its frame; the sessions rail stops paying three layers of vertical air.** Operator, with
   two screenshots: *"see image inspector bar is overlapped in scroll of rh panel. fix."* /

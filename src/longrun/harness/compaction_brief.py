@@ -44,14 +44,25 @@ def _key(text, words=8):
 
 
 def _task(messages):
+    """The user's task: the first substantive turn, else the first real one.
+
+    No length gate: a concise instruction ("Fix the crash in src/x.py") is
+    exactly the work a compaction must not lose. A substantive turn still wins
+    so an opening "hi" does not shadow it; the `[harness]` marker already keeps
+    an injected turn out.
+    """
+    first = ""
     for msg in messages or []:
         if not isinstance(msg, dict) or msg.get("role") != "user":
             continue
         body = str(msg.get("content") or "").strip()
-        if len(body) < 40 or body.lstrip().startswith(HARNESS):
+        if not body or body.lstrip().startswith(HARNESS):
             continue
-        return body
-    return ""
+        if len(body) >= 40:
+            return body
+        if not first:
+            first = body
+    return first
 
 
 def _constraints(task, cap=3):

@@ -83,6 +83,13 @@ check("A5 mechanical paths are not duplicated here (context_engine owns them)",
       "path" not in kinds, kinds)
 check("A6 no task means no anchors",
       cb.anchors([{"role": "user", "content": "[harness] x"}], [])["anchors"] == [])
+# 2026-11-22 (review): the old 40-char gate dropped a concise instruction — exactly
+# the task the feature exists to carry — so it produced no anchor at all.
+SHORT = "Fix the crash in src/x.py."
+sr = cb.anchors([{"role": "user", "content": SHORT}], [])
+check("A7 a concise task is still the anchor (no length gate)",
+      bool(sr["anchors"]) and sr["anchors"][0]["kind"] == "task"
+      and sr["anchors"][0]["text"] == SHORT, json.dumps(sr["anchors"])[:160])
 
 # ── B · the audit ───────────────────────────────────────────────────────────
 GOOD = [{"role": "system", "content":
@@ -127,8 +134,21 @@ check("D1 the audit lands in a per-session jsonl",
 rows = [json.loads(x) for x in open(p, encoding="utf-8") if x.strip()]
 check("D2 the row keeps the verdict and a timestamp",
       rows and rows[0]["verdict"] == "lossy" and "ts" in rows[0])
+# 2026-11-22 (review): a large audit must stay valid JSONL — the old bound sliced
+# the serialised text and could split a string.
+big = {"verdict": "lossy", "anchors": 3,
+       "missing": [{"kind": "task", "text": "z" * 5000} for _ in range(10)]}
+p = stores.append_compaction_audit(SID, big)
+lines = [x for x in open(p, encoding="utf-8") if x.strip()]
+try:
+    parsed = [json.loads(x) for x in lines]
+except Exception:  # noqa: BLE001 — the point of the check
+    parsed = []
+check("D3 a large record is still valid JSONL, never a byte slice",
+      len(parsed) == len(lines) and parsed[-1].get("truncated") is True,
+      "%d lines, %d parsed" % (len(lines), len(parsed)))
 stores._purge_session_artifacts(SID)
-check("D3 the ledger joins the delete cascade", not os.path.exists(p))
+check("D4 the ledger joins the delete cascade", not os.path.exists(p))
 
 # ── E · the forge group ────────────────────────────────────────────────────
 import subprocess  # noqa: E402

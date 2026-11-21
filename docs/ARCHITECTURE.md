@@ -802,7 +802,11 @@ Four papers from the 2026-11-19 batch, read in full, each landed as one capabili
   after it. `harness/effect_state.py` keeps one taint set per session, propagates
   it through `cp`/`mv`/redirection and refuses an egress that NAMES a tainted
   path before dispatch (`forge.py effectstate check|trace`). It claims one rule
-  over declared paths, not Tether's syscall-verified guarantee.
+  over declared paths, not Tether's syscall-verified guarantee. A URL is never a
+  local path, so its segment reading `/secret` or `/token.json` is not a
+  sensitive file and does not block legitimate egress; and because the catalogue
+  has no structured copy/move tool (165 tools), `cp`/`mv` are the only copy
+  carriers today.
 - **A loop is a routing signal** (arXiv:2611.25363, LoopRoute): τ=2 interception
   plus a bounded takeover beats suppression alone. Recorded as P3 and parked:
   longrun's selector is already the LLM, so there is no stronger policy to hand
@@ -824,7 +828,9 @@ boundaries.
   mechanical block does not carry — the task statement, its hard constraints, the last failure —
   audits the compacted list, writes `<sid>.compactions.jsonl`, and appends one bounded carry-forward
   block to the summary when a critical anchor is gone (`forge.py compaction anchors|audit`).
-  `context_engine.anchors_block` still owns paths/commands/pins; this does not duplicate it.
+  There is no length gate on the task: a concise instruction is still the work the continuation
+  must recover (a substantive turn, when present, wins). `context_engine.anchors_block` still owns
+  paths/commands/pins; this does not duplicate it.
 - **A passing branch is not a passing merge** (arXiv:2611.26346, ClonAct): isolated branches pass
   90.0% of true-conflict pairs and the blind merge reaches 33.3%; the scheduler has no worktree
   merge, so no gate is proposed. **Pruning loses evidence** (arXiv:2611.26427, MemFolder): folding

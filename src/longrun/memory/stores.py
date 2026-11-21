@@ -1608,6 +1608,43 @@ def compaction_audit_path(sid):
     return os.path.join(SESSIONS_DIR, "%s.compactions.jsonl" % sid)
 
 
+def _shrink_json(value, cap):
+    """Copy `value` with every string cut to `cap` chars (shape and types kept)."""
+    if isinstance(value, str):
+        return value[:cap]
+    if isinstance(value, list):
+        return [_shrink_json(v, cap) for v in value]
+    if isinstance(value, dict):
+        return {k: _shrink_json(v, cap) for k, v in value.items()}
+    return value
+
+
+def _bounded_json(row, limit=8000):
+    """Serialise ONE valid JSON object no longer than `limit` characters.
+
+    Never slices the serialised text: a byte cut can split a string and leave a
+    line `json.loads` rejects, which breaks the append-only contract for every
+    later reader. Instead the string leaves are shortened and, only if that is
+    still too large, the record falls back to its identifying fields — so each
+    line stays parseable.
+    """
+    try:
+        body = json.dumps(row, ensure_ascii=False, default=str)
+    except Exception:  # noqa: BLE001 — a value that cannot be serialised
+        body = ""
+    if 0 < len(body) <= limit:
+        return body
+    row = dict(row or {})
+    row["truncated"] = True
+    for cap in (512, 256, 128, 64, 32, 16, 8, 4, 2, 1, 0):
+        body = json.dumps(_shrink_json(row, cap), ensure_ascii=False, default=str)
+        if len(body) <= limit:
+            return body
+    minimal = {k: row.get(k) for k in ("ts", "turn", "session", "verdict", "truncated")
+               if k in row}
+    return json.dumps(minimal, ensure_ascii=False, default=str)
+
+
 def append_compaction_audit(sid, record):
     """Append one `compaction_brief.audit` record; fail-open, bounded body."""
     try:
@@ -1616,11 +1653,7 @@ def append_compaction_audit(sid, record):
             return ""
         row = dict(record)
         row.setdefault("ts", round(time.time(), 3))
-        body = json.dumps(row, ensure_ascii=False, default=str)
-        if len(body) > 8000:
-            row["missing"] = (row.get("missing") or [])[:8]
-            row["truncated"] = True
-            body = json.dumps(row, ensure_ascii=False, default=str)[:8000]
+        body = _bounded_json(row)
         _ensure_dirs()
         with open(path, "a", encoding="utf-8") as fh:
             fh.write(body + "\n")
@@ -1650,11 +1683,9 @@ def append_report_audit(sid, record):
         row = dict(record)
         row.setdefault("ts", round(time.time(), 3))
         row.setdefault("turn", os.path.basename(str(sid)))
-        body = json.dumps(row, ensure_ascii=False, default=str)
-        if len(body) > 8000:
-            row.pop("rows", None)
-            row["truncated"] = True
-            body = json.dumps(row, ensure_ascii=False, default=str)[:8000]
+        # `_bounded_json` shrinks the detail instead of slicing the line, so the
+        # row stays valid JSON for every later reader.
+        body = _bounded_json(row)
         _ensure_dirs()
         with open(path, "a", encoding="utf-8") as fh:
             fh.write(body + "\n")
