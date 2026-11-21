@@ -69,7 +69,7 @@ v1253_transcript_rhythm_harness_and_diff v1254_title_and_context_ring
 v1255_typography_superbar_and_links v1256_context_ring_spark_bar_rows v1257_dropup_header_and_filter_sheet
 v1258_compact_strip_hover_id_and_name v1259_rail_density_and_themed_select
 v1260_context_card_and_filter_menu v1261_clean_stream_and_rules_folder
-v1262_composer_status_strip"
+v1262_composer_status_strip v1263_market_detail_and_origin"
 
 # TARGETED run (the fix under test): `LONGRUN_BATTERY_TESTS="v753_x v750_y"` runs
 # ONLY those files (plus the UI guard below). The launcher is tests/battery_tmp.sh,

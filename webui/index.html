@@ -1800,6 +1800,36 @@
     text-align: center; color: var(--dim); font-size: 12.5px; line-height: 1.6; }
   .mkt-empty code { background: var(--bg-2); border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; }
   .mkt-warn { color: #e0b45a; font-size: 10.5px; font-weight: 600; margin-left: 6px; }
+  /* 2026-11-21 (operator: *"le descrizioni sono tutte tagliate: cliccando un tasto
+     devo poter vedere la descrizione completa … se no portarmi all'URL della pagina
+     d'origine"*). The card stays a SCAN row (two clamped lines); the card itself is
+     clickable and the ⓘ button is the keyboard path. The detail reads the copy whole
+     and opens the publisher's page when the catalogue names one — the same split
+     Trae's shelf uses (grid scans, detail reads). */
+  .mkt-card[data-item] { cursor: pointer; }
+  .mkt-card[data-item]:hover { background: var(--panel2); border-color: var(--line-2); }
+  .mkt-act .mkt-open { padding: 0 7px; height: 24px; min-height: 24px; line-height: 1; }
+  #mktDetailWin { width: min(92vw, 760px); max-height: min(84vh, 780px);
+    display: flex; flex-direction: column; overflow: hidden; }
+  .mkt-dlg-hd { display: flex; align-items: flex-start; gap: 9px; min-width: 0; }
+  .mkt-dlg-hd .mkt-ico { margin-top: 1px; }
+  .mkt-dlg-hd b { font-size: 14px; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; min-width: 0; }
+  .mkt-dlg-x { margin-left: auto; flex: 0 0 auto; }
+  .mkt-dlg-body { overflow: auto; min-height: 0; }
+  .mkt-dlg-desc { margin: 10px 0 12px; font-size: 12.5px; line-height: 1.6;
+    color: var(--txt); white-space: pre-wrap; word-break: break-word; }
+  .mkt-dlg-desc[data-empty="1"] { color: var(--dim); font-style: italic; }
+  .mkt-dlg-meta { display: grid; grid-template-columns: max-content minmax(0, 1fr);
+    gap: 4px 14px; margin: 0; font-size: 11.5px; }
+  .mkt-dlg-meta dt { color: var(--dim); text-transform: uppercase; letter-spacing: .06em;
+    font-size: 9.5px; font-weight: 700; padding-top: 2px; }
+  .mkt-dlg-meta dd { margin: 0; min-width: 0; word-break: break-word; }
+  .mkt-dlg-mem { margin: 0; padding: 0; list-style: none; }
+  .mkt-dlg-src { display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 11.5px; }
+  .mkt-dlg-src a { color: var(--acc); }
+  .mkt-dlg-src .mkt-dlg-note { color: var(--dim); font-size: 10.5px; }
   .art-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
     margin-bottom: 14px; min-height: 30px; }
   .art-title { margin: 0; font-size: 15px; font-weight: 650; letter-spacing: .01em; }

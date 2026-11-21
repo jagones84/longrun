@@ -208,15 +208,24 @@ function card(item, have) {
     ? `<button class="ghost" disabled title="${esc(why)}">Installed</button>`
     : `<button class="ghost mkt-install" data-id="${esc(item.id)}" ${item.installable ? "" : "disabled"}
          title="${esc(reason || "install " + item.title)}">Install</button>`;
-  return `<article class="mkt-card" data-kind="${esc(item.kind)}">
+  const info = infoBtn(item);
+  return `<article class="mkt-card" data-kind="${esc(item.kind)}" data-item="${esc(item.id)}">
     <div class="mkt-ico" aria-hidden="true">${icon}</div>
     <div class="mkt-body">
       <div class="mkt-name">${esc(item.title)}</div>
       <div class="mkt-desc">${esc(item.description || KIND_LABEL[item.kind] || "")}</div>
       <div class="mkt-meta" title="${esc(bits.join(" \u00b7 ") + (memberTip ? " \u00b7 " + memberTip : ""))}">${badge} ${esc(bits.join(" \u00b7 ") || KIND_LABEL[item.kind] || "")}</div>
     </div>
-    <div class="mkt-act">${act}</div>
+    <div class="mkt-act">${info}${act}</div>
   </article>`;
+}
+
+/* The detail opener — the keyboard path to the copy the card clamps (the card
+   itself is clickable too). A name here, per WebUI graphics rule 2. */
+function infoBtn(item) {
+  return `<button class="ghost mkt-open" data-item-open="${esc(item.id)}"
+    aria-label="full description and source of ${esc(item.title)}"
+    title="full description \u00b7 source page">\u24D8</button>`;
 }
 
 function manageRow(rec, st) {
@@ -342,14 +351,14 @@ function onlineCard(item) {
   const badge = originBadge("online", "Online");
   const bits = [item.publisher, item.version && "v" + item.version, item.license]
     .filter(Boolean).map(esc).join(" \u00b7 ");
-  return `<article class="mkt-card" data-kind="${esc(item.kind)}">
+  return `<article class="mkt-card" data-kind="${esc(item.kind)}" data-item="${esc(item.id)}">
     <div class="mkt-ico" aria-hidden="true">${KIND_ICON[item.kind] || "\u25CB"}</div>
     <div class="mkt-body">
       <div class="mkt-name">${esc(item.title)}</div>
       <div class="mkt-desc">${esc(item.description || "")}</div>
       <div class="mkt-meta" title="found online \u2014 not in the local catalogue yet">${badge} ${bits}</div>
     </div>
-    <div class="mkt-act"><button class="ghost mkt-import-remote"
+    <div class="mkt-act">${infoBtn(item)}<button class="ghost mkt-import-remote"
       data-source="${esc(state.onlineSource)}" data-slug="${esc(item.name)}"
       title="download it once, pin its digest, then install it">Import</button></div>
   </article>`;
@@ -513,6 +522,114 @@ async function remove(id, files) {
   await load();
 }
 
+/* ── the detail: the copy whole, plus the publisher's page ──────────────── */
+
+/* A catalogue row clamps its description to two lines (`-webkit-line-clamp`), which
+   is right for scanning and useless for deciding. The detail is the reading surface:
+   the SAME `item.description` (the catalogue copy, never re-summarised here), every
+   field the entry carries, and the origin page when one is published. The link is
+   rendered only for http(s) — a remote registry is untrusted input. */
+function _httpUrl(u) { return /^https?:\/\//i.test(String(u || "")); }
+
+function _hostOf(u) {
+  try { return new URL(u).host.replace(/^www\./, ""); }
+  catch (_) { return String(u || ""); }
+}
+
+function _itemById(id) {
+  return (state.items || []).find(i => i.id === id)
+    || (state.online || []).find(i => i.id === id) || null;
+}
+
+function _row(label, value) {
+  return value ? `<dt>${esc(label)}</dt><dd>${value}</dd>` : "";
+}
+
+function _serverLine(item) {
+  const s = item.server || {};
+  if (Array.isArray(s.command) && s.command.length) return `<code>${esc(s.command.join(" "))}</code>`;
+  if (s.url) return `<code>${esc(s.url)}</code>`;
+  return "";
+}
+
+function _srcBlock(item) {
+  const home = String(item.homepage || "");
+  const dl = String((item.source || {}).url || "");
+  const path = String((item.source || {}).path || "");
+  const parts = [];
+  if (_httpUrl(home)) {
+    parts.push(`<a href="${esc(home)}" target="_blank" rel="noopener noreferrer"
+      title="open the publisher's page in a new tab">origin page \u2197 ${esc(_hostOf(home))}</a>`);
+  }
+  if (_httpUrl(dl) && dl !== home) {
+    parts.push(`<a href="${esc(dl)}" target="_blank" rel="noopener noreferrer"
+      title="the artifact this install downloads \u2014 not a page">artifact \u2197</a>`);
+  }
+  if (path) parts.push(`<span class="mkt-dlg-note">local: ${esc(shortHome(path))}</span>`);
+  if (!parts.length) parts.push(`<span class="mkt-dlg-note">no source page published</span>`);
+  return `<div class="mkt-dlg-src">${parts.join("")}</div>`;
+}
+
+let _dlgReturn = null;
+
+function closeDetail() {
+  const back = el("mktDetailBack"), win = el("mktDetailWin");
+  if (back) back.remove();
+  if (win) win.remove();
+  const back2 = _dlgReturn;
+  _dlgReturn = null;
+  if (back2 && back2.focus) { try { back2.focus(); } catch (_) {} }
+}
+
+function openDetail(id) {
+  const item = _itemById(id);
+  if (!item) return;
+  closeDetail();
+  _dlgReturn = document.activeElement;
+  const desc = String(item.description || "");
+  const members = (item.members || []).length
+    ? `<dt>members</dt><dd><ul class="mkt-dlg-mem">` + item.members.map(m =>
+        `<li>${esc((KIND_LABEL[m.kind] || m.kind) + ": " + (m.title || m.name))}</li>`).join("") + `</ul></dd>`
+    : "";
+  const meta = [
+    _row("publisher", item.publisher ? esc(item.publisher) : ""),
+    _row("version", item.version ? "v" + esc(item.version) : ""),
+    _row("kind", esc(KIND_LABEL[item.kind] || item.kind)),
+    _row("category", esc(item.upstream_category || item.category || "")),
+    _row("license", item.license ? esc(item.license) : ""),
+    _row("downloads", item.downloads != null ? esc(String(item.downloads)) : ""),
+    _row("updated", item.updated ? esc(item.updated) : ""),
+    _row("size", item.bytes ? esc(String(item.bytes) + " bytes") : ""),
+    _row("digest", item.sha256 ? `<code>${esc(item.sha256)}</code>` : ""),
+    _row("server", _serverLine(item))
+  ].join("") + members;
+  const back = document.createElement("div");
+  back.className = "smback";
+  back.id = "mktDetailBack";
+  back.setAttribute("data-mktclose", "1");
+  const win = document.createElement("div");
+  win.className = "smodal";
+  win.id = "mktDetailWin";
+  win.setAttribute("role", "dialog");
+  win.setAttribute("aria-modal", "true");
+  win.setAttribute("aria-labelledby", "mktDlgTitle");
+  win.innerHTML = `<div class="pick-hd mkt-dlg-hd">
+      <div class="mkt-ico" aria-hidden="true">${KIND_ICON[item.kind] || "\u25CB"}</div>
+      <b id="mktDlgTitle">${esc(item.title)}</b>
+      ${originBadge(item.origin, item.origin_label, "")}
+      <button type="button" class="ghost mkt-dlg-x" data-mktclose="1"
+        aria-label="close the details" title="close (Esc)">\u2715</button>
+    </div>
+    <div class="mkt-dlg-body">
+      <div class="mkt-dlg-desc"${desc ? "" : ' data-empty="1"'}>${esc(desc || "No description was published for this entry.")}</div>
+      <dl class="mkt-dlg-meta">${meta}</dl>
+      ${_srcBlock(item)}
+    </div>`;
+  document.body.append(back, win);
+  const x = win.querySelector(".mkt-dlg-x");
+  if (x) x.focus();
+}
+
 /* ── wiring ─────────────────────────────────────────────────────────────── */
 
 let _searchTimer = null;
@@ -564,6 +681,13 @@ function wire() {
   if (body && !body.dataset.wired) {
     body.dataset.wired = "1";
     body.addEventListener("click", ev => {
+      // The card scans, the detail reads: a click anywhere but its buttons opens it.
+      const op = ev.target.closest("[data-item-open]");
+      if (op) { ev.preventDefault(); openDetail(op.getAttribute("data-item-open")); return; }
+      const cardEl = ev.target.closest(".mkt-card[data-item]");
+      if (cardEl && !ev.target.closest("button,a")) {
+        openDetail(cardEl.getAttribute("data-item")); return;
+      }
       const sec = ev.target.closest(".mkt-sect-btn");
       if (sec) {
         const k = sec.getAttribute("data-kind");
@@ -643,9 +767,23 @@ async function syncSource() {
   await load();
 }
 
+/* The dialog is created on demand and appended to <body>, so its own events are
+   delegated: ✕/backdrop close it, Escape closes it, and nothing else changes. */
+document.addEventListener("click", ev => {
+  if (ev.target.closest && ev.target.closest("[data-mktclose]")) {
+    ev.preventDefault(); closeDetail();
+  }
+});
+document.addEventListener("keydown", ev => {
+  if (ev.key === "Escape" && el("mktDetailWin")) {
+    ev.preventDefault(); ev.stopPropagation(); closeDetail();
+  }
+});
+
 wire();
 
-window.LRMkt = { load, reload, toggleManage, get state() { return state; } };
+window.LRMkt = { load, reload, toggleManage, openDetail, closeDetail,
+  get state() { return state; } };
 /* data-call reaches only GLOBALS, so the two page buttons are published here. */
 window.mktManage = () => toggleManage();
 window.mktReload = () => {

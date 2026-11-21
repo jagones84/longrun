@@ -21,6 +21,19 @@ All notable changes to Longrun are documented here. The format follows
   it); the pin now matches `toolCard(d.tool, d.args)`.
 
 ### Added
+- **Marketplace: the card scans, the detail reads — full description and the origin page.**
+  Operator: *"nel catalogo marketplace non c'è modo di leggere descrizioni complete degli
+  oggetti? sono tutte tagliate; cliccando un tasto devo poter vedere la descrizione completa …
+  se no portarmi proprio all'URL della pagina d'origine"*. A catalogue card keeps its
+  two-line clamp and gains a named ⓘ opener (and the card itself is clickable); both open ONE
+  dialog (`#mktDetailWin`) with the SAME `description` whole, publisher/version/category/
+  license/downloads/updated/digest/members/server, and **origin page** / artifact links.
+  The origin page is catalogue data now: `market_sync` stores `homepage` for ClawHub
+  (`<owner>/skills/<slug>`) and for MCP entries (`websiteUrl` or `repository.url`), and
+  `market._normalize` derives the ClawHub page for catalogues synced before the field existed —
+  so old imports link correctly without a re-sync. Only `http(s)` values become links; a
+  `javascript:` homepage is dropped. `DESC_MAX` 300 → 1200, cut on a word boundary with `…`
+  instead of mid-sentence. Locked by `v1263` (18/18, `UI_GUARD`); badge 948 → 949.
 - **One composer status strip, Trae-style: five icons, one label, one panel above.** Operator:
   *"vedi la barra sopra msg box di trae come è strutturata? le icone … tasks process, file
   review, messages (queued), background command processes, goal, cliccando su ognuna mostra

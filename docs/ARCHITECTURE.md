@@ -315,7 +315,7 @@ and guessing. `util/runtree.py` is the read model over those stores, and
 
 | Subpackage | Modules |
 |---|---|
-| `core/` | `server.py`, `api_v02.py`, `httpapi.py`, `sse.py`, `events.py`, `forge.py`, `settings.py`, `diagnostics.py`, `configfiles.py`, `sidebar_order.py`, `matrix.py`, `homemove.py`, `market.py` (catalogue: skills · MCP · plugins · connectors, digest-gated, origin persisted with each install), `market_sync.py` (bulk import of the official MCP Registry and ClawHub into `data/market/imported.json`, as one background job the page polls; live remote search + import-one), `market_taxonomy.py` (the curated macro-area vocabulary in `config/market_taxonomy.yaml`: a deterministic keyword classifier applied at sync time, no model, no network), `commands.py` (the operator's own `/` commands), `slash.py` (the ONE `/` catalogue: built-ins, user commands, installed plugins and the documents folders, served by `GET /api/slash`), `connectors.py` (an MCP preset plus the key NAMES it needs) |
+| `core/` | `server.py`, `api_v02.py`, `httpapi.py`, `sse.py`, `events.py`, `forge.py`, `settings.py`, `diagnostics.py`, `configfiles.py`, `sidebar_order.py`, `matrix.py`, `homemove.py`, `market.py` (catalogue: skills · MCP · plugins · connectors, digest-gated, origin persisted with each install), `market_sync.py` (bulk import of the official MCP Registry and ClawHub into `data/market/imported.json`, as one background job the page polls; live remote search + import-one; each entry keeps the publisher's `homepage` and a 1200-char description cut on a word boundary — the detail dialog reads it whole), `market_taxonomy.py` (the curated macro-area vocabulary in `config/market_taxonomy.yaml`: a deterministic keyword classifier applied at sync time, no model, no network), `commands.py` (the operator's own `/` commands), `slash.py` (the ONE `/` catalogue: built-ins, user commands, installed plugins and the documents folders, served by `GET /api/slash`), `connectors.py` (an MCP preset plus the key NAMES it needs) |
 | `agent/` | `agent.py`, `agents.py`, `subagent.py`, `bridge.py`, `agency.py`, `swarm.py`, `session_jobs.py`, `architect.py`, `acceptance.py`, `trace_policy.py` |
 | `orchestrate/` | `jobs.py`, `orchestration.py`, `teams.py`, `routines.py`, `roles.py` |
 | `plan/` | `taskgraph.py`, `keepgoing.py`, `goal.py`, `difficulty.py`, `bestofn.py`, `prm.py`, `heldout.py`, `verify.py`, `commitment.py` (repair/replan/abandon by damage depth, arXiv:2611.19663), `docs.py` (the `/plan` and `/spec` markdown documents under `<workspace>/.longrun/documents/`, with the plan-mode gate) |
@@ -881,6 +881,12 @@ operator-selected `none`). This is not whole-agent confinement. Hard-denied patt
   Three top-level pages share one tab strip (`TAB_IDS`): **Sessions** (`#app`), **Control**
   (the Orbit deck in an iframe) and **My Artifacts** (`#artifactsView`, fed by
   `GET /api/artifacts` — the edit journal read as one cross-session index of produced files).
+  **Marketplace** (`#marketView`, `webui/assets/market.js`) is the fourth: its card clamps the
+  description to two lines for scanning, and a card click (or its ⓘ button) opens one detail
+  dialog (`#mktDetailWin`) with the SAME catalogue copy whole, every field the entry carries and
+  the **origin page** — `homepage` in the catalogue item (`market._normalize`; ClawHub is
+  `<owner>/skills/<slug>`, MCP the registry's `websiteUrl`/`repository.url`), rendered as a link
+  only when it is http(s).
   The inspector's Workspace list is the SAME journal, reconciled with the disk on every read:
   a file changed or deleted outside the harness reports `disk: changed|missing` with the live
   counts, and an editor-dock save (`POST /api/fs/write`) is journalled under its session, so it

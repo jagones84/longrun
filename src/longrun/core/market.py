@@ -362,6 +362,15 @@ def _normalize(raw, origin):
     source = raw.get("source") if isinstance(raw.get("source"), dict) else {}
     server = raw.get("server") if isinstance(raw.get("server"), dict) else None
     sha = str(raw.get("sha256") or "").strip().lower()
+    publisher = str(raw.get("publisher") or "")
+    # The publisher's own PAGE (what the detail dialog opens), never a download or a
+    # `javascript:` value. A catalogue synced before this field existed still gets
+    # its ClawHub page: `<owner>/skills/<slug>` is derivable, so no re-sync is needed.
+    home = str(raw.get("homepage") or "").strip()
+    if not re.match(r"^https?://", home, re.I):
+        home = ""
+    if not home and kind == "skill" and publisher and str(origin).endswith("clawhub"):
+        home = "https://clawhub.ai/%s/skills/%s" % (publisher, name)
     declared = raw.get("members") if isinstance(raw.get("members"), list) else []
     members = [m for m in (_member(r) for r in declared[:MAX_MEMBERS]) if m]
     item = {
@@ -376,7 +385,8 @@ def _normalize(raw, origin):
         "upstream_category": str(raw.get("upstream_category") or ""),
         "featured": bool(raw.get("featured")),
         "version": str(raw.get("version") or ""),
-        "publisher": str(raw.get("publisher") or ""),
+        "publisher": publisher,
+        "homepage": home,
         # Optional upstream metadata a sync may carry (never invented here).
         "updated": str(raw.get("updated") or ""),
         "status": str(raw.get("status") or ""),

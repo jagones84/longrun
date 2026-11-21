@@ -44,8 +44,32 @@ CLAWHUB = "https://clawhub.ai/api/v1"
 PAGE = 100
 MAX_LIMIT = 20000
 MAX_PAGES = 600
-DESC_MAX = 300
+# 2026-11-21 (operator: *"non c'è modo di leggere descrizioni complete? sono tutte
+# tagliate"*): the card clamps to two lines and the DETAIL dialog shows this text
+# whole, so the copy must hold a real description, not a teaser. The published
+# summaries measured on ClawHub run to ~800 chars; 1200 covers them. The cut is on
+# a word boundary and says so, instead of ending mid-sentence.
+DESC_MAX = 1200
 _SLUG = re.compile(r"[^a-z0-9._-]+")
+_HTTP = re.compile(r"^https?://", re.I)
+
+
+def _page(url):
+    """An origin PAGE only when it is a real http(s) URL — never a javascript: one."""
+    u = str(url or "").strip()
+    return u if _HTTP.match(u) else ""
+
+
+def _clip(text, limit=DESC_MAX):
+    """Collapse whitespace and cut on a word boundary, marking the cut with …"""
+    s = " ".join(str(text or "").split())
+    if len(s) <= limit:
+        return s
+    cut = s[:limit]
+    sp = cut.rfind(" ")
+    if sp >= limit // 2:
+        cut = cut[:sp]
+    return cut.rstrip(" ,;:.-") + "\u2026"
 
 # One background import at a time; the page polls this dict.
 _JOB = {"source": "", "running": False, "started": "", "finished": "",
@@ -219,12 +243,16 @@ def _map_server(row):
     meta = _meta(row)
     title = str(srv.get("title") or name)
     desc = str(srv.get("description") or "")
+    repo = srv.get("repository") if isinstance(srv.get("repository"), dict) else {}
     item = {
         "id": ("connector/" if keys else "mcp/") + slug,
         "kind": kind,
         "name": slug,
         "title": title,
-        "description": desc[:DESC_MAX],
+        "description": _clip(desc),
+        # The publisher's own page, when the registry publishes one (the UI opens it
+        # from the detail dialog). The MCP endpoint in `remotes` is NOT a page.
+        "homepage": _page(srv.get("websiteUrl")) or _page(repo.get("url")),
         # `category` is the curated macro-area (config/market_taxonomy.yaml): the
         # registry publishes no taxonomy, and one bucket made every chip empty.
         "category": market_taxonomy.classify(" ".join((title, desc, name))),
@@ -327,6 +355,15 @@ def _claw_row_meta(row):
     return _slug(row.get("slug")), version, topic, updated
 
 
+def _claw_page(owner, slug):
+    """The ClawHub page of one skill (`<owner>/skills/<slug>`, verified HTTP 200)."""
+    o, s = str(owner or "").strip(), str(slug or "").strip()
+    if not o or not s:
+        return ""
+    return "https://clawhub.ai/%s/skills/%s" % (urllib.parse.quote(o, safe=""),
+                                                urllib.parse.quote(s, safe=""))
+
+
 def _claw_item(row, cfg):
     """One ClawHub row → `(item, error)`; its ZIP is downloaded once to pin it.
 
@@ -341,12 +378,15 @@ def _claw_item(row, cfg):
     if data is None:
         return None, "%s: %s" % (row["slug"], why)
     title = str(row.get("displayName") or row.get("slug"))
-    desc = str(row.get("summary") or "")
+    desc = str(row.get("description") or row.get("summary") or "")
     stats = row.get("stats") if isinstance(row.get("stats"), dict) else {}
     return {
         "id": "skill/" + slug, "kind": "skill", "name": slug,
         "title": title,
-        "description": desc[:DESC_MAX],
+        "description": _clip(desc),
+        # The skill's page on ClawHub (verified 200): <owner>/skills/<slug>. The
+        # download URL in `source` is the artifact, not something to read.
+        "homepage": _claw_page(row.get("ownerHandle"), slug),
         # `category` is the curated macro-area; the publisher's own topic is kept
         # beside it for the tooltip (the source is `origin`).
         "category": market_taxonomy.classify(" ".join((title, desc, topic)), topic),
@@ -369,11 +409,12 @@ def _claw_preview(row):
     if not row.get("slug") or not version:
         return None
     title = str(row.get("displayName") or row.get("slug"))
-    desc = str(row.get("summary") or "")
+    desc = str(row.get("description") or row.get("summary") or "")
     stats = row.get("stats") if isinstance(row.get("stats"), dict) else {}
     return {
         "id": "skill/" + slug, "kind": "skill", "name": slug,
-        "title": title, "description": desc[:DESC_MAX],
+        "title": title, "description": _clip(desc),
+        "homepage": _claw_page(row.get("ownerHandle"), slug),
         "category": market_taxonomy.classify(" ".join((title, desc, topic)), topic),
         "upstream_category": topic,
         "featured": False, "version": version,
