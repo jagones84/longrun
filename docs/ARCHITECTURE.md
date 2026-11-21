@@ -351,8 +351,9 @@ Layout (2026-11-20), by runtime role:
   `compose`, `contrast`, `whole`, `snapshot`, `gateway`, `unixshim`). Only
   `cycle` (with `dry_run=False`) reaches them, and only after
   `whole.readiness()` passes; tests inject a fake runner.
-* `harness/` root — the 21 modules the running app imports (live turn seams,
-  read-only HTTP surfaces and their support, including `hazard_notice` below).
+* `harness/` root — the 23 modules the running app imports (live turn seams,
+  read-only HTTP surfaces and their support, including `hazard_notice`,
+  `work_report` and `effect_state` below).
 
 ### Wired vs report-only
 
@@ -780,6 +781,35 @@ loop were wired where the model reads its own work.
   and the per-capability dose (`forge.py guidelines`); the live memory index
   ranks `agent.note` lessons by support and bounds them with the new
   `context.memory_lessons_cap` (default 4).
+
+## Newest online papers (round 164, 2026-11-22)
+
+Four papers from the 2026-11-19 batch, read in full, each landed as one capability
+(two wired at a live seam, two as evidence and a boundary).
+
+- **The report is checked against the turn's record** (arXiv:2611.25760,
+  "Characterizing and Detecting Unfaithful Work Reports by Coding Agents").
+  37.24% of 435 sampled reports carry a claim the record does not support, and
+  handling one costs 4.29 further user turns on average. `harness/work_report.py`
+  extracts the checkable claim forms (test-pass, produced file, command, commit,
+  push) and matches them against the turn's calls plus the session's own card
+  history; the chat loop audits the final text after it is persisted, writes
+  `<sid>.reports.jsonl` and injects one `report.audit` note when a claim has no
+  record. The answer is never edited. `forge.py workreport claims|audit|summary`.
+- **A label travels with the file** (arXiv:2611.25599, Tether). The same
+  `curl @report.txt` is public before a copy of a sensitive file and sensitive
+  after it. `harness/effect_state.py` keeps one taint set per session, propagates
+  it through `cp`/`mv`/redirection and refuses an egress that NAMES a tainted
+  path before dispatch (`forge.py effectstate check|trace`). It claims one rule
+  over declared paths, not Tether's syscall-verified guarantee.
+- **A loop is a routing signal** (arXiv:2611.25363, LoopRoute): τ=2 interception
+  plus a bounded takeover beats suppression alone. Recorded as P3 and parked:
+  longrun's selector is already the LLM, so there is no stronger policy to hand
+  control to; the existing soft nudge is the honest transfer.
+- **Safety cannot be verified, and does not compose** (arXiv:2611.25325):
+  undecidable, PSPACE-complete under bounds, and two agents safe alone can be
+  unsafe together. This bounds the claim of the row above: enforcement of a named
+  rule, never "the turn is safe".
 
 ## Data stores (the data home — `~/.longrun/data`, never the checkout)
 

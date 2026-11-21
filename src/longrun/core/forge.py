@@ -1797,6 +1797,42 @@ def cmd_guidelines(args):
     _emit(guideline_budget, out)
 
 
+def cmd_workreport(args):
+    """Round 164 (arXiv:2611.25760): judge a report's claims against its record."""
+    from longrun.harness import work_report
+    doc = _load_doc(args, "workreport claims|audit|summary FILE.json")
+    if args.action == "claims":
+        out = {"format": work_report.FORMAT,
+               "claims": work_report.claims(doc.get("text") or "")}
+    elif args.action == "summary":
+        out = work_report.summary(doc.get("rows") or [])
+    else:
+        out = work_report.audit(doc.get("text") or "", doc.get("calls") or [],
+                                doc.get("world"))
+    _emit(work_report, out)
+
+
+def cmd_effectstate(args):
+    """Round 164 (arXiv:2611.25599): a label travels with the file across calls."""
+    from longrun.harness import effect_state
+    doc = _load_doc(args, "effectstate check|trace FILE.json")
+    if args.action == "trace":
+        state = {}
+        for call in doc.get("calls") or []:
+            if isinstance(call, dict):
+                effect_state.observe(state, call.get("tool") or "", call.get("args") or {})
+        out = effect_state.describe(state)
+    else:
+        state = doc.get("state") if isinstance(doc.get("state"), dict) else {}
+        tool = doc.get("tool") or ""
+        args_in = doc.get("args") or {}
+        path = effect_state.egress_path(state, tool, args_in)
+        out = {"format": effect_state.FORMAT, "blocked": bool(path), "path": path,
+               "reason": effect_state.reason(path, tool) if path else "",
+               "state": effect_state.describe(state)}
+    _emit(effect_state, out)
+
+
 def cmd_skillos(args):
     """Round 163 (arXiv:2611.26256): screen a skill's contract for OS assumptions."""
     from longrun.harness.checks import skill_os_contract
@@ -5882,6 +5918,14 @@ def _build_parser():
         p.add_argument("action", choices=["consolidate", "dose", "audit"]); \
         p.add_argument("file", nargs="?", help="JSON: {lessons}, {guidelines, capability}, or {record}"); \
         p.set_defaults(fn=cmd_guidelines)
+    p = sub.add_parser("workreport"); \
+        p.add_argument("action", choices=["claims", "audit", "summary"]); \
+        p.add_argument("file", nargs="?", help="JSON: {text, calls, world} or {rows}"); \
+        p.set_defaults(fn=cmd_workreport)
+    p = sub.add_parser("effectstate"); \
+        p.add_argument("action", choices=["check", "trace"]); \
+        p.add_argument("file", nargs="?", help="JSON: {state, tool, args} or {calls}"); \
+        p.set_defaults(fn=cmd_effectstate)
     p = sub.add_parser("skillos"); \
         p.add_argument("action", choices=["build", "screen", "rank", "audit"]); \
         p.add_argument("file", nargs="?", help="JSON: {files, target_os}, {evidence}, or {rows}"); \

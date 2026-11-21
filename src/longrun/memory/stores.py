@@ -493,6 +493,10 @@ def _purge_session_artifacts(sid):
     _log = history_log_path(sid)
     if _log:
         bases.append(_log)
+    # Round 164: the report-audit ledger is a per-session artifact too.
+    _rep = report_audit_path(sid)
+    if _rep:
+        bases.append(_rep)
     try:
         bases.append(taskgraph._path(sid))
         # v812: a RUN keys its graph by the run id (and records the session inside),
@@ -1585,6 +1589,40 @@ def append_history_log(sess, role, text, kind="message"):
                      % (stamp, role, kind, sid, body))
         return path
     except Exception:  # noqa: BLE001 — the log must never break a turn
+        return ""
+
+
+def report_audit_path(sid):
+    """The per-session work-report audit ledger (round 164).
+
+    Source: arXiv:2611.25760 — the report becomes the record a later agent resumes
+    from, so the audit of its claims is kept beside the transcript as JSON lines,
+    one record per turn that made a checkable claim. Append-only; never rewritten.
+    """
+    if not _valid_sid(sid):
+        return ""
+    return os.path.join(SESSIONS_DIR, "%s.reports.jsonl" % sid)
+
+
+def append_report_audit(sid, record):
+    """Append one `work_report.audit` record; fail-open, bounded body."""
+    try:
+        path = report_audit_path(sid)
+        if not path or not isinstance(record, dict):
+            return ""
+        row = dict(record)
+        row.setdefault("ts", round(time.time(), 3))
+        row.setdefault("turn", os.path.basename(str(sid)))
+        body = json.dumps(row, ensure_ascii=False, default=str)
+        if len(body) > 8000:
+            row.pop("rows", None)
+            row["truncated"] = True
+            body = json.dumps(row, ensure_ascii=False, default=str)[:8000]
+        _ensure_dirs()
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(body + "\n")
+        return path
+    except Exception:  # noqa: BLE001 — the ledger must never break a turn
         return ""
 
 

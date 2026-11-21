@@ -46,13 +46,18 @@ from longrun.memory.stores import (FINISH_SUMMARY_KEYS as _FINISH_SUMMARY_KEYS,
                      _chat_workspace, _store_path, _tool_event,
                      append_message, drop_inject, load_plan, load_tasks,
                      persist_inject, persist_tool_card, save_plan, save_session,
-                     save_tasks)
+                     save_tasks, append_report_audit)
 from longrun.util.textkit import (DSML_MARK, extract_action_json, extract_json,
                                   is_dsml, is_tool_markup, mask_quotations)
 from longrun.util.tracing import RunTrace, _REAL_CACHED_TOKENS, _REAL_PROMPT_TOKENS
 
 
 # ------------------------------------------------------------- agent core ----
+
+#: Round 164: a per-turn trace entry keeps the head of its observation for the
+#: report audit. It is NOT a model-facing cut (the model still receives the full
+#: observation through the offload path); this only bounds the audit's copy.
+_TURN_TRACE_OBS_CAP = 4000
 
 SYSTEM_PROMPT = (
     "You are Longrun, the reasoning core of a frontier-style agent harness. The "
@@ -5600,6 +5605,10 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     _tool_repeat = 0
     _last_failed_hash = None  # JAG-183: last FAILED (tool,args) -> verbatim re-run blocked
     _last_failed_err = ""
+    # Round 164 (arXiv:2611.25760): the turn's own tool record, so the final text
+    # can be audited against what actually ran. Bounded: only the last 200 calls.
+    _turn_trace = []
+    _effect_blocks = 0
     # FTA (2609.35732): a failure a LATER success hides is still a failure the
     # turn must report. Tool -> its first error, cleared only by that tool's own
     # success. The existing closure gate reads only the LAST call.
@@ -6746,6 +6755,25 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 continue
             work_steps += 1
             _total_work_steps += 1
+            # Round 164 (arXiv:2611.25599 §2.1): a label travels with the file. An
+            # egress call that NAMES a path this session already read or copied is
+            # refused BEFORE dispatch — the same command was allowed before the
+            # copy and is not allowed after it. State is one dict per session; the
+            # probe is fail-open and never reaches an untainted path.
+            try:
+                from longrun.harness import effect_state as _es
+                _eg_path = _es.egress_path(_es.state_for(sess.get("id")), tool, args)
+            except Exception:  # noqa: BLE001 — a policy probe must never kill a turn
+                _eg_path = ""
+            if _eg_path:
+                _effect_blocks += 1
+                msgs.append({"role": "assistant", "content": answer})
+                _inject(_es.reason(_eg_path, tool), "nudge")
+                publish("effect.blocked", session=sess["id"], tool=tool,
+                        path=_eg_path)
+                work_steps += 1
+                _total_work_steps += 1
+                continue
             _raw_tool = tool
             # The VERIFY GATE reads this: a real tool call after the read-back is the
             # only thing that discharges it (`todo.*` never reaches this branch).
@@ -6847,6 +6875,9 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 obs, ok = "tool error: %s" % e, False
                 _tool_failed = True   # JAG-178: a raised tool error is a failure too
                 _gate_only = False    # a raised call error is a REAL failure
+                if len(_turn_trace) < 200:
+                    _turn_trace.append({"tool": tool, "args": args, "ok": False,
+                                        "output": str(e)[:1000], "exit_code": None})
                 persist_tool_card(sess, tool, False, args=args, error=str(e)[:200],
                                   backend="harness", node=_cur_node(),
                                   think=_think_buf["t"].strip(), after=_after())
@@ -6857,6 +6888,18 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             # JAG-134: feeds the prev_error signal of the difficulty estimate.
             _last_tool_ok = bool(ok)
             _invalid_streak = 0
+            # Round 164 (arXiv:2611.25599): the completed call updates this session's
+            # labels (a read of `.env`, a `cp` of a labelled source to a new path).
+            try:
+                from longrun.harness import effect_state as _es2
+                _es2.observe(_es2.state_for(sess.get("id")), tool, args)
+            except Exception:  # noqa: BLE001 — the label is best-effort
+                pass
+            # Round 164 (arXiv:2611.25760): record this call for the end-of-turn audit.
+            if len(_turn_trace) < 200:
+                _turn_trace.append({"tool": tool, "args": args, "ok": bool(ok),
+                                    "output": str(obs)[:_TURN_TRACE_OBS_CAP],
+                                    "exit_code": sub.get("exit_code") if isinstance(sub, dict) else None})
             # JAG-88: an oversized observation goes to a file (referenced) rather
             # than being truncated into the context — nothing is lost.
             obs = str(obs)
@@ -7697,6 +7740,32 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     _emit_final_reply(on_event, sess, content, _hitl, node=_cur_node(),
                       ts=(reply or {}).get("ts") if isinstance(reply, dict) else None,
                       **_turn_stats)
+    # Round 164 (arXiv:2611.25760): the report becomes the record a later agent
+    # resumes from, so its checkable claims are judged against this turn's calls
+    # (and the session's own card history, so earlier work stays supported). The
+    # answer is NEVER edited; a finding becomes one harness note beside it and one
+    # append-only ledger row. Fail-open: an audit must never end a turn.
+    try:
+        from longrun.harness import work_report as _wr
+        _past = []
+        for _card in (sess.get("tool_cards") or [])[-200:]:
+            if isinstance(_card, dict):
+                _past.append({"tool": _card.get("tool"), "args": _card.get("args"),
+                              "ok": _card.get("ok"),
+                              "output": _card.get("result"),
+                              "error": _card.get("error"),
+                              "exit_code": _card.get("exit_code")})
+        _audit = _wr.audit(content, _turn_trace + _past)
+        if _audit.get("claims"):
+            append_report_audit(sess["id"], _audit)
+            publish("report.audit", session=sess["id"], verdict=_audit["verdict"],
+                    claims=_audit["claims"], unsupported=_audit["unsupported"])
+            _note = _wr.message(_audit)
+            if _note:
+                persist_inject(sess, "report.audit", _note,
+                               after=len(sess.get("messages", [])))
+    except Exception:  # noqa: BLE001 — the audit must never break a turn
+        pass
     # B-6 (v818): did the answer USE the memories the context engine injected?
     # Observability only — it never changes what was injected, and it is the only
     # signal that can tune the memory ranking by evidence instead of guesswork.

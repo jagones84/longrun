@@ -6,6 +6,23 @@ All notable changes to Longrun are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- **A turn's report is audited against its own record, and a label travels with the file.**
+  Round 164 reads four papers from the 2026-11-19 batch in full and lands two capabilities at
+  live seams. (1) `harness/work_report.py` extracts the checkable claims of the final text
+  (test-pass, produced file, command, commit, push) and matches each against the turn's calls
+  plus the session's own tool-card history; after the reply is persisted the loop writes
+  `<sid>.reports.jsonl` and injects one `report.audit` harness note naming the claim whose
+  record is absent. The answer is never edited. Source: arXiv:2611.25760 — 37.24% of 435
+  sampled reports carry an unsupported claim, 4.29 further user turns to handle one.
+  (2) `harness/effect_state.py` keeps one taint set per session, propagates a label through
+  `cp`/`mv`/redirection and refuses an egress that NAMES a tainted path before dispatch, so
+  the same `curl @report.txt` is allowed before a sensitive copy and denied after it.
+  Source: arXiv:2611.25599 (Tether) — one rule over declared paths, not its syscall guarantee.
+  LoopRoute (arXiv:2611.25363) is parked: the selector is already the LLM.
+  Pandora's Toolbox (arXiv:2611.25325) bounds the claim: enforcement, never verification.
+  Locked by `v1250` (28/28); battery 953/953.
+
 ### Fixed
 - **The inspector header no longer shows the sections scrolling through it; the fold control
   loses its frame; the sessions rail stops paying three layers of vertical air.** Operator, with
