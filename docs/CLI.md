@@ -66,7 +66,8 @@ banner instead of re-sending the command.
   `GET /api/tools/running` = `{"running": []}`), then `systemctl --user restart longrun`.
   **Then prove the new code is the running code**: `ActiveEnterTimestamp` must be newer than
   the newest `src/`/`webui/` mtime. Any edit after the restart voids it — restart again.
-  Full procedure: project rules §"After every codebase change the testing head verifies it".
+  Full procedure: project rules §"The testing head verifies ONLY what it can reach — check
+  before you dispatch".
   A CLI change needs no restart — it is a client, not the service.
 * **Never invent ids.** `AX` from `agents ls`, `JN` from `jobs ls`, `SID` from
   `sessions ls`; an unknown one fails loudly instead of creating a row.
@@ -789,9 +790,10 @@ order, on a throwaway session and workspace. It is the executable twin of
 `tests/acceptance/v785_cli_command_cases.py` M1–M16 + `v1052`.
 
 **Runtime changes:** this recipe proves the CLIENT. Before it, the service must run the code
-under test — project rules §"After every codebase change the testing head verifies it" owns
-the gate: battery on the final tree, idle restart, `ActiveEnterTimestamp` newer than the
-newest `src/`/`webui/` mtime, and another restart if any source file changed afterwards.
+under test — project rules §"The testing head verifies ONLY what it can reach — check before
+you dispatch" owns the gate: battery on the final tree, idle restart, `ActiveEnterTimestamp`
+newer than the newest `src/`/`webui/` mtime, and another restart if any source file changed
+afterwards.
 A recipe that passes against a stale process proves the stale process.
 
 ```bash

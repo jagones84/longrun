@@ -20,6 +20,15 @@ All notable changes to Longrun are documented here. The format follows
 - **`v768` F1 re-pointed**: the tool card no longer takes a timestamp argument (round 177 removed
   it); the pin now matches `toolCard(d.tool, d.args)`.
 
+### Changed
+- **The testing head is dispatched only for what it can actually check.** Operator: *"stop asking A54
+  everything: he cannot access every part of the backend and frontend … he can be invoked only for
+  things he can check. Verify before dispatch."* Project rules now list his reach (rendered WebUI over
+  CDP, HTTP with the bearer command, repo files, git, the project tests) and require the three-line
+  pre-dispatch test — **Observable · Reach · Verdict** — before a brief goes out; a change whose only
+  evidence is a deterministic test closes with the battery + the maintainer's own measurement. The
+  references in `docs/TESTING-PLAYBOOK.md` and `docs/CLI.md` point at the new section title.
+
 ### Added
 - **Marketplace: the card scans, the detail reads — full description and the origin page.**
   Operator: *"nel catalogo marketplace non c'è modo di leggere descrizioni complete degli

@@ -52,9 +52,9 @@ LONGRUN_BATTERY_JOBS=1 bash tests/battery.sh   # force sequential (debug a flaky
 ```
 
 **Run the gate on the FINAL tree.** A runtime change also needs the service restarted on that
-tree; project rules §"After every codebase change the testing head verifies it" owns the
-freshness gate (idle restart, `ActiveEnterTimestamp` newer than the newest `src/`/`webui/`
-mtime, re-restart after any later edit).
+tree; project rules §"The testing head verifies ONLY what it can reach — check before you
+dispatch" owns the freshness gate (idle restart, `ActiveEnterTimestamp` newer than the newest
+`src/`/`webui/` mtime, re-restart after any later edit) and says when a dispatch is pointless.
 
 - `v183_chat_core` is the chat-loop contract test (LLM + tool gate mocked):
   normal turn, anti-loop (JAG-183), subagent delegation (JAG-189), stale-plan
