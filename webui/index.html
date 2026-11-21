@@ -3400,7 +3400,14 @@
     padding: 2px 2px 5px; border-bottom: 1px solid var(--line); }
   .cs-tab { display: inline-flex; align-items: center; justify-content: center; height: 24px; width: 24px;
     padding: 0; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--dim);
-    font: inherit; font-size: 11.5px; cursor: pointer; white-space: nowrap; }
+    font: inherit; font-size: 11.5px; cursor: pointer; white-space: nowrap; position: relative; }
+  /* 2026-11-21 (operator: "the queued message shall appear in the bar"): a COUNT on
+     the icon, so a pending queue is visible even when a background command owns the
+     label. The accessible name carries the same number (`_csPaint`). */
+  .cs-tab[data-count]::after { content: attr(data-count); position: absolute; top: -3px; right: -3px;
+    min-width: 12px; height: 12px; padding: 0 3px; box-sizing: border-box; border-radius: 999px;
+    background: var(--acc); color: var(--bg); font-size: 8.5px; font-weight: 700;
+    line-height: 12px; text-align: center; letter-spacing: 0; }
   .cs-tab svg { width: 13px; height: 13px; fill: none; stroke: currentColor;
     stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex: 0 0 auto; }
   .cs-tab:hover { background: var(--hover); color: var(--txt); }
@@ -7973,7 +7980,7 @@ function renderQueue() {
     x.onclick = () => { q.splice(i, 1); _qSave(); renderQueue(); };
     chip.appendChild(ed); chip.appendChild(st); chip.appendChild(x); bar.appendChild(chip);
   });
-  _csLabel();   // ROUND 180: the strip follows the queue
+  _csPaint();   // ROUND 180/181: the strip follows the queue (label + the count badge)
 }
 /* The ✎ of a queue chip: the message goes BACK into the composer instead of
    opening a second editor (that is what "editable like the goal" means here), and
@@ -8827,10 +8834,24 @@ function _slashCmdHits(q) {
 /* JAG-431r4b: function send(text, display) also accepts an optional `atts`
    snapshot so a QUEUED message flushed later still carries its attachment
    note/chips. */
-function send(text, display, atts) {
+async function send(text, display, atts) {
   const inp = $("inp");
   let raw = (text !== undefined ? text : inp.value).trim();
   if (!raw) return;
+  // 2026-11-21 (operator: *"queue message doesn't work, the message is sent; steer
+  // interrupts the current run"*): `turnSSE` is THIS page's handle. After a reload, or
+  // with a turn started by the CLI or another tab, it is missing while the server is
+  // mid-turn — so the queue/steer branch below was skipped and the message started a
+  // NEW turn. Ask the server ONCE before deciding; if it says the session is live,
+  // attach (the same channel a reload uses), so a queued message really queues.
+  if (!turnSSE[sessionId]) {
+    try {
+      const live = await api("GET", "/api/chat/live");
+      if (((live && live.active) || []).includes(sessionId) && !turnSSE[sessionId]) {
+        attachTurn(sessionId, _resumeIdFor(sessionId));
+      }
+    } catch (_) { /* offline: the local state is all we have */ }
+  }
   // v1051b: `/plan <request>` and `/spec <request>` are DOCUMENT commands — they call
   // the backend (which writes the file and locks the session) instead of shipping
   // the token to the model as prose. This check sits FIRST, before the attachment
@@ -15247,6 +15268,9 @@ async function attachIfRunning(sid, since) {
     const out = await api("GET", "/api/chat/live");
     // RH-10: resume where the log stopped instead of replaying the whole turn.
     if ((out.active || []).includes(sid)) attachTurn(sid, since || _resumeIdFor(sid));
+    // 2026-11-21: the server says IDLE — a message queued while this page believed a
+    // turn was live (a stale handle) must not sit here for ever: flush it now.
+    else flushQueue(sid);
   } catch (e) {}
 }
 /* A tab can believe a turn is still running long after the server stopped: a
@@ -20243,6 +20267,14 @@ function _csPaint() {
   document.querySelectorAll("#cmpSuper .cs-tab").forEach(b => {
     const k = b.dataset.cs;
     b.setAttribute("aria-pressed", String(k === on));
+    // A count on the icon (queue · background) so a waiting message is never hidden
+    // by the label's priority; the same number goes into the accessible name.
+    const n = (k === "queue") ? _q().length
+      : (k === "bg") ? (_bgJobs || []).filter(j => j && j.running).length : 0;
+    if (b.dataset.baseLabel === undefined) b.dataset.baseLabel = b.getAttribute("aria-label") || "";
+    if (n > 0) b.dataset.count = String(n); else b.removeAttribute("data-count");
+    const extra = n > 0 ? (k === "queue" ? " \u2014 " + n + " queued" : " \u2014 " + n + " running") : "";
+    b.setAttribute("aria-label", b.dataset.baseLabel + extra);
     if (k === "goal") {
       const ok = goalVisible();
       b.disabled = !ok;
@@ -20294,10 +20326,13 @@ function _csLabel() {
   else if (_cs.key === "bg") txt = _bgStatusText();
   else if (_cs.key === "goal") txt = _goalStatusText() || "no goal";
   else {
+    // 2026-11-21 (operator): a queued message must not disappear behind a background
+    // command — the label lists BOTH (queue first: it is the operator's own action).
     const bg = _bgStatusText();
-    if (bg !== "nothing running") txt = bg;
-    else if (q) txt = q + " waiting to send";
-    else txt = _goalStatusText() || _taskStatusText(true);
+    const parts = [];
+    if (q) parts.push(q + " waiting to send");
+    if (bg !== "nothing running") parts.push(bg);
+    txt = parts.length ? parts.join(" \u00b7 ") : (_goalStatusText() || _taskStatusText(true));
   }
   if (el.textContent !== txt) el.textContent = txt;
 }
@@ -20368,19 +20403,35 @@ document.addEventListener("click", e => {
    its panel. One cache, one poll (5 s, visible tab only), no second renderer. */
 var _bgJobs = [], _bgTimer = null;
 async function _loadBgJobs() {
-  if (!sessionId) { _bgJobs = []; _csLabel(); return; }
+  if (!sessionId) { _bgJobs = []; _csPaint(); return; }
   try {
     const d = await api("GET", "/api/bgjobs?session=" + encodeURIComponent(sessionId));
     if (d && Array.isArray(d.jobs)) _bgJobs = d.jobs;
   } catch (e) { /* a strip must never break the chat */ }
-  _csLabel();
+  _csPaint();   // label + the count on the bg icon
   if (_cs.key === "bg") _renderBgPanel();
 }
 function _bgPollStart() {
   if (_bgTimer) return;
   _bgTimer = setInterval(() => {
-    if (document.visibilityState === "visible") _loadBgJobs();
+    if (document.visibilityState === "visible") { _loadBgJobs(); _queueReconcile(); }
   }, 5000);
+}
+/* 2026-11-21: a message can only wait while a turn runs. If the page missed the
+   `done` (a dropped frame, a channel that was closed on us) the queue used to sit
+   there for ever with the strip still saying it was running. While something is
+   waiting, ask the SERVER every 5 s; when it says idle, drop the stale handle and
+   flush — the queue never becomes a dead end. */
+async function _queueReconcile() {
+  if (!sessionId || !_q().length) return;
+  try {
+    const l = await api("GET", "/api/chat/live");
+    if (((l && l.active) || []).includes(sessionId)) return;
+    const es = turnSSE[sessionId];
+    if (es) { try { es.close(); } catch (e) {} delete turnSSE[sessionId]; }
+    setRunning(sessionId, false);
+    flushQueue(sessionId);
+  } catch (e) { /* offline: try again on the next tick */ }
 }
 function _bgPollStop() {
   if (_bgTimer) { clearInterval(_bgTimer); _bgTimer = null; }

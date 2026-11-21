@@ -87,8 +87,10 @@ check("B5 an empty queue in the panel says so",
 
 # ---- C: one label, one priority, the goal icon follows the goal -----------
 LBL = between(UI, "function _csLabel() {", "function _csReturn()")
-check("C1 the closed strip shows background > queue > goal > open tasks, in that order",
-      LBL.index('if (bg !== "nothing running")') < LBL.index("else if (q)")
+check("C1 the closed strip NAMES every live state: queue, then background, then goal/tasks",
+      'if (q) parts.push(q + " waiting to send");' in LBL
+      and 'if (bg !== "nothing running") parts.push(bg);' in LBL
+      and LBL.index('if (q) parts.push') < LBL.index('if (bg !== "nothing running") parts.push')
       < LBL.index("_goalStatusText() || _taskStatusText(true)"))
 check("C2 the open panel labels itself (tasks/files/queue/bg/goal)",
       all(s in LBL for s in ('_taskStatusText(false)', "_filesStatusText()", "_bgStatusText()",
@@ -98,7 +100,7 @@ check("C3 the goal icon is disabled while there is no goal",
 check("C4 the label is fed by the real surfaces, not a second count",
       "_setRailBadge(\"editsBtn\", files.length);\n  _csLabel();" in UI
       and '$("taskCount").textContent = (c.done || 0) + "/" + _nodes.length;\n  _csLabel();' in UI
-      and "_csLabel();   // ROUND 180: the strip follows the queue" in UI)
+      and '_csPaint();   // ROUND 180/181: the strip follows the queue (label + the count badge)' in UI)
 
 # ---- D: background shell commands -----------------------------------------
 check("D1 GET /api/bgjobs and POST stop are registered on the shell-job owner",

@@ -7,6 +7,20 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Fixed
+- **Queue really queues, steer really steers — and a waiting message is visible.** Operator:
+  *"queue message doesn't work, message is sent; steer interrupting current run. I passed from
+  steer to queue then sent the message … it shall appear in the up msg box bar … multiple queue
+  can be accepted as in Trae."* Two causes. (1) The delivery decision was keyed on `turnSSE`,
+  the handle of THIS page: after a reload, or with a turn started by the CLI or another tab, it
+  was missing, so the queue branch was skipped and the message started a new turn. `send()` is
+  now async and asks `GET /api/chat/live` when it has no handle, attaching to the live turn
+  before deciding. (2) A queued message was invisible while a background command owned the
+  label. The queue icon now carries a COUNT badge (also in its `aria-label`) and the label
+  lists the queue AND the background state; a 5 s reconcile (`_queueReconcile`) drops a stale
+  handle and flushes when the server says idle, so a missed `done` can never turn the queue
+  into a dead end. Steer keeps posting `/api/chat/steer` into the running turn; a command is
+  still always queued. Locked by `v1264` (13/13, `UI_GUARD`); `v1262` C1/C4 re-pointed; badge
+  949 → 950.
 - **The goal menu's last row and the editor's "cancel" were unpressed above the strip's panel.**
   Found by the testing head (A54 finding **R180-1**, high): the goal bar now lives only inside the
   strip's dropup (`#csBody`, a z-70 layer), while both goal popovers were anchored with
