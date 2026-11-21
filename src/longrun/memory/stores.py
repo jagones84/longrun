@@ -497,6 +497,10 @@ def _purge_session_artifacts(sid):
     _rep = report_audit_path(sid)
     if _rep:
         bases.append(_rep)
+    # Round 165: so is the compaction-brief ledger.
+    _cmp = compaction_audit_path(sid)
+    if _cmp:
+        bases.append(_cmp)
     try:
         bases.append(taskgraph._path(sid))
         # v812: a RUN keys its graph by the run id (and records the session inside),
@@ -1589,6 +1593,39 @@ def append_history_log(sess, role, text, kind="message"):
                      % (stamp, role, kind, sid, body))
         return path
     except Exception:  # noqa: BLE001 — the log must never break a turn
+        return ""
+
+
+def compaction_audit_path(sid):
+    """The per-session compaction-brief ledger (round 165).
+
+    Source: arXiv:2611.25673 — compaction is measured by what the continuation can
+    still do, so each boundary's retained/missing anchors are kept beside the
+    transcript. Append-only; never rewritten.
+    """
+    if not _valid_sid(sid):
+        return ""
+    return os.path.join(SESSIONS_DIR, "%s.compactions.jsonl" % sid)
+
+
+def append_compaction_audit(sid, record):
+    """Append one `compaction_brief.audit` record; fail-open, bounded body."""
+    try:
+        path = compaction_audit_path(sid)
+        if not path or not isinstance(record, dict):
+            return ""
+        row = dict(record)
+        row.setdefault("ts", round(time.time(), 3))
+        body = json.dumps(row, ensure_ascii=False, default=str)
+        if len(body) > 8000:
+            row["missing"] = (row.get("missing") or [])[:8]
+            row["truncated"] = True
+            body = json.dumps(row, ensure_ascii=False, default=str)[:8000]
+        _ensure_dirs()
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(body + "\n")
+        return path
+    except Exception:  # noqa: BLE001 — the ledger must never break a compaction
         return ""
 
 

@@ -1797,6 +1797,20 @@ def cmd_guidelines(args):
     _emit(guideline_budget, out)
 
 
+def cmd_compaction(args):
+    """Round 165 (arXiv:2611.25673): what the compacted context still carries."""
+    from longrun.harness import compaction_brief
+    doc = _load_doc(args, "compaction anchors|audit FILE.json")
+    if args.action == "anchors":
+        out = compaction_brief.anchors(doc.get("messages") or [],
+                                       doc.get("tool_cards"))
+    else:
+        out = compaction_brief.audit(doc.get("messages") or [],
+                                     doc.get("after") or [],
+                                     doc.get("tool_cards"))
+    _emit(compaction_brief, out)
+
+
 def cmd_workreport(args):
     """Round 164 (arXiv:2611.25760): judge a report's claims against its record."""
     from longrun.harness import work_report
@@ -5918,6 +5932,10 @@ def _build_parser():
         p.add_argument("action", choices=["consolidate", "dose", "audit"]); \
         p.add_argument("file", nargs="?", help="JSON: {lessons}, {guidelines, capability}, or {record}"); \
         p.set_defaults(fn=cmd_guidelines)
+    p = sub.add_parser("compaction"); \
+        p.add_argument("action", choices=["anchors", "audit"]); \
+        p.add_argument("file", nargs="?", help="JSON: {messages, after, tool_cards}"); \
+        p.set_defaults(fn=cmd_compaction)
     p = sub.add_parser("workreport"); \
         p.add_argument("action", choices=["claims", "audit", "summary"]); \
         p.add_argument("file", nargs="?", help="JSON: {text, calls, world} or {rows}"); \

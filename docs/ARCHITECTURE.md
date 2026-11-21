@@ -351,9 +351,9 @@ Layout (2026-11-20), by runtime role:
   `compose`, `contrast`, `whole`, `snapshot`, `gateway`, `unixshim`). Only
   `cycle` (with `dry_run=False`) reaches them, and only after
   `whole.readiness()` passes; tests inject a fake runner.
-* `harness/` root — the 23 modules the running app imports (live turn seams,
+* `harness/` root — the 24 modules the running app imports (live turn seams,
   read-only HTTP surfaces and their support, including `hazard_notice`,
-  `work_report` and `effect_state` below).
+  `work_report`, `effect_state` and `compaction_brief` below).
 
 ### Wired vs report-only
 
@@ -810,6 +810,26 @@ Four papers from the 2026-11-19 batch, read in full, each landed as one capabili
   undecidable, PSPACE-complete under bounds, and two agents safe alone can be
   unsafe together. This bounds the claim of the row above: enforcement of a named
   rule, never "the turn is safe".
+
+## Newest online papers (round 165, 2026-11-22)
+
+Four papers from the 2026-11-19 batch, read in full; one capability wired, three as evidence and
+boundaries.
+
+- **A compaction carries the task it was compacting** (arXiv:2611.25673, CompAct-Bench). Two hundred
+  trajectories solved before a boundary lose on average 43.3 points of task accuracy after the
+  history is compacted (56.7% average, 68.5% best); omissions cause repeated work, distortions cause
+  early termination. `harness/compaction_brief.py` extracts the semantic anchors the existing
+  mechanical block does not carry — the task statement, its hard constraints, the last failure —
+  audits the compacted list, writes `<sid>.compactions.jsonl`, and appends one bounded carry-forward
+  block to the summary when a critical anchor is gone (`forge.py compaction anchors|audit`).
+  `context_engine.anchors_block` still owns paths/commands/pins; this does not duplicate it.
+- **A passing branch is not a passing merge** (arXiv:2611.26346, ClonAct): isolated branches pass
+  90.0% of true-conflict pairs and the blind merge reaches 33.3%; the scheduler has no worktree
+  merge, so no gate is proposed. **Pruning loses evidence** (arXiv:2611.26427, MemFolder): folding
+  keeps 99.0% at 50% fewer records, and consolidation can double unit length — the reason the repair
+  is an append, not a rewrite. **Content features are not causal** (arXiv:2611.25583, DriftGuard):
+  the audit checks retention, never salience.
 
 ## Data stores (the data home — `~/.longrun/data`, never the checkout)
 

@@ -2179,6 +2179,26 @@ def compact_session(session, budget_tokens=None, keep_recent=None, origin=None):
                 pass
         return {"session": session, "aborted": True, "origin": origin or "manual",
                 "compacted": 0, "messages_after": len(messages), "summary": None}
+    # Round 165 (arXiv:2611.25673, CompAct-Bench): a compaction is judged by what
+    # the continuation can still do. Keep the task statement, its hard constraints,
+    # the last failure and the named paths; when a critical anchor is gone, append
+    # a short carry-forward block to the summary the continuation reads. Retention,
+    # not causal salience (arXiv:2611.25583), and never fatal to the compaction.
+    try:
+        from longrun.harness import compaction_brief
+        from longrun.memory.stores import append_compaction_audit
+        _brief = compaction_brief.audit(messages, msgs,
+                                        (sess or {}).get("tool_cards"))
+        if _brief.get("anchors"):
+            append_compaction_audit(session, _brief)
+            stats["compaction_brief"] = {
+                "verdict": _brief["verdict"], "anchors": _brief["anchors"],
+                "retained": _brief["retained"],
+                "missing": len(_brief["missing"])}
+            if _brief.get("missing_critical"):
+                stats["carry_forward"] = compaction_brief.fit(msgs, _brief)
+    except Exception:  # noqa: BLE001 — a brief must never block a compaction
+        pass
     sess["messages"] = msgs
     save_session(sess)
     # JAG-104: the cached "real" prompt size belongs to the turn BEFORE the

@@ -7,6 +7,17 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **A compaction now carries the task it was compacting.** Round 165 reads four papers from the
+  2026-11-19 batch and lands one capability. `harness/compaction_brief.py` extracts the semantic
+  anchors the existing mechanical block does not carry — the user's task statement, its hard
+  constraints and the last failure — audits the compacted list, writes
+  `<sid>.compactions.jsonl`, and appends one bounded carry-forward block to the system summary when
+  a critical anchor is gone. `context_engine.anchors_block` still owns paths/commands/pins; this does
+  not duplicate it. Source: arXiv:2611.25673 (CompAct-Bench) — 200 trajectories solved before the
+  boundary average 56.7% after compaction (best 68.5%), with omissions causing repeated work and
+  distortions early termination. arXiv:2611.26346 (a branch can pass while the merge fails),
+  arXiv:2611.26427 (pruning loses evidence) and arXiv:2611.25583 (content is not causal) bound the
+  claim: this checks retention, never salience. Locked by `v1255` (22/22); battery 954/954.
 - **A turn's report is audited against its own record, and a label travels with the file.**
   Round 164 reads four papers from the 2026-11-19 batch in full and lands two capabilities at
   live seams. (1) `harness/work_report.py` extracts the checkable claims of the final text
