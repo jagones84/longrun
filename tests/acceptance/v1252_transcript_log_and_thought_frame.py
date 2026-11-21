@@ -44,26 +44,28 @@ def block(start, end):
     return HTML.split(start)[1].split(end)[0] if start in HTML else ""
 
 
-_ROW = block(".toolcard { display: flex; flex-direction: column; align-items: stretch; gap: 0;",
-             "/* 2026-11-01: the head is the card's disclosure control")
+_ROW = block(".toolcard, details.think, .hinj {",
+             ".toolcard-head, details.think > summary, .hinj > summary {")
 
 # ---- A: a tool call is a LINE ---------------------------------------------
 check("A1 the row has no card surface of its own",
-      "border: 0; border-left: 1px solid var(--line);" in _ROW
+      "border: 0;\n    border-left: 1px dotted var(--rail-line);" in _ROW
       and "background: transparent" in _ROW
       and "border-radius: 0" in _ROW
       and "background: var(--panel2)" not in _ROW, _ROW[:300])
-check("A2 it is a 26px line, not a padded box",
-      ".toolcard-head { display: flex; align-items: center; gap: 8px; min-height: 26px; }" in HTML
-      and "padding: 0 4px 0 10px" in _ROW)
-check("A3 the open state happens in place (accent rail + tint, no second card)",
+check("A2 it is a 28px line, not a padded box",
+      "--row-h: 28px" in HTML
+      and "min-height: var(--row-h)" in block(".toolcard-head, details.think > summary, .hinj > summary {",
+                                               "details.think > summary::-webkit-details-marker")
+      and "padding: 0 6px 0 14px" in _ROW)
+check("A3 the open state happens in place (accent rail, no second card)",
       ".toolcard.expanded {" in HTML and "border-left-color: var(--acc)" in HTML
-      and "border-radius: 0 8px 8px 0" in HTML)
+      and "border-radius: 0 8px 8px 0" not in HTML)
 check("A4 a hover tint replaces the card",
-      ".toolcard:hover { background: color-mix(" in HTML)
+      ".toolcard:hover, details.think > summary:hover, .hinj > summary:hover {" in HTML)
 check("A5 no later pass re-introduces the card surface",
       "border-radius: 10px; background: var(--panel); padding: 8px 11px;" not in HTML
-      and ".toolcard { border-radius: 0; background: transparent; padding: 0 4px 0 10px; }" in HTML)
+      and ".toolcard { border-radius: 0; background: transparent; padding: 0 6px 0 14px; }" in HTML)
 
 # ---- B: only the file name is italic --------------------------------------
 check("B1 one builder puts the verb in text and the file name in `.tc-file`",
@@ -82,17 +84,18 @@ check("B5 the tool keeps a colour on its glyph (read/edit/write differ by token)
           for t in ("fs.read", "fs.edit", "fs.write")))
 
 # ---- C: the ONE framed block ----------------------------------------------
-_THINK = block("details.think { margin: 0 0 10px;", "/* v1.6.3 (JAG-55)")
-# Re-pointed (not weakened) 2026-11-22: TRAE's shape is a plain collapsed row and the card
-# only around the OPEN text, so the frame lives on `[open]` and the closed row is frameless.
+# Re-pointed 2026-11-22 round 169: the closed row is now the same dotted rail as every
+# other line, and the card is painted only on `[open]` — same width, same gutter.
+_THINK = block("details.think[open] {", "details.think > summary .tdot")
 check("C1 the reasoning block is framed only while it is open (TRAE's shape)",
-      "border: 1px solid transparent" in _THINK and "background: transparent" in _THINK
-      and "details.think[open] { border-color: var(--line);" in _THINK
-      and "background: color-mix(" in _THINK and "border-radius: 10px" in _THINK, _THINK[:300])
+      "border: 1px solid var(--line)" in _THINK and "border-radius: 10px" in _THINK
+      and "background: color-mix(" in _THINK
+      and "border-left: 1px dotted var(--rail-line)" in block(".toolcard, details.think, .hinj {",
+                                                              ".toolcard-head, details.think > summary"), _THINK[:300])
 check("C2 it is labelled Thought in every path (live, persisted, replayed)",
-      HTML.count("<summary>Thought</summary>") == 2
-      and '<span class="tdot"></span>Thought' in HTML,
-      HTML.count("<summary>Thought</summary>"))
+      HTML.count("<span class=\"tc-ic\" aria-hidden=\"true\">${TOOL_SVG.thought}</span>Thought") == 3
+      and '<details class="think live">' in HTML,
+      HTML.count("TOOL_SVG.thought"))
 check("C3 the live block pulses, and stops when the turn moves on",
       'class="think live"' in HTML
       and ".think > summary .tdot" in HTML.replace("details", "")
@@ -100,9 +103,9 @@ check("C3 the live block pulses, and stops when the turn moves on",
       HTML.count('classList.remove("live")'))
 check("C4 reduced motion turns the pulse off",
       "@media (prefers-reduced-motion: reduce) { details.think > summary .tdot { animation: none; } }" in HTML)
-check("C5 the body text is flush inside the frame (no second left rule)",
-      "details.think .t { color: var(--dim); font-size: 12px; white-space: pre-wrap;" in HTML
-      and "details.think .t {" in HTML)
+check("C5 the body text is ordinary message text (same family, size and leading)",
+      "details.think .t { color: var(--txt); font-size: 13px; line-height: 1.55;" in HTML
+      and ".msg .bubble { background: transparent; border: 0; border-radius: 0; padding: 0;" in HTML)
 
 # ---- D: the rail heads are labels -----------------------------------------
 _HEADS = block("aside .rail-head, #inspector .insp-tools {", "aside .rail-head h2,")

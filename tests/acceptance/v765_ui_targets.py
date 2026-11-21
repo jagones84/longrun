@@ -94,15 +94,18 @@ check("B4 the rail head controls are 24x24 and sized in ONE place",
       and sum(1 for r in rules(".srail-tools button") if "width:" in r) == 1,
       [r.split("{")[0].strip() for r in rules(".srail-tools button")])
 check("B5 the tool-card disclosure is a 28px row, not an 18px strip",
-      "min-height: 28px" in rule(".toolcard-head"), rule(".toolcard-head")[:80])
-check("B6 the tool-card verdict is a pip painted by the card state",
+      # 2026-11-22 round 169: the height moved to the ONE transcript rhythm token, shared
+      # by a tool row, a thought row and a harness row — the pin follows the token.
+      "--row-h: 28px" in ui and "min-height: var(--row-h)" in rule(".toolcard-head, details.think > summary, .hinj > summary"),
+      rule(".toolcard-head, details.think > summary, .hinj > summary")[:80])
+check("B6 the tool-card verdict is a pip painted by the row state",
       # 82c0397: the pip became a per-tool SVG icon (it also names the tool), so
-      # the card state paints it through `color` + `stroke: currentColor` instead
+      # the row state paints it through `color` + `stroke: currentColor` instead
       # of a background dot. The "no emoji text write" half is unchanged.
       '<span class="tc-ic" aria-hidden="true">${ui.icon}</span>' in ui
-      and ".toolcard.ok .tc-ic { color: var(--ok); }" in ui
+      and ".toolcard.ok .tc-ic { color: var(--dim); }" in ui
       and ".toolcard.err .tc-ic { color: var(--err); }" in ui
-      and "stroke: currentColor" in rule(".toolcard .tc-ic svg")
+      and "stroke: currentColor" in rule(".tc-ic svg")
       and 'textContent = data.ok ? "✅" : "⛔"' not in ui)
 
 # ---- C. no regression of the pins that matter --------------------------------

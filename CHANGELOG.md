@@ -126,6 +126,21 @@ All notable changes to Longrun are documented here. The format follows
   browser-rebuilt `/data/sessions/<id>.json` would be a guess.) Locked by `v1067` A1–A6, B1–B10.
 
 ### Changed
+- **One transcript rhythm — dotted rail, aligned 28px rows, no chevrons, plain "harness" row, frameless
+  messages, edits that open their diff.** Operator, with TRAE screenshots: *"le cose non sono allineate …
+  thought non è tutto nel block … harness è disallineato e diverso dagli altri … la freccetta per espandere
+  non serve, basta cliccare sul nome del file … anche risposte LLM no vanno in frame, manco messaggi utente …
+  le spaziature non sono uniformi … anche l'edit deve avere le stesse cose, con apribile finestra diff …
+  harness → LLM lo toglierei … chiamalo harness e basta … lo scope Observation va tenuto ma non in stampatello
+  … il font del thought non è lo stesso del messaggio normale."* Tool rows, "Thought" rows and harness rows now
+  share ONE gutter and ONE dotted left rail (`padding: 0 6px 0 14px`, `border-left: 1px dotted`,
+  `--row-h: 28px`), and the nested group rails (`tc-kids`, `fg-kids`) are flattened so a tool row, a harness
+  row and a message sit on the same x. Every chevron is gone: the row label is the disclosure, the FILE NAME
+  opens the file (read) or the diff window (edit/write), and the action icons appear only on hover/focus. The
+  `harness → LLM` chip became a plain `harness` row with a soft lowercase scope ("Observation · user") and
+  the raw wire body in place. Answers and user prompts are text, not boxes (the prompt keeps one 2px accent
+  rule), and the thought body uses the message typography (13px/1.55). An edit row carries `+A −D` read from
+  `/api/edits/diff`, and clicking its name opens the same diff window. Locked by `v1253` (20/20).
 - **The transcript is a log, not a stack of boxes; only "Thought" carries a frame.** Operator: *"non mi piace
   vedere testi e messaggi vari nei box … guarda TRAE: solo i thoughts ha nei frames … copia spudoratamente il
   formato … non voglio read edit tutto italico, solo il nome file — il Read no … inspector panel e sessions
