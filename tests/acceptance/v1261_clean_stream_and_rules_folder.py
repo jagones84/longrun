@@ -186,8 +186,10 @@ check("F6 the RH panel shows one folder link and drops the green footer sentence
       'data-rulesdir="' in RR and "every .md is loaded in this session" not in RR
       and "folder · " not in RR)
 EDITOR = src("webui", "assets", "editor.js")
-check("F7 the folder link opens that folder in the editor tree",
-      "async function openRulesDir(dir)" in UI and "ed.revealInTree(dir)" in UI
+check("F7 the folder link OPENS the dock and reveals that folder (closed / phone too)",
+      "async function openRulesDir(dir)" in UI and "ed.showDock()" in UI
+      and "ed.revealInTree(dir)" in UI
+      and "showDock: () => { buildDock(); show(); }," in EDITOR
       and "\n  revealInTree,\n" in EDITOR)
 
 print("\n---\nv1261: %d/%d PASS" % (sum(results), len(results)))

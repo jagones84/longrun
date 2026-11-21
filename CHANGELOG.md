@@ -20,8 +20,9 @@ All notable changes to Longrun are documented here. The format follows
   panel follows: one path link, no duplicated second folder, and the long green footer
   sentence is gone. The project textarea, its save button, its ✨ surface (`rules.project`)
   and the separate "Loaded rule files" card are removed — no single editable project file
-  and no dead generated surface. Locked by `v1261` F1–F7; `v361` A8, `v507`, `v540` A8
-  re-pointed.
+  and no dead generated surface. The folder link calls the editor's `showDock()`, so it
+  also opens the dock on a phone and after the operator closed it (A54 B-1). Locked by
+  `v1261` F1–F7; `v361` A8, `v507`, `v540` A8 re-pointed.
 - **`/context` and `/restart` in the composer — two verbs that reuse the doors that already exist.** Operator:
   *"in the slash commands include the restart command /restart … and the context command for showing context
   informations and details (see breakdown RH panel also) don't duplicate code please … commands and tool share

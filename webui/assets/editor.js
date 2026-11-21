@@ -1440,6 +1440,11 @@ window.SparkEditor = {
   refresh,
   refreshAll,
   reloadTree: () => loadTree(),   // JAG-501: workspace changed -> re-root the tree
+  // 2026-11-22 ROUND 179: the rules panels link a FOLDER path; this shows the dock and
+  // reveals it in the tree. `ensureOpen` alone respects a remembered CLOSE and never
+  // opens on a narrow viewport, so the link did nothing there (A54 B-1) — an explicit
+  // click is an explicit open, the same contract as opening a file.
+  showDock: () => { buildDock(); show(); },
   // 2026-11-22 ROUND 179: the rules panels link a FOLDER path; this reveals it in the
   // tree (expanding its parents) so a click opens where the files are.
   revealInTree,

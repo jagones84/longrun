@@ -18065,7 +18065,10 @@ async function openRulesDir(dir) {
   try { openPanel("files", { scroll: false }); } catch (e) {}
   const ed = window.SparkEditor;
   if (!ed) return;
-  if (ed.ensureOpen) await ed.ensureOpen();
+  // A54 B-1: `ensureOpen` respects a remembered close and never opens under 1024 px,
+  // so on a phone the folder link did nothing. An explicit click is an explicit open.
+  if (ed.showDock) ed.showDock();
+  else if (ed.ensureOpen) await ed.ensureOpen();
   if (ed.revealInTree) ed.revealInTree(dir);
 }
 function _rulesProjectRows(rows) {
@@ -19613,8 +19616,8 @@ function makeAutomateWidget(section, getContext) {
 }
 /* K-5: Settings section id → the generate surface owned by its text field. Only the
    sections whose editable text IS a prompt appear here; the rest of a section's fields
-   are config values an agent must not invent. The Rules panel mounts its own two
-   (`rules.global` / `rules.project`, one per card) because it owns those fields. */
+   are config values an agent must not invent. The Rules panel mounts its own ONE
+   (`rules.global`, its only editable field — project rules are files). */
 const SETTINGS_GEN = { compaction: "compaction.instruction" };
 /* K-5: the ✨ of the controls that live in the STATIC markup — each bound to its OWN
    field, each mounted once, and only if the backend registry has that surface. The
