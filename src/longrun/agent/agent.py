@@ -5424,6 +5424,18 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     # JAG-70/JAG-100: one shared assembler builds the EXACT prompt sent here and
     # measured by the context indicator, so the number cannot drift from reality.
     tool_ctx = server._tool_context()
+    # Round 166 (arXiv:2611.24324): a cheap first stage. The prompt is assembled
+    # for the model that will actually serve the turn, so the small model's own
+    # context budget is the one that applies. Disabled unless config/cascade.yaml
+    # names two aliases; an escalation happens later, on evidence.
+    try:
+        from longrun.harness import model_cascade as _mc
+        _cascade = _mc.plan(_mc.load(), interactive=True)
+        _cascade_started = time.time()
+        if _cascade.get("enabled"):
+            model = _cascade["model"]
+    except Exception:  # noqa: BLE001 — a cascade must never block a turn
+        _mc, _cascade, _cascade_started = None, {}, time.time()
     msgs, ctx_stats = assemble_turn(sess, message, tool_ctx, model, _wrap_goal)
     # JAG-172: everything appended to `msgs` from this index on is THIS turn's
     # agentic history (tool calls, observations, nudges). It is persisted at the
@@ -5609,6 +5621,10 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     # can be audited against what actually ran. Bounded: only the last 200 calls.
     _turn_trace = []
     _effect_blocks = 0
+    # Round 167 (arXiv:2611.25896): one "the recorded check passed" signal per
+    # turn, so the continue-nudge stops pushing more exploration after the work
+    # is verified. It never ends the turn and never demands an artifact.
+    _completion_signalled = False
     # FTA (2609.35732): a failure a LATER success hides is still a failure the
     # turn must report. Tool -> its first error, cleared only by that tool's own
     # success. The existing closure gate reads only the LAST call.
@@ -6160,6 +6176,25 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 _c.append((ch, t))
 
         _t_model = time.time()
+        # Round 166: the cheap model stays in control until evidence says the turn
+        # is stalled. Escalation is once per turn; the large model continues from
+        # the same state (a mid-turn escalation, not the paper's cold restart).
+        if _mc is not None and _cascade.get("enabled") and not _cascade.get("escalated"):
+            _dec = _mc.decide({
+                "current": model,
+                "escalated": False,
+                "failure_streak": _fail_streak,
+                "same_obs": max(_same_obs_n.values() or [0]),
+                "invalid_streak": _invalid_streak,
+                "wall_seconds": time.time() - _cascade_started,
+            }, _cascade)
+            if _dec.get("escalate"):
+                _cascade["escalated"] = True
+                model = _dec["model"]
+                publish("model.escalated", session=sess["id"],
+                        small=_cascade.get("small"), large=model,
+                        reason=_dec.get("reason"), signal=_dec.get("signal"),
+                        value=_dec.get("value"), threshold=_dec.get("threshold"))
         _phase(on_event, sess["id"], "model", model=model)
         _requested_model = model
         _advance_from = model if _reasoning_failover else None
@@ -6978,6 +7013,27 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 note = ("Observation for tool %s:\n%s\n\n"
                         "Continue: call the next tool, or report the result."
                         % (tool, obs))
+            # Round 167 (arXiv:2611.25896): a checkable artifact lets a run stop as
+            # soon as it is verified (38-49% of its budget declined under a stopping
+            # rule). The signal is narrow: a verification command in THIS turn's
+            # trace passed AND its own output carries a pass marker AND the plan has
+            # no open step. It only replaces the continue-nudge with "answer now".
+            if not _completion_signalled:
+                try:
+                    from longrun.harness import completion_signal as _cs
+                    _sig = _cs.detect(_turn_trace)
+                    if _sig.get("verified"):
+                        _g_done = taskgraph.load(sess["id"]) or {}
+                        _open_now = sum(1 for _n in taskgraph.plan_nodes(_g_done)
+                                        if _n.get("status") in taskgraph.OPEN_STATUSES)
+                        if _cs.should(_sig, _open_now, _completion_signalled):
+                            note = _cs.text(_sig)
+                            _completion_signalled = True
+                            publish("completion.verified", session=sess["id"],
+                                    command=_sig.get("command"),
+                                    step=_sig.get("step"))
+                except Exception:  # noqa: BLE001 — a signal must never kill a turn
+                    pass
             # Round 163 (arXiv:2611.26553, ROGUE-AI): a note attached to the tool
             # output that names the HAZARD and its CONSEQUENCE lowered harm for all
             # five tested models; a fact-only or rule-restating note of the same

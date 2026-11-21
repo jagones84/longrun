@@ -7,6 +7,29 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Stop exploring once a recorded check establishes the work.** Round 167 reads four papers from
+  the 2026-11-18/19 batch. `harness/completion_signal.py` recognises a verification command the
+  agent already ran (`memory/anchors.CHECK_RE`, one owner), requires a pass marker in its own output
+  and no open plan step, and replaces the "call the next tool" note with "answer now" once per turn;
+  `completion.verified` is published. It never ends the turn and never demands an artifact.
+  Source: arXiv:2611.25896 — a checkable artifact lets a run decline 38–49% of its budget under a
+  stopping rule, while demanding one costs 25 of 120 tasks. arXiv:2611.25146 (completion is judged
+  against fixed criteria, 32.30% strict pass), arXiv:2611.25380 (a stopping policy is a harness
+  adapter) and arXiv:2611.24102 (the instruction must dominate) bound the claim. Locked by `v1268`
+  (19/19); fast battery 938/950 (the 12 reds are pre-existing, in files this round does not touch);
+  acceptance suite 956 files.
+- **A model cascade: cheap first, escalate on the stall evidence.** Round 166 reads three papers
+  from the 2026-11-18/19 batch. `harness/model_cascade.py` plans a turn on a cheaper model and
+  escalates once to the strong one when the loop's existing failure/repeat/invalid counters or a
+  wall-clock budget fire; `config/cascade.yaml` is off by default and names the two aliases, and its
+  eight knobs are the **Settings ▸ Models ▸ Model cascade** form (the form's overlay is merged by
+  the module, one reader); the prompt is assembled for the model that will serve the turn;
+  `model.escalated` is published.
+  Source: arXiv:2611.24324 — a small-first cascade keeps the large model's resolve rate at 16.4%
+  fewer GPU-hours (33.5% on easy tasks), 1.5 points short of an oracle router. arXiv:2611.23917
+  (trust the cheap draft per step) and arXiv:2611.25135 (a calibrated judge needs labels) are the
+  recorded alternatives. Locked by `v1267` (20/20); `v491` 32/32 (the form); fast battery 938/950
+  (the 12 reds are pre-existing, in files this round does not touch); acceptance suite 956 files.
 - **A compaction now carries the task it was compacting.** Round 165 reads four papers from the
   2026-11-19 batch and lands one capability. `harness/compaction_brief.py` extracts the semantic
   anchors the existing mechanical block does not carry — the user's task statement, its hard

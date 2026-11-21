@@ -1797,6 +1797,33 @@ def cmd_guidelines(args):
     _emit(guideline_budget, out)
 
 
+def cmd_verified(args):
+    """Round 167 (arXiv:2611.25896): did a recorded check establish the work?"""
+    from longrun.harness import completion_signal
+    doc = _load_doc(args, "verified detect|summary FILE.json")
+    if args.action == "summary":
+        out = completion_signal.summary(doc.get("rows") or [])
+    else:
+        out = completion_signal.detect(doc.get("cards") or doc.get("calls") or [])
+    _emit(completion_signal, out)
+
+
+def cmd_cascade(args):
+    """Round 166 (arXiv:2611.24324): cheap first, escalate on evidence."""
+    from longrun.harness import model_cascade
+    doc = _load_doc(args, "cascade plan|decide|summary FILE.json")
+    if args.action == "plan":
+        cfg = model_cascade.load(doc.get("path"))
+        cfg = model_cascade._merge(cfg, doc.get("config") or {})
+        out = model_cascade.plan(cfg, interactive=bool(doc.get("interactive", True)))
+    elif args.action == "decide":
+        cfg = model_cascade.plan(doc.get("config") or {})
+        out = model_cascade.decide(doc.get("state") or {}, cfg)
+    else:
+        out = model_cascade.summary(doc.get("rows") or [])
+    _emit(model_cascade, out)
+
+
 def cmd_compaction(args):
     """Round 165 (arXiv:2611.25673): what the compacted context still carries."""
     from longrun.harness import compaction_brief
@@ -5932,6 +5959,14 @@ def _build_parser():
         p.add_argument("action", choices=["consolidate", "dose", "audit"]); \
         p.add_argument("file", nargs="?", help="JSON: {lessons}, {guidelines, capability}, or {record}"); \
         p.set_defaults(fn=cmd_guidelines)
+    p = sub.add_parser("verified"); \
+        p.add_argument("action", choices=["detect", "summary"]); \
+        p.add_argument("file", nargs="?", help="JSON: {cards} or {rows}"); \
+        p.set_defaults(fn=cmd_verified)
+    p = sub.add_parser("cascade"); \
+        p.add_argument("action", choices=["plan", "decide", "summary"]); \
+        p.add_argument("file", nargs="?", help="JSON: {config, state} or {rows}"); \
+        p.set_defaults(fn=cmd_cascade)
     p = sub.add_parser("compaction"); \
         p.add_argument("action", choices=["anchors", "audit"]); \
         p.add_argument("file", nargs="?", help="JSON: {messages, after, tool_cards}"); \

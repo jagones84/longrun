@@ -1,0 +1,15 @@
+# Model cascade (round 166). Source: arXiv:2611.24324.
+#
+# A cheap first stage, escalated to `large` only on evidence. Off by default:
+# set `enabled: true` and name two aliases the router can serve. `interactive:
+# false` keeps the cascade for asynchronous/headless turns only — the paper
+# measures a wall-clock penalty on tasks that fall back.
+enabled: false
+small: ""
+large: ""
+interactive: true
+escalate:
+  failure_streak: 2
+  same_obs: 2
+  invalid_streak: 2
+  wall_seconds: 0

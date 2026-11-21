@@ -31,6 +31,9 @@ _CHECK_RE = re.compile(
     r"pnpm\s+test|make|ctest|cargo\s+test|go\s+test|bash\s+tests/|"
     r"python[0-9.]*\s+-m\s+(pytest|unittest)|ruff|flake8|mypy|eslint|tsc|"
     r"black\s+--check)\b")
+#: One owner for "this command RUNS or TESTS the code"; other modules (the
+#: completion signal) import this name instead of copying the pattern.
+CHECK_RE = _CHECK_RE
 
 #: The kinds of a tool card that name a repository LOCATION.
 _PATH_TOOLS = ("fs.read", "fs.write", "fs.edit")

@@ -351,9 +351,10 @@ Layout (2026-11-20), by runtime role:
   `compose`, `contrast`, `whole`, `snapshot`, `gateway`, `unixshim`). Only
   `cycle` (with `dry_run=False`) reaches them, and only after
   `whole.readiness()` passes; tests inject a fake runner.
-* `harness/` root — the 24 modules the running app imports (live turn seams,
+* `harness/` root — the 26 modules the running app imports (live turn seams,
   read-only HTTP surfaces and their support, including `hazard_notice`,
-  `work_report`, `effect_state` and `compaction_brief` below).
+  `work_report`, `effect_state`, `compaction_brief`, `model_cascade` and
+  `completion_signal` below).
 
 ### Wired vs report-only
 
@@ -830,6 +831,35 @@ boundaries.
   keeps 99.0% at 50% fewer records, and consolidation can double unit length — the reason the repair
   is an append, not a rewrite. **Content features are not causal** (arXiv:2611.25583, DriftGuard):
   the audit checks retention, never salience.
+
+## Newest online papers (round 166, 2026-11-22)
+
+- **Cheap first, escalate on evidence** (arXiv:2611.24324, timeout cascades). On SWE-bench Verified
+  the small/large gap is concentrated on hard tasks (easy 62% vs 77%, medium 36% vs 68%, hard 2% vs
+  36%), and easy+medium are 91% of the tasks. A small-first cascade keeps the large model's resolve
+  rate at 16.4% fewer GPU-hours (33.5% on easy), for 1.5 points less than an oracle router.
+  `harness/model_cascade.py` plans a turn on the small model and escalates ONCE when the loop's own
+  failure/repeat/invalid counters or a wall-clock budget fire; `config/cascade.yaml` is off by
+  default and names the two aliases, and its eight knobs are the **Settings ▸ Models ▸ Model
+  cascade** form (the overlay the form writes is merged by the module — one reader). The escalation
+  is mid-turn (the large model continues from the small model's state), not the paper's cold
+  restart, so the numbers are not claimed.
+  `forge.py cascade plan|decide|summary`. Vanguard (arXiv:2611.23917) and calibrated decision
+  rewards (arXiv:2611.25135) are recorded as the alternatives: per-step trust without weights, and a
+  judge that needs labels this harness does not have.
+
+## Newest online papers (round 167, 2026-11-22)
+
+- **Stop exploring once a recorded check establishes the work** (arXiv:2611.25896, "The Price of an
+  Explanation"). A checkable artifact lets a run stop as soon as it is verified — 38% of the
+  sampling budget and 49% of the search budget declined under the same rule — but *demanding* one
+  costs 25 of 120 tasks. `harness/completion_signal.py` therefore recognises a verification command
+  the agent already ran (`memory/anchors.CHECK_RE`, one owner), requires a pass marker in its own
+  output and no open plan step, and replaces the "call the next tool" note with "answer now" once
+  per turn. It never ends the turn and never demands an artifact. `forge.py verified detect|summary`.
+  EverydayBench (arXiv:2611.25146: 7.6 fixed criteria per request, 32.30% strict pass over 1,771
+  runs), harness adapters (arXiv:2611.25380) and IDEA's intent-dominance rule (arXiv:2611.24102)
+  bound the claim: the check, not the task, is what the record establishes.
 
 ## Data stores (the data home — `~/.longrun/data`, never the checkout)
 

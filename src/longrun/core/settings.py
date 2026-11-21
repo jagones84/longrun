@@ -198,6 +198,35 @@ SECTIONS = [
         "fields": [],          # filled per role in _sections()
     },
     {
+        # 2026-11-22 (round 166): the small-first cascade is a MODEL-SPEND policy,
+        # so its knobs belong to the Models panel next to Routing — one form, one
+        # writer (`harness/model_cascade.py` owns the merge with its gitignored overlay).
+        "file": "cascade.yaml", "id": "cascade", "panel": "models",
+        "title": "Model cascade · cheap first",
+        "help": ("Run the turn on the cheap model and escalate ONCE, mid-turn, only "
+                 "when the loop's own evidence fires (a failure streak, a repeated "
+                 "state-action pair, invalid output, or a wall-clock budget). Off by "
+                 "default: an empty `small`/`large` pair leaves every turn on the "
+                 "chosen model. The wall-clock price of a fallback is real, so "
+                 "`interactive` can keep it off chat turns."),
+        "fields": [
+            _f("enabled", "enabled", "bool"),
+            _f("small", "cheap model", "text", wide=True,
+               placeholder="openrouter:vendor/cheap-model"),
+            _f("large", "strong model", "text", wide=True,
+               placeholder="openrouter:vendor/strong-model"),
+            _f("interactive", "apply to interactive turns", "bool"),
+            _f("escalate.failure_streak", "escalate after N failures", "int",
+               min=0, max=20, help="0 = this signal never escalates."),
+            _f("escalate.same_obs", "escalate after N repeats", "int",
+               min=0, max=20, help="The same observation twice means the action is stuck."),
+            _f("escalate.invalid_streak", "escalate after N invalid outputs", "int",
+               min=0, max=20),
+            _f("escalate.wall_seconds", "escalate after N seconds", "int",
+               min=0, max=86400, help="0 = no wall-clock trigger."),
+        ],
+    },
+    {
         "file": "decisions.yaml", "id": "decisions", "panel": "harness",
         "title": "Decision layer & speculation",
         "help": ("A pluggable cheap-model layer in front of the loop (route / prune / "
@@ -504,6 +533,9 @@ def _effective(name):
     if name == "routing.yaml":
         from longrun.model import routing
         return routing.load_config()
+    if name == "cascade.yaml":
+        from longrun.harness import model_cascade
+        return model_cascade.load()
     if name == "decisions.yaml":
         from longrun.model import decision
         return decision.load_config()
@@ -572,6 +604,14 @@ def _save(name, clean):
         for path, val in clean.items():
             _set(cur, path, val)
         routing.save_config(cur)
+    elif name == "cascade.yaml":
+        # The form edits the nested policy (`escalate.failure_streak` -> escalate:),
+        # and the module owns the overlay write so there is one reader of its shape.
+        from longrun.harness import model_cascade
+        doc = {}
+        for path, val in clean.items():
+            _set(doc, path, val)
+        model_cascade.save(doc)
     elif name == "hooks.yaml":
         _write_overlay(HOOKS_OVERLAY, {"hooks": clean.get("hooks") or []})
         from longrun.tools import hooks
