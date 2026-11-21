@@ -1370,10 +1370,15 @@
     cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; height: auto; min-height: 0; }
   #goalBar button.gb-text.gb-expand:hover { color: var(--acc); }
   /* JAG-2: the goal editor is a small WINDOW above the composer — a real multi-line,
-     scrollable field where the whole objective is visible. No mono-line input. */
-  .gb-editor { position: absolute; bottom: 100%; left: 22px; right: 22px; margin-bottom: 6px;
+     scrollable field where the whole objective is visible. No mono-line input.
+     ROUND 181 (A54 R180-1): the goal bar only lives inside the strip's panel
+     (.cs-body, a z-70 dropup), so a popover anchored with `bottom: 100%` of the
+     composer landed UNDER that layer and its last row could not be pressed. Both
+     goal popovers are FIXED and placed from the panel's own rect (`_gbPlaceDropup`),
+     which removes the stacking-context dependency entirely. */
+  .gb-editor { position: fixed;
     padding: 8px 9px; border: 1px solid var(--line); border-radius: 10px;
-    background: var(--panel); box-shadow: 0 8px 28px rgba(0,0,0,.45); z-index: 40; }
+    background: var(--panel); box-shadow: 0 8px 28px rgba(0,0,0,.45); z-index: 90; }
   .gb-editor[hidden] { display: none; }
   .gb-editor-hd { display: flex; align-items: center; justify-content: space-between;
     font-size: 11px; color: var(--dim); margin-bottom: 6px; }
@@ -1402,10 +1407,10 @@
   #goalBar > button.gb-act { width: 24px; padding: 0; text-align: center; }
   /* JAG-2 (space): the secondary actions live in a small popover, so the goal row is
      ONE line on a narrow chat instead of a stack of buttons. */
-  .gb-menu { position: absolute; bottom: 100%; right: 22px; margin-bottom: 6px;
+  .gb-menu { position: fixed;
     display: flex; flex-direction: column; gap: 2px; padding: 4px;
     border: 1px solid var(--line); border-radius: 10px; background: var(--panel);
-    box-shadow: 0 8px 28px rgba(0,0,0,.45); z-index: 45; }
+    box-shadow: 0 8px 28px rgba(0,0,0,.45); z-index: 90; }
   .gb-menu[hidden] { display: none; }
   .gb-menu button { text-align: left; height: 24px; min-height: 24px; padding: 0 10px;
     white-space: nowrap; }
@@ -12351,11 +12356,31 @@ function goalToggle() {
   return goalAct(st === "paused" ? "resume" : "pause");
 }
 
-/* JAG-2 (space): the goal actions live in a popover; the bar stays one line. */
+/* JAG-2 (space): the goal actions live in a popover; the bar stays one line.
+   ROUND 181 (A54 R180-1): the bar only exists inside the strip's panel, which is a
+   z-70 layer above the composer. The popovers are fixed and placed from the panel's
+   rect so they sit ABOVE it (and are never clipped or covered) on every viewport. */
+function _gbPlaceDropup(node, wide) {
+  const body = $("csBody");
+  if (!node || !body || body.hidden) return;
+  const z = _uiZoom();
+  const r = body.getBoundingClientRect();
+  node.style.left = "0px"; node.style.top = "0px";
+  node.style.width = wide ? ((r.width - 12) / z) + "px" : "";
+  const w = node.offsetWidth * z, h = node.offsetHeight * z;
+  const vw = window.innerWidth, vh = window.innerHeight;
+  let left = wide ? r.left + 6 : r.right - w - 6;
+  left = Math.max(8, Math.min(left, vw - w - 8));
+  let top = r.top - 6 - h;
+  if (top < 8) top = Math.min(r.bottom + 6, vh - h - 8);
+  node.style.left = (left / z) + "px";
+  node.style.top = (top / z) + "px";
+}
 function goalMenuToggle() {
   const m = $("goalMenu");
   if (!m) return null;
   m.hidden = !m.hidden;
+  if (!m.hidden) _gbPlaceDropup(m, false);
   return null;
 }
 
@@ -12404,6 +12429,7 @@ function goalEdit() {
   }
   panel.hidden = false;
   _growGoalEdit();
+  _gbPlaceDropup(panel, true);
   box.focus();
   try { box.setSelectionRange(box.value.length, box.value.length); } catch (e) {}
   return null;
@@ -20247,6 +20273,8 @@ function _csLabel() {
 }
 function _csReturn() {
   const key = _cs.key;
+  // A fixed goal popover must not outlive its bar: close both before the node goes home.
+  if (key === "goal") { goalMenuClose(); goalEditCancel(); }
   if (_cs.node) {
     if (_cs.parent) _cs.parent.insertBefore(_cs.node, _cs.next || null);
     _cs.node.hidden = _cs.wasHidden;
@@ -24319,7 +24347,11 @@ function renderChatHead() {
   head.hidden = !sessionId;
   if (!sessionId) return;
   const tt = $("chatHeadTitle"), ii = $("chatHeadId");
-  if (tt) { tt.textContent = t || "(untitled)"; tt.title = "click to copy the session name and id"; }
+  // ROUND 181: the accessible name must CONTAIN the visible text (WCAG 2.5.3); a fixed
+  // "copy this session's name and id" labelled a button that reads otherwise (axe 4.14).
+  if (tt) { const n = t || "(untitled)";
+    tt.textContent = n; tt.title = "click to copy the session name and id";
+    tt.setAttribute("aria-label", n + " — copy the session name and id"); }
   if (ii) ii.textContent = sessionId;
 }
 function _copySessionName() {

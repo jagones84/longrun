@@ -6,6 +6,20 @@ All notable changes to Longrun are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- **The goal menu's last row and the editor's "cancel" were unpressed above the strip's panel.**
+  Found by the testing head (A54 finding **R180-1**, high): the goal bar now lives only inside the
+  strip's dropup (`#csBody`, a z-70 layer), while both goal popovers were anchored with
+  `bottom: 100%` of the composer (z 45/40) — the panel painted over them, so `elementFromPoint`
+  on `✕ delete` and on the editor's `cancel` answered the panel and the press did nothing. The
+  menu and the editor are now `position: fixed`, `z-index: 90`, and placed from the panel's own
+  rect by `_gbPlaceDropup` (right-aligned above it for the menu, panel-width window above it for
+  the editor), so no stacking-context dependency is left; closing the strip also closes both.
+  Locked by `v1262` F1–F3 (22/22). Also fixed a live axe 4.14 finding on the chat head: the
+  session title button's accessible name now CONTAINS the visible text (WCAG 2.5.3).
+- **`v768` F1 re-pointed**: the tool card no longer takes a timestamp argument (round 177 removed
+  it); the pin now matches `toolCard(d.tool, d.args)`.
+
 ### Added
 - **One composer status strip, Trae-style: five icons, one label, one panel above.** Operator:
   *"vedi la barra sopra msg box di trae come è strutturata? le icone … tasks process, file
@@ -19,7 +33,7 @@ All notable changes to Longrun are documented here. The format follows
   ✎/⇢/× keep working with no second implementation. Background means the **shell** jobs
   (`shell {background:true}`): `bgjobs.listing()` + `GET /api/bgjobs?session=` (running first,
   log tail) and `POST /api/bgjobs {job}` to stop one; the tool jobs and agent runs stay in
-  RH ▸ Feed. Locked by `v1262` (19/19, in `UI_GUARD`); `v1255`/`v1256`/`v1258` re-pointed.
+  RH ▸ Feed. Locked by `v1262` (22/22, in `UI_GUARD`); `v1255`/`v1256`/`v1258` re-pointed.
 - **Settings ▸ Rules is Trae's Rules list: one folder path, one row per rule file, and a
   per-file "always apply" switch.** Operator: *"metti solo il path delle rules non ogni
   singola rules lì in alto così apri magari il path in hyperlink … se vai in settings rules

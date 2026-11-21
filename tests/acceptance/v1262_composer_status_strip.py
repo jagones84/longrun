@@ -13,6 +13,7 @@ compatto"*. Decisions: ONE strip (the goal bar and the queue chips stop being ro
   C  one label, with the declared priority and the goal icon disabled without a goal
   D  the background panel reads GET /api/bgjobs; the backend lists the shell jobs
   E  the existing surfaces are not duplicated
+  F  the goal popovers clear the strip's panel (A54 R180-1)
 
 Deterministic and offline. Run: python3 tests/acceptance/v1262_composer_status_strip.py
 """
@@ -154,6 +155,24 @@ check("E1 the RH Feed still owns tool jobs and agent runs (one implementation)",
       and "/api/tools/running" in UI and "/api/agent/runs" in UI)
 check("E2 the doc bar is untouched and still above the strip",
       'id="docBar"' in UI and UI.index('id="docBar"') < UI.index('id="cmpSuper"'))
+
+# ---- F: the goal popovers clear the strip's panel (A54 R180-1) ------------
+# The bar only exists inside #csBody (a z-70 layer above the composer). Anchored with
+# bottom:100% of the composer, the popover's last row landed UNDER that layer and could
+# not be pressed. Both popovers are fixed and placed from the panel's rect instead.
+check("F1 both goal popovers are fixed above the panel layer",
+      ".gb-menu { position: fixed;" in UI and ".gb-editor { position: fixed;" in UI
+      and "z-index: 90; }" in between(UI, ".gb-menu { position: fixed;", ".gb-menu[hidden]")
+      and "z-index: 90; }" in between(UI, ".gb-editor { position: fixed;", ".gb-editor[hidden]"))
+HELP = between(UI, "function _gbPlaceDropup(", "function goalMenuToggle()")
+check("F2 the placement reads the panel rect and opens ABOVE it",
+      "const r = body.getBoundingClientRect();" in HELP
+      and "let top = r.top - 6 - h;" in HELP
+      and "if (top < 8) top = Math.min(r.bottom + 6, vh - h - 8);" in HELP)
+check("F3 both openers place the popover, and closing the panel closes them",
+      "if (!m.hidden) _gbPlaceDropup(m, false);" in UI
+      and "_growGoalEdit();\n  _gbPlaceDropup(panel, true);" in UI
+      and 'if (key === "goal") { goalMenuClose(); goalEditCancel(); }' in UI)
 
 print("\n---\nv1262: %d/%d PASS" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

@@ -229,7 +229,7 @@ check("E4 tool.output is replayed on a chat re-attach", "tool.output" in _attach
 # ============================================================================
 ui = open(os.path.join(REPO, "webui", "index.html"), encoding="utf-8").read()
 check("F1 the tool card shows its INPUT as soon as it starts",
-      'toolCard(d.tool, d.args, d.ts)' in ui)
+      'toolCard(d.tool, d.args)' in ui)
 check("F2 tool.output streams into the card", "liveToolOutput" in ui
       and 'addEventListener("tool.output"' in ui)
 check("F3 the objective is read/edited in a real editor window (no duplicate block)",
