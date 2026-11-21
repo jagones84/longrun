@@ -325,6 +325,16 @@ All notable changes to Longrun are documented here. The format follows
   tool gate. (Locked by `v1052` B1/B1b, N9d/N9d2, N11b/N11b2, O1–O7; `v785` K1–K5; `v763` F1–F2.)
 
 ### Fixed
+- **Settings ▸ Rules edits the file it SAVES, and the loaded rule files are links.** The testing head's
+  round-177 verdict found the defect: the project editor rendered the COMPOSED corpus (native file + every
+  folder `.md` + `AGENTS.md` — 85,396 chars live) while `save("project")` writes one file, so the first save
+  would have duplicated every other file's rules into it; the global editor had the same shape with
+  `Global_rules.md` + `AGENTS.md`. `rules.status()` now carries `file_text` (the native file's OWN bytes)
+  beside the composed `text`, both Settings editors bind `file_text`, and the project card names the two
+  folders under its path. The "Uploaded files" card (now "Loaded rule files") renders one `.rfile` button per
+  loaded `.md` that opens the real file via `openInEditor` — the same `data-rulepath` contract as the RH
+  panel. Measured live: `/api/rules` project `text` 85,396 / `file_text` 0, project editor 0 chars, 4 links,
+  a real press opens the dock on `.trae/rules/project_rules.md`; axe 0 violations. Locked by `v1261` F1–F3.
 - **The transcript is TRAE-clean, and the project rules FOLDER is loaded whole.** Operator: *"guarda che
   orrore gli orari e gli exit code e la roba a destra nel chat stream elimina tutto. la data va messa sulla
   sinistra e solo degli user messages e risposte dell'agente, non delle fasi intermedie"*; *"perché dopo

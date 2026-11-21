@@ -425,12 +425,19 @@ def status(ws=None):
     ROUND 177: `file_rows` is what the RH panel renders as one link per `.md` — the
     project scope is no longer a single editable file but every `.md` of the rules
     folders (`project_rules_dirs`), so the panel must be able to name each of them.
+
+    ROUND 178: `text` is the COMPOSED corpus (native file + every folder `.md` +
+    AGENTS.md) because that is what the model reads; `file_text` is the native
+    file's OWN bytes, and it is what an editor must load and save. Showing the
+    composed corpus in an editor that writes a single file would duplicate every
+    other file's rules into it on the first save.
     """
     c = collect(ws)
 
     def _scope(key, path, files):
         return {"path": path, "exists": os.path.isfile(path),
-                "chars": len(c[key]["text"]), "text": c[key]["text"], "files": files,
+                "chars": len(c[key]["text"]), "text": c[key]["text"],
+                "file_text": _read(path), "files": files,
                 "file_rows": _file_rows(files), "prompt_cap": MAX_BYTES}
     proj = _scope("project", project_rules_path(ws), c["project"]["files"])
     proj["dirs"] = project_rules_dirs(ws)   # the folder model the panel renders

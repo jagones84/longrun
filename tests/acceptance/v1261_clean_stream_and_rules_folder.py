@@ -131,5 +131,34 @@ check("E7 the RH panel renders the file LINKS and drops the single editable text
       'data-rulepath="' in UI and 'b.onclick = () => openInEditor(b.dataset.rulepath);' in UI
       and 'id="rule_project"' not in UI)
 
+# ---- F: Settings ▸ Rules edits the file it SAVES, not the composed corpus ---
+# A54 (round 177 verdict): the project editor showed the COMPOSED corpus (native +
+# every folder `.md` + AGENTS.md) while saving one file — the first save would have
+# duplicated every other file's rules. `file_text` is the native file's own bytes.
+from unittest import mock  # noqa: E402
+
+_tmp = tempfile.mkdtemp(prefix="lr-v1261-f-")
+_fd = os.path.join(_tmp, ".trae", "rules")
+os.makedirs(_fd, exist_ok=True)
+with open(os.path.join(_fd, "one.md"), "w", encoding="utf-8") as f:
+    f.write("FOLDER RULE\n")
+_native = os.path.join(_tmp, "native_project.md")
+with open(_native, "w", encoding="utf-8") as f:
+    f.write("NATIVE RULE\n")
+with mock.patch.object(rules, "project_rules_path", lambda ws=None: _native):
+    _st = rules.status(ws=_tmp)
+check("F1 file_text is the native file only, while text is the composed corpus",
+      _st["project"]["file_text"] == "NATIVE RULE\n"
+      and "FOLDER RULE" in _st["project"]["text"]
+      and _st["project"]["file_text"] != _st["project"]["text"])
+LOAD = between(UI, "async function loadRules() {", "async function saveRules(")
+check("F2 both Settings editors load `file_text`, never the composed `text`",
+      '$("rulesGlobalText").value = g.file_text || "";' in LOAD
+      and '$("rulesProjectText").value = p.file_text || "";' in LOAD
+      and "= g.text" not in LOAD and "= p.text" not in LOAD)
+check("F3 the loaded-files card links every file to the editor like the RH panel",
+      'const _rf = (scope, f) =>' in LOAD and 'class="rfile" data-rulepath="' in LOAD
+      and "openInEditor(b.dataset.rulepath)" in LOAD)
+
 print("\n---\nv1261: %d/%d PASS" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)
