@@ -7,6 +7,19 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **A long `<select>` now carries a filter field — the "assign to…" list is searchable.** Operator:
+  *"Assign to shall have the search bar to filter agents, see other menus in the webui for ref.
+  Also I can't see agents maybe e.g. a54?"* The deck's "assign to…" listed the whole roster
+  (97 agents + the placeholder = 98 rows) and could only be walked by eye. The shared themed
+  select (`webui/assets/filtersort.js`, both pages) adds a filter field above the list when it has
+  more than 10 rows: case-insensitive substring over both the row TEXT and its VALUE, so `a54`
+  finds "Head of Longrun Testing · A54" and `head` finds it by name. The field is focused on open
+  and pinned while the list scrolls, hidden rows leave the keyboard walk (`↑`/`↓`/Home/End wrap
+  over what is visible, Enter picks it, typing stays in the field), an empty result says "no
+  match", and the pick still writes the ORIGINAL option index. A short list (e.g. the 2-option
+  jobs scope) keeps the bare list. Measured on the 390×844 touch deck: `a54` → 1 visible row →
+  tap selects A54; `zzzz` → 0 rows + the empty line; `head` + Enter → A54. Locked by `v1268`
+  (17/17, `UI_GUARD`); badge 967 → 968.
 - **The maintainability programme: a guardrail, a domain layer, and the ADRs made mechanical.** The
   environment an external agent (or a fresh contributor) works in is now something it can be held to.
   `scripts/check.sh` is the single fast gate — syntax, `ruff` (`F`,`E9`) and a lenient `mypy` —

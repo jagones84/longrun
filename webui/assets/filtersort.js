@@ -288,7 +288,11 @@
    * One implementation for both pages: this file is loaded by the WebUI and by the deck.
    * Auto-installed, because a menu that forgets to opt in is exactly the defect above.
    * ------------------------------------------------------------------ */
-  var _ts = {sel: null, pop: null, list: null, items: [], at: -1, openedBy: null, openedAt: 0, press: null, ateClick: 0};
+  var _ts = {sel: null, pop: null, list: null, items: [], vis: [], at: -1, search: null,
+             empty: null, openedBy: null, openedAt: 0, press: null, ateClick: 0};
+  /* A list longer than this gets a filter field: the deck's "assign to…" carries the
+     whole roster (97 agents), which cannot be walked by eye. Short lists stay bare. */
+  var SEARCH_MIN = 10;
 
   function _tsEsc(s) {
     return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
@@ -303,13 +307,15 @@
     if (st.pop) st.pop.remove();
     if (st.sel) st.sel.setAttribute("aria-expanded", "false");
     var was = st.sel;
-    st.sel = null; st.pop = null; st.list = null; st.items = []; st.at = -1;
+    st.sel = null; st.pop = null; st.list = null; st.items = []; st.vis = []; st.at = -1;
+    st.search = null; st.empty = null;
     st.openedBy = null; st.press = null;
     if (refocus && was) { try { was.focus({preventScroll: true}); } catch (e) {} }
   }
   function _tsPaint() {
     var st = _ts; if (!st.pop) return;
-    st.items.forEach(function (el, i) {
+    st.items.forEach(function (el) { el.classList.remove("on"); el.setAttribute("aria-selected", "false"); });
+    st.vis.forEach(function (el, i) {
       var on = i === st.at;
       el.classList.toggle("on", on);
       el.setAttribute("aria-selected", on ? "true" : "false");
@@ -318,6 +324,7 @@
         try { el.scrollIntoView({block: "nearest"}); } catch (e) {}
       }
     });
+    if (st.empty) st.empty.hidden = st.vis.length > 0;
   }
   /* Anchored under the control, flipped up and clamped — the rect is in VISUAL px,
      which is what a body-level popup needs even when the page carries a zoom. */
@@ -349,24 +356,57 @@
     pop.setAttribute("role", "dialog");
     var name = sel.getAttribute("aria-label") || sel.title || "choose";
     pop.setAttribute("aria-label", name);
-    pop.innerHTML = '<div class="ts-list" role="listbox" tabindex="-1" aria-label="' + _tsEsc(name) + '">'
+    /* ROUND 185 (operator: *"Assign to shall have the search bar to filter agents, see
+       other menus in the webui for ref"*): the roster is 97 agents and the list is a
+       scroll, so a long list carries a filter field — the same need the palette and the
+       folder pickers answer. A short list keeps the bare list (no control it does not
+       need). The field stays pinned while the list scrolls. */
+    var searchable = opts.length > SEARCH_MIN;
+    pop.innerHTML = (searchable
+        ? '<div class="ts-head"><input class="ts-search" type="text" placeholder="filter\u2026"'
+          + ' aria-label="filter options" autocomplete="off" spellcheck="false"></div>'
+        : "")
+      + '<div class="ts-list" role="listbox" tabindex="-1" aria-label="' + _tsEsc(name) + '">'
       + opts.map(function (o, i) {
         return '<div class="ts-opt' + (i === sel.selectedIndex ? " on" : "") + '" role="option"'
           + ' id="tsOpt' + i + '" aria-selected="' + (i === sel.selectedIndex) + '"'
-          + ' data-i="' + i + '" title="' + _tsEsc(o.textContent) + '">'
-          + _tsEsc(o.textContent) + "</div>";
-      }).join("") + "</div>";
+          + ' data-i="' + i + '" data-v="' + _tsEsc(o.value || "") + '"'
+          + ' title="' + _tsEsc(o.textContent) + '">' + _tsEsc(o.textContent) + "</div>";
+      }).join("") + "</div>"
+      + (searchable ? '<div class="ts-empty" hidden>no match</div>' : "");
     document.body.appendChild(pop);
-    var at = sel.selectedIndex < 0 ? 0 : sel.selectedIndex;
     _ts.sel = sel; _ts.pop = pop;
     _ts.list = pop.querySelector(".ts-list");
     _ts.items = [].slice.call(pop.querySelectorAll(".ts-opt"));
-    _ts.at = at;
+    _ts.vis = _ts.items.slice();
+    _ts.search = pop.querySelector(".ts-search");
+    _ts.empty = pop.querySelector(".ts-empty");
+    var at = _ts.vis.findIndex(function (el) { return Number(el.dataset.i) === sel.selectedIndex; });
+    _ts.at = at < 0 ? 0 : at;
+    if (_ts.search) _ts.search.addEventListener("input", function () { _tsFilter(_ts.search.value); });
     sel.setAttribute("aria-haspopup", "listbox");
     sel.setAttribute("aria-expanded", "true");
     if (!_tsPhone()) _tsPlace(sel, pop);
     _tsPaint();
-    try { (_ts.list || pop).focus({preventScroll: true}); } catch (e) {}
+    /* A filter is only useful with the caret in it (on a phone that is the keyboard the
+       operator expects when asking for a search). A short list keeps its keyboard walk. */
+    try { (_ts.search || _ts.list || pop).focus({preventScroll: true}); } catch (e) {}
+  }
+  /* Case-insensitive substring over the option's TEXT and its VALUE (a label like
+     "Head of Longrun Testing · A54" answers both "head" and "a54"). Hidden rows leave
+     `vis`, so the keyboard walk and Enter only ever touch what the eye can see. */
+  function _tsFilter(q) {
+    var st = _ts; if (!st.pop) return;
+    var needle = String(q || "").trim().toLowerCase();
+    st.items.forEach(function (el) {
+      var hit = !needle
+        || el.textContent.toLowerCase().indexOf(needle) >= 0
+        || String(el.dataset.v || "").toLowerCase().indexOf(needle) >= 0;
+      el.hidden = !hit;
+    });
+    st.vis = st.items.filter(function (el) { return !el.hidden; });
+    st.at = st.vis.length ? 0 : -1;
+    _tsPaint();
   }
   function _tsPick(i) {
     var sel = _ts.sel; if (!sel) return;
@@ -378,8 +418,8 @@
     _tsClose(true);
   }
   function _tsMove(step) {
-    var st = _ts; if (!st.pop || !st.items.length) return;
-    st.at = (st.at + step + st.items.length) % st.items.length;
+    var st = _ts; if (!st.pop || !st.vis.length) return;
+    st.at = (st.at + step + st.vis.length) % st.vis.length;
     _tsPaint();
   }
   /* ROUND 176 (operator: *"the filter in the agents panel … disappears immediately after
@@ -421,21 +461,37 @@
       if (!sel || sel.disabled || sel.multiple) return;
       if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault(); _tsOpen(sel);
-        if (e.key === "ArrowUp") { _ts.at = _ts.items.length - 1; _tsPaint(); }
+        if (e.key === "ArrowUp") { _ts.at = _ts.vis.length - 1; _tsPaint(); }
       }
       return;
     }
+    /* ROUND 185: with the filter field focused, letters BELONG to the field — only the
+       navigation keys keep their meaning (Enter picks the highlighted VISIBLE row). */
+    var inSearch = !!(e.target && e.target.classList && e.target.classList.contains("ts-search"));
     if (e.key === "Escape") { e.preventDefault(); _tsClose(true); return; }
     if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); _tsMove(e.key === "ArrowDown" ? 1 : -1); return; }
+    if (inSearch) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        var cur = _ts.vis[_ts.at];
+        if (cur) _tsPick(Number(cur.dataset.i));
+      }
+      return;
+    }
     if (e.key === "Home") { e.preventDefault(); _ts.at = 0; _tsPaint(); return; }
-    if (e.key === "End") { e.preventDefault(); _ts.at = _ts.items.length - 1; _tsPaint(); return; }
-    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); _tsPick(_ts.at); return; }
-    /* first-letter jump, the one native nicety worth keeping in a long list */
-    if (e.key && e.key.length === 1) {
+    if (e.key === "End") { e.preventDefault(); _ts.at = _ts.vis.length - 1; _tsPaint(); return; }
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      var on = _ts.vis[_ts.at];
+      if (on) _tsPick(Number(on.dataset.i));
+      return;
+    }
+    /* first-letter jump, the one native nicety worth keeping — over what is VISIBLE */
+    if (e.key && e.key.length === 1 && _ts.vis.length) {
       var ch = e.key.toLowerCase();
-      for (var k = 1; k <= _ts.items.length; k++) {
-        var i = (_ts.at + k) % _ts.items.length;
-        if ((_ts.items[i].textContent || "").toLowerCase().indexOf(ch) === 0) {
+      for (var k = 1; k <= _ts.vis.length; k++) {
+        var i = (_ts.at + k) % _ts.vis.length;
+        if ((_ts.vis[i].textContent || "").toLowerCase().indexOf(ch) === 0) {
           e.preventDefault(); _ts.at = i; _tsPaint(); return;
         }
       }

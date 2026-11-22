@@ -72,7 +72,8 @@ v1260_context_card_and_filter_menu v1261_clean_stream_and_rules_folder
 v1262_composer_status_strip v1263_market_detail_and_origin
 v1264_queue_delivery_and_badge v1265_resume_starts_a_goal_turn
 v1266_rail_head_mask_and_density
-v1267_assign_menu_touch"
+v1267_assign_menu_touch
+v1268_assign_select_search"
 
 # TARGETED run (the fix under test): `LONGRUN_BATTERY_TESTS="v753_x v750_y"` runs
 # ONLY those files (plus the UI guard below). The launcher is tests/battery_tmp.sh,
