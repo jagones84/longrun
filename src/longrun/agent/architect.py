@@ -423,7 +423,12 @@ TOOL_SCHEMAS = {
             "goal": {"type": "string", "description": "The job goal, in plain language."},
             "coordinator": {"type": "string", "description": "Coordinator agent ID/name (optional)."},
             "agents": {"type": "array", "description": "Worker agent IDs/names (optional)."},
-            "deps": {"type": "array", "description": "Optional dependency list."},
+            "deps": {
+                "anyOf": [{"type": "array"}, {"type": "object"}],
+                "description": "Worker dependencies: the map {agent: [agents]} "
+                               '(canonical) or an array of {"agent": "A61", '
+                               '"depends_on": ["A60"]} items.',
+            },
             "mode": {"type": "string",
                      "description": "'coordinator' (default: the coordinator plans, then "
                                     "aggregates) or 'run' (every worker gets the goal "
@@ -448,7 +453,12 @@ TOOL_SCHEMAS = {
             "goal": {"type": "string", "description": "New goal, in plain language."},
             "coordinator": {"type": "string", "description": "New coordinator agent ID/name."},
             "agents": {"type": "array", "description": "New worker list (agent IDs/names)."},
-            "deps": {"type": "object", "description": "Worker dependency map {agent: [agents]}."},
+            "deps": {
+                "anyOf": [{"type": "array"}, {"type": "object"}],
+                "description": "Worker dependencies: the map {agent: [agents]} "
+                               '(canonical) or an array of {"agent": "A61", '
+                               '"depends_on": ["A60"]} items.',
+            },
             "mode": {"type": "string",
                      "description": "'coordinator' (default: plan + aggregate) or 'run' "
                                     "(workers get the goal directly)."},

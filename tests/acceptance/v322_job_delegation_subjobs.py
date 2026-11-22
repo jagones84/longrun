@@ -127,6 +127,60 @@ check("E3 running a job whose agent is gone fails loudly (never a silent done)",
       _g2.get("status") == "error" and "no agents" in (_g2.get("error") or ""),
       str(_g2.get("status")))
 
+# ---- H) deps: the ARRAY form the published schema declares -----------------
+# Live 2026-11-22 (J53): `job.create(deps=[{"agent":"A61","depends_on":"A60"}])`
+# was swallowed by `isinstance(deps, dict)` — the job was created with `deps: {}`
+# and the ordering silently vanished. Both shapes must mean the same thing.
+arr = jobs.JOBS.create("array deps", coordinator=M, agents=[M, W], mode="run",
+                       deps=[{"agent": W, "depends_on": M}])["job"]
+check("H1 an array of {agent, depends_on} becomes the canonical map",
+      arr.get("deps") == {W: [M]}, str(arr.get("deps")))
+mp = jobs.JOBS.create("map deps", coordinator=M, agents=[M, W], mode="run",
+                      deps={W: [M]})["job"]
+check("H2 the map form is unchanged", mp.get("deps") == {W: [M]},
+      str(mp.get("deps")))
+filtered = jobs.JOBS.create("array deps filtered", coordinator=M, agents=[M, W],
+                            mode="run",
+                            deps=[{"agent": "A99", "depends_on": M},
+                                  {"agent": W, "depends_on": "A99"}])["job"]
+check("H3 unknown agents are filtered on both ends",
+      filtered.get("deps") == {}, str(filtered.get("deps")))
+
+# ---- I) mode='run': the coordinator LEADS, it is not also a worker ---------
+# Live 2026-11-22 (J53): `agents` held [A60, A61, A59] because the coordinator's
+# org subtree is auto-added. In mode=run A59 received the goal as a worker too
+# and re-delegated it to A60/A61, which already had it — every worker ran twice.
+calls.clear()
+rj = jobs.JOBS.create("run-mode team", coordinator=M, agents=[M, W], mode="run")["job"]
+jobs.JOBS._run(rj["id"])
+_ran = {c["sid"] for c in calls}
+check("I1 only the report runs; the coordinator does not duplicate the goal",
+      _ran == {"sessW"}, str(_ran))
+_runjob = jobs.JOBS.get(rj["id"]) or {}
+check("I2 the run job is done and the worker has its run record",
+      _runjob.get("status") == "done" and W in (_runjob.get("runs") or {}),
+      str(_runjob.get("status")))
+check("I3 the coordinator has NO worker run record",
+      M not in (_runjob.get("runs") or {}), str(list(_runjob.get("runs") or {})))
+check("I4 the coordinator is not minted as a subjob",
+      all(s.get("agent") != M for s in (_runjob.get("subjobs") or {}).values()),
+      str({k: v.get("agent") for k, v in (_runjob.get("subjobs") or {}).items()}))
+# a single-agent run job IS a detached dispatch: coordinator == only worker.
+calls.clear()
+solo = jobs.JOBS.create("solo run", coordinator=M, agents=[M], mode="run")["job"]
+jobs.JOBS._run(solo["id"])
+check("I5 a single-agent run job (detached dispatch) still runs",
+      {c["sid"] for c in calls} == {"sessM"}
+      and (jobs.JOBS.get(solo["id"]) or {}).get("status") == "done",
+      str({c["sid"] for c in calls}))
+# a coordinator that is NOT one of the job's members must never swallow a worker
+calls.clear()
+outside = jobs.JOBS.create("run outside coord", coordinator=M, agents=[W],
+                           mode="run")["job"]
+jobs.JOBS._run(outside["id"])
+check("I6 a run job whose coordinator is not a member still runs its worker",
+      {c["sid"] for c in calls} == {"sessW"}, str({c["sid"] for c in calls}))
+
 # ---- name <-> title sync (JAG-322 part c) ---------------------------------
 agents.REGISTRY.designate("sessW", name="Slave Renamed")
 check("F1 renaming an agent mirrors onto its session title",

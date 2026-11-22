@@ -428,6 +428,53 @@ def merge_deps(job_deps, declared):
     return out
 
 
+def normalize_deps(deps, agents):
+    """The canonical `{agent: [agents]}` map from EITHER documented shape.
+
+    2026-11-22 (operator, live J53): `job.create`'s published schema declares
+    `deps` as an ARRAY, while the store and the runner read a MAP. The array was
+    swallowed by `isinstance(deps, dict)`: the job was created with `deps: {}`
+    and the worker ordering silently vanished. Both shapes are accepted now, and
+    the map form is unchanged.
+
+    Array items: ``{"agent": "A61", "depends_on": "A60"}`` (a string or a list;
+    ``deps`` / ``after`` are accepted as aliases). Only members of `agents`
+    survive, on both ends — the same filter the map form always applied.
+    """
+    agents = set(agents or [])
+    out = {}
+
+    def _add(aid, vals, any_key=False):
+        aid = str(aid or "").strip()
+        if not aid or (not any_key and aid not in agents):
+            return
+        if isinstance(vals, str):
+            vals = [vals]
+        clean = []
+        for v in (vals or []):
+            v = str(v or "").strip()
+            if v in agents and v not in clean:
+                clean.append(v)
+        if clean or any_key:      # the MAP form keeps a key with no valid value
+            cur = out.setdefault(aid, [])
+            for v in clean:
+                if v not in cur:
+                    cur.append(v)
+
+    if isinstance(deps, dict):
+        # The MAP form keeps its keys untouched (historical behaviour); only the
+        # values are filtered to the job's members.
+        for k, v in deps.items():
+            _add(k, v, any_key=True)
+        return out
+    if isinstance(deps, list):
+        for it in deps:
+            if isinstance(it, dict):
+                _add(it.get("agent") or it.get("id"),
+                     it.get("depends_on", it.get("deps", it.get("after"))))
+    return out
+
+
 _STATUS_RE = re.compile(r"^[ \t]*STATUS[ \t]*:[ \t]*(DONE|OK|COMPLETE|BLOCKED|FAILED)\b[:\-]?[ \t]*(.*)$",
                         re.I | re.M)
 
@@ -620,8 +667,7 @@ class JobRegistry:
             d = _load()
             d["seq"] += 1
             jid = "J%d" % d["seq"]
-            clean_deps = {k: [x for x in (v or []) if x in agents]
-                          for k, v in (deps if isinstance(deps, dict) else {}).items()}
+            clean_deps = normalize_deps(deps, agents)
             # JAG-292: inter-job dependencies. A job may declare `blocked_by` — a
             # set of OTHER jobs (paperclip issue_blockers / ruflo Task.resolveExecutionOrder).
             # It stays "blocked" until every blocker is done, then wake() releases it.
@@ -680,9 +726,9 @@ class JobRegistry:
                                       or (job.get("agents") or [None])[0])
             if mode is not None:
                 job["mode"] = str(mode or "coordinator")
-            if isinstance(deps, dict):
+            if isinstance(deps, (dict, list)):
                 al = job.get("agents") or []
-                job["deps"] = {k: [x for x in (v or []) if x in al] for k, v in deps.items()}
+                job["deps"] = normalize_deps(deps, al)
             if blocked_by is not None:
                 job["blocked_by"] = self._clean_blockers(d, jid, blocked_by)
                 done, _failed = self._blockers_state(job, d)
@@ -1279,6 +1325,10 @@ class JobRegistry:
             roster = {a["id"]: a for a in agents_mod.REGISTRY.list()["agents"]}
             sessions = self._live_sessions(job)
             coord = job.get("coordinator")
+            # Did the job ACTUALLY list its coordinator as a member? A job whose
+            # coordinator was deleted falls back to the first live agent below —
+            # that fallback is a WORKER and must never be skipped in `mode=run`.
+            _coord_in_team = bool(coord) and coord in sessions
             failed = []                    # JAG-337: subjobs that could not be finished
             if coord not in sessions:                 # JAG-322: coordinator was deleted
                 coord = next(iter(sessions), None)
@@ -1340,6 +1390,16 @@ class JobRegistry:
             # JAG-322: the plan becomes numbered, attributable SUBJOBS (J6.1, J6.2...)
             # and the delegation is written into the coordinator's own chat.
             _coord_mode = job.get("mode") == "coordinator"
+            # 2026-11-22 (operator, live J53): a coordinator LEADS — it is not also
+            # a worker when the job has a team. `job.create` auto-adds the
+            # coordinator's org subtree, so the coordinator IS in `agents`; in
+            # `mode=run` the old `_coord_mode` guard let it receive the goal as a
+            # worker too, and (now that cascades are allowed) re-delegate it to the
+            # reports that already had it — two full turns per worker. Skip it
+            # whenever there are OTHER agents; a single-agent run job (a detached
+            # dispatch: coordinator == its only worker) must still run.
+            _skip_coord_work = bool(coord) and (
+                _coord_mode or (_coord_in_team and len(sessions) > 1))
             coord_label = (("%s (%s)" % (coord, roster.get(coord, {}).get("name") or coord))
                            if (_coord_mode and coord) else None)
             # 2026-11-08: a job can also be assigned by an AGENT (a detached
@@ -1363,7 +1423,7 @@ class JobRegistry:
             _tree = {k: v for k, v in (_sub or {}).items()
                      if v and k in _team and v in _team}
             subs = plan_subjobs(jid, list(sessions.keys()),
-                                (coord if _coord_mode else None), plan, deps,
+                                (coord if _skip_coord_work else None), plan, deps,
                                 tree=_tree)
             # v629: MERGE, never replace — a deeper org level mints children
             # under ids that already exist (J8.1.1), and a re-dispatch must not
@@ -1380,7 +1440,7 @@ class JobRegistry:
             for wave in waves(list(sessions.keys()), deps):
                 threads = []
                 for aid in wave:
-                    if _coord_mode and aid == coord:
+                    if _skip_coord_work and aid == coord:
                         continue
                     sid = sessions.get(aid)
                     if not sid:
