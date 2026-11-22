@@ -54,7 +54,8 @@ os.environ["LONGRUN_DB"] = os.path.join(TMP, "events.db")
 # core/server.py imports the prompt constants out of agent.py, so import it first.
 from longrun.core import server as _server  # noqa: E402,F401
 from longrun.harness import hazard_notice  # noqa: E402
-from longrun.harness.checks import guideline_budget, recall_log, skill_os_contract  # noqa: E402
+from longrun.harness.checks import guideline_budget  # noqa: E402
+from longrun.harness import recall_log, skill_os_contract  # noqa: E402
 from longrun.memory import skills, stores  # noqa: E402
 from longrun.tools import registry, tools  # noqa: E402
 

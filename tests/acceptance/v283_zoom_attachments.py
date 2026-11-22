@@ -61,7 +61,11 @@ check("chips are bound for mouse AND keyboard",
 check("a raw-bytes URL helper exists (works behind the token)",
       "function _rawUrl" in ui and '"/api/fs/raw?path="' in ui and "authQS()" in ui)
 check("image paths in a transcript linkify to the image window",
-      'a.className = "imglink"; a.dataset.u = _rawUrl(p)' in ui)
+      # 2026-11-22: the anchor stores the path itself (`a.dataset.u = p`); the raw URL is
+      # resolved at click time (`showImage(_rawUrl(a.dataset.u))`). Both the `imglink`
+      # class and a dataset url are still set, so a stopped-linkify regression still fails.
+      'a.className = "imglink"; a.dataset.u = p' in ui
+      and "showImage(_rawUrl(a.dataset.u))" in ui)
 check("the sent message shows the chips next to the bubble",
       "_attachmentChips(_attSnap)" in ui and "_bindAttachmentChips(_bub)" in ui)
 

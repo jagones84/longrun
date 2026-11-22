@@ -107,7 +107,13 @@ check("G2 the env card says what it is, not which panel owns what",
       and "The clients themselves are managed by Settings" not in SETTINGS)
 
 # ---- H. rules paths ----------------------------------------------------------
-check("H1 no scope letter glued to a path", 'files.push("G " + f)' not in UI and '_rf("G", f)' in UI)
+check("H1 no scope letter glued to a path",
+      # 2026-11-22 (ROUND 179): the scope letter was removed from the project-rules file
+      # list entirely (no "G "/"P " prefix); the row is now a folder path plus one
+      # `data-rulepath` link per file, basename only (`_rulesRefRow`). Pin the removed
+      # glued forms AND their replacement, so a re-glued scope letter fails again.
+      'files.push("G " + f)' not in UI and '_rf("G", f)' not in UI
+      and 'data-rulepath=' in UI)
 
 # ---- I. memory status --------------------------------------------------------
 check("I1 the idle state prints no kind ledger",

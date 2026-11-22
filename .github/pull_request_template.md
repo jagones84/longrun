@@ -17,6 +17,7 @@ Closes #
 - [ ] Cross-platform preserved (no POSIX assumption leaked out of `osutil.py`)
 - [ ] No secrets; `.env` stays gitignored
 - [ ] `CHANGELOG.md` `## [Unreleased]` updated for any user-visible change
+- [ ] New or renamed domain vocabulary is in `GLOSSARY.md` (respecting its `_Avoid_` list), and any decision this change settles is recorded in `docs/adr/` — or an existing ADR is explicitly updated, not silently contradicted
 - [ ] Docs updated if behaviour or the API changed
 
 ## Evidence

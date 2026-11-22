@@ -48,7 +48,8 @@ from longrun.memory.stores import (FINISH_SUMMARY_KEYS as _FINISH_SUMMARY_KEYS,
                      persist_inject, persist_tool_card, save_plan, save_session,
                      save_tasks, append_report_audit)
 from longrun.util.textkit import (DSML_MARK, extract_action_json, extract_json,
-                                  is_dsml, is_tool_markup, mask_quotations)
+                                  is_dsml, is_tool_markup, json_value_end,
+                                  mask_quotations, tail_json_spans)
 from longrun.util.tracing import RunTrace, _REAL_CACHED_TOKENS, _REAL_PROMPT_TOKENS
 
 
@@ -1387,9 +1388,26 @@ def _looks_like_json_action(text):
     # `startswith` gate treated that as a normal ANSWER, so when the call did not
     # parse into an action (raw newlines / unescaped quotes) the raw JSON was
     # painted in the chat and the turn stopped as `user_pivot` (session
-    # 5033e643711a). An object whose FIRST key is an action key, ANYWHERE in the
-    # message, is a call attempt — never a reply.
-    return bool(re.search(r"[\{\[]\s*\"(?:action|tool|tool_name|args)\"\s*:", t))
+    # 5033e643711a). An object whose FIRST key is an action key and that ENDS the
+    # message is a call attempt — never a reply.
+    #
+    # 2026-11-22 (session 4dc73d4ef973): a REPORT wrote a dispatch back in plain
+    # prose, mid-sentence, with no backticks — and the "anywhere" match below made
+    # that example the turn's action, executing ghost dispatches with a "..." goal.
+    # Only the message's CONCLUSION can be a call; a complete object embedded in a
+    # sentence is prose about a call. An UNCLOSED value is still a call attempt
+    # (the model was cut off), which the scanners cannot see as a balanced span.
+    for _s, _e, _obj in tail_json_spans(t):
+        if isinstance(_obj, dict) and any(
+                k in _obj for k in ("action", "tool", "tool_name", "args")):
+            return True
+    _call_re = re.compile(r"[\{\[]\s*\"(?:action|tool|tool_name|args)\"\s*:")
+    _m = _call_re.search(t)
+    while _m:
+        if json_value_end(t, _m.start()) is None:
+            return True
+        _m = _call_re.search(t, _m.end())
+    return False
 
 
 # JAG-304: a parsed JSON OBJECT is only an ACTION ATTEMPT when it carries one of
@@ -2452,8 +2470,12 @@ def _apply_chat_dispatch(sess, act, on_event, node=None, after=None, state=None)
     turn IN the teammate's session — its ROLE.md, its model, its transcript — so an
     orchestrator ("Master") actually DISTRIBUTES work across its team and the
     teammate's own chat shows the delegated work. Only a DIRECT REPORT of the
-    current agent may be targeted, and only a NON-delegated turn may dispatch (a
-    dispatched turn cannot dispatch again) — that prevents A->B->A recursion.
+    current agent may be targeted. A turn opened BY a dispatch may itself
+    dispatch: the chain of command cascades level by level, so a delegated
+    manager still hands work to ITS own reports. Recursion is prevented by the
+    org chart being a TREE — a dispatch only ever moves DOWN one level, and the
+    direct-report check is what enforces that (A->B->A would require A to be a
+    report of B, which the chart refuses).
 
     DETACHED by default (2026-11-08): the delegation becomes a JOB and this call
     returns its id at once, so the delegating turn never parks behind the teammate
@@ -2480,6 +2502,13 @@ def _apply_chat_dispatch(sess, act, on_event, node=None, after=None, state=None)
 
         if not goal:
             return _fail("goal required")
+        # 2026-11-22 (session 4dc73d4ef973): a dispatch copied VERBATIM from the
+        # instruction template — goal "..." — ran and burned two teammate turns on
+        # an empty objective. A placeholder is not a goal: refuse it loudly so the
+        # model substitutes the real subtask instead of paying for a no-op turn.
+        if re.match(r"^(?:\.{2,}|…|<\s*[^>\n]{0,80}\s*>)$", goal):
+            return _fail("goal is a placeholder (%r), not a subtask — send the real "
+                         "instruction text" % goal)
         if not to:
             return _fail('agent required (a teammate A-id, e.g. "A9")')
         me = agents_mod.REGISTRY.get(sess["id"]) or {}
@@ -6577,16 +6606,15 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
         if isinstance(act, dict) and act.get("action") == "dispatch":
             # JAG-450: hand a subtask to a TEAMMATE's OWN session (the org chart),
             # so an orchestrator distributes work instead of doing it all itself.
-            if plan_only or autonomous:
-                # A plan-only turn plans; a DELEGATED turn works — neither may
-                # dispatch further (autonomous also blocks A->B->A recursion).
+            # 2026-11-22 (operator): a DELEGATED (autonomous) turn MUST be able to
+            # dispatch too — "qualsiasi agente dispatchato puo e deve poter usare
+            # dispatch a cascata sui suoi riporti diretti". The cascade is finite
+            # because the org chart is a tree and a dispatch always moves DOWN one
+            # level; only a PLAN-ONLY turn is refused (it decomposes and stops).
+            if plan_only:
                 msgs.append({"role": "assistant", "content": answer})
-                _inject("SYSTEM (harness) — %s: dispatching to teammates is not "
-                        "allowed here. %s" % (
-                            "PLAN-ONLY turn" if plan_only else "a DELEGATED turn",
-                            "Record the plan and stop." if plan_only
-                            else "Do this work yourself and report the result."),
-                        "nudge")
+                _inject("SYSTEM (harness) — PLAN-ONLY turn: dispatching to teammates "
+                        "is not allowed here. Record the plan and stop.", "nudge")
                 work_steps += 1
                 _total_work_steps += 1
                 continue
@@ -6697,7 +6725,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                     dict(_batch[0], thought=act.get("thought")))
                 _single = (str(act.get("action") or "").strip().lower()
                            if isinstance(act, dict) else "")
-                if _single == "dispatch" and not (plan_only or autonomous):
+                if _single == "dispatch" and not plan_only:
                     work_steps += 1
                     _total_work_steps += 1
                     used_tools.append("dispatch")
@@ -6727,18 +6755,15 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                     _inject(obs + "\n\nContinue: call the next tool, or report the result.",
                             "observation")
                     continue
-                if _single in ("dispatch", "subagent") and (plan_only or
-                        (_single == "dispatch" and autonomous)):
+                if _single in ("dispatch", "subagent") and plan_only:
                     # Same refusal a bare action gets — never the tool path.
                     msgs.append({"role": "assistant", "content": answer})
-                    _inject("SYSTEM (harness) — %s: %s here. %s" % (
-                        "PLAN-ONLY turn" if plan_only else "a DELEGATED turn",
-                        "dispatching to teammates is not allowed"
-                        if _single == "dispatch"
-                        else "spawning subagents is not allowed",
-                        "Record the plan and stop." if plan_only
-                        else "Do this work yourself and report the result."),
-                        "nudge")
+                    _inject("SYSTEM (harness) — PLAN-ONLY turn: %s here. "
+                            "Record the plan and stop." % (
+                                "dispatching to teammates is not allowed"
+                                if _single == "dispatch"
+                                else "spawning subagents is not allowed"),
+                            "nudge")
                     work_steps += 1
                     _total_work_steps += 1
                     continue

@@ -186,7 +186,7 @@ def _chat_ref(explicit, required=True):
             _no_current_session()
         return ""
     if re.match(r"^A\d+$", ref):
-        a = _agent_row(req("GET", "/api/agents/tree"), ref)
+        a = _agent_row(req(*_route("api_agents_tree")), ref)
         sid = (a or {}).get("session")
         if not sid:
             print("error: no agent %s in the org chart" % ref, file=sys.stderr)
@@ -320,8 +320,8 @@ def cmd_chat(args):
             _set_current_session(got)
             print("session: %s" % got)
         return
-    out = req("POST", "/api/chat", {"message": args.message, "session": sid or None,
-                                    "model": args.model}, timeout=_LONG_TIMEOUT)
+    out = req(*_route("chat"), {"message": args.message, "session": sid or None,
+                                "model": args.model}, timeout=_LONG_TIMEOUT)
     if out.get("error"):
         print("error:", out["error"], file=sys.stderr)
         sys.exit(1)
@@ -375,25 +375,25 @@ def cmd_plan(args):
             print(" %d. [%s] %s %s" % (i, "x" if s.get("done") else " ",
                                        s.get("title", ""), "(" + s.get("id", "") + ")"))
     elif args.action == "generate":
-        out = req("POST", "/api/plan/generate", {"goal": args.goal})
+        out = req(*_route("api_plan_generate"), {"goal": args.goal})
         if out.get("error"):
             print("error:", out["error"], file=sys.stderr)
             sys.exit(1)
         for s in out.get("plan", {}).get("steps", []):
             print(" •", s.get("title"))
     elif args.action == "toggle":
-        print(json.dumps(req("POST", "/api/plan/toggle", {"id": args.id, "session": sid}),
+        print(json.dumps(req(*_route("api_plan_toggle"), {"id": args.id, "session": sid}),
                          indent=2, ensure_ascii=False))
     elif args.action == "set":
         steps = json.loads(args.steps) if args.steps else []
-        print(json.dumps(req("POST", "/api/plan",
+        print(json.dumps(req(*_route("api_plan"),
                              {"goal": args.goal, "steps": steps, "session": sid}),
                          indent=2, ensure_ascii=False))
 
 
 def cmd_tasks(args):
     if args.action == "ls":
-        out = req("GET", "/api/tasks")
+        out = req(*_route("api_tasks"))
         for t in out.get("tasks", []):
             print(" [%s] %s (%s)" % (t.get("status", "?"), t.get("title"), t.get("id")))
         if out.get("remaining"):
@@ -401,24 +401,144 @@ def cmd_tasks(args):
             for r in out["remaining"]:
                 print("  -", r)
     elif args.action == "add":
-        print(json.dumps(req("POST", "/api/tasks", {"title": args.value}), indent=2))
+        print(json.dumps(req(*_route("api_tasks_post"), {"title": args.value}), indent=2))
     elif args.action == "done":
-        print(json.dumps(req("PATCH", "/api/tasks", {"id": args.value, "status": "done"}), indent=2))
+        print(json.dumps(req(*_route("api_tasks_patch"), {"id": args.value, "status": "done"}), indent=2))
     elif args.action == "set":
-        print(json.dumps(req("PATCH", "/api/tasks", {"id": args.value, "status": args.status}), indent=2))
+        print(json.dumps(req(*_route("api_tasks_patch"), {"id": args.value, "status": args.status}), indent=2))
+
+
+# ---- declared CLI routes: ONE source of truth for (method, path) -------------
+# A CLI route is written HERE and nowhere else; the handlers below call through
+# `req(*_route(name))`, so a route cannot drift from its declaration.
+# `tests/acceptance/v588_cli_route_parity.py` asserts every declared route is served
+# by the server under the declared method; `v1276_cli_contract.py` covers the
+# help/action contract against the live parser.
+# Every STATIC route is declared here: 97 call sites across 39 handlers collapsed to 91
+# entries (e.g. GET /api/agents/tree, called from 4 handlers, is now declared once).
+# Paths built at call time (f-strings, concatenation, `%s` — 61 sites) stay inline until
+# a shape is designed for them: `cmd_events` builds its own query, `"/api/runs/" + id`
+# its own suffix. A migrated call is equivalent by construction, because the declared
+# tuple IS the literal it replaced.
+ROUTES = {
+    "api_acp":                      ("POST", "/api/acp"),
+    "api_acp_connect":              ("POST", "/api/acp/connect"),
+    "api_agent_runs":               ("GET", "/api/agent/runs"),
+    "api_agents":                   ("POST", "/api/agents"),
+    "api_agents_tree":              ("GET", "/api/agents/tree"),
+    "api_approvals":                ("GET", "/api/approvals"),
+    "api_blackboard":               ("GET", "/api/blackboard"),
+    "api_blackboard_post":          ("POST", "/api/blackboard"),
+    "api_blackboard_watch":         ("GET", "/api/blackboard/watch"),
+    "api_checkpoints":              ("DELETE", "/api/checkpoints"),
+    "api_checkpoints_get":          ("GET", "/api/checkpoints"),
+    "api_checkpoints_post":         ("POST", "/api/checkpoints"),
+    "api_codebase_build":           ("POST", "/api/codebase/build"),
+    "api_codebase_status":          ("GET", "/api/codebase/status"),
+    "api_context_compact":          ("POST", "/api/context/compact"),
+    "api_context_preview":          ("POST", "/api/context/preview"),
+    "api_embedding_active":         ("GET", "/api/embedding/active"),
+    "api_embedding_active_post":    ("POST", "/api/embedding/active"),
+    "api_embedding_costs":          ("GET", "/api/embedding/costs"),
+    "api_embedding_models":         ("GET", "/api/embedding/models"),
+    "api_embedding_models_post":    ("POST", "/api/embedding/models"),
+    "api_eval_run":                 ("POST", "/api/eval/run"),
+    "api_eval_tasks":               ("GET", "/api/eval/tasks"),
+    "api_jobs":                     ("GET", "/api/jobs"),
+    "api_jobs_post":                ("POST", "/api/jobs"),
+    "api_jobs_wake":                ("POST", "/api/jobs/wake"),
+    "api_knowledge_discover":       ("POST", "/api/knowledge/discover"),
+    "api_knowledge_import":         ("POST", "/api/knowledge/import"),
+    "api_knowledge_notebooks":      ("GET", "/api/knowledge/notebooks"),
+    "api_knowledge_notebooks_post": ("POST", "/api/knowledge/notebooks"),
+    "api_knowledge_research":       ("POST", "/api/knowledge/research"),
+    "api_knowledge_sources":        ("POST", "/api/knowledge/sources"),
+    "api_knowledge_status":         ("GET", "/api/knowledge/status"),
+    "api_market_import_remote":     ("POST", "/api/market/import-remote"),
+    "api_market_install":           ("POST", "/api/market/install"),
+    "api_market_installed":         ("GET", "/api/market/installed"),
+    "api_market_plugin_import":     ("POST", "/api/market/plugin-import"),
+    "api_market_plugin_scan":       ("GET", "/api/market/plugin-scan"),
+    "api_market_sources":           ("GET", "/api/market/sources"),
+    "api_market_sync":              ("POST", "/api/market/sync"),
+    "api_market_sync_status":       ("GET", "/api/market/sync/status"),
+    "api_mcp_clients":              ("GET", "/api/mcp/clients"),
+    "api_mcp_clients_post":         ("POST", "/api/mcp/clients"),
+    "api_mcp_clients_remove":       ("POST", "/api/mcp/clients/remove"),
+    "api_mcp_local_file":           ("POST", "/api/mcp/local-file"),
+    "api_mcp_reload":               ("POST", "/api/mcp/reload"),
+    "api_memory":                   ("POST", "/api/memory"),
+    "api_meta":                     ("GET", "/api/meta"),
+    "api_meta_get":                 ("GET", "/api/meta?action=best"),
+    "api_meta_post":                ("POST", "/api/meta"),
+    "api_model_ensure":             ("POST", "/api/model/ensure"),
+    "api_models":                   ("GET", "/api/models"),
+    "api_orbit_sessions":           ("POST", "/api/orbit/sessions"),
+    "api_plan":                     ("POST", "/api/plan"),
+    "api_plan_generate":            ("POST", "/api/plan/generate"),
+    "api_plan_toggle":              ("POST", "/api/plan/toggle"),
+    "api_providers":                ("GET", "/api/providers"),
+    "api_providers_default":        ("POST", "/api/providers/default"),
+    "api_providers_post":           ("POST", "/api/providers"),
+    "api_research_model":           ("GET", "/api/research/model"),
+    "api_research_model_post":      ("POST", "/api/research/model"),
+    "api_roles":                    ("POST", "/api/roles"),
+    "api_routines":                 ("GET", "/api/routines"),
+    "api_routines_post":            ("POST", "/api/routines"),
+    "api_routing":                  ("GET", "/api/routing"),
+    "api_routing_post":             ("POST", "/api/routing"),
+    "api_runs":                     ("GET", "/api/runs"),
+    "api_sessions":                 ("GET", "/api/sessions"),
+    "api_sessions_post":            ("POST", "/api/sessions"),
+    "api_subagent_collect":         ("POST", "/api/subagent/collect"),
+    "api_subagent_spawn":           ("POST", "/api/subagent/spawn"),
+    "api_tasks":                    ("GET", "/api/tasks"),
+    "api_tasks_patch":              ("PATCH", "/api/tasks"),
+    "api_tasks_post":               ("POST", "/api/tasks"),
+    "api_tools":                    ("GET", "/api/tools"),
+    "api_tools_call":               ("POST", "/api/tools/call"),
+    "api_tools_cancel":             ("POST", "/api/tools/cancel"),
+    "api_tools_running":            ("GET", "/api/tools/running"),
+    "api_voice_status":             ("GET", "/api/voice/status"),
+    "api_voice_stt":                ("POST", "/api/voice/stt"),
+    "api_voice_tts":                ("POST", "/api/voice/tts"),
+    "chat":                         ("POST", "/api/chat"),
+    "control":                      ("POST", "/api/agent/control"),
+    "feed":                         ("GET", "/api/feed"),
+    "hooks":                        ("GET", "/api/hooks"),
+    "mcp":                          ("POST", "/mcp"),
+    "sandbox":                      ("GET", "/api/sandbox?force=1"),
+    "self":                         ("GET", "/api/self"),
+    "selfcheck":                    ("GET", "/api/selfcheck"),
+    "status":                       ("GET", "/api/status"),
+    "swarm":                        ("POST", "/api/swarm/run"),
+}
+
+
+def _route(name):
+    """The declared (method, path) for `name` — or a loud error naming the table."""
+    try:
+        return ROUTES[name]
+    except KeyError:
+        raise KeyError("undeclared CLI route %r — add it to ROUTES in forge.py" % name)
+
+
+def _path(name):
+    """Just the declared path (for callers with their own method, e.g. `sse`)."""
+    return _route(name)[1]
 
 
 def cmd_status(_):
-    print(json.dumps(req("GET", "/api/status"), indent=2))
+    print(json.dumps(req(*_route("status")), indent=2))
 
 
 def cmd_sandbox(_):
-    print(json.dumps(req("GET", "/api/sandbox?force=1"), indent=2))
+    print(json.dumps(req(*_route("sandbox")), indent=2))
 
 
 def cmd_tools(args):
     if args.action == "ls":
-        out = req("GET", "/api/tools")
+        out = req(*_route("api_tools"))
         for t in out.get("tools", []):
             print(" %-9s enabled=%-5s approval=%-8s auto=%d :: %s"
                   % (t["name"], t["enabled"], t["approval"], len(t.get("auto_approve") or []),
@@ -431,12 +551,12 @@ def cmd_tools(args):
         except json.JSONDecodeError as e:
             print("bad json args:", e, file=sys.stderr)
             sys.exit(2)
-        out = req("POST", "/api/tools/call", {"tool": args.value, "args": tool_args})
+        out = req(*_route("api_tools_call"), {"tool": args.value, "args": tool_args})
         print(json.dumps(out, indent=2, ensure_ascii=False))
     elif args.action == "running":
-        print(json.dumps(req("GET", "/api/tools/running"), indent=2, ensure_ascii=False))
+        print(json.dumps(req(*_route("api_tools_running")), indent=2, ensure_ascii=False))
     elif args.action == "cancel":
-        print(json.dumps(req("POST", "/api/tools/cancel", {"job": args.value}),
+        print(json.dumps(req(*_route("api_tools_cancel"), {"job": args.value}),
                          indent=2, ensure_ascii=False))
     # 2026-11-17: the policy WRITE verbs (policy/runtime/verifier/…/approvals) are
     # gone. Operator: "can you change it by CLI? i think not otherwise an agent can
@@ -471,7 +591,7 @@ def cmd_approvals(args):
         print(json.dumps(out, indent=2, ensure_ascii=False))
         sys.exit(0 if out.get("verdict") == "clean" else 1)
     if args.action == "ls":
-        out = req("GET", "/api/approvals")
+        out = req(*_route("api_approvals"))
         print("stats:", json.dumps(out.get("stats", {})))
         for a in out.get("approvals", []):
             print(" [%-13s] %-9s %-10s %s" % (a["status"], a["tool"], a["id"], a["summary"][:70]))
@@ -494,11 +614,11 @@ def cmd_approvals(args):
 
 def cmd_runs(args):
     if args.action == "ls":
-        for r in req("GET", "/api/agent/runs").get("runs", []):
+        for r in req(*_route("api_agent_runs")).get("runs", []):
             print(" [%-9s] %-16s steps=%-2s %s" % (r["status"], r["id"], r["steps"],
                                                    (r.get("goal") or "")[:60]))
     elif args.action == "summary":
-        print(json.dumps(req("GET", "/api/runs"), indent=2, ensure_ascii=False))
+        print(json.dumps(req(*_route("api_runs")), indent=2, ensure_ascii=False))
     elif args.action == "trace":
         print(json.dumps(req("GET", "/api/runs/%s/trace" % args.value), indent=2, ensure_ascii=False))
     elif args.action == "node":
@@ -514,7 +634,7 @@ def cmd_runs(args):
 
 
 def cmd_control(args):
-    out = req("POST", "/api/agent/control", {"runId": args.value2, "action": args.value})
+    out = req(*_route("control"), {"runId": args.value2, "action": args.value})
     print(json.dumps({k: out.get(k) for k in ("id", "status", "goal")}, indent=2))
 
 
@@ -587,13 +707,13 @@ def cmd_memory(args):
         print("\ncounts:", json.dumps(out["counts"]))
         return
     if args.action == "store":
-        out = req("POST", "/api/memory", {"kind": args.value, "content": args.value2})
+        out = req(*_route("api_memory"), {"kind": args.value, "content": args.value2})
         print(json.dumps(out, indent=2, ensure_ascii=False))
     elif args.action == "forget":
         out = req("DELETE", "/api/memory?target=" + _q(args.value))
         print(json.dumps(out, indent=2, ensure_ascii=False))
     elif args.action == "purge":
-        out = req("POST", "/api/memory", {"action": "purge"})
+        out = req(*_route("api_memory"), {"action": "purge"})
         print(json.dumps(out, indent=2, ensure_ascii=False))
     elif args.action == "search":
         query = args.value
@@ -1876,7 +1996,7 @@ def cmd_effectstate(args):
 
 def cmd_skillos(args):
     """Round 163 (arXiv:2611.26256): screen a skill's contract for OS assumptions."""
-    from longrun.harness.checks import skill_os_contract
+    from longrun.harness import skill_os_contract
     doc = _load_doc(args, "skillos build|screen|rank|audit FILE.json")
     if args.action == "build":
         out = {"format": skill_os_contract.FORMAT,
@@ -1894,7 +2014,7 @@ def cmd_skillos(args):
 
 def cmd_greprecall(args):
     """Round 163 (arXiv:2611.25123): the lossless log is the memory; grep is the reader."""
-    from longrun.harness.checks import recall_log
+    from longrun.harness import recall_log
     doc = _load_doc(args, "greprecall search|count|verify|advantage FILE.json")
     text = doc.get("text")
     if text is None and doc.get("path"):
@@ -3779,10 +3899,10 @@ def cmd_subagent(args):
         body = {"goal": args.value}
         if args.max_steps:
             body["max_steps"] = args.max_steps   # omitted -> config/subagents.yaml
-        out = req("POST", "/api/subagent/spawn", body)
+        out = req(*_route("api_subagent_spawn"), body)
         print(json.dumps(out, indent=2, ensure_ascii=False))
     elif args.action == "collect":
-        out = req("POST", "/api/subagent/collect", {"id": args.value, "timeout": 120})
+        out = req(*_route("api_subagent_collect"), {"id": args.value, "timeout": 120})
         print(json.dumps({k: v for k, v in out.items() if k in ("ok", "status", "summary", "steps")}, indent=2))
     elif args.action == "status":
         url = "/api/subagent"
@@ -3793,21 +3913,21 @@ def cmd_subagent(args):
 
 def cmd_meta(args):
     if args.action == "run":
-        out = req("POST", "/api/meta", {"action": "run", "n_candidates": args.n_candidates})
+        out = req(*_route("api_meta_post"), {"action": "run", "n_candidates": args.n_candidates})
         print("Candidates: %d" % len(out.get("results", [])))
         print("Frontier: %d" % len(out.get("frontier", [])))
         for r in out.get("frontier", []):
             print(" %s quality=%.3f cost=%d tok" % (r.get("label"), r.get("quality"), r.get("cost_tokens")))
         print("\nsaved to:", out.get("saved_to"))
     elif args.action == "status":
-        print(json.dumps(req("GET", "/api/meta"), indent=2))
+        print(json.dumps(req(*_route("api_meta")), indent=2))
     elif args.action == "best":
-        print(json.dumps(req("GET", "/api/meta?action=best"), indent=2))
+        print(json.dumps(req(*_route("api_meta_get")), indent=2))
 
 
 def cmd_blackboard(args):
     if args.action == "post":
-        out = req("POST", "/api/blackboard", {"topic": args.value, "content": args.value2,
+        out = req(*_route("api_blackboard_post"), {"topic": args.value, "content": args.value2,
                                                  "tags": [t.strip() for t in (args.tags or "").split(",") if t]})
         print(json.dumps(out, indent=2, ensure_ascii=False))
     elif args.action == "get":
@@ -3826,11 +3946,11 @@ def cmd_blackboard(args):
         for e in out.get("entries", []):
             print(" [%s] %s" % (e.get("topic"), e.get("content", "")[:120]))
     elif args.action == "stats":
-        out = req("GET", "/api/blackboard")
+        out = req(*_route("api_blackboard"))
         print(json.dumps(out.get("stats", {}), indent=2))
     elif args.action == "watch":
         print("watching blackboard (Ctrl-C to stop)…")
-        for ev, payload in sse("/api/blackboard/watch"):
+        for ev, payload in sse(_path("api_blackboard_watch")):
             print("%-14s %s" % (ev, (payload or "")[:160]))
 
 
@@ -3840,14 +3960,14 @@ def cmd_acp(args):
             params = json.loads(args.value2) if args.value2 else {}
         except json.JSONDecodeError:
             params = {}
-        out = req("POST", "/api/acp", {"jsonrpc": "2.0", "id": "cli",
+        out = req(*_route("api_acp"), {"jsonrpc": "2.0", "id": "cli",
                                          "method": args.value, "params": params})
         print(json.dumps(out, indent=2, ensure_ascii=False))
     elif args.action == "connect":
-        out = req("POST", "/api/acp/connect", {"name": args.value, "url": args.value2, "token": args.token})
+        out = req(*_route("api_acp_connect"), {"name": args.value, "url": args.value2, "token": args.token})
         print(json.dumps(out, indent=2, ensure_ascii=False))
     elif args.action == "list":
-        out = req("GET", "/api/mcp/clients")
+        out = req(*_route("api_mcp_clients"))
         print(json.dumps(out, indent=2))
 
 
@@ -3855,7 +3975,7 @@ def cmd_swarm(args):
     body = {"goal": args.goal, "n_workers": args.n_workers}
     if args.max_steps:
         body["max_steps"] = args.max_steps   # omitted -> config/subagents.yaml
-    out = req("POST", "/api/swarm/run", body)
+    out = req(*_route("swarm"), body)
     print("Goal id: %s" % out.get("goal_id"))
     print("Subgoal ids: %s" % out.get("subgoal_ids"))
     print("Synthesis id: %s" % out.get("synthesis_id"))
@@ -3868,15 +3988,15 @@ def cmd_mcp(args):
     """MCP: tools/list over JSON-RPC AND client management (mirrors the WebUI)."""
     action = getattr(args, "action", None) or "tools"
     if action == "tools":
-        init = req("POST", "/mcp", {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+        init = req(*_route("mcp"), {"jsonrpc": "2.0", "id": 1, "method": "initialize",
                                     "params": {"protocolVersion": "2025-06-18"}})
         print("server:", json.dumps(init.get("result", {}).get("serverInfo", {})))
-        tl = req("POST", "/mcp", {"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
+        tl = req(*_route("mcp"), {"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
         for t in tl.get("result", {}).get("tools", []):
             print(" -", t["name"], "::", t["description"][:70])
         return
     if action == "ls":
-        print(json.dumps(req("GET", "/api/mcp/clients"), indent=2, ensure_ascii=False))
+        print(json.dumps(req(*_route("api_mcp_clients")), indent=2, ensure_ascii=False))
         return
     if action == "add":
         # value = a preset name; value2 = a raw JSON spec (command/args or url)
@@ -3885,20 +4005,20 @@ def cmd_mcp(args):
                 body = json.loads(args.json)
             except json.JSONDecodeError as e:
                 print("bad json:", e, file=sys.stderr); sys.exit(2)
-            print(json.dumps(req("POST", "/api/mcp/clients", body), indent=2, ensure_ascii=False))
+            print(json.dumps(req(*_route("api_mcp_clients_post"), body), indent=2, ensure_ascii=False))
         else:
-            print(json.dumps(req("POST", "/api/mcp/clients", {"preset": args.value}),
+            print(json.dumps(req(*_route("api_mcp_clients_post"), {"preset": args.value}),
                              indent=2, ensure_ascii=False))
         return
     if action == "remove":
-        print(json.dumps(req("POST", "/api/mcp/clients/remove", {"name": args.value}),
+        print(json.dumps(req(*_route("api_mcp_clients_remove"), {"name": args.value}),
                          indent=2, ensure_ascii=False))
         return
     if action == "reload":
-        print(json.dumps(req("POST", "/api/mcp/reload", {}), indent=2, ensure_ascii=False))
+        print(json.dumps(req(*_route("api_mcp_reload"), {}), indent=2, ensure_ascii=False))
         return
     if action == "local-file":
-        print(json.dumps(req("POST", "/api/mcp/local-file", {"path": args.value}),
+        print(json.dumps(req(*_route("api_mcp_local_file"), {"path": args.value}),
                          indent=2, ensure_ascii=False))
         return
     print("unknown mcp action", file=sys.stderr); sys.exit(2)
@@ -3945,7 +4065,7 @@ def cmd_market(args):
             print("  !", err)
         return
     if action == "sources":
-        out = req("GET", "/api/market/sources")
+        out = req(*_route("api_market_sources"))
         for s in out.get("sources") or []:
             print("%-14s %6s items  %-26s %s"
                   % (s.get("id"), s.get("items"), _age(s), s.get("cost") or ""))
@@ -3953,10 +4073,10 @@ def cmd_market(args):
         print("job:", json.dumps(out.get("job") or {}))
         return
     if action == "status":
-        print(json.dumps(req("GET", "/api/market/sync/status").get("job") or {}, indent=2))
+        print(json.dumps(req(*_route("api_market_sync_status")).get("job") or {}, indent=2))
         return
     if action == "installed":
-        out = req("GET", "/api/market/installed")
+        out = req(*_route("api_market_installed"))
         for r in out.get("installed") or []:
             print("%-40s %-9s %-14s %-10s %s"
                   % (str(r.get("id"))[:40], r.get("kind"),
@@ -3969,7 +4089,7 @@ def cmd_market(args):
         body = {"source": source}
         if args.limit:
             body["limit"] = int(args.limit)
-        res = req("POST", "/api/market/sync", body)
+        res = req(*_route("api_market_sync"), body)
         if not res.get("ok"):
             print(json.dumps(res, indent=2))
             return
@@ -3980,7 +4100,7 @@ def cmd_market(args):
         job = res.get("job") or {}
         while job.get("running"):
             time.sleep(3)
-            job = req("GET", "/api/market/sync/status").get("job") or {}
+            job = req(*_route("api_market_sync_status")).get("job") or {}
             print("pages=%s rows=%s items=%s skipped=%s"
                   % (job.get("pages"), job.get("rows_seen"), job.get("items"),
                      job.get("skipped")), flush=True)
@@ -4007,7 +4127,7 @@ def cmd_market(args):
         if not (args.value and args.value2):
             print("usage: forge.py market import <source> <slug>", file=sys.stderr)
             sys.exit(2)
-        print(json.dumps(req("POST", "/api/market/import-remote",
+        print(json.dumps(req(*_route("api_market_import_remote"),
                              {"source": args.value, "slug": args.value2}),
                          indent=2, ensure_ascii=False))
         return
@@ -4015,12 +4135,12 @@ def cmd_market(args):
         if not args.value:
             print("usage: forge.py market install <id> [--overwrite]", file=sys.stderr)
             sys.exit(2)
-        print(json.dumps(req("POST", "/api/market/install",
+        print(json.dumps(req(*_route("api_market_install"),
                              {"id": args.value, "overwrite": bool(args.overwrite)}),
                          indent=2, ensure_ascii=False))
         return
     if action == "plugin-scan":
-        out = req("GET", "/api/market/plugin-scan")
+        out = req(*_route("api_market_plugin_scan"))
         for p in out.get("packages") or []:
             ok = "ok  " if not p.get("error") else "no  "
             members = ",".join("%s:%s" % (m.get("kind"), m.get("name"))
@@ -4038,7 +4158,7 @@ def cmd_market(args):
             print("usage: forge.py market plugin-add <path|https-url>", file=sys.stderr)
             sys.exit(2)
         key = "url" if str(args.value).startswith("https://") else "path"
-        print(json.dumps(req("POST", "/api/market/plugin-import",
+        print(json.dumps(req(*_route("api_market_plugin_import"),
                              {key: args.value, "overwrite": bool(args.overwrite)}),
                          indent=2, ensure_ascii=False))
         return
@@ -4057,10 +4177,10 @@ def cmd_market(args):
 
 def cmd_models(args):
     if getattr(args, "action", None) == "ensure":
-        print(json.dumps(req("POST", "/api/model/ensure", {"model": args.value}),
+        print(json.dumps(req(*_route("api_model_ensure"), {"model": args.value}),
                          indent=2, ensure_ascii=False))
         return
-    out = req("GET", "/api/models")
+    out = req(*_route("api_models"))
     # JAG-241: `/api/models` returns {providers:[...], router_models:[...]} — there
     # is NO top-level "models" key, so the old `out.get("models")` printed NOTHING
     # even with the router full. List the local router roster + the providers.
@@ -4089,7 +4209,7 @@ def cmd_index(args):
     """Codebase index (JAG-400): status / build / search — the workspace's code/docs."""
     action = getattr(args, "action", "status") or "status"
     if action == "build":
-        print(json.dumps(req("POST", "/api/codebase/build",
+        print(json.dumps(req(*_route("api_codebase_build"),
                              {"force": bool(getattr(args, "force", False))}),
                          indent=2, ensure_ascii=False))
         return
@@ -4101,7 +4221,7 @@ def cmd_index(args):
         if not out.get("results"):
             print("(no matches)")
         return
-    print(json.dumps(req("GET", "/api/codebase/status"), indent=2, ensure_ascii=False))
+    print(json.dumps(req(*_route("api_codebase_status")), indent=2, ensure_ascii=False))
 
 
 def cmd_knowledge(args):
@@ -4109,18 +4229,18 @@ def cmd_knowledge(args):
     action = getattr(args, "action", "status") or "status"
     nb = getattr(args, "notebook", None)
     if action == "notebooks":
-        out = req("GET", "/api/knowledge/notebooks")
+        out = req(*_route("api_knowledge_notebooks"))
         for n in out.get("notebooks", []):
             print("%-14s %-24s (%s sources)" % (n.get("id"), n.get("name"), n.get("sources")))
         return
     if action == "create":
-        print(json.dumps(req("POST", "/api/knowledge/notebooks",
+        print(json.dumps(req(*_route("api_knowledge_notebooks_post"),
                              {"action": "create", "name": args.value or ""}),
                          indent=2, ensure_ascii=False))
         return
     if action == "add":
         body = {"notebook": nb, "refs": args.value or ""}
-        print(json.dumps(req("POST", "/api/knowledge/sources", body), indent=2, ensure_ascii=False))
+        print(json.dumps(req(*_route("api_knowledge_sources"), body), indent=2, ensure_ascii=False))
         return
     if action == "search":
         qs = "/api/knowledge/search?k=%d&q=%s" % (args.limit, _q(args.value or ""))
@@ -4134,7 +4254,7 @@ def cmd_knowledge(args):
             print("(no matches)")
         return
     if action == "discover":
-        out = req("POST", "/api/knowledge/discover", {"q": args.value or "", "n": args.limit})
+        out = req(*_route("api_knowledge_discover"), {"q": args.value or "", "n": args.limit})
         for c in out.get("candidates", []):
             print("%s\n  %s" % (c.get("title"), c.get("url")))
         if not out.get("candidates"):
@@ -4142,40 +4262,40 @@ def cmd_knowledge(args):
         return
     if action == "import":
         urls = [u.strip() for u in (args.value or "").replace(",", "\n").splitlines() if u.strip()]
-        print(json.dumps(req("POST", "/api/knowledge/import", {"notebook": nb, "urls": urls}),
+        print(json.dumps(req(*_route("api_knowledge_import"), {"notebook": nb, "urls": urls}),
                          indent=2, ensure_ascii=False))
         return
     if action == "research":
         body = {"q": args.value or "", "notebook": nb or "default",
                 "depth": args.depth or "shallow", "n": args.limit,
                 "max_rounds": args.max_rounds}
-        print(json.dumps(req("POST", "/api/knowledge/research", body),
+        print(json.dumps(req(*_route("api_knowledge_research"), body),
                          indent=2, ensure_ascii=False))
         return
-    print(json.dumps(req("GET", "/api/knowledge/status"), indent=2, ensure_ascii=False))
+    print(json.dumps(req(*_route("api_knowledge_status")), indent=2, ensure_ascii=False))
 
 
 def cmd_research(args):
     """Research model selection (JAG-403b). `set` / `ls` / `active`."""
     action = getattr(args, "action", "active") or "active"
     if action == "ls":
-        out = req("GET", "/api/research/model")
+        out = req(*_route("api_research_model"))
         for m in out.get("models", []):
             print("  %-50s %-12s %s" % (m.get("id"), m.get("provider", ""), m.get("label", "")))
         print("\nactive: %s" % (out.get("active") or "(none)"))
         return
     if action == "set":
-        print(json.dumps(req("POST", "/api/research/model", {"model": args.value or ""}),
+        print(json.dumps(req(*_route("api_research_model_post"), {"model": args.value or ""}),
                          indent=2, ensure_ascii=False))
         return
-    print(json.dumps(req("GET", "/api/research/model"), indent=2, ensure_ascii=False))
+    print(json.dumps(req(*_route("api_research_model")), indent=2, ensure_ascii=False))
 
 
 def cmd_embedding(args):
     """Embedding models + cost log (JAG-403): models/active/costs/cost-test."""
     action = getattr(args, "action", "active") or "active"
     if action == "models":
-        out = req("GET", "/api/embedding/models")
+        out = req(*_route("api_embedding_models"))
         for m in out.get("models", []):
             local = " (local, free)" if (m.get("price_per_mtok") or 0) == 0 else (
                 " $%s/1Mt" % m.get("price_per_mtok"))
@@ -4185,11 +4305,11 @@ def cmd_embedding(args):
         print("\nactive: %s" % (out.get("active") or "(none — lexical only)"))
         return
     if action == "active":
-        out = req("GET", "/api/embedding/active")
+        out = req(*_route("api_embedding_active"))
         print("active: %s" % (out.get("active") or "(none — lexical only)"))
         return
     if action == "set":
-        print(json.dumps(req("POST", "/api/embedding/active",
+        print(json.dumps(req(*_route("api_embedding_active_post"),
                              {"model": args.value or ""}),
                          indent=2, ensure_ascii=False))
         return
@@ -4199,15 +4319,15 @@ def cmd_embedding(args):
         except json.JSONDecodeError as e:
             print("bad json model spec:", e, file=sys.stderr)
             sys.exit(2)
-        print(json.dumps(req("POST", "/api/embedding/models", {"add": spec}),
+        print(json.dumps(req(*_route("api_embedding_models_post"), {"add": spec}),
                          indent=2, ensure_ascii=False))
         return
     if action == "remove":
-        print(json.dumps(req("POST", "/api/embedding/models", {"remove": args.value or ""}),
+        print(json.dumps(req(*_route("api_embedding_models_post"), {"remove": args.value or ""}),
                          indent=2, ensure_ascii=False))
         return
     if action == "costs":
-        out = req("GET", "/api/embedding/costs")
+        out = req(*_route("api_embedding_costs"))
         print("total cost so far: $%.6f   total tokens: %d" % (
             out.get("total_cost_usd", 0.0), out.get("total_tokens", 0)))
         print("by model:")
@@ -4230,7 +4350,7 @@ def cmd_embedding(args):
 
 def cmd_feed(_):
     try:
-        for ev, payload in sse("/api/feed"):
+        for ev, payload in sse(_path("feed")):
             try:
                 d = json.loads(payload) if payload and not payload.startswith("[") else {}
             except json.JSONDecodeError:
@@ -4279,7 +4399,7 @@ def _print_history_full(out):
 
 def cmd_sessions(args):
     if args.action == "ls":
-        out = req("GET", "/api/sessions")
+        out = req(*_route("api_sessions"))
         cur = _current_session()
         for s in out.get("sessions", []):
             mark = "*" if cur and s.get("id") == cur else " "
@@ -4307,7 +4427,7 @@ def cmd_sessions(args):
             out = req("GET", "/api/sessions/new?title=" + _q(args.value or "session")
                       + "&workspace=" + _q(ws))
         else:
-            out = req("POST", "/api/sessions", {"title": args.value})
+            out = req(*_route("api_sessions_post"), {"title": args.value})
         print(json.dumps({k: out.get(k) for k in ("id", "title", "messages")},
                          indent=2, ensure_ascii=False))
         if out.get("id"):
@@ -4646,10 +4766,10 @@ def cmd_context(args):
         url = "/api/context" + ("?session=" + _q(sid) if sid else "")
         print(json.dumps(req("GET", url), indent=2, ensure_ascii=False))
     elif args.action == "compact":
-        print(json.dumps(req("POST", "/api/context/compact", {"session": sid}),
+        print(json.dumps(req(*_route("api_context_compact"), {"session": sid}),
                          indent=2, ensure_ascii=False))
     elif args.action == "preview":
-        out = req("POST", "/api/context/preview", {"session": sid, "message": args.value})
+        out = req(*_route("api_context_preview"), {"session": sid, "message": args.value})
         print(json.dumps(out, indent=2, ensure_ascii=False))
     elif args.action == "items":
         url = "/api/context/items" + ("?session=" + _q(sid) if sid else "")
@@ -4657,19 +4777,19 @@ def cmd_context(args):
 
 
 def cmd_hooks(_):
-    print(json.dumps(req("GET", "/api/hooks"), indent=2, ensure_ascii=False))
+    print(json.dumps(req(*_route("hooks")), indent=2, ensure_ascii=False))
 
 
 def cmd_routing(args):
     if args.action == "show":
-        print(json.dumps(req("GET", "/api/routing"), indent=2, ensure_ascii=False))
+        print(json.dumps(req(*_route("api_routing")), indent=2, ensure_ascii=False))
     else:
         try:
             body = json.loads(args.value) if args.value else {}
         except json.JSONDecodeError as e:
             print("bad json:", e, file=sys.stderr)
             sys.exit(2)
-        print(json.dumps(req("POST", "/api/routing", body), indent=2, ensure_ascii=False))
+        print(json.dumps(req(*_route("api_routing_post"), body), indent=2, ensure_ascii=False))
 
 
 def cmd_setup(args):
@@ -4858,11 +4978,11 @@ def cmd_manifest(_):
 
 def cmd_checkpoints(args):
     if args.action == "ls":
-        out = req("GET", "/api/checkpoints")
+        out = req(*_route("api_checkpoints_get"))
         for c in out.get("checkpoints", []):
             print(" %-14s %-20s %s" % (c.get("id"), c.get("label") or "", c.get("ts") or ""))
     elif args.action == "create":
-        print(json.dumps(req("POST", "/api/checkpoints",
+        print(json.dumps(req(*_route("api_checkpoints_post"),
                              {"label": args.value, "session": args.session}),
                          indent=2, ensure_ascii=False))
     elif args.action == "show":
@@ -4874,33 +4994,33 @@ def cmd_checkpoints(args):
         print(json.dumps(req("DELETE", "/api/checkpoints/" + args.value),
                          indent=2, ensure_ascii=False))
     elif args.action == "prune":
-        print(json.dumps(req("DELETE", "/api/checkpoints"),
+        print(json.dumps(req(*_route("api_checkpoints")),
                          indent=2, ensure_ascii=False))
 
 
 def cmd_self(_):
-    print(json.dumps(req("GET", "/api/self"), indent=2, ensure_ascii=False))
+    print(json.dumps(req(*_route("self")), indent=2, ensure_ascii=False))
 
 
 def cmd_selfcheck(_):
-    print(json.dumps(req("GET", "/api/selfcheck"), indent=2, ensure_ascii=False))
+    print(json.dumps(req(*_route("selfcheck")), indent=2, ensure_ascii=False))
 
 
 def cmd_providers(args):
     action = getattr(args, "action", None) or "ls"
     if action == "ls":
-        print(json.dumps(req("GET", "/api/providers"), indent=2, ensure_ascii=False))
+        print(json.dumps(req(*_route("api_providers")), indent=2, ensure_ascii=False))
     elif action == "add":
         try:
             body = json.loads(args.value) if args.value else {}
         except json.JSONDecodeError as e:
             print("bad json:", e, file=sys.stderr); sys.exit(2)
-        print(json.dumps(req("POST", "/api/providers", body), indent=2, ensure_ascii=False))
+        print(json.dumps(req(*_route("api_providers_post"), body), indent=2, ensure_ascii=False))
     elif action == "rm":
         print(json.dumps(req("DELETE", "/api/providers?id=" + _q(args.value)),
                          indent=2, ensure_ascii=False))
     elif action == "default":
-        print(json.dumps(req("POST", "/api/providers/default", {"ref": args.value}),
+        print(json.dumps(req(*_route("api_providers_default"), {"ref": args.value}),
                          indent=2, ensure_ascii=False))
     elif action == "rm-model":
         print(json.dumps(req("DELETE", "/api/providers/models?provider=" + _q(args.value)),
@@ -4931,7 +5051,7 @@ def cmd_eval(args):
         print(json.dumps(out, indent=2, ensure_ascii=False))
         return
     if args.action == "tasks":
-        out = req("GET", "/api/eval/tasks")
+        out = req(*_route("api_eval_tasks"))
         rows = out.get("tasks", []) if isinstance(out, dict) else (out if isinstance(out, list) else [])
         for t in rows:
             if isinstance(t, dict):
@@ -4940,19 +5060,19 @@ def cmd_eval(args):
             else:
                 print(" ", t)
     else:
-        out = req("POST", "/api/eval/run", {"model": args.model, "max_steps": args.max_steps,
+        out = req(*_route("api_eval_run"), {"model": args.model, "max_steps": args.max_steps,
                                             "task_id": args.task, "save": not args.no_save})
         print(json.dumps(out, indent=2, ensure_ascii=False))
 
 
 def cmd_voice(args):
     if args.action == "status":
-        print(json.dumps(req("GET", "/api/voice/status"), indent=2, ensure_ascii=False))
+        print(json.dumps(req(*_route("api_voice_status")), indent=2, ensure_ascii=False))
     elif args.action == "stt":
-        print(json.dumps(req("POST", "/api/voice/stt", {"text": args.value}),
+        print(json.dumps(req(*_route("api_voice_stt"), {"text": args.value}),
                          indent=2, ensure_ascii=False))
     elif args.action == "tts":
-        print(json.dumps(req("POST", "/api/voice/tts", {"text": args.value}),
+        print(json.dumps(req(*_route("api_voice_tts"), {"text": args.value}),
                          indent=2, ensure_ascii=False))
 
 
@@ -4976,7 +5096,7 @@ def _agent_row(tree, aid):
 def _resolve_session(ref):
     """Accept a session id OR an agent id (AX) and return the session id (JAG-294)."""
     if ref and re.match(r"^A\d+$", str(ref)):
-        a = _agent_row(req("GET", "/api/agents/tree"), ref)
+        a = _agent_row(req(*_route("api_agents_tree")), ref)
         return a.get("session") if a else ref
     return ref
 
@@ -4993,10 +5113,10 @@ def cmd_roles(args):
         print(out.get("text") or "(no role for this session)")
     elif args.action == "set":
         text = sys.stdin.read() if args.text in (None, "-") else args.text
-        print(json.dumps(req("POST", "/api/roles", {"session": sid, "text": text}),
+        print(json.dumps(req(*_route("api_roles"), {"session": sid, "text": text}),
                          indent=2, ensure_ascii=False))
     elif args.action == "clear":
-        print(json.dumps(req("POST", "/api/roles", {"session": sid, "text": ""}),
+        print(json.dumps(req(*_route("api_roles"), {"session": sid, "text": ""}),
                          indent=2, ensure_ascii=False))
     elif args.action == "reset":
         print(json.dumps(req("DELETE", "/api/roles?session=" + _q(sid)), indent=2))
@@ -5004,7 +5124,7 @@ def cmd_roles(args):
 
 def cmd_agents(args):
     if args.action == "ls":
-        out = req("GET", "/api/agents/tree")
+        out = req(*_route("api_agents_tree"))
         for a in out.get("agents", []):
             # 2026-11-18 (operator: "parlare con i miei agenti"): an agent IS a
             # session, and that session is what `chat --session` takes — printing it
@@ -5018,12 +5138,12 @@ def cmd_agents(args):
         if not name:
             print("error: a name is required", file=sys.stderr)
             sys.exit(1)
-        tree = req("GET", "/api/agents/tree")
+        tree = req(*_route("api_agents_tree"))
         if any((x.get("name") or "").strip().lower() == name.lower()
                for x in tree.get("agents", [])):
             print("error: name already in use:", name, file=sys.stderr)
             sys.exit(1)
-        s = req("POST", "/api/orbit/sessions", {"title": name})
+        s = req(*_route("api_orbit_sessions"), {"title": name})
         if not s.get("ok"):
             print("error:", s.get("error") or "could not create session", file=sys.stderr)
             sys.exit(1)
@@ -5031,12 +5151,12 @@ def cmd_agents(args):
         for k in ("role", "model", "reports_to"):
             if getattr(args, k):
                 body[k] = getattr(args, k)
-        out = req("POST", "/api/agents", body)
+        out = req(*_route("api_agents"), body)
         print(json.dumps(out, indent=2, ensure_ascii=False))
         if not out.get("ok"):
             sys.exit(1)
     elif args.action == "set":
-        a = _agent_row(req("GET", "/api/agents/tree"), args.value)
+        a = _agent_row(req(*_route("api_agents_tree")), args.value)
         if not a:
             print("error: unknown agent", args.value, file=sys.stderr)
             sys.exit(1)
@@ -5044,9 +5164,9 @@ def cmd_agents(args):
         for k in ("name", "role", "model", "reports_to"):
             if getattr(args, k):
                 body[k] = getattr(args, k)
-        print(json.dumps(req("POST", "/api/agents", body), indent=2, ensure_ascii=False))
+        print(json.dumps(req(*_route("api_agents"), body), indent=2, ensure_ascii=False))
     elif args.action == "rm":
-        a = _agent_row(req("GET", "/api/agents/tree"), args.value)
+        a = _agent_row(req(*_route("api_agents_tree")), args.value)
         if not a:
             print("error: unknown agent", args.value, file=sys.stderr)
             sys.exit(1)
@@ -5056,9 +5176,9 @@ def cmd_agents(args):
 
 def cmd_routines(args):
     if args.action == "ls":
-        print(json.dumps(req("GET", "/api/routines"), indent=2, ensure_ascii=False))
+        print(json.dumps(req(*_route("api_routines")), indent=2, ensure_ascii=False))
     elif args.action == "new":
-        print(json.dumps(req("POST", "/api/routines", {"agent": args.agent, "goal": args.value, "every_seconds": args.every}), indent=2, ensure_ascii=False))
+        print(json.dumps(req(*_route("api_routines_post"), {"agent": args.agent, "goal": args.value, "every_seconds": args.every}), indent=2, ensure_ascii=False))
     elif args.action == "rm":
         print(json.dumps(req("DELETE", "/api/routines/" + args.value), indent=2, ensure_ascii=False))
     elif args.action in ("enable", "disable"):
@@ -5067,7 +5187,7 @@ def cmd_routines(args):
 
 def cmd_jobs(args):
     if args.action == "ls":
-        out = req("GET", "/api/jobs")
+        out = req(*_route("api_jobs"))
         for j in out.get("jobs", []):
             print(" %-4s %-8s %-6s %s" % (j.get("id"), j.get("status"),
                                           j.get("coordinator") or "",
@@ -5084,12 +5204,12 @@ def cmd_jobs(args):
             body["coordinator"] = args.coordinator
         if getattr(args, "mode", None):
             body["mode"] = args.mode
-        print(json.dumps(req("POST", "/api/jobs", body), indent=2, ensure_ascii=False))
+        print(json.dumps(req(*_route("api_jobs_post"), body), indent=2, ensure_ascii=False))
     elif args.action == "run":
         print(json.dumps(req("POST", "/api/jobs/%s/dispatch" % _q(args.value), {}),
                          indent=2, ensure_ascii=False))
     elif args.action == "wake":
-        print(json.dumps(req("POST", "/api/jobs/wake", {}), indent=2, ensure_ascii=False))
+        print(json.dumps(req(*_route("api_jobs_wake"), {}), indent=2, ensure_ascii=False))
     elif args.action == "get":
         print(json.dumps(req("GET", "/api/jobs/" + _q(args.value)), indent=2, ensure_ascii=False))
 

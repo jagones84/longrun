@@ -15,6 +15,12 @@ eval/results/
 # change starts tracking parts of .Matrix (e.g. rules/ or docs/).
 .Matrix/trash/
 
+# Local issue tracker + engineering-flow working files (spec, tickets, verdict).
+# Same reason as `.agent/` above: this is one run's plan, not shipped source. The
+# durable outputs of a run are the tracked docs it produces (GLOSSARY.md, docs/adr/,
+# CODING_STANDARDS.md), never the ticket scratch. See docs/agents/issue-tracker.md.
+.scratch/
+
 
 # JAG-180: editor/agent backup + temp files must never reach the repo.
 *.bak

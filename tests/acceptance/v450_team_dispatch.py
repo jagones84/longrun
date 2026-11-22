@@ -101,6 +101,23 @@ check("A4 the delegated user message is attributed to the dispatcher",
 check("A5 a dispatch tool.result event is emitted",
       any(k == "tool.result" and kw.get("tool") == "dispatch" for k, kw in ev))
 
+# ---- A2) the CASCADE: a delegated manager dispatches to ITS OWN report ------
+# 2026-11-22 (operator): "qualsiasi agente dispatchato puo e deve poter usare
+# dispatch a cascata sui suoi riporti diretti". coder1 is itself a delegated
+# agent in this org; it must still be able to hand work to its own report.
+L = A.REGISTRY.designate("sess_leaf", name="leaf", role="worker",
+                         reports_to=C["id"])["agent"]
+ev.clear()
+out_cascade = S._apply_chat_dispatch(
+    {"id": "sess_coder1", "messages": []},
+    {"action": "dispatch", "agent": L["id"], "goal": "leaf subtask", "wait": True},
+    on_event)
+check("A6 a manager can cascade a dispatch to its own direct report",
+      "ACK from sess_leaf" in out_cascade, out_cascade[:120])
+check("A7 the leaf's OWN session received the cascaded turn",
+      any(m.get("role") == "assistant" and "ACK from sess_leaf" in (m.get("content") or "")
+          for m in _store["sess_leaf"]["messages"]))
+
 # ---- B) guard rails ---------------------------------------------------------
 res_b = S._apply_chat_dispatch(master_sess,
                                {"action": "dispatch", "agent": "A99", "goal": "x"}, on_event)
@@ -110,14 +127,20 @@ res_c = S._apply_chat_dispatch({"id": "sess_nobody", "messages": []},
 check("B2 a non-agent session cannot dispatch", "not an org agent" in res_c, res_c)
 res_d = S._apply_chat_dispatch(master_sess, {"action": "dispatch", "agent": C["id"]}, on_event)
 check("B3 a goal is required", "goal required" in res_d, res_d)
+res_e = S._apply_chat_dispatch(master_sess,
+                               {"action": "dispatch", "agent": C["id"], "goal": "..."},
+                               on_event)
+check("B4 a placeholder goal is refused (no teammate turn burned)",
+      "placeholder" in res_e, res_e)
 
 # ---- C) the static wiring: prompt roster + loop branch + tool prompt ---------
 agent_src = open(os.path.join(REPO, "src", "longrun", "agent", "agent.py"), encoding="utf-8").read()
 prompt_src = open(os.path.join(REPO, "src", "longrun", "model", "prompt.py"), encoding="utf-8").read()
 check("C1 the loop has the dispatch action branch",
       'act.get("action") == "dispatch"' in agent_src and "_apply_chat_dispatch(sess, act" in agent_src)
-check("C2 a delegated/plan-only turn cannot dispatch (no recursion)",
-      "plan_only or autonomous" in agent_src)
+check("C2 only a PLAN-ONLY turn is refused dispatch; a delegated turn may cascade",
+      "if plan_only:" in agent_src and "plan_only or autonomous" not in agent_src
+      and '_single == "dispatch" and not plan_only' in agent_src)
 check("C3 the chat tool prompt advertises dispatch",
       '"action":"dispatch"' in agent_src and "DISTRIBUTE work" in agent_src)
 check("C4 the role prompt lists the team (org chart) for an orchestrator",

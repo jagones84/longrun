@@ -7,6 +7,27 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **The maintainability programme: a guardrail, a domain layer, and the ADRs made mechanical.** The
+  environment an external agent (or a fresh contributor) works in is now something it can be held to.
+  `scripts/check.sh` is the single fast gate — syntax, `ruff` (`F`,`E9`) and a lenient `mypy` —
+  **ratcheted** against `scripts/guardrail-baseline.txt` (414 / 88) so it fails only when a count
+  *increases*; it leaves no bytecode beside the source, and is wired into CI
+  (`.github/workflows/check.yml`), an optional pre-commit hook and `tests/mega_test.sh` (one
+  definition, no drift). The domain layer lands: `GLOSSARY.md` (the shared names, each with its
+  `_Avoid_` list) and `docs/adr/0001..0005`, both now first in the `AGENTS.md` read order;
+  `CODING_STANDARDS.md` separates the judgement calls a reviewer enforces from the process that stays
+  in `CONTRIBUTING.md`. Four acceptance pins make the recorded decisions mechanical rather than
+  aspirational — `v1271` (the docs' inventory vs the tree), `v1272` (ADR-0001: the only HARD
+  third-party import is PyYAML), `v1273` (ADR-0003: nothing outside `core/forge.py` reaches into the
+  report-only zone) and `v1274` (ADR-0002: the data home and the config dir are never inside the
+  checkout). Twelve pins that had lagged behind the operator's own UI rounds (171/177/179) were
+  carried forward to the behaviour they now describe — re-pointed, never deleted — so the gate can
+  attest again: the suite is 962/962 (fast gate 956/956), up from 940/952.
+  **Structural move:** `harness/checks/recall_log.py` and `harness/checks/skill_os_contract.py` →
+  `harness/recall_log.py` and `harness/skill_os_contract.py`. Both are live seams the running app
+  uses (not CLI-only checkers), which is what the report-only zone's own docstring prescribes
+  ("put the live seam in `longrun.harness`"); every importer, the adapter, the tests and the docs
+  moved with them in the same change, so `harness/checks/` is now CLI-only in fact as well as in name.
 - **Three harness-engineering levers the turn loop was missing.** Round 168 applies the only
   empirically measured harness levers in the LangChain article (2026-02-17: a fixed
   `gpt-5.2-codex` moved 52.8% → 66.5% on Terminal-Bench 2.0, +13.7 points, by changing only the
@@ -71,6 +92,21 @@ All notable changes to Longrun are documented here. The format follows
   Locked by `v1250` (32/32); battery 953/953.
 
 ### Fixed
+- **The "assign to…" menu scrolls under a finger and no longer vanishes on touch.** Operator:
+  *"The jobs panel assign to menu is weird, it doesn't scroll, disappears as touched, I can't
+  select who I want. At least in mobile mode."* The shared themed `<select>` popup
+  (`webui/assets/filtersort.js`) picked the row on `pointerdown`; a finger's touchdown is also the
+  start of a scroll, so the row under the thumb was chosen and the menu closed before the list
+  could move. Measured on the real deck (`/orbit?embed=1&panel=jobs`, 390×844, touch emulation,
+  the live roster of 98 assignees): a drag selected "Frontend Developer · A16" and closed the
+  490px sheet. The press is only remembered now and the row is picked on `pointerup` when it did
+  not travel more than 8px; the click that follows is eaten once so it cannot reach the form
+  behind the closed sheet, and a click with no pointer stream (assistive tech) still selects. A
+  phone `resize` (the URL bar collapsing) no longer dismisses the sheet, and the popup declares
+  `touch-action: pan-y` with non-selectable rows. After the fix the same drag scrolls the sheet
+  (scrollTop 0 → 490) with the menu open and the selection untouched, a tap picks "Reality
+  Checker · A20", and a mouse click picks "coder 1 · A9" without a click-through. Locked by
+  `v1267` (10/10, `UI_GUARD`); badge 966 → 967.
 - **`/skills` no longer answers "no skills installed" from a stale snapshot.** Measured on the live
   app after the checkout moved to `MyRepos/`: `GET /api/skills` returned 280 skills and every active
   symlink resolved, and the agent (whose prompt is built server-side from
@@ -1993,7 +2029,7 @@ All notable changes to Longrun are documented here. The format follows
 ### Changed
 - **CLI route parity is pinned (JAG-CLId/e).** `v588` proves every `forge.py` endpoint exists on the server (99 paths across the four route files, including the `_is`/tuple dispatch forms) and every call uses a served HTTP method (128 method+path pairs: `do_GET/do_POST` regions, `method ==` blocks, per-branch gates). 6/6.
 ### Changed
-- **CLI parity: usage, encoding, docs (JAG-CLI).** The `forge.py` Usage block now lists every subcommand (`agents`, `jobs`, `routines`, `roles`, `index`, `knowledge`, `research`, `embedding`, plus the newer `sessions`/`runs`/ `context`/`models`/`mcp` actions); `forge events --session/--kind` URL-encodes its values instead of splicing them raw; `docs/CLI.md` no longer advertises `runs summary --limit` or `context show --model`, flags the parser never had. Locked by `v587` 16/16.
+- **CLI parity: usage, encoding, docs (JAG-CLI).** The `forge.py` Usage block now lists every subcommand (`agents`, `jobs`, `routines`, `roles`, `index`, `knowledge`, `research`, `embedding`, plus the newer `sessions`/`runs`/ `context`/`models`/`mcp` actions); `forge events --session/--kind` URL-encodes its values instead of splicing them raw; `docs/CLI.md` no longer advertises `runs summary --limit` or `context show --model`, flags the parser never had. Locked by `v587` 16/16 (2026-11-22: `v587` was retired — the usage/docstring half now lives in `v1276`, read from the live parser, and the encoding half in `v785` §G, which drives the handler).
 - **README is now the pitch, and the banner wears the runner.** The header drops
   the standalone icon (the banner carries the runner mark), opens with a
   one-liner plus a six-row capability table, and adds a Table of Contents, a

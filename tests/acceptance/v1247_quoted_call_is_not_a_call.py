@@ -64,6 +64,19 @@ check("A2 nor when the quotation carries args",
 check("A3 the legacy prose+RAW-call shape still parses (no regression)",
       (A._extract_action('Vado avanti. {"action":"tool","tool":"python.run",'
                          '"args":{"code":"print(1)"}}') or {}).get("tool") == "python.run")
+
+# --- A2: bare (unquoted) example quoted MID-SENTENCE ------------------------
+# Live 2026-11-22, session 4dc73d4ef973: A59 reported its own dispatch back in
+# prose. The example had no backticks and sat mid-sentence, so `extract_action_json`
+# executed it — two ghost dispatches with goal "..." and one "goal required".
+_GHOST = ('Il dispatch era già riuscito: chiamata '
+          '{"action":"dispatch","agent":"A60","goal":"...","wait":true} '
+          'eseguita senza errori; nessun tool usato.')
+check("A4 a bare example mid-sentence is NOT an action (no ghost execution)",
+      A._extract_action(_GHOST) is None, A._extract_action(_GHOST))
+check("B3 …and the report stays a reply, not machine text",
+      A._looks_like_json_action(_GHOST) is False,
+      A._looks_like_json_action(_GHOST))
 check("B1 `_looks_like_json_action` is False for the report (a reply, not a call)",
       A._looks_like_json_action(_REPORT) is False)
 check("B2 and still True for the raw call after prose",

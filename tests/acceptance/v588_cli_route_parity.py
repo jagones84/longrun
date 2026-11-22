@@ -204,6 +204,34 @@ for m, lit, plus in re.findall(r'req\(\s*"(GET|POST|PUT|PATCH|DELETE)"\s*,\s*("[
 for lit in re.findall(r'sse\(\s*"([^"]+)"', fv):
     pairs.append(("GET", lit.split("?")[0], False))
 
+# Declared routes are the STRONGER source: a migrated command has no inline literal,
+# so without this the method check would silently stop covering it. Read the table in
+# `forge.py` (the one place a CLI route is written) and add every declared pair.
+sys.path.insert(0, os.path.join(REPO, "src"))
+from longrun.core import forge as _forge                                        # noqa: E402
+
+for _m, _p in sorted(_forge.ROUTES.values()):
+    pairs.append((_m, _p.split("?")[0], _p.endswith("/")))
+
+_missing_declared = [(m, p) for m, p in _forge.ROUTES.values()
+                     if (m, p.split("?")[0], p.endswith("/")) not in pairs]
+check("JAG-CLId every DECLARED route is in the parity pairs (table read, not regex)",
+      bool(_forge.ROUTES) and not _missing_declared,
+      "declared=%d missing=%s" % (len(_forge.ROUTES), _missing_declared))
+
+# ---- ADR-0006: a CLI route is declared once, in ROUTES -----------------------
+# The checks above find route literals wherever they live, so a NEW inline static route
+# would sail through them while quietly splitting the truth. Assert the migration is
+# COMPLETE instead: no static `req("M", "/…")` or `sse("/…")` remains in the source.
+# Paths built at call time (`"/api/runs/" + id`) are not matched, by design — ADR-0006
+# keeps those inline until a shape is designed for them. The pattern therefore requires a
+# COMPLETE literal (closing quote then `,` or `)`), or the 24 concat sites would trip it.
+_inline_req = re.findall(r'req\(\s*"(?:GET|POST|PUT|PATCH|DELETE)"\s*,\s*"/[^"]*"\s*[,)]', fv)
+_inline_sse = re.findall(r'sse\(\s*"/[^"]*"\s*[,)]', fv)
+check("JAG-CLIf no inline static route remains (ADR-0006: declared once)",
+      not _inline_req and not _inline_sse,
+      "inline req=%s sse=%s" % (_inline_req[:4], _inline_sse[:4]))
+
 
 def _methods_for(c, is_pattern):
     got = set(srv_exact.get(c, ()))

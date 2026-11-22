@@ -1,0 +1,14 @@
+# Optional LOCAL wiring for the guardrail.
+#
+#   python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
+#   .venv/bin/pip install pre-commit && .venv/bin/pre-commit install
+#
+# The authoritative guardrail is `bash scripts/check.sh` (CI runs it with
+# --require-tools). This hook just runs the fast half — ruff on the files a commit
+# touches — so a mechanical slip is caught before the commit is even written.
+# mypy is intentionally NOT a commit hook: it is slow, and CI covers it.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.6
+    hooks:
+      - id: ruff

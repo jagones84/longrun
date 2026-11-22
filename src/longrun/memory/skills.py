@@ -321,7 +321,7 @@ def _os_screen(folder):
     files, 200 KB each) and fail-open.
     """
     try:
-        from longrun.harness.checks import skill_os_contract
+        from longrun.harness import skill_os_contract
         files = {}
         for base, _dirs, names in os.walk(str(folder or "")):
             for name in names[:50]:

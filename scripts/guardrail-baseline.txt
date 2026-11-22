@@ -1,0 +1,9 @@
+# Longrun guardrail baselines — the finding counts the repo is allowed to carry.
+#
+# scripts/check.sh FAILS when a count INCREASES (a new mechanical mistake), so the
+# guardrail is green on day one and still catches regressions.
+#
+# Lower a number whenever you pay findings down. Never raise one to make the check
+# pass — if it needs to grow, that is a finding, not a fix.
+ruff=414
+mypy=88

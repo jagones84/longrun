@@ -1,0 +1,31 @@
+# Longrun — developer tooling configuration.
+#
+# The APPLICATION is stdlib-only (see requirements.txt and CONTRIBUTING.md); this file
+# configures DEV tools only and adds no runtime dependency. ruff and mypy are declared
+# in requirements-dev.txt.
+#
+# The single guardrail is `bash scripts/check.sh` (syntax + lint + types, ratcheted
+# against scripts/guardrail-baseline.txt). Run it after an edit; CI runs it with
+# --require-tools.
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+# The live, agent-editable zone is not ours to lint: it is loaded fail-open and may
+# hold a user's throwaway code.
+extend-exclude = ["src/Matrix"]
+
+[tool.ruff.lint]
+# The mechanical rules every edit must not regress: pyflakes (unused import, unused
+# variable, undefined name, redefinition) plus syntax. Style and upgrade rules
+# (E7/E4/UP/...) are deliberately NOT fatal yet — see "Guardrail" in CONTRIBUTING.md.
+select = ["F", "E9"]
+
+[tool.mypy]
+python_version = "3.10"
+# The core has no third-party imports; the shipped *.yaml/*.json are read as data.
+ignore_missing_imports = true
+# Report only on the modules named on the command line, not the whole import graph.
+follow_imports = "silent"
+warn_unused_ignores = false
+exclude = ["src/Matrix"]

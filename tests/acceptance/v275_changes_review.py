@@ -109,11 +109,23 @@ check("each change row has approve/reject buttons",
       'class="ghost ed-ok"' in ui and 'class="ghost ed-no"' in ui)
 check("approve posts to /api/edits/approve", '"/api/edits/approve"' in ui)
 check("reject posts to /api/edits/undo", '"/api/edits/undo"' in ui)
-check("chat timestamp helper exists", "function _tsSpan(ts)" in ui)
-check("timestamps wired into chat + tool cards + harness + history",
-      ui.count("_tsSpan(") >= 5, str(ui.count("_tsSpan(")))
-check("history replay forwards the stored ts",
-      'who("user", m.content, m.ts, m.sender, m.subjob, m.chapter' in ui and "toolCard(v.tool, undefined, v.ts)" in ui)
+# 2026-11-22 (ROUND 177): the per-row clock was NARROWED to a date-only stamp on the
+# user/agent rows only ("gli orari … elimina tutto. la data va messa … solo degli user
+# messages e risposte dell'agente, non delle fasi intermedie"). `_tsSpan` is gone,
+# replaced by `_dateSpan`.
+check("the date-only helper exists (`_tsSpan` -> `_dateSpan`)",
+      "function _dateSpan(ts)" in ui and "_tsSpan(" not in ui)
+check("the date stamp is wired into the user/agent rows (who + _stampWho)",
+      # `_dateSpan(` appears exactly 3 times in the source: its definition, the `who()`
+      # header (the user/agent row) and `_stampWho` (the finalized live answer). >=3 is
+      # the real floor, not a soft number; a narrowed-away stamp fails again.
+      ui.count("_dateSpan(") >= 3, str(ui.count("_dateSpan(")))
+check("history replay forwards the user date but no longer a ts into toolCard",
+      # ROUND 177: the tool/thought rows carry no time, so the replay calls
+      # `toolCard(v.tool, undefined)` — the ts argument is dropped.
+      'who("user", m.content, m.ts, m.sender, m.subjob, m.chapter' in ui
+      and "toolCard(v.tool, undefined);" in ui
+      and "toolCard(v.tool, undefined, v.ts)" not in ui)
 
 print("---")
 passed = sum(results)

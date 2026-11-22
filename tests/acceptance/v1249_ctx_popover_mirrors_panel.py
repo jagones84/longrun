@@ -27,7 +27,10 @@ import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 HTML = open(os.path.join(REPO, "webui", "index.html"), encoding="utf-8").read()
-_POP = HTML.split("function _ctxPopover()")[1].split("\ndocument.addEventListener")[0]
+# 2026-11-22: the builder takes the clicked ring (`anchor`), so the marker must include the
+# parameter — splitting on the bare `_ctxPopover()` raised IndexError and the script died
+# before printing a single check. Re-pointed to the real signature.
+_POP = HTML.split("function _ctxPopover(anchor)")[1].split("\ndocument.addEventListener")[0]
 
 results = []
 
@@ -42,7 +45,7 @@ def check(name, ok, detail=""):
 # 2026-11-22: the card markup moved into ONE builder (`_ctxCardHTML`) that the popover
 # and the `/context` window both render, so the anatomy is asserted there and the
 # popover must be using it — the intent (one card, one vocabulary) is unchanged.
-_CARD = HTML.split("function _ctxCardHTML(d)")[1].split("function _ctxPopover()")[0]
+_CARD = HTML.split("function _ctxCardHTML(d)")[1].split("function _ctxPopover(")[0]
 for cls in ("ctxhead", "ctxpct", "meter", "ctxstate", "ctxrow", "ctxacts"):
     check("A the shared card renders .%s (the panel's anatomy)" % cls, cls in _CARD)
 check("A6 the popover renders that builder, not its own copy",
@@ -83,13 +86,21 @@ check("E2 the popover adds no fetch of its own",
 
 # --- F: the trigger and the dismissal ---------------------------------------
 check("F1 the composer ring is still the trigger",
-      '{ const _cc = $("cmpCtx"); if (_cc) { _cc.onclick = _ctxPopover;' in HTML)
+      # 2026-11-22 (ROUND 172): the click is a DELEGATED listener on `#cmpCtx` now, so a
+      # re-rendered composer can never leave the ring without a handler. Same ONE trigger,
+      # re-pointed from `_cc.onclick`.
+      '$("cmpCtx")' in HTML and 'e.target.closest && e.target.closest("#cmpCtx")' in HTML
+      and "_ctxPopover(onRing)" in HTML)
 check("F2 an outside click still closes it",
       "_ctxPopEl && !_ctxPopEl.contains(e.target)" in HTML)
 check("F3 the popover is a labelled dialog and stays on screen",
+      # 2026-11-22 (ROUND 176): the on-screen clamp is now computed in LAYOUT px (the
+      # ring's visual rect divided by the app zoom `_uiZoom`), so the old
+      # `window.innerWidth - pop.offsetWidth - 8` literal is gone. Re-pointed to the
+      # zoom-aware clamp; the dialog labelling is unchanged.
       'setAttribute("role", "dialog")' in _POP
       and 'setAttribute("aria-label", "context details")' in _POP
-      and "window.innerWidth - pop.offsetWidth - 8" in _POP)
+      and "window.innerWidth / z" in _POP and "vw - pw - 8" in _POP)
 
 print("\n---\nv1249: %d/%d PASS" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

@@ -9,7 +9,7 @@
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776ab.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![deps](https://img.shields.io/badge/deps-stdlib%20%2B%20PyYAML-brightgreen.svg)](#quick-start-windows)
-[![tests](https://img.shields.io/badge/battery-957%2F957%20tests-blue.svg)](#tests)
+[![tests](https://img.shields.io/badge/battery-967%2F967%20tests-blue.svg)](#tests)
 
 **Longrun is the self-hosted AI agent harness that drives the LLM — teams of
 agents, real tools, and verification, on your own machine.** One Python process
@@ -139,7 +139,7 @@ behind it is `docs/diagrams/longrun-architecture.architecture.json`.
 Longrun can extend *itself* without a fork and without a restart. It splits into
 two zones:
 
-- **Nucleous** — `src/longrun/`: the protected core (14 subpackages). Stable, reviewed, and hard to break.
+- **Nucleous** — `src/longrun/`: the protected core (15 subpackages). Stable, reviewed, and hard to break.
 - **Matrix** — `src/Matrix/` (Python) plus its runtime directory under the
   [data home](#where-your-data-lives-not-in-the-repository) (`matrix/`; `matrix.status.matrix_dot`
   reports it, and the in-repo `.Matrix/` is only the legacy name).
@@ -532,7 +532,7 @@ launcher (`tests/battery_tmp.sh`, gitignored and never shipped); every checkout
 scopes the tracked battery with `LONGRUN_BATTERY_TESTS`. The full suite runs on
 request. The fast run skips six heavy indexing and document-ingestion tests:
 
-The suite is 957/957 tests — every acceptance file under `tests/acceptance/` is
+The suite is 967/967 tests — every acceptance file under `tests/acceptance/` is
 counted, and the badge above is the same number (one truth, pinned by `v354`).
 
 ```bash
@@ -553,6 +553,13 @@ See [Testing Playbook](docs/TESTING-PLAYBOOK.md) for live WebUI checks.
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | architecture and data flow |
 | [docs/CLI.md](docs/CLI.md) | CLI commands and API endpoints |
 | [docs/TESTING-PLAYBOOK.md](docs/TESTING-PLAYBOOK.md) | live WebUI verification |
+| [docs/OPERATIONS.md](docs/OPERATIONS.md) | runbooks: restarts, the turn gate, troubleshooting |
+| [docs/REPORTING.md](docs/REPORTING.md) | the report format for the operator |
+| [docs/RESEARCH-frontier-harnesses-2026.md](docs/RESEARCH-frontier-harnesses-2026.md) | the research base and where Longrun sits |
+| [GLOSSARY.md](GLOSSARY.md) | the domain vocabulary — the shared names |
+| [CODING_STANDARDS.md](CODING_STANDARDS.md) | the judgement-call standards the reviewer enforces |
+| [docs/adr/](docs/adr/) | the decisions that are hard to reverse, with the alternative rejected |
+| [docs/agents/](docs/agents/) | how the engineering flow reads this repo (issue tracker, domain docs) |
 | [AGENTS.md](AGENTS.md) | orientation for an AI agent landing in the repo |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | how to contribute |
 | [CHANGELOG.md](CHANGELOG.md) | release notes |

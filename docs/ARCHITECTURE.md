@@ -23,6 +23,29 @@ the process rather than of a component:
   streamed — `llama.cpp` and vLLM locally, OpenRouter / DeepSeek / OpenAI /
   Anthropic / Google over the network.
 
+## Contents
+
+Seventeen sections. Titles only, deliberately: this file is read as text and grepped by
+heading, and hand-written anchors drift from whichever renderer shows it.
+
+- The object model (five levels)
+- A team job, end to end
+- Request / turn lifecycle (one chat turn)
+- Components (`src/longrun/`, organised in subpackages)
+- Harness evidence workflow
+- Retrieval, and its second stage
+- Web search, and how a turn shows its work (2026-11-16)
+- Newest online papers (round 163, 2026-11-20)
+- Newest online papers (round 164, 2026-11-22)
+- Newest online papers (round 165, 2026-11-22)
+- Newest online papers (round 166, 2026-11-22)
+- Newest online papers (round 167, 2026-11-22)
+- Data stores (the data home — `~/.longrun/data`, never the checkout)
+- Safety model
+- Interfaces
+- Diagrams
+- Entry points
+
 ## The object model (five levels)
 
 The whole product is one hierarchy, from a business goal to a checklist item:
@@ -357,7 +380,7 @@ Harness² upstream (arXiv:2610.14224): that is only a comparison arm in
 
 Layout (2026-11-20), by runtime role:
 
-* `harness/checks/` — the 137 report-only per-paper checkers. Pure data in,
+* `harness/checks/` — the 135 report-only per-paper checkers. Pure data in,
   verdict out; only `core/forge.py` imports them.
 * `harness/execution/` — the 9 gated executors (`probe`, `runner`, `editors`,
   `compose`, `contrast`, `whole`, `snapshot`, `gateway`, `unixshim`). Only
@@ -777,11 +800,11 @@ loop were wired where the model reads its own work.
   card, harness inject) and the delete cascade removes it;
   `context.grep` / `context.count` search it (regex, chronological line numbers,
   context, pagination, count-only) with no index and no embedding. The pure half
-  is `harness/checks/recall_log.py` (`forge.py greprecall`).
+  is `harness/recall_log.py` (`forge.py greprecall`).
 - **A cross-OS skill contract screen** (arXiv:2611.26256, SkillBridge). A skill
   is a contract over guide text, package surface, metadata, install lines and OS
   assumptions; static screening is recall-oriented triage for dynamic validation,
-  never a verdict. `harness/checks/skill_os_contract.py` builds the contract and
+  never a verdict. `harness/skill_os_contract.py` builds the contract and
   fires a rule only when it is matched, reachable, in conflict with the target OS
   and not covered by a fallback, naming the contract field and the repair target.
   `skills.install_skill_file|install_skill_dir|install_zip` return the screen as

@@ -75,7 +75,10 @@ check("B2 the ⋯ is the rail's LAST control (the foot), not a mid-cluster tool"
       RAIL.index('class="tb-foot"') < RAIL.index('id="moreBtn"')
       and RAIL.index('id="moreBtn"') < RAIL.index("</aside>"), "")
 check("B3 the ✨ acts on the draft: it rides the chat group (v890)",
-      '"chat.prompt", "#inp", "#toolsBar #chatViewSec", null,' in UI, "")
+      # 2026-11-22 (ROUND 171): the SAME registry entry moved its host into the message
+      # box (`#cmpSpark`, top-right, inside `#inp`'s composer); the sidebar no longer
+      # mounts it. The entry (field `#inp`, same titles) is unchanged — only the host moved.
+      '"chat.prompt", "#inp", "#cmpSpark", null,' in UI, "")
 check("B4 the rail's tools are FOUR SECTIONS with one hairline between",
       RAIL.count('class="tb-sec"') == 4
       and "#toolsBar .tb-sec + .tb-sec { margin-top: 8px; padding-top: 10px;" in UI, "")

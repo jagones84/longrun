@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """v785 — CLI command behaviour: the real handlers, not just their shape.
 
-v587/v588/v312 pin the CLI *statically* (usage block, route parity, method
-parity). None of them ever runs a `cmd_*`: a command can pass every static pin
+v588 pins the CLI *statically* (route and method parity), and v1276 pins the
+contract (help completeness + the required surface) from the LIVE parser. None
+of them ever runs a `cmd_*`: a command can pass every static pin
 and still print nothing, mis-format a row, or exit 0 on a malformed argument.
 This one DRIVES the handlers with `forge.req` stubbed and asserts what a user
 sees — the org chart row, the session/approval/tool listings the teams work

@@ -72,7 +72,9 @@ _at = _body(UI, "function _atNode(nid) {", "function _openSection(nid) {")
 check("B1 _atNode points the next append at the stamped step",
       "_activeNodeId = nid" in _at and "_activeScope = null" in _at)
 check("B2 a live tool card is placed under its step",
-      "_atNode(d.node); toolCard(d.tool, d.args, d.ts)" in UI)
+      # 2026-11-22 (ROUND 177): the tool rows carry no time, so the live handler calls
+      # `toolCard(d.tool, d.args)` — the ts argument was dropped. Same placement, no clock.
+      "_atNode(d.node); toolCard(d.tool, d.args)" in UI)
 check("B3 a live harness inject is placed under its step",
       "_atNode(d.node); harnessInject(d)" in UI)
 _open = _body(UI, "function _openSection(nid) {", "function _logAppend(el, chapter)")

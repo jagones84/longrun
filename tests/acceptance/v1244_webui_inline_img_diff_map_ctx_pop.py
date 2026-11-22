@@ -53,7 +53,11 @@ check("2d the map is called from showDiff and reset on error",
 
 # ---- 3: context-ring popover + compact -------------------------------------
 check("3a a ctx popover surface exists and is styled like the other popovers",
-      ".ctxpop {" in HTML and "function _ctxPopover()" in HTML)
+      # 2026-11-22 (ROUND 172): the builder takes the ring that was clicked (`anchor`), so
+      # its signature is `_ctxPopover(anchor)`. The surface (`.ctxpop`) and the shared-anatomy
+      # styling (`.ctxpop .ctxhead`) are unchanged — re-pointed, not dropped.
+      ".ctxpop {" in HTML and "function _ctxPopover(anchor)" in HTML
+      and ".ctxpop .ctxhead {" in HTML)
 check("3b it shows the three values the panel shows (messages / tokens / budget)",
       # 2026-11-21 (round 165): the stub rows became the inspector's OWN card, so the
       # values are read from the same `/api/context` display instead of hand-rolled
@@ -64,7 +68,11 @@ check("3c it reuses the ONE compaction door (no second mechanism)",
       'pop.querySelector(".cp-compact").onclick = () => { _closeCtxPop(); compactNow(); }' in HTML
       and "async function compactNow()" in HTML)
 check("3d the ring is clickable and the numbers are kept",
-      '$("cmpCtx")' in HTML and "_cc.onclick = _ctxPopover" in HTML and "_ctxDisplay = d;" in HTML)
+      # 2026-11-22 (ROUND 172): the ring's click is a DELEGATED listener now (a re-rendered
+      # composer can never leave `#cmpCtx` without a handler), so `_cc.onclick` is gone.
+      # Assert the delegated form; the `#cmpCtx` surface and `_ctxDisplay` are unchanged.
+      '$("cmpCtx")' in HTML and 'e.target.closest && e.target.closest("#cmpCtx")' in HTML
+      and "_ctxPopover(onRing)" in HTML and "_ctxDisplay = d;" in HTML)
 check("3e it closes on an outside click", '_closeCtxPop();\n});' in HTML)
 
 # ---- rules the operator asked to record ------------------------------------

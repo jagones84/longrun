@@ -14,8 +14,9 @@ deliberate and load-bearing, so please respect it.
   Linux arm64/aarch64 (NVIDIA DGX Spark) and Windows x64 from the same code.
 - **No secrets in the repo.** Keys live in a local `.env` / `~/.hermes/.env` (gitignored).
   `.env.template` is the only tracked env file.
-- **Evidence over belief.** Every claim in a PR should come with a number: a test count,
-  an HTTP status, a file field.
+- **Standards live elsewhere.** The judgement-call standards a reviewer enforces are in
+  [`CODING_STANDARDS.md`](CODING_STANDARDS.md); the vocabulary is in [`GLOSSARY.md`](GLOSSARY.md);
+  the hard-to-reverse decisions are in [`docs/adr/`](docs/adr/).
 
 ## Set up
 
@@ -60,6 +61,36 @@ pytest tests/properties/   # Hypothesis property tests
 - A test is `vNNN_topic.py`: it does `sys.path.insert(0, REPO/src)`, imports `longrun`,
   defines `check(name, ok, detail="")`, prints `PASS`/`FAIL` and exits non-zero on any `FAIL`.
 
+## Guardrail (lint + types, in seconds)
+
+Run this after an edit. It is the cheap deterministic check the battery is too heavy to be:
+
+```bash
+bash scripts/check.sh          # syntax + lint (ruff) + types (mypy)
+bash scripts/check.sh --fast   # skip the slow mypy step
+```
+
+The mechanical rules it owns — the ones a reviewer no longer has to police:
+
+- **syntax** — every file under `src/longrun/` must parse, and **no bytecode is left
+  next to the source** (a stale `.pyc` has made a test assert on an old function body).
+- **pyflakes class** (ruff `F`) — unused imports and variables, undefined names,
+  redefinitions. This is the class of mistake that used to be caught only by the full battery.
+- **types** (mypy, lenient) — it must not get *worse* (`--ignore-missing-imports`; only
+  the modules named are reported).
+
+It is a **ratchet**: the tree carries a known number of findings
+([`scripts/guardrail-baseline.txt`](scripts/guardrail-baseline.txt)), so the check fails
+only when a count **increases**. Lower a number when you pay findings down; never raise
+one to make the check pass. Style/upgrade rules are deliberately **not** fatal yet — the
+selection is `select = ["F", "E9"]` in [`pyproject.toml`](pyproject.toml), and widening it
+is a later, deliberate step.
+
+Wiring: CI runs `bash scripts/check.sh --require-tools`
+([`.github/workflows/check.yml`](.github/workflows/check.yml)); an optional local hook is
+[`.pre-commit-config.yaml`](.pre-commit-config.yaml). `tests/mega_test.sh` calls the same
+script, so the static analysis has one definition.
+
 ## Branches and releases
 
 - **`Experimental-Refactor` is the working branch.** Every change lands here and is pushed.
@@ -76,11 +107,11 @@ pytest tests/properties/   # Hypothesis property tests
 
 ## House style
 
-- English only in code, comments, docstrings, log messages, UI strings and commits.
-- Explicit type hints and structured docstrings for functions.
-- Log lines: `[Level] | [Timestamp] | [Module]`.
-- Temp/one-off agent scripts go to `.agent/trash/` (gitignored), not the application
-  data directory `trash/`, repo root, or `scripts/`.
+[`CODING_STANDARDS.md`](CODING_STANDARDS.md) is the single list of coding standards — the
+judgement calls no tool can check, read by the **review** agent. Mechanical rules are
+enforced by the guardrail above, so do not restate them here. Two operational rules stay
+in this file because they govern the *contribution process*, not the code:
+
 - Inspect `git status` and diffs before restoring files. Never discard uncommitted
   user work with `git reset --hard`, `git checkout --`, or `git clean`.
 - Write a `## [Unreleased]` entry in [`CHANGELOG.md`](CHANGELOG.md) with any user-visible
@@ -90,12 +121,18 @@ pytest tests/properties/   # Hypothesis property tests
 
 | Path | What |
 |---|---|
-| `src/longrun/` | the harness package, organised in 14 subpackages (`core/`, `agent/`, `orchestrate/`, `plan/`, `tools/`, `model/`, `memory/`, `interop/`, `util/`, `integrations/`, `orbit/`, `research/`, `harness/`, `gen/`) |
+| `src/longrun/` | the harness package, organised in 15 subpackages (`agent/`, `core/`, `evolve/`, `gen/`, `harness/`, `integrations/`, `interop/`, `memory/`, `model/`, `orbit/`, `orchestrate/`, `plan/`, `research/`, `tools/`, `util/`) |
 | `src/longrun/orbit/` | the Orbit command deck (`/orbit`) |
 | `webui/` | the main single-file WebUI |
 | `tests/acceptance/` | the deterministic gate (auto-discovered) |
 | `docs/` | architecture, CLI, testing playbook, and the historical record |
+| `GLOSSARY.md` | the domain vocabulary — the single source of truth for names |
+| `docs/adr/` | decisions that are hard to reverse, with the rejected alternative |
+| `CODING_STANDARDS.md` | the judgement-call standards the reviewer enforces |
+| `docs/agents/` | how the engineering flow reads this repo (issue tracker, domain docs) |
+| `scripts/check.sh` | the fast guardrail: syntax + lint + types, ratcheted |
 | `.agent/` | maintainer's local working notes: `handoff/`, `runbooks/`, `docs/`, `plans/`, `reports/` (untracked) |
+| `.scratch/` | the local issue tracker (one spec + tickets per feature), gitignored |
 
 ## License
 

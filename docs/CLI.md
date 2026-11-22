@@ -370,6 +370,13 @@ python3 forge.py recovery adjudicate /tmp/record.json
   refuses (exit 2) a result whose format does not match, so a renamed key cannot
   silently flip the exit code.
 
+**`setup` — a LOCAL command in this family.** It runs on *your* machine, not the
+server's: the workspace it touches is the caller's. `setup run PLAN.json
+[--workspace DIR] [--state DIR] [--reuse]` executes the round-106 semantic setup
+blocks (arXiv:2611.18443), printing one line per block and a cost line; `--reuse`
+skips a block whose digest and pre-state match its checkpoint. `setup status` prints
+where those checkpoints live (default `data/setup`).
+
 ### Runs & observability
 
 | Command | Endpoint |

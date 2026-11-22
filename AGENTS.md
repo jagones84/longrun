@@ -12,10 +12,15 @@ that built this.
 > exists only in a development checkout, never in a clone. Everything listed below
 > is tracked and present in every clone.
 
-1. **`docs/ARCHITECTURE.md`** and **`docs/CLI.md`** — how the system is wired.
-2. **`docs/TESTING-PLAYBOOK.md`** — the mindset for testing the harness live.
-3. **`CONTRIBUTING.md`** — how to run the gate, write a test, and the house style.
-4. **`docs/RESEARCH-frontier-harnesses-2026.md`** — the research base and where Longrun
+1. **`GLOSSARY.md`** — the project's own vocabulary. Read it first: it is what makes every
+   later file read the same way, and what stops `job` / `run` / `turn` from drifting.
+2. **`docs/adr/`** — the decisions that are hard to reverse, each with the alternative that
+   was rejected. Do not re-litigate one silently; surface the conflict.
+3. **`docs/ARCHITECTURE.md`** and **`docs/CLI.md`** — how the system is wired.
+4. **`docs/TESTING-PLAYBOOK.md`** — the mindset for testing the harness live.
+5. **`CONTRIBUTING.md`** — how to run the gate and write a test; the standards it points at
+   are [`CODING_STANDARDS.md`](CODING_STANDARDS.md).
+6. **`docs/RESEARCH-frontier-harnesses-2026.md`** — the research base and where Longrun
    sits vs. the 2026 frontier.
 
 ## The 60-second mental model
@@ -36,11 +41,16 @@ that built this.
 - The **harness is the model's secretary**: it injects synthetic turns tagged
   `nudge` / `observation` / `continue`, persisted so the chat rebuilds them on reload.
 
-## The one command that matters
+## The commands that matter
 
 ```bash
-bash tests/battery.sh     # FAST deterministic gate; trust its reported count
+bash scripts/check.sh     # FAST static gate: syntax + lint + types, ratcheted — after every edit
+bash tests/battery.sh     # FULL deterministic gate (964 tests); trust its reported count
 ```
+
+Run the cheap one constantly. It is deliberately a **ratchet**: it fails when a count
+*increases*, so a new unused import, undefined name or type slip is caught in seconds
+while the existing debt is paid down ([`pyproject.toml`](pyproject.toml) owns the rules).
 
 ## Non-negotiables
 
@@ -52,6 +62,10 @@ bash tests/battery.sh     # FAST deterministic gate; trust its reported count
 - **Evidence over belief.** A claim needs a number (test count, HTTP status, file field).
 - **`ast.parse` after any scripted patch.** Inspect the diff and restore only the
   affected hunk if a patch breaks; never overwrite unrelated user changes.
+- **A CLI route is declared once.** `core/forge.py` holds `ROUTES` — one `(method, path)`
+  per route — and handlers call `req(*_route("name"))`; `v588` (route parity) and `v1276`
+  (the contract, from the live parser) hold you to it. Adding a command means adding its
+  route to the table; paths built at call time stay inline. See `docs/adr/0006`.
 - **Checkpoint large refactors**, but never use destructive rollback commands
   (`git reset --hard`, `git checkout --`, `git clean`) over a dirty worktree.
 - **Temporary agent scripts go to `.agent/trash/`**; do not put them in `scripts/`
@@ -82,5 +96,17 @@ Place it by these three questions, in order:
 Anything the app imports from `harness/` stays at the `harness/` root. No new top-level package for one
 subject; no round/paper names in paths (the reference goes in the docstring); a module only tests import
 belongs in `checks/` (or it is dead — say so). A move updates every importer, `core/forge.py`, tests and
-docs in the same commit, and is proven by the import audit + `python3 forge.py harness` + the battery.
+docs in the same commit, and is proven by the import-audit pin (`v1273`) + `python3 forge.py harness` + the battery.
+
+## Agent skills
+
+### Issue tracker
+
+Work is tracked as local markdown: one feature per directory under `.scratch/<feature>/`
+(`spec.md` plus one file per ticket under `issues/<NN>-<slug>.md`). See `docs/agents/issue-tracker.md`.
+
+### Domain docs
+
+Single-context: one `GLOSSARY.md` and `docs/adr/` at the repo root, consumed before
+exploring. See `docs/agents/domain.md`.
 

@@ -33,10 +33,12 @@ check("A1b label resolver", "function _toolUI(tool, args)" in html)
 check("A1c canonical web names", 't === "web" || t.startsWith("web.")' in html
       and '"web.search"' in html and '"web.fetch"' in html)
 check("A2a card uses the icon", '<span class="tc-ic" aria-hidden="true">${ui.icon}</span>' in html)
-check("A2b card uses the label", '<span class="tc-name">${esc(ui.label)}</span>' in html)
+# 2026-11-22: the row label is built by `_toolNameHTML(ui)` (verb in plain text + the file
+# name in the tool tint, ROUND 174), not `esc(ui.label)`. Re-pointed, not weakened.
+check("A2b card uses the label", '<span class="tc-name">${_toolNameHTML(ui)}</span>' in html)
 check("A2c label follows the args on result",
       "const _ui = _toolUI(tool, data.args);" in html
-      and "_nm.textContent = _ui.label;" in html)
+      and "_nm.innerHTML = _toolNameHTML(_ui);" in html)
 check("A3a hits box", '<div class="webhits"></div>' in html)
 check("A3b renderer", "function _webBody(card, payload)" in html)
 check("A3c fed from data", "_webBody(card, data.data);" in html)
@@ -50,7 +52,13 @@ check("A7 reload carries data", "args: v.args, data: v.data," in html)
 check("A8 failed card opens", "if (_hasWeb && data.ok === false)" in html
       and 'card.classList.add("expanded");' in html)
 check("A9 more-results toggle", 'more.textContent = "show all " + rows.length + " results";' in html)
-check("A10 meta shows engine/count", '(_d.duration_ms != null ? Math.round(_d.duration_ms) + "ms" : "")' in html)
+# 2026-11-22: the card meta (`.tc-stat`) no longer prints engine/duration — it is the edit
+# diff stat, `+A −D`, read once per session+path (`_fillEditStat`). Re-pointed to the
+# current shape; a card that stops showing the diff stat fails again.
+check("A10 card meta shows the edit diff stat (+A −D)",
+      "const slot = card.querySelector(\".tc-stat\")" in html
+      and "slot.innerHTML = '<span class=\"add\">+' + (d.add || 0)" in html
+      and "<span class=\"del\">\u2212' + (d.del || 0)" in html)
 check("A11 timeline rail dot css", ".tctree .tc-kids > .toolcard::before" in html)
 
 print("\n%d/%d PASS" % (sum(results), len(results)))

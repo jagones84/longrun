@@ -1,0 +1,22 @@
+name: guardrail
+
+# The cheap deterministic check runs on every push and PR. It is deliberately NOT the
+# acceptance battery: the guardrail is green today and catches mechanical regressions
+# in seconds, which is what a push-time gate should do.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  guardrail:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dev tools
+        run: python -m pip install -q -r requirements-dev.txt
+      - name: Run the guardrail (lint + types must not regress)
+        run: bash scripts/check.sh --require-tools

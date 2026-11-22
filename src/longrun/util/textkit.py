@@ -222,51 +222,81 @@ def _iter_json_objects(text):
     the text with a brace/quote-aware cursor and yields each complete value
     independently.
     """
-    return [obj for _start, obj in _iter_json_spans(text)]
+    return [obj for _start, _end, obj in _iter_json_spans(text)]
+
+
+def _scan_json_value(text, i):
+    """`(end_offset, value)` of the balanced JSON value starting at `text[i]`.
+
+    `(None, None)` when the value never closes (a truncated call). End offsets are
+    what tells a real action apart from a quoted example: the action is the
+    message's CONCLUSION, so only a value that ENDS the message may be executed.
+    """
+    n, depth, instr, esc, j = len(text), 0, False, False, i
+    while j < n:
+        c = text[j]
+        if instr:
+            if esc:
+                esc = False
+            elif c == "\\":
+                esc = True
+            elif c == '"':
+                instr = False
+        else:
+            if c == '"':
+                instr = True
+            elif c in "{[":
+                depth += 1
+            elif c in "}]":
+                depth -= 1
+                if depth == 0:
+                    blob = text[i:j + 1]
+                    try:
+                        return j + 1, json.loads(blob)
+                    except Exception:  # noqa: BLE001
+                        # A model's multi-line string value makes the object invalid
+                        # for the strict parser (raw control chars): escape them and
+                        # retry before dropping the model's call on the floor.
+                        try:
+                            return j + 1, json.loads(_escape_control_chars(blob))
+                        except Exception:  # noqa: BLE001 — unparseable blob
+                            return j + 1, None
+        j += 1
+    return None, None
 
 
 def _iter_json_spans(text):
-    """`(start_offset, value)` for every balanced top-level JSON value in `text`."""
+    """`(start, end, value)` for every balanced top-level JSON value in `text`."""
     out, i, n = [], 0, len(text)
     while i < n:
         if text[i] in "{[":
-            depth, instr, esc, start = 0, False, False, i
-            j = i
-            while j < n:
-                c = text[j]
-                if instr:
-                    if esc:
-                        esc = False
-                    elif c == "\\":
-                        esc = True
-                    elif c == '"':
-                        instr = False
-                else:
-                    if c == '"':
-                        instr = True
-                    elif c in "{[":
-                        depth += 1
-                    elif c in "}]":
-                        depth -= 1
-                        if depth == 0:
-                            break
-                j += 1
-            if depth == 0 and j < n:
-                blob = text[start:j + 1]
-                try:
-                    out.append((start, json.loads(blob)))
-                except Exception:  # noqa: BLE001
-                    # A model's multi-line string value makes the object invalid for
-                    # the strict parser (raw control chars): escape them and retry
-                    # before dropping the model's call on the floor.
-                    try:
-                        out.append((start, json.loads(_escape_control_chars(blob))))
-                    except Exception:  # noqa: BLE001 — genuinely unparseable blob
-                        pass
-                i = j + 1
+            end, val = _scan_json_value(text, i)
+            if end is not None:
+                if val is not None:
+                    out.append((i, end, val))
+                i = end
                 continue
         i += 1
     return out
+
+
+#: What may follow a JSON value that still counts as the message's CONCLUSION:
+#: whitespace, a closing ``` fence, or closing punctuation. Anything else is prose.
+_TAIL_ONLY = re.compile(r"^\s*(?:```[ \t]*)?[.,;:!?]*\s*$")
+
+
+def tail_json_spans(text):
+    """`(start, end, value)` for balanced JSON values that END the message."""
+    return [(s, e, v) for s, e, v in _iter_json_spans(text) if _TAIL_ONLY.match(text[e:])]
+
+
+def json_value_end(text, start):
+    """End offset of the balanced JSON value at `start`; None when it never closes.
+
+    Used by the reply judgement: a call cut off mid-emission (no closing brace) is
+    still a call attempt; a COMPLETE object quoted mid-sentence is a report.
+    """
+    return _scan_json_value(str(text or ""), int(start))[0]
 
 
 #: The keys that make a JSON object an ACTION rather than a data artifact.
@@ -289,6 +319,14 @@ def extract_action_json(text):
     value that starts inside a QUOTED span (backticks, or a well-formed `'…'`) is prose
     and is never an action; a fenced block still counts (models wrap real calls in
     ```json).
+
+    2026-11-22 (live session 4dc73d4ef973): a report wrote its dispatch back in plain
+    prose — ``chiamata nativa {"action":"dispatch","agent":"A60","goal":"...","wait":true}``
+    — with NO quotation marks. The extractor executed that EXAMPLE: two ghost
+    dispatches with the placeholder goal, plus a third at 07:50:37 that failed with
+    "goal required" (the quoted call had no `goal` key). Only a JSON value that ENDS
+    the message (whitespace / a closing fence / punctuation after it) is an action; a
+    value embedded mid-sentence is a report ABOUT a call.
     """
     text = (text or "").strip()
     if not text:
@@ -299,9 +337,9 @@ def extract_action_json(text):
             return whole
     except Exception:  # noqa: BLE001 — prose around the object is the normal case
         pass
-    spans = quotation_ranges(text)
-    objs = [o for s, o in _iter_json_spans(text) if isinstance(o, dict)
-            and not any(a <= s < b for a, b in spans)]
+    quotes = quotation_ranges(text)
+    objs = [o for s, _e, o in tail_json_spans(text) if isinstance(o, dict)
+            and not any(a <= s < b for a, b in quotes)]
     if not objs:
         return None
     for obj in reversed(objs):

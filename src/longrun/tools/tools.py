@@ -2394,7 +2394,7 @@ def _context_recall(args, run_id=None, count_only=False):
     interaction with a regex, returning matches in chronological order with their
     original locations, paginated, or count-only. No embeddings, no index.
     """
-    from longrun.harness.checks import recall_log
+    from longrun.harness import recall_log
     from longrun.memory import stores
     args = args or {}
     sid = str(args.get("session") or "").strip() or str(run_id or "")

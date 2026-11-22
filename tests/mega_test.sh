@@ -26,11 +26,11 @@ pip install -q -r requirements-dev.txt
 
 echo -e "\n[1] STATIC ANALYSIS"
 echo "------------------------------------------"
-echo "-> Running Ruff (Linter)..."
-ruff check src/longrun || echo "Ruff found issues."
-
-echo "-> Running Mypy (Type Checker)..."
-mypy src/longrun --ignore-missing-imports || echo "Mypy found issues."
+# One truth: the lint + typecheck ratchet lives in scripts/check.sh (also run by CI
+# and pre-commit). This suite keeps going after a red step on purpose, so the answer
+# is reported here rather than swallowed by a bare `|| echo`.
+echo "-> Running the guardrail (ruff + mypy, ratcheted)..."
+bash scripts/check.sh --require-tools || echo "Guardrail found issues."
 
 echo "-> Running Bandit (Security)..."
 bandit -r src/longrun -ll -q || echo "Bandit found issues."

@@ -1,6 +1,7 @@
 ---
 name: repo-orientation
 description: "Orient an LLM in the Longrun codebase: how to self-inspect the repo, map its architecture, and explain its configuration and capabilities using ONLY repo-relative paths (no absolute/machine paths). Trigger when the agent must explain 'how is this project made', 'what can this harness do', 'how is it configured', 'understand this repo', 'self-inspect', 'explain the architecture', 'map the codebase', or needs to orient itself after landing here. IT: 'com'e' fatto questo repo', 'cosa sa fare', 'spiega la configurazione', 'spiega l'architettura'."
+origin: longrun
 ---
 
 # Repo Orientation — self-inspect Longrun

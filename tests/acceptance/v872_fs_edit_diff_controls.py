@@ -88,9 +88,11 @@ def main() -> int:
           and 'setAttribute("aria-label"' in update_source
           and "<svg" in update_source
           and 'aria-hidden="true"' in update_source)
-    check("U2 icon controls have a 28px pointer target and visible hover/focus",
-          "min-width: 28px" in action_css
-          and "min-height: 28px" in action_css
+    check("U2 icon controls have a 26px pointer target and visible hover/focus",
+          # 2026-11-22: the action box shrank to 26x26 (`.toolcard .tc-action`), matching
+          # the tool row's tighter rhythm; the hover/focus affordances are unchanged.
+          "min-width: 26px" in action_css
+          and "min-height: 26px" in action_css
           and ".toolcard .tc-action:hover" in html
           and ".toolcard .tc-action:focus-visible" in html)
 

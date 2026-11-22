@@ -139,8 +139,13 @@ check("4a loadHistory is generation-guarded and clears the log FIRST",
       in ui)
 check("4b every await in loadHistory re-checks the generation",
       ui.count("if (_stale()) return;") >= 3)
-check("4c a replayed summary is labelled 'compacted history' with no fake timestamp",
-      'inject_kind: "compacted history"' in ui and "d.ts === null ? \"\" : _tsSpan(d.ts)" in ui)
+check("4c a replayed summary is labelled 'compacted history' with no timestamp rendered",
+      # 2026-11-22 (ROUND 177): the intermediate phases no longer render a clock at all.
+      # The helper is `_dateSpan` (date-only, on the user/agent rows); the summary inject
+      # passes its server ts straight through and no row prints a per-event time, so the
+      # old `_tsSpan(d.ts)` render must be gone. Pin both halves so a re-added clock fails.
+      'inject_kind: "compacted history"' in ui
+      and "_tsSpan(d.ts)" not in ui and "function _dateSpan(ts)" in ui)
 check("4d the compacted head is wrapped in a 'compacted history' group, not left at the root",
       "function _headGroup()" in ui and 'det.className = "fgroup head"' in ui
       and "{ _freeGroup = null; _headGroup(); }" in ui)
