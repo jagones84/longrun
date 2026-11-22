@@ -288,7 +288,7 @@
    * One implementation for both pages: this file is loaded by the WebUI and by the deck.
    * Auto-installed, because a menu that forgets to opt in is exactly the defect above.
    * ------------------------------------------------------------------ */
-  var _ts = {sel: null, pop: null, list: null, items: [], at: -1, openedBy: null, openedAt: 0};
+  var _ts = {sel: null, pop: null, list: null, items: [], at: -1, openedBy: null, openedAt: 0, press: null, ateClick: 0};
 
   function _tsEsc(s) {
     return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
@@ -304,7 +304,7 @@
     if (st.sel) st.sel.setAttribute("aria-expanded", "false");
     var was = st.sel;
     st.sel = null; st.pop = null; st.list = null; st.items = []; st.at = -1;
-    st.openedBy = null;
+    st.openedBy = null; st.press = null;
     if (refocus && was) { try { was.focus({preventScroll: true}); } catch (e) {} }
   }
   function _tsPaint() {
@@ -443,18 +443,49 @@
   }, true);
   document.addEventListener("pointerdown", function (e) {
     if (!_ts.pop) return;
-    if (_ts.pop.contains(e.target)) return;
+    if (_ts.pop.contains(e.target)) return;   // inside the popup: never close
     var sel = e.target && e.target.closest && e.target.closest("select");
     if (sel && sel === _ts.sel) return;
     _tsClose(false);
   });
+  /* ROUND 184 (operator: *"the jobs panel assign to menu is weird, it doesn't scroll,
+     it disappears as touched, I can't select who I want. At least in mobile mode"*).
+     The pick used to happen on `pointerdown`: a FINGER's touchdown is also the start of
+     a scroll, so the row under the thumb was chosen and the menu closed before the list
+     could move. Measured on a 390x844 touch screen with the deck's real roster (98
+     assignees): a drag selected "Frontend Developer · A16" and closed the popup.
+     The press is only REMEMBERED now; the pick happens on `pointerup` when the press did
+     not travel (a scroll), and the click that follows it on the same element is eaten so
+     it cannot reach the form behind the closed sheet. A click with NO pointer stream
+     (assistive tech) still selects. */
   document.addEventListener("pointerdown", function (e) {
+    _ts.ateClick = 0;   // a new press: any pending click-through guard is stale
     if (!_ts.pop || !_ts.pop.contains(e.target)) return;
-    var opt = e.target.closest(".ts-opt");
+    var opt = e.target && e.target.closest && e.target.closest(".ts-opt");
+    _ts.press = opt ? {opt: opt, x: e.clientX, y: e.clientY} : null;
+  }, true);
+  document.addEventListener("pointerup", function (e) {
+    if (!_ts.pop || !_ts.pop.contains(e.target)) return;
+    var opt = e.target && e.target.closest && e.target.closest(".ts-opt");
+    var p = _ts.press; _ts.press = null;
+    if (!opt) return;
+    if (p && (Math.abs(e.clientX - p.x) + Math.abs(e.clientY - p.y)) > 8) return;  // a scroll
+    e.preventDefault();
+    _ts.ateClick = Date.now();
+    _tsPick(Number(opt.dataset.i));
+  }, true);
+  document.addEventListener("click", function (e) {
+    if (_ts.ateClick && Date.now() - _ts.ateClick < 400) {
+      _ts.ateClick = 0;
+      e.preventDefault(); e.stopPropagation();
+      return;
+    }
+    if (!_ts.pop || !_ts.pop.contains(e.target)) return;
+    var opt = e.target && e.target.closest && e.target.closest(".ts-opt");
     if (!opt) return;
     e.preventDefault();
     _tsPick(Number(opt.dataset.i));
-  });
+  }, true);
   /* ROUND 176 (operator: *"the filter in the agents panel … disappears immediately after
      the menu is loaded"*): the popup used to CLOSE on any scroll — and `_tsPaint()` scrolls
      the chosen row into view while opening, so the very first open closed itself wherever a
@@ -466,7 +497,10 @@
   }, true);
   window.addEventListener("resize", function () {
     if (!_ts.pop || !_ts.sel) return;
-    if (_tsPhone()) { _tsClose(false); return; }
+    /* ROUND 184: the phone sheet is anchored by CSS, and a mobile browser fires
+       `resize` while its URL bar collapses — closing there made the menu vanish as the
+       operator touched it. Nothing to place again, so keep it. */
+    if (_tsPhone()) return;
     _tsPlace(_ts.sel, _ts.pop);
   });
 

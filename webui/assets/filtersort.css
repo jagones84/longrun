@@ -60,11 +60,16 @@
   box-shadow: 0 18px 48px rgba(0, 0, 0, .46);
   font-size: calc(12.5px * var(--zoom, 1));
   overscroll-behavior: contain;
+  /* ROUND 184: a long roster (the deck's 98 assignees) must be draggable with a finger
+     without the page behind taking the gesture. */
+  touch-action: pan-y; -webkit-overflow-scrolling: touch;
 }
 .ts-opt {
   padding: calc(6px * var(--zoom, 1)) calc(9px * var(--zoom, 1)); border-radius: 7px;
   cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   color: var(--txt, #e7e9ee);
+  /* ROUND 184: a drag over the labels must scroll the list, never start a text range. */
+  -webkit-user-select: none; user-select: none;
 }
 .ts-opt:hover, .ts-opt.on {
   background: var(--sel, var(--hover, rgba(255, 255, 255, .07)));
