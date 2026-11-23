@@ -398,6 +398,10 @@ Layout (2026-11-20), by runtime role:
   retention predicate with recorded evidence (the target habit vs the rest of the runs), so an
   improvement that costs the off-target work is named, not averaged away. Imported by `cycle` and by
   `improve._save` (the decision stamp), so it counts as one of the root modules above.
+* `harness/capability_protocol.py` — the evolve/held-out protocol (RRSI §4.1, HSI §4.1): a seeded
+  split with a held-out digest, the A/A noise band, a per-run record (arm/model/suite/scores/n/
+  tokens/date) and a like-for-like verdict. Library only — it runs no agent and calls no model; the
+  first live run needs a configured provider.
 
 ### Wired vs report-only
 

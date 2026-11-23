@@ -7,6 +7,18 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **A capability protocol: evolve/held-out split, A/A noise band, like-for-like verdict (RSI R1).** The
+  repository had benchmark runners and no protocol tying them together — its newest capability run
+  predates every RSI round, so "is it better?" had no defensible answer. Source: RRSI arXiv:2609.24972
+  §4.1 / Tables 2–3 and HSI arXiv:2608.08466 §4.1 (both separate the evolve tasks from the scored
+  tasks and establish a noise band first). New `harness/capability_protocol.py`: `split()` (seeded,
+  deterministic, disjoint, exhaustive, non-empty, refuses duplicate/short input), `split_digest()`
+  (names the held-out side; the seal is a contract, the digest is the audit), `noise_band()` (worst
+  A/A gap; one run is refused), `record()` (arm/model/suite/split/scores/n/tokens/date; per-task 0/1
+  outcomes, no pasted averages), and `compare()` (`improved`/`worse`/`flat` only against the band;
+  a changed n or suite is `not-comparable`, and no band is `no-noise-band`, not a guess). Library
+  only — it runs no agent and calls no model; the first live run still needs a configured provider.
+  Locked by `v1295` (33/33; the module is absent on the parent).
 - **The retention constraint now has real evidence: a promoted skill may not degrade the rest of the
   work (RSI I-7).** arXiv:2611.25380 Eq. 4 (its Table 4) requires a specialisation to keep prior
   capability; I-5 built the predicate and nothing fed it. `selfevolve.skill_retention(dir)` compares
