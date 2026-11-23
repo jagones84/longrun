@@ -337,6 +337,19 @@ def run(session_id=None, domain="general", dry_run=True, model=None, call=None,
                 else:
                     report["rejected"] += chosen["rejected"]
         report["reflection"] = compose_mod.reflect(report["trials"], report.get("successor"))
+        # I-5 (2026-11-23): name the HARNESS FIELDS this round edits, in the
+        # vocabulary of arXiv:2611.25380 §3.4 (system prompt / tool schema /
+        # skill / exemplar / planning). The report used to name only the
+        # decision; a domain adapter is what an operator loads, so the round
+        # says which fields compose and where two candidates collide.
+        try:
+            from longrun.harness import domain_adapter as _adapter
+            report["genotype"] = _adapter.genotype(
+                [{"kind": s.get("kind"), "name": s.get("name"),
+                  "content": s.get("content")} for s in supported],
+                domain=domain)
+        except Exception:  # noqa: BLE001 — a report field must never break a cycle
+            pass
         kept_objs = [s for s in supported if s.get("name") in (report.get("kept") or [])]
         report["proposal"] = _admit(group, report, kept_objs)
         report["status"] = "no adoption"

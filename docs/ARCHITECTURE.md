@@ -387,6 +387,14 @@ Layout (2026-11-20), by runtime role:
   read-only HTTP surfaces and their support, including `hazard_notice`,
   `work_report`, `effect_state`, `compaction_brief`, `model_cascade`,
   `completion_signal`, `env_card`, `edit_loop` and `time_budget` below).
+* `harness/domain_adapter.py` — the GEPA genotype of arXiv:2611.25380: a
+  domain-scoped adapter over named fields (`system_prompt`, `tool_schema`,
+  `skill`, `exemplar`, `planning`), composition with recorded right-biased
+  overrides, the Eq. 4 retention check (a specialisation may not drop another
+  domain), and the mapping from an existing proposal or cycle candidate onto the
+  field it edits. Read-only; `cycle.run` reports the composed genotype of the
+  candidates it supported. Imported by `cycle`, not by the app at boot, so it is
+  outside the 29 root modules above.
 
 ### Wired vs report-only
 

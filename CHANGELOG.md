@@ -7,6 +7,21 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Domain-scoped harness adapters: the round says which harness fields it edits, and composition cannot
+  silently collide (RSI I-5).** Source: B. Chen et al., *Beyond Weight Updates: Evolving Agent Harnesses
+  for Domain Specialization*, arXiv:2611.25380, §3.4–§3.5 and Eq. 4. The self-improvement loop already
+  produced rules proposals, mined skills, Matrix bundles and registry deltas, but had no name for the
+  composed object and no check that two specialisations collide or cost each other. New
+  `harness/domain_adapter.py`: a domain-scoped adapter over the paper's named genotype
+  (`system_prompt` / `tool_schema` / `skill` / `exemplar` / `planning`); `compose()` merges disjoint
+  fields and records every overlapping field as a right-biased override with both adapter names;
+  `retention()` is the Eq. 4 constraint (a gain in one domain may not hide a drop in another beyond a
+  stated tolerance); `from_proposal()` / `from_candidate()` map the records the loop already writes onto
+  the field they edit (the domain is the record's `domain`, never its workspace path — a directory is
+  not a vertical). `cycle.run` now reports the composed `genotype` of the candidates it supported, so
+  a round states its fields, its overrides and its unmapped rows instead of only a decision. Locked by
+  `v1292` (34/34; RED first — the parent report carried no genotype). Read-only: no model, no network,
+  no benchmark claim.
 - **A promoted skill is measured on the runs that follow it (RSI, I-4).** `forged_usage` answered
   "was this forged tool called after it landed?"; a promoted SKILL had no such read, so the loop could
   install a procedure and never look at whether the habit became more reliable (arXiv 2610.34938 names
