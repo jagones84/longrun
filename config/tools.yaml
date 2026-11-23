@@ -540,6 +540,27 @@ tools:
       # code writes the store elsewhere is not detectable here (documented limit).
       - "(?:python[0-9.]*|node|perl|ruby)\\b[^\\n]*(?:\\s-c\\b|\\s-e\\b|\\s-\\s*<<|<<)[\\s\\S]{0,600}?(?:events\\.db|data/(runs|sessions|threads|heldout|proposals|improvement)\\b)"
       - "\\b(cat|head|tail|less|more|strings|xxd|od|base64|cp|rsync|scp)\\b[^\\n]*data/heldout"
+      # 2026-11-23 (bug hunt F-002): the POLICY OVERLAY is the permission layer.
+      # `load_config` merges it on top of this file with a per-tool SHALLOW update,
+      # so an overlay `tools: {<t>: {deny: []}}` ERASES the hard-deny list above —
+      # a tool call that could write it would lift the `.env`/`LONGRUN_TOKEN`/
+      # control-API rules. The file is the operator's (Settings > Tools &
+      # approvals writes it through `save_config`); a tool call never needs it.
+      # A path-token match wherever the name appears, like the `.env` rule above;
+      # the python door denies it too (`matrix_guard._store_targets`).
+      - pattern: "tools\\.overlay\\.(?:ya?ml|json)"
+        proof: v1283_policy_overlay_is_not_agent_writable
+        why: "the policy overlay IS the permission layer — an overlay `deny: []` erases a hard deny; change a tool's policy from Settings > Tools & approvals, never by writing the overlay from a tool call"
+      # 2026-11-23 (bug hunt F-003): the app CONFIG dir holds the GLOBAL RULES
+      # (`Global_rules.md`, injected into every prompt) and the routing /
+      # providers / decisions / subagents configs. The golden rule is "the RULES
+      # are written by the human — the agent at most PROPOSES"; a tool call that
+      # could write there would rewrite its own persistent instructions. The
+      # python door denies it too (`matrix_guard._store_targets`). Default app
+      # home; a `LONGRUN_CONFIG_DIR` override is still covered by the python door.
+      - pattern: "(?:>>?|\\btee\\b|\\b(?:rm|mv|truncate|shred|dd|cp|install)\\b)[^\\n]*\\.longrun/config/"
+        proof: v1284_agent_config_dir_is_not_writable
+        why: "the app config dir holds the global rules and the model/routing configs — propose a rule change (improve), never write them from a tool call"
 
   # read a file (host-side, constrained to allowed roots)
   fs.read:

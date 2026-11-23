@@ -176,9 +176,13 @@ IMPROVE = open(os.path.join(REPO, "src/longrun/util/improve.py"), encoding="utf-
 check("G1 the end-of-turn recorder passes the outcome and the purpose",
       "_se.record(" in AGENT and "outcome=(" in AGENT and "purpose=message" in AGENT,
       "agent.py")
+# 2026-11-23 (I-1): the same aligned split now also feeds the recency tiebreak, so
+# the call site gained `times=_tss`; the intent is unchanged — evolve mines
+# through the ONE `history_split`, never a rebuilt list.
 check("G2 evolve mines through the ONE aligned split, never a rebuilt list",
       "selfevolve.history_split()" in IMPROVE
-      and "selfevolve.mine(_seqs, c, outcomes=_ocs, purposes=_pps)" in IMPROVE,
+      and "selfevolve.mine(_seqs, c, outcomes=_ocs, purposes=_pps, times=_tss)"
+      in IMPROVE,
       "improve.py")
 
 print("\n%d/%d PASS" % (sum(results), len(results)))

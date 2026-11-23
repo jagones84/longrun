@@ -5,7 +5,12 @@ Each `execute(tool, args, run_id)` returns a normalised dict:
     {tool, ok, backend, sandboxed, exit_code, stdout, stderr, duration_ms, ...}
 
 Policy (allowlist / approval) is enforced by the caller (server.py) via
-registry.classify(); this module only *runs* an already-permitted action.
+registry.classify(); `execute` normally only *runs* an already-permitted action.
+It DOES re-assert the hard deny (`registry.deny_hit`) on every call, because it
+is also reachable directly: a self-evolved Matrix tool runs each of its steps
+through `execute`, so a step naming a hard-denied action (e.g. `shell.exec` on
+`LONGRUN_TOKEN`) would otherwise slip past the gate its own docstring promises
+to respect. The hard deny is the ONE boundary `approvals.mode=full` never lifts.
 """
 
 import difflib
@@ -5538,6 +5543,22 @@ def execute(tool, args, run_id=None):
                     "error": "blocked by the decision layer: %s" % _v.get("reason")}
     except Exception:  # noqa: BLE001 — the decision layer must never break a tool
         pass
+    # Defense in depth: `registry.classify` guards the CALLER's door, but this
+    # function is also reachable directly — a self-evolved Matrix tool runs every
+    # step through it, so a step naming a hard-denied action would execute with
+    # `ok=True` while its generated docstring claimed to "never bypass a gate".
+    # The hard deny is the ONE boundary `approvals.mode=full` never lifts, so
+    # re-assert it here, side-effect free (no approval round-trip, no firing
+    # accounting), immediately before the dispatch. `deny_hit` is the same judge
+    # `classify` uses, so the two can never drift.
+    try:
+        _hit = registry.deny_hit(tool, args or {})
+    except Exception:  # noqa: BLE001 — the guard must never break a tool call
+        _hit = ""
+    if _hit:
+        return {"ok": False, "tool": tool, "args": args or {}, "exit_code": 126,
+                "denied": True,
+                "error": "matches hard-deny pattern %r" % _hit}
     res = None
     try:
         res = _dispatch_execute(tool, args, run_id=run_id)

@@ -203,9 +203,27 @@ def _format_matrix_error(exc, target_file=None):
 
 
 def _verified_store_path(repo_root=None):
-    _root, _msrc, mdot = _roots(repo_root)
-    os.makedirs(mdot, exist_ok=True)
-    return os.path.join(mdot, "verified_targets.json")
+    """Where the pre-promotion test RECORD lives.
+
+    It is the harness's OWN record of what it tested, so it must sit where the
+    agent cannot rewrite it: a gate whose evidence the agent controls is
+    worthless. In production (no `repo_root`) it lives in the improvement RECORD
+    dir, already denied by every door (`matrix_guard._store_targets` +
+    the `config/tools.yaml` shell/fs rules) — the same home as the audit ledger.
+
+    Bug hunt 2026-11-23 (F-001): it used to live in the Matrix RUNTIME dir
+    (`~/.longrun/matrix`, i.e. `mdot`), which the agent IS allowed to write, so a
+    `verified_targets.json` forged with an artifact's sha made `verify_target`
+    bless code that was never tested and `promote_to_nucleous` import it into
+    Nucleous. An explicit `repo_root` (tests) keeps the record under the fixture.
+    """
+    if repo_root is not None:
+        _root, _msrc, mdot = _roots(repo_root)
+        os.makedirs(mdot, exist_ok=True)
+        return os.path.join(mdot, "verified_targets.json")
+    d = os.path.join(paths.IMPROVEMENT_DIR, "matrix")
+    os.makedirs(d, exist_ok=True)
+    return os.path.join(d, "verified_targets.json")
 
 
 def _file_sha256(path):
@@ -579,7 +597,8 @@ def run_test(script_name="test_matrix.py", code=None, install_deps=None,
 
     When the test passes (exit_code == 0), records the SHA-256 verification proof
     for `target` (e.g. 'tool:fast_calc' or 'hook:plan') and any Matrix module
-    imported by the test script in `.Matrix/verified_targets.json`.
+    imported by the test script in the verification record
+    (`_verified_store_path` — the improvement RECORD dir, not the Matrix zone).
     """
     matrix_guard.ensure_layout(repo_root)
     root, msrc, mdot = _roots(repo_root)

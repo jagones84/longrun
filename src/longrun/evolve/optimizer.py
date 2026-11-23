@@ -73,6 +73,64 @@ def _evolution_history(limit=HISTORY_LIMIT):
                     "stale": str(p.get("stale") or "")})
         if len(out) >= limit:
             break
+    # I-4: merge the DURABLE half — deltas the ledger still remembers after the
+    # proposal JSON was cleared — so the pruner cannot be reset by `clear_decided`.
+    seen = set()
+    for h in out:
+        k = _delta_key(h.get("delta"))
+        if k:
+            seen.add(k)
+    for h in _durable_decided(limit):
+        if h["key"] in seen:
+            continue
+        out.append(h)
+        seen.add(h["key"])
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _durable_decided(limit=HISTORY_LIMIT):
+    """Registry deltas the LEDGER still remembers after `clear_decided` (I-4).
+
+    `clear_decided` deletes the proposal JSON (its docstring says the ledger is
+    the durable record) but the ledger row did not carry the delta IDENTITY, so
+    the pruner's memory died with the file. `_submit` now stamps `delta_key` on
+    each `optimizer.delta` row, so the refused deltas can be rebuilt from the
+    record that is never deleted. Returns rows shaped like `_evolution_history`
+    (id/status/key/reason, no `delta`).
+    """
+    try:
+        from longrun.util import improve as _improve
+        rows = _improve.ledger_tail(max(int(limit or 0) * 6, 60))
+    except Exception:  # noqa: BLE001 — a read-only view must never break a run
+        return []
+    key_of = {}
+    for r in rows:
+        if isinstance(r, dict) and r.get("kind") == "optimizer.delta":
+            k = str(r.get("delta_key") or "")
+            if k:
+                key_of.setdefault(str(r.get("proposal") or ""), k)
+    if not key_of:
+        return []
+    out = []
+    for r in rows:                          # newest first
+        if not isinstance(r, dict) or r.get("kind") != "decide":
+            continue
+        if r.get("scope") != "registry":
+            continue
+        k = key_of.get(str(r.get("proposal") or ""))
+        if not k:
+            continue
+        status = str(r.get("decision") or "denied")
+        if status in ("approve", "approved"):
+            status = "approved"
+        elif status in ("deny", "denied"):
+            status = "denied"
+        out.append({"id": r.get("proposal"), "status": status, "key": k,
+                    "reason": "recorded in the ledger (%s)" % status})
+        if len(out) >= limit:
+            break
     return out
 
 
@@ -105,6 +163,8 @@ def _history_block(history):
              "refused, 'cannot apply' = the registry no longer accepts it); choose "
              "a DIFFERENT row, or skip:"]
     for h in history:
+        if not h.get("delta"):                # durable rows carry only the identity
+            continue
         d = h.get("delta") or {}
         bits = ["%s.%s" % (d.get("target"), d.get("field"))]
         if "value" in d:
@@ -672,12 +732,58 @@ def _policy_snapshot(policy_hits):
     return "\n".join(rows)[:9000]
 
 
+def _read_recent_traces(limit=6):
+    """The most recent run records, newest first — CROSS-SESSION evidence (I-3).
+
+    `run(sid)` reads ONE session, so a friction that only shows across many
+    sessions is invisible. This reads the runmetrics store (`RUNS_DIR`, the same
+    records `_read_trace` uses) and is fail-open: no store -> no context.
+    Read-only.
+    """
+    try:
+        from longrun.model import runmetrics as _rm
+        d = _rm.RUNS_DIR
+        names = [n for n in os.listdir(d) if n.endswith(".json")]
+        names.sort(key=lambda n: os.path.getmtime(os.path.join(d, n)), reverse=True)
+    except Exception:  # noqa: BLE001 — the context must never break a run
+        return []
+    out = []
+    for n in names[:max(1, int(limit or 6))]:
+        try:
+            with open(os.path.join(d, n), encoding="utf-8") as f:
+                rec = json.load(f)
+        except Exception:  # noqa: BLE001
+            continue
+        if isinstance(rec, dict):
+            out.append(rec)
+    return out
+
+
+def _cross_summary(rows):
+    """Outcome and exit-code counts across the recent runs (I-3). Bounded."""
+    rows = [r for r in (rows or []) if isinstance(r, dict)]
+    if not rows:
+        return {}
+    outcomes, code = {}, {}
+    for r in rows:
+        oc = str(r.get("outcome") or "unknown")
+        outcomes[oc] = outcomes.get(oc, 0) + 1
+        c = r.get("code")
+        if c not in (None, 0):
+            code[str(c)] = code.get(str(c), 0) + 1
+    return {"sessions": len(rows), "outcomes": outcomes, "exit_codes": code}
+
+
 def _build_analysis_prompt(trace, policy_hits, job_cost, feedback, history=None,
-                           refusals=None):
+                           refusals=None, cross=None):
     """Build the optimizer's analysis prompt from session evidence.
 
     The prompt asks for ONE JSON object: either {"skip": true, ...} or a registry-row
     delta the existing approval pipeline can apply. It never asks for a code change.
+
+    `cross` (I-3, 2026-11-23) is the cross-session summary from `_cross_summary`:
+    a friction seen in ONE session is weaker evidence than the same friction seen
+    across the last N runs. Absent -> the prompt is byte-identical to before.
     """
     parts = []
 
@@ -692,6 +798,17 @@ def _build_analysis_prompt(trace, policy_hits, job_cost, feedback, history=None,
         code_map = {1: "semantic error", 64: "usage error", 124: "timeout",
                     125: "sandbox", 126: "blocked", 127: "unknown tool", 130: "cancelled"}
         parts.append(f"Exit code: {code} ({code_map.get(code, 'unknown')})")
+
+    if cross and cross.get("sessions"):
+        _oc = ", ".join("%s=%d" % (k, v)
+                        for k, v in sorted((cross.get("outcomes") or {}).items()))
+        _ec = ", ".join("exit %s x%d" % (k, v)
+                        for k, v in sorted((cross.get("exit_codes") or {}).items()))
+        parts.append(
+            "Across the last %d run record(s) (cross-session context — a friction "
+            "seen here only ONE time is weaker evidence than the same one "
+            "recurring): outcomes %s%s."
+            % (cross["sessions"], _oc, ("; " + _ec) if _ec else ""))
 
     if policy_hits:
         live, gone = _hit_rows(policy_hits)
@@ -841,6 +958,15 @@ def _submit(delta, evidence, sid):
         rec = _improve.propose(
             "registry", content, reason=why[:500],
             origin="optimizer", delta=delta, experiment=exp)
+        # I-4 (2026-11-23): stamp the delta IDENTITY on the durable ledger so the
+        # pruner's memory survives `clear_decided` (which deletes the proposal
+        # JSON). Without it a denied/reverted delta could be re-proposed after a
+        # "clear decided" — the exact oscillation the pruner exists to stop.
+        try:
+            _improve.ledger_add("optimizer.delta", origin="optimizer",
+                                proposal=rec.get("id"), delta_key=_delta_key(delta))
+        except Exception:  # noqa: BLE001 — the durable stamp must not fail a submit
+            pass
         return rec.get("id")
     except Exception:  # noqa: BLE001 — submitting is additive, never fails the session
         return None
@@ -870,8 +996,12 @@ def run(sid, jid=None):
     feedback = _read_feedback(sid)
     refusal_rows = _read_refusals(sid)
     history = _evolution_history()
+    # I-3: the ONE-session trace is joined by the cross-session context, so the
+    # model can weigh a friction that recurs over the last N runs.
+    cross = _cross_summary(_read_recent_traces())
     prompt = _build_analysis_prompt(trace, policy_hits, job_cost, feedback,
-                                    history=history, refusals=refusal_rows)
+                                    history=history, refusals=refusal_rows,
+                                    cross=cross)
 
     _live, _gone = _hit_rows(policy_hits)
     evidence = {
@@ -885,6 +1015,7 @@ def run(sid, jid=None):
         "unknown_args": len(policy_hits.get("unknown_args", {})),
         "job_tokens": job_cost.get("tokens", 0),
         "has_feedback": bool(feedback),
+        "cross_sessions": int(cross.get("sessions") or 0),
         "refusals": sum(int(r.get("n") or 0) for r in refusal_rows.values()),
         "refusals_gave_up": sum(int(r.get("gave_up") or 0)
                                 for r in refusal_rows.values()),
@@ -966,7 +1097,16 @@ def run(sid, jid=None):
     # RRSI pruner ("no longer useful"): the same delta already decided or still
     # waiting adds a duplicate to the inbox and no information to the operator.
     _key = _delta_key(delta)
-    _seen = next((h for h in history if _key and _delta_key(h["delta"]) == _key), None)
+    _seen = None
+    if _key:
+        for h in history:
+            if h.get("key") == _key:          # durable row (I-4)
+                _seen = h
+                break
+            _d0 = h.get("delta")
+            if isinstance(_d0, dict) and _d0 and _delta_key(_d0) == _key:
+                _seen = h
+                break
     if _seen:
         result = {"skip": True, "session": sid, "delta": delta,
                   "reason": "already proposed (%s): %s" % (

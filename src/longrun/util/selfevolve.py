@@ -47,7 +47,7 @@ def _ngrams(seq, k):
     return [tuple(seq[i:i + k]) for i in range(len(seq) - k + 1)]
 
 
-def mine(sequences, c=None, outcomes=None, purposes=None):
+def mine(sequences, c=None, outcomes=None, purposes=None, times=None):
     """Find contiguous tool sequences repeated across different runs.
 
     Args:
@@ -58,7 +58,8 @@ def mine(sequences, c=None, outcomes=None, purposes=None):
         purposes: optional, aligned with `sequences`: what each run was FOR.
     Returns:
         list of {"pattern": [tool,...], "length": k, "support": n, "runs": [idx],
-                 "purpose": str, "support_ok": n, "support_bad": n, "unknown": n}
+                 "purpose": str, "support_ok": n, "support_bad": n, "unknown": n,
+                 "recent": n}
         sorted by (length*support) descending; the longer patterns with the
         same support win over their sub-patterns.
 
@@ -86,13 +87,18 @@ def mine(sequences, c=None, outcomes=None, purposes=None):
         pps = [""] * len(raw)
     # The run filter and the outcome filter are the SAME pass: `runs` below holds
     # indices into `seqs`, so anything that drops a run must drop its outcome too.
-    seqs, kept_ocs, kept_pps = [], [], []
-    for s, o, p in zip(raw, ocs, pps):
+    # `times` (epoch per run, aligned) rides the same filter (I-1, 2026-11-23).
+    tss = list(times) if times is not None else None
+    if tss is not None and len(tss) != len(raw):
+        tss = None
+    seqs, kept_ocs, kept_pps, kept_ts = [], [], [], []
+    for i, (s, o, p) in enumerate(zip(raw, ocs, pps)):
         clean = [str(x) for x in (s or []) if _dispatchable(x, known)]
         if len(clean) >= mn:
             seqs.append(clean)
             kept_ocs.append(str(o or "").strip().lower())
             kept_pps.append(" ".join(str(p or "").split()))
+            kept_ts.append(float(tss[i] or 0) if tss is not None else 0.0)
     found = {}
     for k in range(mn, mx + 1):
         for idx, s in enumerate(seqs):
@@ -126,11 +132,28 @@ def mine(sequences, c=None, outcomes=None, purposes=None):
             if kept_pps[i]:
                 seen[kept_pps[i]] = seen.get(kept_pps[i], 0) + 1
         d["purpose"] = max(seen, key=lambda t: (seen[t], t)) if seen else ""
+        # I-1 (2026-11-23): a habit seen 3× last year is not the same evidence as
+        # one seen 3× this week. When the caller supplies run timestamps, count the
+        # supporting runs inside `recency_days` and use it as a ranking tiebreak so
+        # the automatic pass (which installs the top candidates) prefers what the
+        # operator is actually doing NOW. No timestamps -> recent == support, so the
+        # order is byte-identical to the pre-change behaviour.
+        if tss is None:
+            d["recent"] = d["support"]
+        else:
+            try:
+                _days = int(c.get("recency_days") or 30)
+            except (TypeError, ValueError):
+                _days = 30
+            _cut = time.time() - max(0, _days) * 86400
+            d["recent"] = sum(1 for i in rs if kept_ts[i] >= _cut)
         # OCM: every run we have an outcome for failed -> refuse the candidate.
         if d["support_ok"] == 0 and d["support_bad"] > 0:
             continue
         out.append(d)
-    out.sort(key=lambda d: (d["length"] * d["support"], d["support"]), reverse=True)
+    out.sort(key=lambda d: (d["length"] * d["support"],
+                            d.get("recent", d["support"]), d["support"]),
+             reverse=True)
     return out
 
 
@@ -215,15 +238,39 @@ def _split_note(cand):
             % (ok, bad, unk))
 
 
-def scan(sequences, out_dir, c=None, note="", outcomes=None, purposes=None):
-    """Mine the sequences and write a draft per pattern. Returns the paths."""
+def scan(sequences, out_dir, c=None, note="", outcomes=None, purposes=None,
+         times=None):
+    """Mine the sequences and write a draft per pattern. Returns the paths.
+
+    I-2 (2026-11-23): a candidate that is the SAME habit as one already in the
+    store or already emitted this run is skipped — the exact-slug check missed a
+    subsequence (`fs.read→fs.edit→shell` vs `fs.edit→shell`) and a near-identical
+    tool set, which produced a second skill for one habit.
+    """
     c = c or cfg()
+    try:
+        thr = float(c.get("dedupe_similarity") or 0.8)
+    except (TypeError, ValueError):
+        thr = 0.8
+    existing = []
+    try:
+        for name in os.listdir(out_dir):
+            prop = _read_json(os.path.join(out_dir, name, "proposal.json"))
+            pat = (prop or {}).get("pattern") if isinstance(prop, dict) else None
+            if isinstance(pat, list) and pat:
+                existing.append([str(x) for x in pat])
+    except OSError:
+        existing = []
     paths = []
-    for cand in mine(sequences, c, outcomes=outcomes, purposes=purposes):
+    for cand in mine(sequences, c, outcomes=outcomes, purposes=purposes,
+                     times=times):
+        pat = [str(x) for x in (cand["pattern"] or [])]
         # Self-maintenance: skip drafts that already exist — a re-mine
         # must not re-emit (and re-flood the chat with) the same patterns.
         name = slug(cand["pattern"])
         if os.path.isfile(os.path.join(out_dir, name, "proposal.json")):
+            continue
+        if any(_near_dup(pat, seen, thr) for seen in existing):
             continue
         split = _split_note(cand)
         full = ("%s | %s" % (note, split)) if (note and split) else (note or split)
@@ -231,10 +278,39 @@ def scan(sequences, out_dir, c=None, note="", outcomes=None, purposes=None):
                   purpose=cand.get("purpose") or "")
         if p:
             paths.append(p)
+            existing.append(pat)
         # Flood cap: one mine run deposits at most 10 NEW drafts.
         if len(paths) >= 10:
             break
     return paths
+
+
+def _contains(long, short):
+    """True when `short` appears as a CONTIGUOUS run inside `long`."""
+    n, m = len(long or []), len(short or [])
+    if m == 0 or m > n:
+        return False
+    return any(long[i:i + m] == short for i in range(n - m + 1))
+
+
+def _near_dup(a, b, threshold):
+    """True when two mined patterns describe the SAME habit (I-2, 2026-11-23).
+
+    One contains the other in order (the shorter is the same procedure with a
+    step added or dropped), OR their tool sets overlap at least `threshold`
+    (Jaccard). A pure subsequence/insertion produced a second draft for one
+    habit; the exact-slug check could not see it.
+    """
+    a = [str(x) for x in (a or [])]
+    b = [str(x) for x in (b or [])]
+    if not a or not b:
+        return False
+    if _contains(b, a) or _contains(a, b):
+        return True
+    sa, sb = set(a), set(b)
+    if not sa or not sb:
+        return False
+    return len(sa & sb) / float(len(sa | sb)) >= threshold
 
 
 def prune_junk(out_dir, c=None):
@@ -404,6 +480,16 @@ def history_split(path=None):
     return ([r["tools"] for r in rows],
             [r.get("outcome") or "" for r in rows],
             [r.get("purpose") or "" for r in rows])
+
+
+def history_ts(path=None):
+    """The recorded runs' timestamps, aligned with `history_split` (one order).
+
+    `mine(times=...)` uses these for the recency tiebreak (I-1, 2026-11-23): a
+    habit seen this week outranks one seen a year ago. Same `history_rows` order
+    as `history_split`, so the three (four) lists can never misalign.
+    """
+    return [float(r.get("ts") or 0) for r in history_rows(path)]
 
 
 def _uses(seq, ns):
@@ -1635,7 +1721,8 @@ def mine_history(out_dir, c=None, path=None, note=""):
     instead of by frequency.
     """
     seqs, ocs, pps = history_split(path)
-    return scan(seqs, out_dir, c, note=note, outcomes=ocs, purposes=pps)
+    return scan(seqs, out_dir, c, note=note, outcomes=ocs, purposes=pps,
+                times=history_ts(path))
 
 
 #: The lifecycle of a repair draft. A skill draft has one (`verified` /
@@ -3297,10 +3384,13 @@ def pipeline(pattern, out_dir, support=0, runner=None, promote_if_green=True,
     """Full stage 2 cycle: draft -> synth -> verify -> (promote if green AND
     the green streak reaches the bar).
 
-    `purpose` is the one sentence that turns material into a skill; an empty one
-    means the automatic cycle stops at a VERIFIED DRAFT (the purpose gate in
-    `promote` refuses the install), which is the designed behaviour: a mined
-    sequence is evidence of a repeat, not a statement of what it is for.
+    `purpose` is the one sentence that says what the sequence is FOR; when the
+    runs behind it stated one, it is carried into the draft and the archived
+    skill. An empty one does NOT block the automatic install — the "purpose
+    gate" was withdrawn (`draft`), so the evidence gates in `promote` alone
+    decide and the skill ships with an empty purpose. A caller that has the
+    purpose (`mine` derives it from the runs; `scan`/`evolve_once` pass it)
+    should always pass it.
     """
     c = c or cfg()
     d = draft(pattern, support, out_dir, purpose=purpose)

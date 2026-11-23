@@ -296,6 +296,30 @@ def _store_targets():
         _imp = getattr(_p, "IMPROVEMENT_DIR", "")
         if isinstance(_imp, str) and _imp:
             out.append(_imp)
+        # Bug hunt 2026-11-23 (F-002): the POLICY OVERLAY is the permission layer
+        # itself. `save_config`/`POST /api/tools` write it and `load_config` merges
+        # it ON TOP of `config/tools.yaml` with a per-tool SHALLOW update, so an
+        # overlay `tools: {<t>: {deny: []}}` ERASES a shipped hard-deny (the `.env`
+        # / `LONGRUN_TOKEN` / control-API rules). It sits directly under the data
+        # dir — not a protected subdir — so a tool call could rewrite it and then
+        # lift a hard deny. Deny it exactly like the record.
+        if isinstance(data, str) and data:
+            out.append(os.path.join(data, "tools.overlay.yaml"))
+            out.append(os.path.join(data, "tools.overlay.json"))
+        # Bug hunt 2026-11-23 (F-003): the app CONFIG dir holds the GLOBAL RULES
+        # (`Global_rules.md` — injected into every prompt) plus the routing,
+        # providers, decisions and subagents configs. The golden rule is "the RULES
+        # are written by the human — the agent at most PROPOSES", so this dir is a
+        # record the agent may not write either. It sat outside the Nucleous and
+        # outside every store target, so a tool call could rewrite its own
+        # persistent instructions. Protect it in every door.
+        _cfgd = ""
+        try:
+            _cfgd = _p.config_dir()
+        except Exception:  # noqa: BLE001
+            _cfgd = ""
+        if isinstance(_cfgd, str) and _cfgd:
+            out.append(_cfgd)
     except Exception:  # noqa: BLE001 — the guard must not break on an import
         pass
     # The in-repo spelling needs no entry of its own: `paths.DATA_DIR` IS the

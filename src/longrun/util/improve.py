@@ -1075,14 +1075,24 @@ def evolve_once(note="", allow_code=None):
     # OCM (2026-11-14): mine with the outcome and the purpose of the runs the
     # sequences came from — one aligned split, never reconstructed here.
     _seqs, _ocs, _pps = selfevolve.history_split()
-    for cand in selfevolve.mine(_seqs, c, outcomes=_ocs, purposes=_pps):
+    _tss = selfevolve.history_ts()          # I-1: recency tiebreak for the ranking
+    for cand in selfevolve.mine(_seqs, c, outcomes=_ocs, purposes=_pps, times=_tss):
         if installed >= pcap:
             break
         # `promote_per_run: 0` means "keep mining, install nothing" — the same
         # reading `forge_per_run: 0` has for the code arm, so the pass still
         # drafts and verifies instead of silently doing nothing at all.
         rep = selfevolve.pipeline(cand["pattern"], out, cand["support"], c=c,
-                                  promote_if_green=pcap > 0)
+                                  promote_if_green=pcap > 0,
+                                  # Bug hunt 2026-11-23 (F-004): carry the purpose
+                                  # `mine()` derived from the runs' stated purposes.
+                                  # Without it the automatic path installed a skill
+                                  # whose `purpose` was empty even when every run
+                                  # behind it had said what it was for — while the
+                                  # `scan()` path recorded it. A skill nobody can
+                                  # state the purpose of is un-addressable for the
+                                  # agent that must choose it.
+                                  purpose=cand.get("purpose") or "")
         arc = rep.get("archived")
         if isinstance(arc, dict) and arc.get("ok"):
             installed += 1
