@@ -671,6 +671,85 @@ def impact(pattern, since=None, path=None, min_runs=None, margin=None):
             "min_runs": need, "margin": eps, "verdict": verdict}
 
 
+def _rest_counts(pattern, since, path=None):
+    """Known-outcome runs that do NOT contain `pattern`, split at `since` (I-7).
+
+    The complement of `_impact_counts`: what the harness did elsewhere. A run
+    that contains the pattern belongs to the target, never to the rest.
+    """
+    pat = [str(x) for x in (pattern or [])]
+    before = {"ok": 0, "bad": 0}
+    after = {"ok": 0, "bad": 0}
+    if since is None:
+        return before, after
+    cutoff = float(since)
+    for row in history_rows(path):
+        tools = [str(x) for x in (row.get("tools") or [])]
+        if pat and _contains(tools, pat):
+            continue
+        outcome = str(row.get("outcome") or "").strip().lower()
+        bucket = after if float(row.get("ts") or 0) >= cutoff else before
+        if outcome == "ok":
+            bucket["ok"] += 1
+        elif outcome in ("error", "corrected"):
+            bucket["bad"] += 1
+    return before, after
+
+
+def _rate_row(bucket):
+    """{ok, runs, rate} for one `_impact_counts` bucket (rate None with no runs)."""
+    n = bucket["ok"] + bucket["bad"]
+    return {"ok": bucket["ok"], "bad": bucket["bad"], "runs": n,
+            "rate": (round(bucket["ok"] / float(n), 4) if n else None)}
+
+
+def skill_retention(proposal_dir, path=None, tolerance=None):
+    """Eq. 4 with recorded evidence: did this change cost the REST of the work? (I-7)
+
+    I-4 measured a promoted skill's own habit before/after. The retention
+    constraint of arXiv:2611.25380 (Eq. 4, its Table 4) asks the other half:
+    a specialisation may improve its target and must not destroy prior
+    capability. Here the two "domains" are the target habit and the rest of the
+    recorded runs (every known-outcome run that does not contain the pattern),
+    compared over the same cut `promote()` stamped. The predicate itself is
+    `harness.domain_adapter.retention`, so the check has one owner.
+
+    Read-only; a legacy artifact with no `impact_baseline` says so. A run with
+    no outcome is evidence of nothing and is never counted.
+    """
+    folder = str(proposal_dir or "").rstrip("/")
+    prop = _read_json(os.path.join(folder, "proposal.json")) or {}
+    base = prop.get("impact_baseline") if isinstance(prop.get("impact_baseline"),
+                                                     dict) else {}
+    pattern = base.get("pattern") or prop.get("pattern") or []
+    since = base.get("ts")
+    if since is None:
+        since = prop.get("released_ts") or prop.get("created")
+    name = str(prop.get("name") or os.path.basename(folder))
+    if not pattern or since is None:
+        return {"ok": False, "name": name,
+                "error": "no impact baseline on this artifact "
+                         "(promoted before I-4, 2026-11-23)"}
+    t_before, t_after = _impact_counts(pattern, since, path=path)
+    r_before, r_after = _rest_counts(pattern, since, path=path)
+    from longrun.harness import domain_adapter as _adapter
+    verdict = _adapter.retention(
+        {"target": {"ok": t_before["ok"],
+                    "runs": t_before["ok"] + t_before["bad"]},
+         "rest": {"ok": r_before["ok"],
+                  "runs": r_before["ok"] + r_before["bad"]}},
+        {"target": {"ok": t_after["ok"],
+                    "runs": t_after["ok"] + t_after["bad"]},
+         "rest": {"ok": r_after["ok"],
+                  "runs": r_after["ok"] + r_after["bad"]}},
+        tolerance=tolerance)
+    return {"ok": bool(verdict.get("ok")), "name": name,
+            "since": round(float(since), 3),
+            "target": {"before": _rate_row(t_before), "after": _rate_row(t_after)},
+            "rest": {"before": _rate_row(r_before), "after": _rate_row(r_after)},
+            "retention": verdict}
+
+
 def skill_impact(proposal_dir, path=None, min_runs=None, margin=None):
     """The post-promotion verdict for ONE installed skill (I-4).
 
@@ -718,15 +797,31 @@ def installed_impact(skills_dir=None, category="created", path=None, limit=100,
         if not os.path.isdir(folder):
             continue
         got = skill_impact(folder, path=path, min_runs=min_runs, margin=margin)
+        ret = skill_retention(folder, path=path)
+        rv = ret.get("retention") if isinstance(ret.get("retention"), dict) else {}
         rows.append({"name": name, "ok": bool(got.get("ok")),
                      "verdict": str(got.get("verdict") or ""),
                      "before": got.get("before"), "after": got.get("after"),
+                     # I-7: Eq. 4 beside the target's own gain. None = nothing
+                     # comparable, which is not the same as "retained".
+                     "retained": (bool(rv.get("ok")) if rv.get("compared") else None),
+                     "retention": rv,
+                     "retention_error": str(ret.get("error") or ""),
                      "error": str(got.get("error") or "")})
     verdicts = {}
+    retention = {"retained": 0, "regressed": 0, "not-measured": 0}
     for row in rows:
         key = row["verdict"] or "not-measured"
         verdicts[key] = verdicts.get(key, 0) + 1
-    return {"ok": True, "skills": rows, "count": len(rows), "verdicts": verdicts}
+        rv = row.get("retention") or {}
+        if not rv.get("compared"):
+            retention["not-measured"] += 1
+        elif rv.get("ok"):
+            retention["retained"] += 1
+        else:
+            retention["regressed"] += 1
+    return {"ok": True, "skills": rows, "count": len(rows), "verdicts": verdicts,
+            "retention": retention}
 
 
 def retire_unused(days=14, path=None, repo_root=None, dry_run=False,

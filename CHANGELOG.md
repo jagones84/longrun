@@ -7,6 +7,16 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **The retention constraint now has real evidence: a promoted skill may not degrade the rest of the
+  work (RSI I-7).** arXiv:2611.25380 Eq. 4 (its Table 4) requires a specialisation to keep prior
+  capability; I-5 built the predicate and nothing fed it. `selfevolve.skill_retention(dir)` compares
+  the target habit with the REST of the recorded runs (every known-outcome run that does not contain
+  the pattern) over the install cut `promote()` stamped, and hands both to
+  `domain_adapter.retention`. `installed_impact()` now carries the verdict per skill (`retained`,
+  `retention`, `retention_error`) and a `retention` total (`retained` / `regressed` / `not-measured`).
+  An unexercised target is skipped, not called retained; an off-target drop beyond the tolerance
+  refuses the change even when the target improved; `unknown` outcomes stay evidence of nothing.
+  Locked by `v1294` (20/20; RED first — the API and the verdict are absent on the parent).
 - **Every approved improvement now names the harness field it edits, and the loop's genotype history is
   a read (RSI I-6).** I-5 gave the loop the genotype vocabulary of arXiv:2611.25380; an approved
   proposal still carried only prose, so nothing said whether the change moved the system prompt, a tool

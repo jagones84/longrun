@@ -394,9 +394,10 @@ Layout (2026-11-20), by runtime role:
   domain), and the mapping from an existing proposal or cycle candidate onto the
   field it edits. Read-only; `cycle.run` reports the composed genotype of the
   candidates it supported, and `decide(approve)` stamps the field plus one
-  `adapter` ledger row that `history()` reads back. Imported by `cycle` and by
-  `improve._save` (the decision stamp), so it counts as one of the root modules
-  above.
+  `adapter` ledger row that `history()` reads back. `selfevolve.skill_retention()` feeds the
+  retention predicate with recorded evidence (the target habit vs the rest of the runs), so an
+  improvement that costs the off-target work is named, not averaged away. Imported by `cycle` and by
+  `improve._save` (the decision stamp), so it counts as one of the root modules above.
 
 ### Wired vs report-only
 
