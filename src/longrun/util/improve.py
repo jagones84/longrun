@@ -1215,6 +1215,23 @@ def mine_once(note="", evolve=False):
 
 
 def _save(rec):
+    # I-6 (2026-11-23): an APPROVED improvement names the harness field it edits,
+    # in the adapter vocabulary of arXiv:2611.25380 — metadata only, so a Matrix
+    # bundle never copies its bytes into the proposal record. One `adapter` ledger
+    # row is what `domain_adapter.history()` reads back, so "which fields has the
+    # loop changed?" is answerable without re-deriving it from prose.
+    if rec.get("status") == "approved" and "adapter" not in rec:
+        try:
+            from longrun.harness import domain_adapter as _adapter
+            got = _adapter.summary(rec)
+            if got:
+                rec["adapter"] = got
+                ledger_add("adapter", origin=rec.get("origin", "agent"),
+                           proposal=rec["id"], name=got["name"],
+                           domain=got["domain"], field=got["fields"][0],
+                           scope=rec.get("scope"))
+        except Exception:  # noqa: BLE001 — metadata must never break a decision
+            pass
     write_json(_path(rec["id"]), rec)
     return rec
 

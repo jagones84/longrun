@@ -10,7 +10,7 @@ because it is the point of measuring first, the other two were **accurate**:
 
   "the 135 report-only per-paper checkers"  <- `harness/checks/*.py`
   "the 9 gated executors"                   <- `harness/execution/*.py`
-  "the 29 modules the running app imports"  <- `harness/` root files reached from the app
+  "the 30 modules the running app imports"  <- `harness/` root files reached from the app
 
 Deriving each from the tree makes the doc self-verifying: add a checker, a gated executor
 or an app-imported seam without updating the doc, and this pin fails naming it.

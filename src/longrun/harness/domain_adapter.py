@@ -184,6 +184,62 @@ def from_proposal(rec):
     return made.get("adapter") if made.get("ok") else None
 
 
+def summary(rec):
+    """The adapter's METADATA for an improvement record, without its body (I-6).
+
+    `from_proposal()` carries the edit body, which is what a genotype needs and
+    what a proposal record must not grow (a Matrix bundle's bytes are not the
+    proposal's). This is the map a decision can stamp and an audit can count:
+    `{name, domain, fields}` or None when the scope edits no harness field.
+    """
+    rec = rec or {}
+    field = field_for(rec.get("scope"))
+    if not field:
+        return None
+    return {"name": _slug(rec.get("id") or "proposal", "proposal"),
+            "domain": _slug(rec.get("domain") or "general", "general"),
+            "fields": [field]}
+
+
+def history(rows=None, limit=500):
+    """Which harness fields the loop has APPROVED over time (I-6).
+
+    Reads the improvement ledger's `adapter` rows (written when a proposal is
+    approved) — or a supplied list. Newest first in `edits`; `fields` and
+    `domains` carry counts and the last timestamp, so "has this harness ever
+    changed its tool schema?" is a read, not an opinion. Fail-open: an
+    unreadable ledger is an empty history, never an error.
+    """
+    if rows is None:
+        try:
+            from longrun.util import improve as _improve
+            rows = _improve.ledger_tail(limit)
+        except Exception:  # noqa: BLE001 — a read model must never raise
+            rows = []
+    edits, fields, domains = [], {}, {}
+    for row in rows or []:
+        if not isinstance(row, dict) or row.get("kind") != "adapter":
+            continue
+        field = str(row.get("field") or "")
+        domain = str(row.get("domain") or "general")
+        if not field:
+            continue
+        ts = float(row.get("ts") or 0)
+        edits.append({"ts": ts, "field": field, "domain": domain,
+                      "proposal": str(row.get("proposal") or ""),
+                      "name": str(row.get("name") or "")})
+        bucket = fields.setdefault(field, {"field": field, "count": 0, "last": 0.0})
+        bucket["count"] += 1
+        bucket["last"] = max(bucket["last"], ts)
+        db = domains.setdefault(domain, {"domain": domain, "count": 0, "last": 0.0})
+        db["count"] += 1
+        db["last"] = max(db["last"], ts)
+    edits.sort(key=lambda r: r["ts"], reverse=True)
+    return {"ok": True, "edits": edits, "count": len(edits),
+            "fields": fields, "domains": domains,
+            "last": edits[0] if edits else None}
+
+
 def from_candidate(cand, domain="general"):
     """The adapter a harness-cycle candidate would be, or None."""
     cand = cand or {}

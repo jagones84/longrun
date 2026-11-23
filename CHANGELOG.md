@@ -7,6 +7,15 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Every approved improvement now names the harness field it edits, and the loop's genotype history is
+  a read (RSI I-6).** I-5 gave the loop the genotype vocabulary of arXiv:2611.25380; an approved
+  proposal still carried only prose, so nothing said whether the change moved the system prompt, a tool
+  schema or a skill. `improve.decide(approve)` now stamps `adapter` (`{name, domain, fields}` — metadata
+  only, a Matrix bundle never copies its bytes into the proposal) and writes one `adapter` ledger row;
+  `domain_adapter.summary()` maps a scope onto its field and `domain_adapter.history()` reads the
+  ledger back as per-field/per-domain counts plus the newest edit. A scope that edits no harness field
+  (`memory`, `code`) is approved without an adapter claim, and a denial records none. Locked by `v1293`
+  (24/24; RED first — 17/24 with the decision seam reverted).
 - **Domain-scoped harness adapters: the round says which harness fields it edits, and composition cannot
   silently collide (RSI I-5).** Source: B. Chen et al., *Beyond Weight Updates: Evolving Agent Harnesses
   for Domain Specialization*, arXiv:2611.25380, §3.4–§3.5 and Eq. 4. The self-improvement loop already
