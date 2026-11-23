@@ -7,6 +7,18 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **The harness cycle gains RRSI's pre-scoring regularizers (RSI R2).** Source: arXiv:2609.24972
+  §3.2–§3.3 and Table 2 (the unregularized arm wins its evolve split 92.8 and loses transfer 40.3 vs
+  43.6, at 3.80M vs 2.42M tokens/trial). New `harness/regularizer.py`: an **annealed edit budget**
+  (`edit_budget`, b_max → b_min), `count_edits`, a **leakage screen** (`leakage`) that refuses an edit
+  naming an evolve-split task/entity/answer before it is scored, a **noise-adjusted, cost-aware
+  acceptance** (`admit`: clear the band, stay within the band of the best, and pay for token growth by
+  `Δcost ≤ β0 + β1·Δgain`), a stall/exploration signal (`stalled`, `unexplored`) and **structural
+  pruning** (`prune`). `cycle.run` applies the budget and the leakage screen before any probe when
+  `regularize` is on, records `report["regularized"]` (budget, screened terms, dropped names+rule) and
+  says why when everything is dropped; the unregularized path is byte-identical. Locked by `v1296`
+  (35/35; RED first — with the cycle seam reverted G1–G3 fail). Acceptance/pruning are predicates for
+  the R1 protocol, not yet wired to a numeric fitness; no benchmark number is claimed.
 - **A capability protocol: evolve/held-out split, A/A noise band, like-for-like verdict (RSI R1).** The
   repository had benchmark runners and no protocol tying them together — its newest capability run
   predates every RSI round, so "is it better?" had no defensible answer. Source: RRSI arXiv:2609.24972

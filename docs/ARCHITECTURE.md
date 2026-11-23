@@ -402,6 +402,10 @@ Layout (2026-11-20), by runtime role:
   split with a held-out digest, the A/A noise band, a per-run record (arm/model/suite/scores/n/
   tokens/date) and a like-for-like verdict. Library only — it runs no agent and calls no model; the
   first live run needs a configured provider.
+* `harness/regularizer.py` — RRSI's search constraints (arXiv:2609.24972 §3.2–§3.3) as pure
+  predicates: an annealed edit budget, an edit counter, a pre-scoring leakage screen, a
+  noise-adjusted and cost-aware acceptance rule, a stall/exploration signal and structural pruning.
+  `cycle.run` applies the budget and the leakage screen before any probe when `regularize` is on.
 
 ### Wired vs report-only
 

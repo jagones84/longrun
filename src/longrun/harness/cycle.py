@@ -248,11 +248,50 @@ def run(session_id=None, domain="general", dry_run=True, model=None, call=None,
         if got.get("skipped"):
             skips.append("%s: %s" % (scope, got["skipped"]))
     report["skipped"] = skips
+    # R2 (2026-11-24): RRSI's pre-scoring regularizers (arXiv:2609.24972 §3.2).
+    # A candidate that bundles more attributable edits than this round's budget,
+    # or that encodes a term from the evolve split, is dropped BEFORE any probe:
+    # a leaking candidate must never earn an inflated score that a later round
+    # would treat as evidence. Off unless the caller asks for it.
+    if c.get("regularize"):
+        try:
+            from longrun.harness import regularizer as _reg
+            try:
+                budget = max(1, int(c.get("edit_budget") or _reg.B_MAX))
+            except (TypeError, ValueError):
+                budget = _reg.B_MAX
+            terms = [str(t) for t in (c.get("benchmark_terms") or []) if str(t).strip()]
+            kept, dropped = [], []
+            for cand in candidates:
+                edits = _reg.count_edits(cand)
+                if edits > budget:
+                    dropped.append({"name": cand.get("name"), "rule": "edit-budget",
+                                    "edits": edits, "budget": budget})
+                    continue
+                leak = _reg.leakage(cand, terms)
+                if leak.get("leak"):
+                    dropped.append({"name": cand.get("name"), "rule": "leakage",
+                                    "hits": leak.get("hits")})
+                    continue
+                kept.append(cand)
+            candidates = kept
+            report["regularized"] = {"budget": budget,
+                                     "screened_terms": len(terms),
+                                     "dropped": dropped}
+        except Exception:  # noqa: BLE001 — a screen must never break a cycle
+            pass
     if not candidates:
         report["status"] = "no candidates"
-        report["reason"] = (", ".join(skips)
-                            or "; ".join(str(r.get("reason")) for r in report["refusals"])
-                            or "the editors returned nothing")
+        _dropped = (report.get("regularized") or {}).get("dropped") or []
+        if _dropped:
+            report["reason"] = ("the regularizer dropped %d candidate(s): %s"
+                                % (len(_dropped), ", ".join(
+                                    "%s (%s)" % (d.get("name"), d.get("rule"))
+                                    for d in _dropped)))
+        else:
+            report["reason"] = (", ".join(skips)
+                                or "; ".join(str(r.get("reason")) for r in report["refusals"])
+                                or "the editors returned nothing")
         return _save(report)
 
     candidates, deferred = _take(candidates, cap)
