@@ -164,6 +164,26 @@ def slug(pattern):
     return (s or "skill")[:64]
 
 
+def _skills_root(skills_dir=None):
+    """The skills library root (one owner: `promote` uses the same chain)."""
+    return (skills_dir or os.environ.get("LONGRUN_SKILLS_DIR")
+            or os.path.join(REPO, "skills"))
+
+
+def skill_installed(pattern, skills_dir=None, category=None, c=None):
+    """Is this mined habit ALREADY live under skills/<category>/<slug>? (I-3)
+
+    The automatic evolve pass used to re-draft, re-synthesize and re-verify a
+    pattern it had itself installed on an earlier turn: the folder name is the
+    pattern's slug, so the answer is a directory check. Read-only.
+    """
+    c = c or cfg()
+    root = _skills_root(skills_dir)
+    cat = str(category or c.get("category") or "created")
+    nm = slug([str(x) for x in (pattern or [])])
+    return os.path.isdir(os.path.join(root, cat, nm))
+
+
 def draft(pattern, support, out_dir, note="", purpose=""):
     """Write a skill DRAFT (proposal.json + SKILL.md). Executes nothing.
 
@@ -173,10 +193,25 @@ def draft(pattern, support, out_dir, note="", purpose=""):
     automatic draft installs on the evidence gates alone, and a purpose is never
     required (the attempt to make it one broke five pins and was withdrawn).
 
+    I-3 (2026-11-23): a re-mine must not ERASE what the loop already learned.
+    The old body rewrote `proposal.json` unconditionally, so every pass over the
+    same pattern threw away `verify`, the consecutive-green streak and the
+    recorded abstraction — the patience bar was unreachable on the automatic path
+    because the streak was reset before it could ever be read. A folder that
+    already carries a verdict for the SAME pattern is now returned untouched;
+    a proposed/rejected draft is still refreshed (its support and purpose may
+    legitimately have changed).
+
     Returns the path of the proposal folder, or None if the write fails.
     """
     name = slug(pattern)
     d = os.path.join(out_dir, name)
+    prev = _read_json(os.path.join(d, "proposal.json"))
+    same = (isinstance(prev, dict)
+            and [str(x) for x in (prev.get("pattern") or [])]
+            == [str(x) for x in (pattern or [])])
+    if same and str(prev.get("status") or "") in ("verified", "archived"):
+        return d
     try:
         os.makedirs(d, exist_ok=True)
         proposal = {"kind": "skill", "status": "proposed", "name": name,
@@ -549,6 +584,149 @@ def forged_usage(path=None, repo_root=None):
     out.sort(key=lambda r: (r["uses"], r["created"]))
     return {"ok": True, "tools": out, "count": len(out),
             "unused": len([r for r in out if r["verdict"] == "unused"])}
+
+
+#: I-4 (2026-11-23): how a promoted skill is judged on the runs that FOLLOW it.
+#: A known-outcome run is one datum; fewer than this many after the install is
+#: not a measurement, and a rate move smaller than the margin is not a verdict.
+IMPACT_MIN_RUNS = 3
+IMPACT_MARGIN = 0.10
+
+
+def _impact_counts(pattern, since, path=None):
+    """Known-outcome runs containing `pattern`, split at `since` (before/after)."""
+    pat = [str(x) for x in (pattern or [])]
+    before = {"ok": 0, "bad": 0}
+    after = {"ok": 0, "bad": 0}
+    if not pat or since is None:
+        return before, after
+    cutoff = float(since)
+    for row in history_rows(path):
+        tools = [str(x) for x in (row.get("tools") or [])]
+        if not _contains(tools, pat):
+            continue
+        outcome = str(row.get("outcome") or "").strip().lower()
+        bucket = after if float(row.get("ts") or 0) >= cutoff else before
+        if outcome == "ok":
+            bucket["ok"] += 1
+        elif outcome in ("error", "corrected"):
+            bucket["bad"] += 1
+        # a run with no outcome is evidence of nothing — never counted
+    return before, after
+
+
+def impact(pattern, since=None, path=None, min_runs=None, margin=None):
+    """Did this habit get MORE RELIABLE after the change landed? (I-4, RSI)
+
+    Source: arXiv 2610.34938 — "harness self-evolution needs ways to establish
+    whether a change helps on later tasks". `forged_usage` answers that for a
+    forged TOOL (was it called after it landed?); a PROMOTED SKILL had no such
+    read, so the loop could install a procedure and never look at whether it
+    worked. This compares the outcome rate of the same recorded pattern before
+    and after `since`, on the runs `mine` already reads (`data/sequences.json`).
+
+    Only runs carrying a KNOWN outcome count (`ok` vs `error`/`corrected`);
+    `unknown` runs are neither success nor failure. Verdicts:
+    `no-baseline` (nothing known before), `no-runs-since`, `not-enough-data`,
+    `improved`, `worse`, `flat`. It is a correlation: a skill is not guaranteed
+    to be read, and a run may fail for a reason the pattern does not name.
+
+    Read-only, deterministic, no model call.
+    """
+    try:
+        need = int(IMPACT_MIN_RUNS if min_runs is None else min_runs)
+    except (TypeError, ValueError):
+        need = IMPACT_MIN_RUNS
+    try:
+        eps = float(IMPACT_MARGIN if margin is None else margin)
+    except (TypeError, ValueError):
+        eps = IMPACT_MARGIN
+    need = max(1, need)
+    if since is None:
+        since = time.time()
+    before, after = _impact_counts(pattern, since, path=path)
+
+    def _rate(b):
+        n = b["ok"] + b["bad"]
+        return (round(b["ok"] / float(n), 4) if n else None)
+
+    b_rate, a_rate = _rate(before), _rate(after)
+    n_after = after["ok"] + after["bad"]
+    if b_rate is None:
+        verdict = "no-baseline"
+    elif n_after == 0:
+        verdict = "no-runs-since"
+    elif n_after < need:
+        verdict = "not-enough-data"
+    elif a_rate >= b_rate + eps:
+        verdict = "improved"
+    elif a_rate <= b_rate - eps:
+        verdict = "worse"
+    else:
+        verdict = "flat"
+    return {"pattern": [str(x) for x in (pattern or [])],
+            "since": round(float(since), 3),
+            "before": dict(before, runs=before["ok"] + before["bad"], rate=b_rate),
+            "after": dict(after, runs=n_after, rate=a_rate),
+            "min_runs": need, "margin": eps, "verdict": verdict}
+
+
+def skill_impact(proposal_dir, path=None, min_runs=None, margin=None):
+    """The post-promotion verdict for ONE installed skill (I-4).
+
+    Reads the `impact_baseline` `promote()` stamps on the artifact (pattern plus
+    the install time). An artifact promoted before the stamp existed has no
+    baseline and says so instead of inventing one.
+    """
+    folder = str(proposal_dir or "").rstrip("/")
+    prop = _read_json(os.path.join(folder, "proposal.json")) or {}
+    base = prop.get("impact_baseline") if isinstance(prop.get("impact_baseline"),
+                                                     dict) else {}
+    pattern = base.get("pattern") or prop.get("pattern") or []
+    since = base.get("ts")
+    if since is None:
+        since = prop.get("released_ts") or prop.get("created")
+    if not pattern or since is None:
+        return {"ok": False, "name": str(prop.get("name") or os.path.basename(folder)),
+                "error": "no impact baseline on this artifact "
+                         "(promoted before I-4, 2026-11-23)"}
+    out = impact(pattern, since=since, path=path, min_runs=min_runs, margin=margin)
+    out["ok"] = True
+    out["name"] = str(prop.get("name") or os.path.basename(folder))
+    return out
+
+
+def installed_impact(skills_dir=None, category="created", path=None, limit=100,
+                     min_runs=None, margin=None):
+    """Every machine-created skill's post-promotion verdict, in one read (I-4).
+
+    Read-only. A skill with no baseline is listed as such, never dropped, so the
+    report can tell "not measured yet" from "measured and flat".
+    """
+    root = os.path.join(_skills_root(skills_dir), str(category or "created"))
+    try:
+        cap = max(1, int(limit or 100))
+    except (TypeError, ValueError):
+        cap = 100
+    try:
+        names = sorted(os.listdir(root))[:cap]
+    except OSError:
+        return {"ok": True, "skills": [], "count": 0, "verdicts": {}}
+    rows = []
+    for name in names:
+        folder = os.path.join(root, name)
+        if not os.path.isdir(folder):
+            continue
+        got = skill_impact(folder, path=path, min_runs=min_runs, margin=margin)
+        rows.append({"name": name, "ok": bool(got.get("ok")),
+                     "verdict": str(got.get("verdict") or ""),
+                     "before": got.get("before"), "after": got.get("after"),
+                     "error": str(got.get("error") or "")})
+    verdicts = {}
+    for row in rows:
+        key = row["verdict"] or "not-measured"
+        verdicts[key] = verdicts.get(key, 0) + 1
+    return {"ok": True, "skills": rows, "count": len(rows), "verdicts": verdicts}
 
 
 def retire_unused(days=14, path=None, repo_root=None, dry_run=False,
@@ -2715,8 +2893,7 @@ def promote(proposal_dir, skills_dir=None, c=None, human=False, purpose="",
     # The skills root is a PATH, not a constant: a test (or a different install)
     # points it elsewhere with LONGRUN_SKILLS_DIR instead of writing into the
     # checkout. Default stays the repo's skills/ library.
-    root = (skills_dir or os.environ.get("LONGRUN_SKILLS_DIR")
-            or os.path.join(REPO, "skills"))
+    root = _skills_root(skills_dir)
     category = str(c.get("category") or "created")
     target = os.path.join(root, category, name)
     # JAG-426 safety boundary 1: the built-in library is IMMUTABLE — an auto skill
@@ -2859,6 +3036,12 @@ def promote(proposal_dir, skills_dir=None, c=None, human=False, purpose="",
     prop["evidence"] = evidence
     prop["promotion_bound"] = _bound
     prop["cost_tokens"] = _cost
+    # I-4 (2026-11-23): the install time is what makes the outcome rate of the
+    # SAME pattern comparable before and after the change (`impact` /
+    # `installed_impact`). Stamped on the artifact, never inferred from file
+    # mtimes, so a copy/restore cannot move the baseline.
+    prop["impact_baseline"] = {"pattern": _pattern_of(prop),
+                               "ts": round(time.time(), 3)}
     # DR-M: which bar judged the cost, and which bars an operator release skipped.
     prop["cost_basis"] = _cost_basis
     if human:
@@ -3396,9 +3579,13 @@ def pipeline(pattern, out_dir, support=0, runner=None, promote_if_green=True,
     d = draft(pattern, support, out_dir, purpose=purpose)
     if not d:
         return {"ok": False, "error": "draft failed"}
-    s = synth(pattern, out_dir, c)
-    if not s:
-        return {"ok": False, "error": "synth failed", "dir": d}
+    # I-3 (2026-11-23): the synth-if-missing rule has ONE owner (`ensure_check`),
+    # and it protects a hand-written `check.py`. The pass used to call `synth`
+    # here, which rewrites the check unconditionally — so re-mining a draft the
+    # operator had edited replaced their verification with the generated one.
+    ready = ensure_check(d)
+    if not ready.get("ok"):
+        return {"ok": False, "error": ready.get("error") or "synth failed", "dir": d}
     report = verify(d, runner=runner, c=c)
     arch = None
     if report.get("green") and promote_if_green:

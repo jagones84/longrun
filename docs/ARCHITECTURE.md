@@ -23,6 +23,26 @@ the process rather than of a component:
   streamed — `llama.cpp` and vLLM locally, OpenRouter / DeepSeek / OpenAI /
   Anthropic / Google over the network.
 
+## Contents
+
+- The object model (five levels)
+- A team job, end to end
+- Request / turn lifecycle (one chat turn)
+- Components (`src/longrun/`, organised in subpackages)
+- Harness evidence workflow
+- Retrieval, and its second stage
+- Web search, and how a turn shows its work (2026-11-16)
+- Newest online papers (round 163, 2026-11-20)
+- Newest online papers (round 164, 2026-11-22)
+- Newest online papers (round 165, 2026-11-22)
+- Newest online papers (round 166, 2026-11-22)
+- Newest online papers (round 167, 2026-11-22)
+- Data stores (the data home — `~/.longrun/data`, never the checkout)
+- Safety model
+- Interfaces
+- Diagrams
+- Entry points
+
 ## The object model (five levels)
 
 The whole product is one hierarchy, from a business goal to a checklist item:

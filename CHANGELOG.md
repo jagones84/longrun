@@ -7,6 +7,16 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **A promoted skill is measured on the runs that follow it (RSI, I-4).** `forged_usage` answered
+  "was this forged tool called after it landed?"; a promoted SKILL had no such read, so the loop could
+  install a procedure and never look at whether the habit became more reliable (arXiv 2610.34938 names
+  that gap). `promote()` now stamps `impact_baseline {pattern, ts}` on the installed artifact;
+  `selfevolve.impact(pattern, since)` compares the same pattern's outcome rate before/after on the
+  recorded runs (`data/sequences.json`), counting only KNOWN outcomes (`unknown` is not evidence);
+  `skill_impact(dir)` reads one artifact and `installed_impact()` aggregates every created skill,
+  naming the ones promoted before the stamp as `not-measured`. Verdicts: `improved` / `worse` / `flat` /
+  `not-enough-data` / `no-runs-since` / `no-baseline`. Read-only, no model. Locked by `v1291` (20/20);
+  the verdict is a correlation and is not yet wired to retirement.
 - **A long `<select>` now carries a filter field — the "assign to…" list is searchable.** Operator:
   *"Assign to shall have the search bar to filter agents, see other menus in the webui for ref.
   Also I can't see agents maybe e.g. a54?"* The deck's "assign to…" listed the whole roster
@@ -105,6 +115,22 @@ All notable changes to Longrun are documented here. The format follows
   Locked by `v1250` (32/32); battery 953/953.
 
 ### Fixed
+- **A skill bundle from a self-improvement proposal installs whole or not at all (RSI, I-1).**
+  `improve.decide(approve)` validated and installed a skill bundle one artifact per loop iteration, so
+  a failure on the second left the first live while the proposal stayed `pending` — a half-installed
+  improvement whose retry met its own leftovers. The Matrix branch of the same seam already promised the
+  opposite. The whole bundle is now validated first (target shape, sha256, no duplicated target, no
+  existing skill), the first write happens only after that, and a later failure rolls back every folder
+  this call created and answers with the failing artifact. Locked by `v1289` (19/19).
+- **A re-mine can no longer erase a draft's verdict, and the automatic pass skips a pattern it already
+  installed (RSI, I-3).** `draft()` rewrote `proposal.json` unconditionally, throwing away `verify`, the
+  consecutive-green streak and the recorded abstraction — so a patience bar above 1 (`min_green_streak`)
+  was unreachable on the automatic path. A folder that already carries a verdict for the SAME pattern is
+  returned untouched (a proposed/rejected draft is still refreshed). `pipeline()` now uses
+  `ensure_check`, the documented single owner of the synth-if-missing rule, so a hand-written `check.py`
+  is no longer replaced by the generated one. `evolve_once()` skips a pattern already live under
+  `skills/<category>/<slug>` (`selfevolve.skill_installed`) and reports `skipped: already installed`
+  instead of spending a sandbox verify on it. Locked by `v1290` (15/15).
 - **The "assign to…" menu scrolls under a finger and no longer vanishes on touch.** Operator:
   *"The jobs panel assign to menu is weird, it doesn't scroll, disappears as touched, I can't
   select who I want. At least in mobile mode."* The shared themed `<select>` popup

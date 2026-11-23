@@ -1079,6 +1079,17 @@ def evolve_once(note="", allow_code=None):
     for cand in selfevolve.mine(_seqs, c, outcomes=_ocs, purposes=_pps, times=_tss):
         if installed >= pcap:
             break
+        # I-3 (2026-11-23): the pass already installed this habit on an earlier
+        # turn. Re-drafting/re-synthesizing/re-verifying it spent a sandbox run to
+        # rediscover a skill that is live, and `promote` could only refuse it as a
+        # clobber. The report says so instead of hiding the pattern.
+        pattern = [str(x) for x in (cand.get("pattern") or [])]
+        if selfevolve.skill_installed(pattern, c=c):
+            reports.append({"pattern": pattern,
+                            "support": int(cand.get("support") or 0),
+                            "green": True, "rel": "", "dir": "",
+                            "skipped": "already installed"})
+            continue
         # `promote_per_run: 0` means "keep mining, install nothing" — the same
         # reading `forge_per_run: 0` has for the code arm, so the pass still
         # drafts and verifies instead of silently doing nothing at all.
@@ -1330,27 +1341,73 @@ def decide(pid, decision):
         artifacts = rec.get("artifacts") or []
         if artifacts:
             import hashlib
+            import shutil
             from longrun.memory import skills as skills_mod
-            installed = []
+            # ATOM-1 (RSI round 1, 2026-11-23): validate the WHOLE bundle before
+            # the first write. The Matrix branch of this same decision already
+            # promises that "a partial or broken artifact never becomes live"; the
+            # skill branch used to install one artifact per loop iteration, so a
+            # failure on the second left the first live while the proposal stayed
+            # pending — a self-improvement that is half installed and half refused.
+            plan, targets = [], set()
             for art in artifacts:
                 target = str((art or {}).get("target") or "")
                 parts = target.split("/")
                 if (len(parts) != 4 or parts[0] != "skills"
                         or parts[3] != "SKILL.md" or not parts[1] or not parts[2]
                         or any(p in (".", "..") or "\\" in p for p in parts[:3])):
-                    return {"ok": False, "error": "a skill artifact must target "
+                    return {"ok": False, "failed": [art.get("name")],
+                            "error": "a skill artifact must target "
                             "skills/<category>/<name>/SKILL.md (got %r)" % target}
+                cat = str(parts[1]).strip().lower()
+                nm = str(parts[2]).strip().lower()
+                if (cat, nm) in targets:
+                    return {"ok": False, "failed": [art.get("name")],
+                            "error": "two skill artifacts target the same skill "
+                                     "(%s/%s) — one install cannot be half a bundle"
+                                     % (cat, nm)}
+                targets.add((cat, nm))
                 content = str((art or {}).get("content") or "")
                 digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
                 if digest != str((art or {}).get("sha256") or ""):
                     return {"ok": False, "failed": [art.get("name")],
                             "error": "skill artifact %r changed since the experiment"
                                      % (art.get("name"),)}
-                made = skills_mod.install_skill_file(parts[1], parts[2], content)
-                if not made.get("ok"):
+                folder = os.path.join(skills_mod.SKILLS_DIR, cat, nm)
+                if os.path.exists(folder):
                     return {"ok": False, "failed": [art.get("name")],
-                            "error": made.get("error") or "skill install refused"}
-                installed.append(made.get("path") or target)
+                            "error": "target already exists: %s — the bundle is "
+                                     "refused before anything is written" % folder}
+                plan.append((cat, nm, content, target))
+            installed, created, failing = [], [], ""
+            try:
+                for cat, nm, content, target in plan:
+                    made = skills_mod.install_skill_file(cat, nm, content)
+                    if not made.get("ok"):
+                        failing = nm
+                        raise RuntimeError(made.get("error") or "skill install refused")
+                    installed.append(made.get("path") or target)
+                    created.append(str(made.get("path") or ""))
+            except Exception as exc:  # noqa: BLE001 — roll back, then answer
+                for folder in reversed(created):
+                    if not folder:
+                        continue
+                    try:
+                        shutil.rmtree(folder, ignore_errors=True)
+                        os.rmdir(os.path.dirname(folder))
+                    except OSError:
+                        pass
+                try:
+                    skills_mod.list_skills(reload=True)
+                except Exception:  # noqa: BLE001 — a cache refresh must not mask
+                    pass
+                left = [p for p in created if p and os.path.exists(p)]
+                out = {"ok": False, "failed": [failing] if failing else [],
+                       "error": "skill bundle not installed: %s — the artifacts "
+                                "written before it were rolled back" % exc}
+                if left:
+                    out["left"] = left
+                return out
             rec["status"] = "approved"
             rec["installed_to"] = ", ".join(installed)
             saved = _save(rec)
