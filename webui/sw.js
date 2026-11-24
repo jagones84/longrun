@@ -46,8 +46,11 @@
  * prose for the model.
  * 2026-11-24 — bumped to v15: `/reset` now resets the chat it is typed in (the same
  * session id, the harness's own `sessions.reset`), and the fresh-chat verb is `/new`.
+ * 2026-11-24 — bumped to v16: `/restart` waits for the service to come back and
+ * reloads the page (it called a `feedReconnect()` that does not exist), and a
+ * message / `/goal` runs in the chat it was typed in.
  */
-const CACHE = "longrun-shell-v15";
+const CACHE = "longrun-shell-v16";
 const SHELL = ["/", "/orbit", "/assets/dragsort.js", "/assets/icon-192.png",
                "/assets/icon-512.png", "/assets/apple-touch-icon.png",
                "/assets/icon-maskable-512.png"];

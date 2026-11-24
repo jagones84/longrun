@@ -9026,15 +9026,23 @@ async function send(text, display, atts) {
   // calls send(raw, text) for a queued message while the operator may be typing a
   // new paragraph in the box — that auto-send must not delete it (send() empties
   // the box on every path, so the draft is the only copy left).
-  if (text === undefined) _draftClear(sessionId);
+  // 2026-11-24 (operator): a message is a COMMAND too — `/goal <text>` must run in
+  // the chat it was typed in. `sessionId` can move during the `chat/live` probe
+  // above, so the captured id wins; a screen that moved on never receives a bubble
+  // that belongs to another chat (the transcript shows it when it is opened).
+  let turnSession = _cmdSid || sessionId;
+  const _moved = !!turnSession && turnSession !== sessionId;
+  if (text === undefined) _draftClear(turnSession);   // the box that typed it
+  if (_moved) toast("sent in the chat you left — open it to follow the reply", "warn");
   // 2026-11-11: this bubble must survive a transcript repaint whose snapshot was
   // taken before the server appended the message (see `_pendingUser`).
-  _pendingUserAdd(sessionId, (_splitAttBlock(msg).rest || "").trim());
+  _pendingUserAdd(turnSession, (_splitAttBlock(msg).rest || "").trim());
   // 2026-11-16: the 8th arg is the MODEL-FACING text — the ↻ retry re-sends it
   // verbatim (attachments included) while the bubble keeps the clean display.
-  const _uNode = who("user", (mode ? "🎯 /goal " : "") + _disp + _attNote, null, null, null, null, null,
-                     (mode ? "/goal " : "") + msg);
-  if (_attSnap.length) {
+  const _uNode = _moved ? null
+    : who("user", (mode ? "🎯 /goal " : "") + _disp + _attNote, null, null, null, null, null,
+          (mode ? "/goal " : "") + msg);
+  if (_attSnap.length && _uNode) {
     const _bub = _uNode && _uNode.querySelector(".bubble");
     if (_bub) { _bub.insertAdjacentHTML("beforeend", _attachmentChips(_attSnap)); _bindAttachmentChips(_bub); }
   }
@@ -9042,7 +9050,6 @@ async function send(text, display, atts) {
   // JAG-168: bind this turn to ITS session. It keeps streaming in the background
   // if the user switches away; output is painted ONLY while that session is on
   // screen (`live()`), so nothing is mixed into another log and nothing is lost.
-  let turnSession = sessionId;
   // v1165: the legacy SSE URL is kept as the FALLBACK path only (a server without
   // POST /api/chat/start). The turn itself is followed on the page's ONE feed.
   const url = "/api/chat/stream?message=" + encodeURIComponent(msg) + (turnSession ? "&session=" + turnSession : "") + mode + (currentModel() ? "&model=" + encodeURIComponent(currentModel()) : "") + (authQS() ? "&" + authQS() : "");
@@ -13835,10 +13842,30 @@ async function restartService() {
   if (!r || r.ok === false) {
     toast("restart refused: " + ((r && (r.error || r.reason)) || "unknown"), "err"); return;
   }
-  toast("restart scheduled — this page reconnects in a few seconds", "ok");
-  // The socket drops when the process exits; the boot sequence re-attaches it, so the
-  // honest UI act is to say what happens and leave the reconnect to the existing loop.
-  if (typeof feedReconnect === "function") setTimeout(() => { try { feedReconnect(); } catch (_) {} }, 2500);
+  toast("restart scheduled — this page reloads as soon as the service is back", "ok");
+  // 2026-11-24: this used to call a reconnect helper that does NOT exist in this
+  // file — so `/restart` scheduled the exit and left the page on a dead socket. A
+  // hard restart takes ~10 s (0.6 s exit + RestartSec + boot): wait for the service
+  // to DISAPPEAR and to answer again, then reload, which rebuilds the feed, every
+  // turn channel and the shell in one step. A restart that never goes down is
+  // reported instead of pretending.
+  const _t0 = Date.now();
+  let _down = false;
+  const _poll = async () => {
+    if (Date.now() - _t0 > 60000) {
+      toast("the service did not come back — reload this page", "err"); return;
+    }
+    try { await api("GET", "/api/build"); }
+    catch (_) { _down = true; setTimeout(_poll, 1200); return; }
+    if (_down) { location.reload(); return; }
+    if (Date.now() - _t0 > 15000) {
+      toast("the service is still the old process — see the restart ticket", "warn");
+      try { connectFeed(); } catch (_) {}
+      return;
+    }
+    setTimeout(_poll, 1200);
+  };
+  setTimeout(_poll, 1200);
 }
 
 /* ---- approvals (v0.2: HITL gate) ----

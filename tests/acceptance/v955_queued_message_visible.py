@@ -85,7 +85,10 @@ FEED = HTML[max(0, _fi - 500):HTML.find('es.addEventListener("chat.done"', _fi)]
 check("A1 the pending-user ledger exists (bounded)",
       "let _pendingUser = [];" in HTML and "_pendingUser.length > 8" in HTML)
 check("A2 send() records the message it painted",
-      "_pendingUserAdd(sessionId, (_splitAttBlock(msg).rest" in SEND)
+      # 2026-11-24: recorded against the session the message is TYPED in (`turnSession`
+      # = the id captured before any await), so a switch during the send cannot file
+      # the pending bubble under the wrong chat.
+      "_pendingUserAdd(turnSession, (_splitAttBlock(msg).rest" in SEND)
 check("A2b the STEER path records it too",
       "_pendingUserAdd(sessionId, (_splitAttBlock(_rawMsg).rest" in SEND)
 check("A3 a brand-new chat re-keys the entry when the server names it",

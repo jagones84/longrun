@@ -250,6 +250,23 @@ All notable changes to Longrun are documented here. The format follows
   Locked by `v1250` (32/32); battery 953/953.
 
 ### Fixed
+- **`/restart` scheduled the exit and then left the page on a dead socket.** Operator: *"/restart command in
+  webui doesn't work"*. The composer called `feedReconnect()` — a function that does not exist in
+  `webui/index.html` — instead of `connectFeed()`, so the only reconnect was the feed's own 5 s retry,
+  which fires while the service is still booting; the page looked dead and the operator read it as "the
+  restart didn't work". The tool call itself is fine and is now measured end to end: `harness.restart`
+  answers in 0.07 s, the unit comes back in ~7 s (`Restart=always`), `ActiveEnterTimestamp` moves.
+  `restartService` now waits for the service to DISAPPEAR and to answer again (`GET /api/build`), then
+  reloads the page, which rebuilds the feed, every turn channel and the shell in one step; a restart
+  that never goes down is reported as such instead of pretending. Pinned by `v1302` H1/H2.
+- **A message — and therefore `/goal <text>` — now runs in the chat it was typed in.** The turn target
+  was read from the mutable global after `send()`'s one `await` (`GET /api/chat/live`), the same race
+  the slash commands had: a switch during it moved the message, its pending bubble and the whole
+  `/goal` turn to whichever session was on screen afterwards. The turn now takes the id captured at
+  the top of `send()` (`turnSession = _cmdSid || sessionId`), records the pending bubble against that
+  id, and never paints a bubble into a chat that moved on (it says so instead). Pinned by `v1302` H3;
+  `v955` A2 and `v934` D1/D2 re-pointed (same invariant: every path that empties the box clears the
+  draft of the session it belongs to).
 - **`self.tools` advertised `scope` in the prompt while its canonical schema dropped it.** The
   `_SUBTOOL_FIELDS` row for `self.tools` still listed only `tool`/`query`, so the derived schema the
   dispatcher validates against carried neither `scope` (added 2026-11-24) nor `limit`, and a model call

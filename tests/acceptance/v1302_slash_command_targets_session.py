@@ -122,9 +122,19 @@ check("F1 /plan and /spec post the captured session",
 check("F2 send() hands the captured id to the document command",
       "_runDocCommand(_docKind, _docAsk, _cmdSid)" in SEND)
 
+# ---- H: /restart really comes back, and a turn keeps its captured session ----
+RESTART = _between("async function restartService() {", "\n/* ---- approvals")
+check("H1 /restart waits for the service to go down and to answer again",
+      '"GET", "/api/build"' in RESTART and "location.reload()" in RESTART)
+check("H2 /restart never calls a function that does not exist",
+      "feedReconnect" not in HTML)
+check("H3 a message (and `/goal`) runs in the chat it was typed in",
+      "let turnSession = _cmdSid || sessionId;" in HTML
+      and "_pendingUserAdd(turnSession," in HTML)
+
 # ---- G: the offline shell follows (a cached old composer is a stale contract) --
 check("G1 the service-worker cache was bumped for this shell change",
-      'longrun-shell-v15' in SW)
+      'longrun-shell-v16' in SW)
 
 print("---")
 ok = sum(results)
