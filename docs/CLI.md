@@ -370,6 +370,21 @@ python3 forge.py recovery adjudicate /tmp/record.json
   refuses (exit 2) a result whose format does not match, so a renamed key cannot
   silently flip the exit code.
 
+**`graph` — the one LIVE group in this family (round 169).** Its input is either a
+census JSON or nothing at all, in which case it reads the running system:
+
+```bash
+python3 forge.py graph report        # the topology card + the census payload (LIVE)
+python3 forge.py graph audit         # audit the LIVE census (exit 1 on a defect)
+python3 forge.py graph audit /tmp/census.json
+```
+
+It joins the shipped graph checkers (`tool_graph`, `intent_audit`, `skill_cfi`,
+`hypergraph_ke`): those each read ONE synthesized graph, while this reads the
+*persisted* orchestration graphs (agents, teams, jobs + subjobs) as one census and
+names an orphan edge, an undeclared `dep` cycle, or a dead blocker. The same census
+is the `topology` field of `GET /api/orbit/constellation`.
+
 **`setup` — a LOCAL command in this family.** It runs on *your* machine, not the
 server's: the workspace it touches is the caller's. `setup run PLAN.json
 [--workspace DIR] [--state DIR] [--reuse]` executes the round-106 semantic setup

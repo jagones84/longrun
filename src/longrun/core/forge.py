@@ -781,6 +781,28 @@ def _emit(mod, out, ok=None, codes=None):
     sys.exit(0 if (ok is None or ok(out)) else 1)
 
 
+def cmd_graph(args):
+    """Round 169 (the stored graph-engineering talk, Neo4j `g_NgCLTibiM`): one topology census.
+
+    `report` reads the LIVE system and prints the topology card + the census
+    payload; `audit` reads a census JSON (or the live one) and names every
+    topology defect — an orphan edge, an undeclared dep cycle, a dead blocker.
+    """
+    from longrun.harness import graph_topology as _gt
+    from longrun.harness.checks import graph_topology as _chk
+    if getattr(args, "action", None) == "audit":
+        payload = _load_doc(args, "graph audit FILE.json") if getattr(args, "file", None) \
+            else _gt.census()
+        _emit(_chk, _chk.audit(payload), lambda o: o["verdict"] == "clean")
+    payload = _load_doc(args, "graph report FILE.json") if getattr(args, "file", None) \
+        else _gt.census()
+    card = _gt.card(payload)
+    if card:
+        print(card)
+    print(json.dumps(payload, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
 def cmd_episodes(args):
     """Round 115 (arXiv:2611.13254): validate a fault episode record and name controls."""
     from longrun.harness.checks import fault_episode
@@ -6107,6 +6129,10 @@ def _build_parser():
         p.add_argument("action", choices=["search", "count", "verify", "advantage"]); \
         p.add_argument("file", nargs="?", help="JSON: {text|path, pattern}, {entries, text}, or {rows}"); \
         p.set_defaults(fn=cmd_greprecall)
+    p = sub.add_parser("graph"); \
+        p.add_argument("action", choices=["report", "audit"]); \
+        p.add_argument("file", nargs="?", help="JSON: {census} (audit/report); omit to read LIVE"); \
+        p.set_defaults(fn=cmd_graph)
     p = sub.add_parser("harness",
                        help="list the per-paper groups, their actions and their input")
     p.add_argument("group", nargs="?", help="one group: print its own -h")

@@ -100,3 +100,92 @@ def ready(pending, deps, done_ids):
     """
     done = set(done_ids or [])
     return [i for i in pending if not (set(deps.get(i, [])) - done)]
+
+
+# ── graph engineering (round 169) ───────────────────────────────────────────
+# The chaos the four helpers above leave behind: sixteen structures in this
+# codebase ARE graphs, and only four of them share these functions, on `dep`
+# edges alone — nothing could carry an *edge kind*, so no cross-graph question
+# ("what is the frontier?", "is this loop declared?") had a home. `Graph` is
+# that home: a stdlib value object over the SAME `{item: [prereq]}` shape, so
+# the four helpers above stay byte-identical and every existing caller keeps
+# working. Sources: the stored graph-engineering talk (Neo4j, `g_NgCLTibiM`);
+# `S-2026-11-01-057` (deterministic execution constraints).
+#
+# A Loop IS a graph: a `feedback` edge declares it, so a `dep` cycle that the
+# graph ALSO mirrors with a `feedback` edge is intended, and `has_cycle` (the
+# strict twin) is asked over `dep` edges only.
+
+EDGE_KINDS = ("dep", "contain", "membership", "handoff", "feedback")
+
+
+class Graph:
+    """Nodes + TYPED edges, with the helpers above as its traversal.
+
+    Pure, no I/O: build it from data already in memory. `census()` is the
+    bounded, plain-data summary a reader (the topology audit, the Orbit deck,
+    the CLI) consumes without touching any store.
+    """
+
+    FORMAT = "longrun-graph/1"
+
+    def __init__(self, nodes=None, edges=None):
+        self._nodes = {}          # id -> status or None
+        self._edges = []          # {"from", "to", "kind"}
+        for n in nodes or ():
+            self.add_node(n)
+        for e in edges or ():
+            self.add_edge(*e)     # (a, b) or (a, b, kind)
+
+    def add_node(self, node, status=None):
+        self._nodes[str(node)] = status
+        return self
+
+    def add_edge(self, src, dst, kind="dep"):
+        if kind not in EDGE_KINDS:
+            raise ValueError("unknown edge kind %r (expected one of %s)"
+                             % (kind, ", ".join(EDGE_KINDS)))
+        self._edges.append({"from": str(src), "to": str(dst), "kind": kind})
+        return self
+
+    @property
+    def nodes(self):
+        return list(self._nodes)
+
+    def edges(self, kind=None):
+        """Every edge as a plain dict, optionally filtered to one kind."""
+        return [dict(e) for e in self._edges if kind is None or e["kind"] == kind]
+
+    def deps(self, kinds=("dep",)):
+        """`{node: [prereq, ...]}` over `kinds` (the shape the helpers take)."""
+        out = {n: [] for n in self._nodes}
+        for e in self._edges:
+            if e["kind"] in kinds and e["from"] != e["to"]:
+                out.setdefault(e["to"], []).append(e["from"])
+        return out
+
+    def statuses(self):
+        """Only the nodes whose status was declared."""
+        return {n: s for n, s in self._nodes.items() if s}
+
+    def waves(self):
+        return waves(self.nodes, self.deps())
+
+    def ready(self, done_ids):
+        done = set(str(x) for x in (done_ids or ()))
+        return ready(self.nodes, self.deps(), done)
+
+    def has_cycle(self):
+        return has_cycle(self.nodes, self.deps())
+
+    def census(self):
+        """The plain-data summary: nodes, typed edges, counts, the dep cycle."""
+        counts = {k: 0 for k in EDGE_KINDS}
+        for e in self._edges:
+            counts[e["kind"]] += 1
+        return {"format": self.FORMAT,
+                "nodes": self.nodes,
+                "edges": self.edges(),
+                "counts": {"nodes": len(self._nodes), "edges": counts},
+                "cycle": self.has_cycle(),
+                "statuses": self.statuses()}

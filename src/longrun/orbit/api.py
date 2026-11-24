@@ -8,6 +8,11 @@ import os
 
 from longrun.util.dataio import json_body as _body
 
+# Round 169 (graph engineering): the deck's topology is the ONE census, so the
+# deck and `forge.py graph` cannot disagree, and this reader stays in the app
+# (the report-only zone is reached only by `core/forge.py` — v1273).
+from longrun.harness import graph_topology as _topology
+
 from .attention import AttentionFeed
 from .bay import ModelBay
 from .decisions import DecisionQueue
@@ -170,6 +175,9 @@ def _constellation(team=None):
                  for j in jbs],
         "subjobs": _subjobs_of(ags, jbs, graphs),
         "graphs": graphs,
+        # Round 169: the topology as ONE census, built from the SAME scoped lists
+        # the payload already carries — no second read, no second derivation.
+        "topology": _topology.build_from(ags, jbs, tms),
     }
     try:
         from longrun.core import matrix as _mtx

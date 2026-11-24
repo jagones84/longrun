@@ -7,6 +7,32 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Graph engineering — one typed-graph primitive, one topology census, one audit (round 169).** The
+  operator asked whether "graph engineering, the next step after harness engineering" is implementable
+  *modularly*; the proposal `.agent/docs/proposals/2026-11/2026-11-25_graph-engineering.md` (rows G1–G3)
+  answers with the smallest three rows, not a framework. The study found the harness already owns
+  **sixteen** graph/DAG/tree structures sharing ONE 4-function primitive. **G1** `util/dag.py` gains
+  `EDGE_KINDS` (`dep|contain|membership|handoff|feedback`) and a `Graph` value object
+  (`waves`/`ready`/`cycle`/`census`) over the SAME `{item:[prereq]}` shape — the four legacy functions are
+  untouched, so both importers keep working. **G2** `harness/graph_topology.py` (live seam:
+  `build_from`/`build`/`census`/`card`/`frontier`) + the report-only `harness/checks/graph_topology.py`
+  (`audit`: `orphan-edge`, `undeclared-cycle`, `dead-blocker`, `invariant-failed`) + the `forge.py graph
+  report|audit` group. **G3** `orbit/api._constellation` carries the ONE census as `topology`, built from
+  the same scoped lists it already reads (no second read, no second derivation). It **joins** the shipped
+  graph checkers (`tool_graph`, `intent_audit`, `skill_cfi`, `hypergraph_ke`) — each reads ONE synthesized
+  graph; none read the persisted orchestration graphs as a census. Docs in the same change: ARCHITECTURE
+  counts (136 checkers / 31 app-imported root modules), `docs/CLI.md` (`graph`), README badge 988 → 991.
+  Evidence: `v1303` **36/36** (RED first — `AttributeError: no attribute 'EDGE_KINDS'`); targeted gate
+  **46/46 GREEN**; full fast battery 978/985, the 7 reds reproduced identically on a clean `HEAD` worktree
+  (pre-existing, in files this round does not touch); `scripts/check.sh` PASS. Live: restart 20:40:15 CET >
+  newest source 20:37:23, `/api/health` 200; `forge.py graph report` prints the card (agents 140n/92e
+  handoff · jobs 95n/80e contain+dep · teams 105n/110e membership); `forge.py graph audit` → `clean`,
+  exit 0; `GET /api/orbit/constellation` carries `topology` (agents/jobs/teams, 340 nodes, 282 edges) and
+  the deck (`/orbit` 200) ignores the additive key. Honest negatives: the live census covers the execution
+  graphs (agents/teams/jobs+subjobs), not the in-chat `session_jobs` or the per-session task graphs;
+  `jobs.wake` is NOT re-scheduled through `frontier()` (the census is a read, never a new scheduler); the
+  audit cannot share `util.dag`'s Kahn — ADR-0003 keeps `harness/checks/` stdlib-pure, so it carries a
+  local copy; no rendered screenshot/console check (Chrome DevTools MCP was unreachable this session).
 - **Tool discovery is HYBRID, and the prompt says so for every library.** Operator: *"nel system prompt
   non vedo metodo per cercare skills by keywords … tutto dev'essere cercato by keywords o semantica o
   ibrido … e devi verificare che funzioni live"*. `self.tools {query}` already ranked the keyword half
