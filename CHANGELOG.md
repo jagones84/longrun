@@ -7,6 +7,23 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Tool discovery is HYBRID, and the prompt says so for every library.** Operator: *"nel system prompt
+  non vedo metodo per cercare skills by keywords … tutto dev'essere cercato by keywords o semantica o
+  ibrido … e devi verificare che funzioni live"*. `self.tools {query}` already ranked the keyword half
+  (name + description word tiers); it now also blends a cosine over the same text when the embedding
+  backend is already warm, exactly like `skills.search` — `semantic:true` forces the embedding half,
+  `semantic:false` stays keyword-only, omitted means auto (warm only, so a search never pays the ~9 s
+  model load). The warm-only cosine has ONE owner, `memory/semantic.py` (`ready`, `scores`,
+  `MIN_COS`, one cache namespace per caller — a tool search and a skill search used to invalidate each
+  other's cache), and `skills.search` was moved onto it with no behaviour change. The always-on prompt
+  now names all three modes for tools and skills and states that the library is never enumerated to
+  find one: `KEYWORD` / `semantic:true` / `HYBRID` in the tool recipe, the hybrid rank plus "never read
+  the whole library" in the skills block, and "Never enumerate it to find one" in `SKILLS_POLICY`.
+  Live on `54acf22c7fbf`: the model quoted the new sentences verbatim; `self.tools
+  {query:"launch a subprocess"}` answered 0 keyword-only and 4 hybrid hits, `skills.search
+  {query:"control an android phone", semantic:true}` promoted `android-emulator-qa` from rank 4 to 3.
+  Locked by `v1301` E3/E4/F4/F5 + G1–G5 (fake-embedder probe: keyword-only finds nothing, hybrid finds
+  the semantic-only tool, `scope=all` carries it), 48/48 targeted gate.
 - **The optional semantic backend is declared, not implied.** `requirements.txt` names the two extras
   the hybrid search needs — `numpy>=1.26` and `sentence-transformers>=3.0` — with the
   `local_files_only=True` contract stated in the same comment: `memory.semantic_query` and the hybrid
@@ -192,6 +209,14 @@ All notable changes to Longrun are documented here. The format follows
   Locked by `v1250` (32/32); battery 953/953.
 
 ### Fixed
+- **`self.tools` advertised `scope` in the prompt while its canonical schema dropped it.** The
+  `_SUBTOOL_FIELDS` row for `self.tools` still listed only `tool`/`query`, so the derived schema the
+  dispatcher validates against carried neither `scope` (added 2026-11-24) nor `limit`, and a model call
+  the prompt taught — `self.tools {query:"…", scope:"all"}` — was answered "unknown argument 'scope' …
+  ignored" and fell back to the tools-only answer. The row now declares `tool, query, scope, limit,
+  semantic`; verified live on `self.tools {action:"tools", scope:"all", query:"foglio elettronico"}`,
+  which reached the merged answer and returned its kind counts. Locked by `v1301` A1–A3 (which call the
+  handler directly) plus the schema check in `v1126` (0 undeclared fields).
 - **A slash command can no longer land in a different chat than the one it was typed in.** Operator:
   *"se eseguo un comando in una chat session per esempio /reset … me lo fa in un altra … nella architect
   chat me lo ha fatto nella chat che avevo selezionato PRIMA"*. Every session-scoped `/` action read the

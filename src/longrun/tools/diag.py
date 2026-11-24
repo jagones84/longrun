@@ -386,7 +386,7 @@ TOOL_QUERY_STOP = frozenset((
 ))
 
 
-def tools_report(tool=None, query=None) -> dict:
+def tools_report(tool=None, query=None, semantic=None) -> dict:
     """What the harness can do right now: native tools + their policy + MCP.
 
     JAG-513: this is the TOOL DISCOVERY surface the system prompt points at, so
@@ -396,6 +396,13 @@ def tools_report(tool=None, query=None) -> dict:
       * `tool="fs.read"` -> that tool's FULL input schema (every property with
         its type, default and required marker), which is what the model must read
         BEFORE calling a tool it has not used in this session.
+
+    2026-11-24 (operator): the query is HYBRID. The word tiers below are the
+    KEYWORD half; `semantic=True` adds a cosine over name+description when the
+    embedding backend is already warm (never loaded by a search), so a query
+    phrased in the task's own words finds the tool whose name it lacks. `None`
+    means auto (warm only), `False` forces keyword-only. An exact name/phrase hit
+    is already the answer and skips the blend.
 
     A name the registry does not know is an ERROR with near-miss suggestions —
     never a silent empty answer, which is how the model used to start guessing.
@@ -429,6 +436,7 @@ def tools_report(tool=None, query=None) -> dict:
             entry["required"] = required
         index[t["name"]] = entry
     capped = False
+    sem_used = False
     total = len(index)
     if tool:
         want = str(tool).strip()
@@ -536,7 +544,33 @@ def tools_report(tool=None, query=None) -> dict:
                 boost = sum(_tier(w, ntoks) for w in words)
             return (-(hits[name] + boost), name)
 
-        index = {n: index[n] for n in sorted(hits, key=_rank)}
+        # 2026-11-24 (operator): KEYWORD is the tiers above; `semantic` adds the
+        # EMBEDDING half over the SAME text (name + description) and the two are
+        # blended — a hybrid rank. The cosine is computed over the WHOLE registry,
+        # so a tool with no lexical overlap can still be found. Used only when the
+        # backend is already warm: a discovery call never loads the model.
+        sem_used = False
+        if not exact:
+            from longrun.memory import semantic as _sem
+            _want = _sem.ready() if semantic is None else bool(semantic)
+            _cos = _sem.scores([("%s %s" % (n, (index[n].get("description") or ""))).strip()
+                                for n in index], query, namespace="tools") if _want else None
+            if _cos is not None:
+                _mx = max(hits.values(), default=0.0) or 1.0
+                _blend = {}
+                for _i, _n in enumerate(index):
+                    _c = max(0.0, float(_cos[_i]))
+                    _lexn = hits.get(_n, 0.0) / _mx
+                    if not _lexn and _c < _sem.MIN_COS:
+                        continue
+                    _blend[_n] = (0.65 * _lexn + 0.35 * _c, _c)
+                index = {n: index[n] for n in sorted(
+                    _blend, key=lambda n: (-_blend[n][0], -_blend[n][1], n))}
+                sem_used = True
+            else:
+                index = {n: index[n] for n in sorted(hits, key=_rank)}
+        else:
+            index = {n: index[n] for n in sorted(hits, key=_rank)}
         native = [n for n in native if n in index]
         external = [n for n in external if n in index]
         enabled = [n for n in enabled if n in index]
@@ -563,6 +597,8 @@ def tools_report(tool=None, query=None) -> dict:
                for n, e in index.items()}}
     if query:
         out["query"] = query
+    if sem_used:
+        out["semantic"] = True     # the rank blended the embedding half (hybrid)
     if capped:
         if query:
             out["capped"] = ("showing the %d best matches — narrow the words, or ask "
@@ -579,7 +615,7 @@ def tools_report(tool=None, query=None) -> dict:
     return out
 
 
-def search_all(query, limit=10, kinds=None) -> dict:
+def search_all(query, limit=10, kinds=None, semantic=None) -> dict:
     """ONE ranked answer across tools + MCP + skills + plugins (2026-11-24).
 
     The operator's rule: discovery must be able to SEARCH every library without
@@ -587,6 +623,10 @@ def search_all(query, limit=10, kinds=None) -> dict:
     already OWNS it — `tools_report` for native tools, the registry's external
     (MCP) half, `skills.search_skills` (lexical + semantic when warm) and the
     plugin scan — so this function is a fan-out, never a second implementation.
+
+    `semantic` is forwarded to the libraries that HAVE an embedding half (tools,
+    skills); MCP's gateway `catalog_search` and the plugin scan are keyword-only
+    by their own contract, and each row says which `kind` answered.
 
     Scores are NOT comparable across kinds (a tool's word score and a skill's
     cosine measure different things), so the merged list is ordered by each
@@ -607,7 +647,7 @@ def search_all(query, limit=10, kinds=None) -> dict:
                      "where": where})
 
     # ---- tools: native + external (MCP), ranked by the ONE discovery surface ----
-    tr = tools_report(query=q) or {}
+    tr = tools_report(query=q, semantic=semantic) or {}
     idx = tr.get("tools") or {}
     if "tool" in want:
         for i, n in enumerate((tr.get("native") or [])[:lim]):
@@ -622,7 +662,7 @@ def search_all(query, limit=10, kinds=None) -> dict:
     if "skill" in want:
         try:
             from longrun.memory import skills as _skills
-            for i, h in enumerate(_skills.search_skills(q, limit=lim) or []):
+            for i, h in enumerate(_skills.search_skills(q, limit=lim, semantic=semantic) or []):
                 _add("skill", h.get("name"), i + 1, h.get("description"),
                      "skills.read {name:'%s'}" % h.get("name"))
         except Exception:  # noqa: BLE001 — one library failing must not kill the search

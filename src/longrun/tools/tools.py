@@ -2259,15 +2259,18 @@ def _self(args, run_id):
             _scope = str((args or {}).get("scope") or "tools").strip().lower()
             _q = (args or {}).get("query")
             _lim = (args or {}).get("limit") or 10
+            _sem = (args or {}).get("semantic")
             if _scope in ("all", "any", "everything"):
-                info["tools"] = diag_mod.search_all(_q, limit=_lim)
+                info["tools"] = diag_mod.search_all(_q, limit=_lim, semantic=_sem)
             elif _scope == "skills":
-                info["tools"] = diag_mod.search_all(_q, limit=_lim, kinds=("skill",))
+                info["tools"] = diag_mod.search_all(_q, limit=_lim, kinds=("skill",),
+                                                    semantic=_sem)
             elif _scope == "plugins":
-                info["tools"] = diag_mod.search_all(_q, limit=_lim, kinds=("plugin",))
+                info["tools"] = diag_mod.search_all(_q, limit=_lim, kinds=("plugin",),
+                                                    semantic=_sem)
             else:
                 info["tools"] = diag_mod.tools_report(tool=(args or {}).get("tool"),
-                                                      query=_q)
+                                                      query=_q, semantic=_sem)
         elif action in ("diagnostics", "settings", "config-check"):
             info["diagnostics"] = diag_mod.settings_report(
                 session=(args or {}).get("session") or run_id,

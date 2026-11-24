@@ -210,8 +210,10 @@ CHAT_APPROVAL_WAIT = 30
 
 SKILLS_POLICY = (
     "Skills: an installed skill library holds the harness's own procedures for many "
-    "tasks. Before improvising, SCAN it: `skills.search` ranks each skill's "
-    "instructions, not just its title; LOAD it with the `skills` tool "
+    "tasks. Never enumerate it to find one: before improvising, SCAN it by keywords "
+    "with `skills.search` — a HYBRID rank (keyword score + semantic embeddings when "
+    "the backend is warm; semantic:true forces them, false is keyword-only) over "
+    "each skill's instructions, not just its title; LOAD it with the `skills` tool "
     '({"action":"read","name":"<name>"}) and follow it step by step. The skills '
     "section below carries the exact calls.\n"
 )

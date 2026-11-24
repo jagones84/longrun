@@ -1195,8 +1195,11 @@ def tool_context():
         "## Tool discovery — read before you call",
         "The tools are NOT listed here on purpose: the registry depends on this "
         "config and would go stale in a prompt. SEARCH it instead of guessing:",
-        '- `self.tools {query:"<words>"}` → every tool whose NAME or one-line '
-        "DESCRIPTION matches those words, best match first. Use your task's own "
+        '- `self.tools {query:"<words>"}` → the KEYWORD rank: every tool whose NAME '
+        "or one-line DESCRIPTION matches those words, best match first. Add "
+        "semantic:true for the HYBRID rank (the same words embedded against the "
+        "same text — used only when the embed backend is already warm, so a search "
+        "never loads it; semantic:false is keyword-only). Use your task's own "
         "words (\"read a file\", \"run a command\", \"search the web\").",
         '- `self.tools {}` → a compact index (name, required args, one-line '
         "description), alphabetical and capped when the registry is large; the "
@@ -1210,7 +1213,9 @@ def tool_context():
         '- `self.tools {query:"<words>", scope:"all"}` → ONE ranked answer across '
         "tools, MCP, skills and plugins (each row names its `kind` and the call "
         'that opens it); scope:"skills" or scope:"plugins" narrows the same search '
-        "to one library.",
+        "to one library. Tools and skills rank HYBRID when the embed backend is "
+        "warm; the MCP gateway's `catalog_search` and the plugin scan are "
+        "keyword-only by their own contract.",
         # 2026-11-07: the FIVE core tools are stable enough to spell out here, and
         # not doing so cost a lookup round-trip on almost every task (ladder r1:
         # `self.tools {query:"write file"}` before a two-byte fs.write; LHB: 14 such

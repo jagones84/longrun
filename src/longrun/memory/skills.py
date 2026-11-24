@@ -136,50 +136,9 @@ def _frontmatter_name(text):
 
 _cache = {"sig": None, "skills": [], "bodies": {}}
 
-# 2026-11-24: hybrid ranking support. `_SEM_CACHE` holds the normalized embeddings
-# of every skill's title+description, rebuilt when that text changes; the cosine
-# threshold below is the floor a skill must clear to enter on semantics ALONE.
-_SEM_CACHE = {"sig": None, "vecs": None}
-_SEM_MIN_COS = 0.30
-
-
-def _semantic_ready():
-    """True only when the embedding backend is ALREADY loaded in this process.
-
-    `memory` loads `SentenceTransformer` at service start for its own index, so the
-    live harness gets the semantic half for free. A cold process (a CLI, a test)
-    stays purely lexical: a tool call must never pay the ~9 s model load.
-    """
-    try:
-        from longrun.memory import memory as _mem
-        return getattr(_mem, "_EMBEDDER", None) is not None
-    except Exception:  # noqa: BLE001 — searching must never break on this
-        return False
-
-
-def _semantic_scores(rows, query):
-    """Cosine(query, title + description) per row, or None when unavailable."""
-    try:
-        import numpy as np
-        from longrun.memory import memory as _mem
-        texts = [("%s %s" % (r.get("title") or "", r.get("description") or "")).strip()
-                 for r in rows]
-        sig = hashlib.sha1("\x00".join(texts).encode("utf-8")).hexdigest()
-        if _SEM_CACHE.get("sig") != sig or _SEM_CACHE.get("vecs") is None:
-            vecs = _mem._embed_batch(texts)
-            if vecs is None:
-                return None
-            _SEM_CACHE["sig"], _SEM_CACHE["vecs"] = sig, vecs
-        qv = _mem._embed_batch([str(query)])
-        if qv is None:
-            return None
-        q = np.asarray(qv)[0]
-        v = np.asarray(_SEM_CACHE["vecs"])
-        if v.ndim != 2 or len(q) != v.shape[1]:
-            return None          # a bag-of-words fallback cannot align with ST vectors
-        return [float(x) for x in (v @ q)]
-    except Exception:  # noqa: BLE001 — the lexical half is always the answer
-        return None
+# 2026-11-24: the warm-only semantic half (cosine over each skill's title +
+# description, cached per text set) lives in ONE place, `memory.semantic`, because
+# `self.tools {query}` blends the same cosine over its own catalogue.
 
 
 def _matrix_skills_dir():
@@ -665,9 +624,10 @@ def skills_context(max_chars=2200):
     out = ("Skills: %d installed under %s/<category>/<name>/SKILL.md.\n"
            % (len(skills), SKILLS_DIR)
            + 'Before solving a task, SEARCH this library instead of improvising: '
-           'call `skills.search` {"query":"<task keywords>"} (or {"action":"search","query":"<task keywords>"}) — ranks over each skill\'s '
+           'call `skills.search` {"query":"<task keywords>"} (or {"action":"search","query":"<task keywords>"}) — a HYBRID rank: keyword score + SEMANTIC '
+           "embeddings when the backend is warm (`semantic:true` forces the embedding half, `semantic:false` stays keyword-only), over each skill's "
            "name, description AND full instructions (SKILL.md body); "
-           '`skills.list` ({"action":"list"}) dumps every name; `skills.read` {"name":"<name>"} ({"action":"read","name":"<name>"}) '
+           '`skills.list` ({"action":"list"}) only browses names — never read the whole library to find one; `skills.read` {"name":"<name>"} ({"action":"read","name":"<name>"}) '
            "loads ONE skill — then FOLLOW its instructions step by step.")
     if len(out) > max_chars:
         out = out[:max_chars] + \
@@ -763,9 +723,11 @@ def search_skills(query, limit=10, semantic=None):
                 scored.append((round(score, 3), s))
         scored.sort(key=lambda x: (-x[0], x[1]["name"]))
     # ---- hybrid: blend the lexical score with a semantic cosine (warm only) ----
+    from longrun.memory import semantic as _sem
     if semantic is None:
-        semantic = _semantic_ready()
-    sem = _semantic_scores(skills, query) if semantic else None
+        semantic = _sem.ready()
+    sem = _sem.scores([("%s %s" % (s.get("title") or "", s.get("description") or "")).strip()
+                       for s in skills], query, namespace="skills") if semantic else None
     if sem is not None:
         mx = max((sc for sc, _s in scored), default=0.0) or 1.0
         lex = {s["name"]: sc for sc, s in scored}
@@ -773,7 +735,7 @@ def search_skills(query, limit=10, semantic=None):
         for i, s in enumerate(skills):
             cos = max(0.0, float(sem[i]))
             lexn = lex.get(s["name"], 0.0) / mx
-            if not lexn and cos < _SEM_MIN_COS:
+            if not lexn and cos < _sem.MIN_COS:
                 continue
             merged.append((round(0.65 * lexn + 0.35 * cos, 4), round(cos, 4), s))
         merged.sort(key=lambda x: (-x[0], -x[1], x[2]["name"]))

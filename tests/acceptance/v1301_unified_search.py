@@ -14,7 +14,10 @@ RECIPE. This pins the unified search that makes the recipe sufficient:
      embedding backend is warm, and stays purely lexical when it is not;
   E  the discovery prompt advertises scope=all and still carries NO catalogue;
   F  the skills section states the REAL absolute path (harness repo, never the
-     session workspace).
+     session workspace);
+  G  `self.tools {query}` is HYBRID too: `semantic:true` finds a tool with no
+     lexical overlap, `semantic:false` stays keyword-only, and the prompt names
+     all three modes (keyword / semantic / hybrid) for tools AND skills.
 
 Deterministic: no live model, no network, no external MCP client.
 Run: python3 tests/acceptance/v1301_unified_search.py
@@ -34,7 +37,7 @@ sys.path.insert(0, os.path.join(REPO, "src"))
 from longrun.core import server as _server          # noqa: E402
 from longrun.core import api_v02                    # noqa: E402
 from longrun.tools import diag, registry, tools as T  # noqa: E402
-from longrun.memory import skills                   # noqa: E402
+from longrun.memory import memory as _memory, skills, semantic  # noqa: E402
 
 # Deterministic: never start a configured external MCP client in a test.
 registry._external_tools = lambda: {}
@@ -92,8 +95,10 @@ lex = skills.search_skills("connect dgx spark", limit=5, semantic=False)
 check("D2 lexical-only still ranks the keyword match first",
       lex and "dgx" in lex[0]["name"], lex[:1])
 check("D3 the semantic half never loads the model inside a search",
-      "_get_embedder" not in inspect.getsource(skills._semantic_ready)
-      and "_EMBEDDER" in inspect.getsource(skills._semantic_ready))
+      # 2026-11-24: the warm-only cosine has ONE owner (`memory.semantic`) because
+      # `self.tools {query}` blends the same half over its own catalogue.
+      "_get_embedder" not in inspect.getsource(semantic.ready)
+      and "_EMBEDDER" in inspect.getsource(semantic.ready))
 
 # ---------------------------------------------------------------- E: the prompt --
 tctx = api_v02.tool_context()
@@ -101,6 +106,10 @@ check("E1 the discovery recipe advertises scope=all",
       'scope:"all"' in tctx and "self.tools {query:" in tctx)
 check("E2 the prompt still carries NO catalogue",
       "fs(" not in tctx and "shell(" not in tctx and "learned_" not in tctx)
+check("E3 the tool recipe names all three modes (keyword / semantic / hybrid)",
+      "KEYWORD" in tctx and "semantic:true" in tctx and "HYBRID" in tctx)
+check("E4 the skills block says the library is never read whole to find one",
+      "never read the whole library" in skills.skills_context())
 
 # ------------------------------------------------------------ F: the skills path --
 _texts = __import__("longrun.model.prompt", fromlist=["x"]).section_texts(sess="a2")
@@ -111,6 +120,52 @@ check("F2 it never claims the skills live in the session workspace",
       "workspace>" not in _sk and "<workspace" not in _sk)
 check("F3 the system prompt still builds end to end",
       bool(_server._system_prompt(None)))
+check("F4 the skills block names keyword + semantic + hybrid",
+      "HYBRID" in _sk and "SEMANTIC" in _sk and "keyword" in _sk, _sk[:200])
+check("F5 the skills POLICY says the library is searched, never enumerated",
+      "Never enumerate" in _server._system_prompt(None))
+
+# ------------------------------------------------- G: hybrid TOOL ranking ----
+check("G1 tools_report accepts the semantic switch",
+      "semantic" in inspect.signature(diag.tools_report).parameters)
+check("G2 search_all forwards it (scope=all is ONE search, not a second path)",
+      "semantic" in inspect.signature(diag.search_all).parameters)
+
+_orig_emb = getattr(_memory, "_EMBEDDER", None)
+_orig_batch = _memory._embed_batch
+semantic._CACHE.clear()
+
+
+def _fake_batch(texts, vocab=None):
+    # Deterministic 'embeddings': the probe query and fs.read share one axis, every
+    # other text the other — so ANY hit for the probe is the semantic half alone.
+    out = []
+    for t in texts:
+        tl = str(t).lower()
+        out.append([1.0, 0.0] if ("photonbeam" in tl or tl.startswith("fs.read "))
+                   else [0.0, 1.0])
+    return out
+
+
+_memory._EMBEDDER = object()
+_memory._embed_batch = _fake_batch
+try:
+    lex_only = diag.tools_report(query="photonbeam", semantic=False)
+    hybrid = diag.tools_report(query="photonbeam", semantic=True)
+    merged = diag.search_all("photonbeam", limit=5, semantic=True)
+finally:
+    _memory._EMBEDDER = _orig_emb
+    _memory._embed_batch = _orig_batch
+    semantic._CACHE.clear()
+check("G3 keyword-only finds nothing for a word no tool carries",
+      (lex_only.get("native") or []) == [] and "semantic" not in lex_only,
+      lex_only.get("native"))
+check("G4 the hybrid rank surfaces the SEMANTIC match (no lexical overlap)",
+      "fs.read" in (hybrid.get("native") or []) and hybrid.get("semantic") is True,
+      hybrid.get("native"))
+check("G5 scope=all carries the same hybrid tool hit",
+      any(r.get("kind") == "tool" and r.get("name") == "fs.read"
+          for r in (merged.get("results") or [])), merged.get("results"))
 
 print("\n---\nv1301: %d/%d PASS" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

@@ -286,9 +286,12 @@ _LEGACY_SCHEMAS = {
                         "ports). action=logs: this session's event history. "
                         "action=context: how full this session's context window is. "
                         "action=tools: TOOL DISCOVERY — every enabled tool with its "
-                        "one-line description; add `query` to filter, or `tool` to get "
+                        "one-line description; add `query` to filter by KEYWORDS, "
+                        "or `tool` to get "
                         "that tool's FULL input schema (properties, types, defaults, "
-                        "required). `scope` widens the SAME search: scope=all answers "
+                        "required). Add `semantic:true` for the HYBRID rank (keyword + "
+                        "embeddings over name+description; auto only when the embed "
+                        "backend is warm). `scope` widens the SAME search: scope=all answers "
                         "tools + MCP + skills + plugins in ONE ranked list, "
                         "scope=skills / scope=plugins narrow it to one library. "
                         "ALWAYS read the schema before the first use of a "
@@ -346,6 +349,14 @@ _LEGACY_SCHEMAS = {
                                       "'tools' (default: native + MCP), 'skills', "
                                       "'plugins', or 'all' for ONE ranked answer "
                                       "across every library")},
+            "semantic": {"type": "boolean",
+                         "description": ("action=tools: true adds the SEMANTIC half "
+                                         "(cosine over each tool's name+description), "
+                                         "blended with the keyword score — a HYBRID "
+                                         "rank; omit for auto, used only when the "
+                                         "embedding backend is already warm (a search "
+                                         "never pays the model load); false is "
+                                         "keyword-only")},
         },
     },
     "reconcile": {
@@ -366,7 +377,9 @@ _LEGACY_SCHEMAS = {
     },
     "skills": {
         "description": ("Agent skills registry: list available skills (from the "
-                        "skills/ tree, search by keyword, read a full SKILL.md "
+                        "skills/ tree, SEARCH by keywords or hybrid (semantic:true "
+                        "adds embeddings; auto when the backend is warm, so a search "
+                        "never loads the model), read a full SKILL.md "
                         "to follow its instructions/entrypoint, audit the library, "
                         "or retire the machine-created skills that were never "
                         "opened — moved to skills/_retired/, never deleted, dry "
@@ -381,10 +394,12 @@ _LEGACY_SCHEMAS = {
             "limit": {"type": "integer", "default": 10, "description": "max skills to return (action=search)"},
             "semantic": {"type": "boolean",
                          "description": ("action=search: true adds the semantic half "
-                                         "(cosine over each skill's title+description); "
-                                         "omit for auto — it is used only when the "
-                                         "embedding backend is already warm, so a "
-                                         "search never pays the model load")},
+                                         "(cosine over each skill's title+description), "
+                                         "blended with the keyword score — a HYBRID "
+                                         "rank; omit for auto — it is used only when "
+                                         "the embedding backend is already warm, so a "
+                                         "search never pays the model load; false is "
+                                         "keyword-only")},
             "confirm": {"type": "boolean", "default": False,
                         "description": ("action=retire: actually move the never-opened "
                                         "skills to skills/_retired/ (default: dry run, "
@@ -1088,7 +1103,11 @@ LEGACY_DEFAULT_SUBTOOL = {
 _SUBTOOL_FIELDS = {
     "self": {
         "info": [], "diagnose": [], "logs": ["session", "limit", "kind"],
-        "context": ["session"], "tools": ["tool", "query"],
+        # 2026-11-24: `scope` (one search across every library) and `semantic` (the
+        # embedding half) are args the handler READS; a field missing from this row
+        # is silently dropped from the canonical schema, and the dispatcher then
+        # answers "unknown argument 'scope' … ignored" to a call the prompt taught.
+        "context": ["session"], "tools": ["tool", "query", "scope", "limit", "semantic"],
         "diagnostics": ["session", "model", "code", "source", "limit"],
         "failures": ["limit", "since"],
         "sj": ["session", "job"], "trace": ["session"],
