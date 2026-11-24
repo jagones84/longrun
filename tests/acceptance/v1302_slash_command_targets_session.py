@@ -13,8 +13,9 @@ Contract locked here (static, because a `/` command is a composer action):
      fallback AND `_SLASH_RUN` re-attached after the backend catalogue;
   D  ONE guard (`_commandTarget`) refuses when the screen moved on, and each async
      action re-checks it after its await (no retarget, no wiping another view);
-  E  `/reset` says where it went and that a stateless session (Architect) is not reset —
-     it opens a NEW chat in that session's workspace;
+  E  `/reset` RESETS the chat it is typed in (same session id: `POST
+     /api/sessions/<sid>/clear`), and never creates another session; the old
+     "fresh chat" verb is `/new`, which names the source session as untouched;
   F  `/plan` and `/spec` post the captured id too.
 
 No model, no network, no server.
@@ -50,6 +51,7 @@ SEND = _between("async function send(text, display, atts) {", "\n  let msg = raw
 FALLBACK = _between("let SLASH_COMMANDS = [", "\nconst SLASH_BY_ID")
 RUNMAP = _between("const _SLASH_RUN = {", "\n};")
 RESET = _between("async function resetChat(sid) {", "\n/* JAG-121:")
+NEW = _between("async function newChat(sid) {", "\n/* `/reset`: reset the chat it is typed in")
 COMPACT = _between("async function compactNow(sid) {", "\nasync function docBarPaint")
 UNLOCK = _between("async function docUnlock(sid) {", "\nasync function goalAct")
 STATUS = _between("async function openSessionStatus(sid) {", "\n/* 2026-11-22 (operator): `/context`")
@@ -58,7 +60,7 @@ DOC = _between("async function _runDocCommand(kind, ask, sid) {", "\nasync funct
 GUARD = _between("function _commandTarget(sid, label) {", "\n}")
 
 _FN = {"compact": "compactNow", "status": "openSessionStatus", "reset": "resetChat",
-       "unlock": "docUnlock", "context": "openContextDetails"}
+       "new": "newChat", "unlock": "docUnlock", "context": "openContextDetails"}
 
 # ---- A: the session is captured once, before any await ----------------------
 check("A1 send() captures the session the command was typed in",
@@ -94,16 +96,24 @@ for label, body in (("compact", COMPACT), ("unlock", UNLOCK),
           '_commandTarget(sid, "%s")' % label in body, body[:160])
 check("D3 compaction never wipes another session's view",
       "if (S !== sessionId) return;" in COMPACT)
-check("D4 /reset re-checks the target after the workspace read",
+check("D4 /reset re-checks the target after the wipe",
       "if (S !== sessionId)" in RESET)
 check("D5 /status and /context do not render after a switch",
       "if (S !== sessionId) return;" in STATUS and "if (S !== sessionId) return;" in CTX)
 
-# ---- E: /reset says where it went, and what a stateless session is ----------
-check("E1 /reset names the workspace and the untouched source session",
-      "was not touched" in RESET and '"GET", "/api/workspace?session="' in RESET)
-check("E2 /reset states the Architect session is stateless",
-      "stateless" in RESET and "Architect" in RESET and "_isSystemSess" in RESET)
+# ---- E: /reset RESETS the same chat; /new is the fresh-chat verb ------------
+check("E1 /reset wipes the SAME session (the harness's own `sessions.reset`)",
+      '"/api/sessions/" + encodeURIComponent(S) + "/clear"' in RESET)
+check("E2 /reset never creates another session",
+      "createSession(" not in RESET and "createSession(" in NEW)
+check("E3 /reset does not repaint a view the operator left",
+      "if (S !== sessionId)" in RESET and "transcript and plan cleared" in RESET)
+check("E4 /new names the workspace and the untouched source session",
+      "was not touched" in NEW and '"GET", "/api/workspace?session="' in NEW)
+check("E5 the two verbs are distinct in BOTH tables (one verb, one meaning)",
+      'id: "new"' in FALLBACK and 'id: "reset"' in FALLBACK
+      and "new: (sid) => newChat(sid)" in RUNMAP
+      and "reset: (sid) => resetChat(sid)" in RUNMAP)
 
 # ---- F: the document commands post the captured id --------------------------
 check("F1 /plan and /spec post the captured session",
@@ -114,7 +124,7 @@ check("F2 send() hands the captured id to the document command",
 
 # ---- G: the offline shell follows (a cached old composer is a stale contract) --
 check("G1 the service-worker cache was bumped for this shell change",
-      'longrun-shell-v14' in SW)
+      'longrun-shell-v15' in SW)
 
 print("---")
 ok = sum(results)

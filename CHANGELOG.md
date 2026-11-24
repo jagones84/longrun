@@ -217,6 +217,19 @@ All notable changes to Longrun are documented here. The format follows
   semantic`; verified live on `self.tools {action:"tools", scope:"all", query:"foglio elettronico"}`,
   which reached the merged answer and returned its kind counts. Locked by `v1301` A1–A3 (which call the
   handler directly) plus the schema check in `v1126` (0 undeclared fields).
+- **`/reset` now resets the chat it is typed in — it can no longer create or touch another session.** Operator
+  (second report): *"se applicati alla architect session vanno ad agire su un'altra sessione … fix
+  immediately"*. The composer command kept the id pinning of the fix below, but its VERB was a second
+  truth: the harness's own `sessions.reset` wipes a session's transcript/tool cards/injects/plan (`stores
+  .clear_session`), while the WebUI `/reset` created a NEW session in that workspace — so a `/reset`
+  typed in the Architect landed the operator in a new chat, which is exactly "it acted on another
+  session". `resetChat(sid)` now posts `POST /api/sessions/<captured sid>/clear`: same id, same
+  workspace, same title, transcript and plan wiped, toast naming both; it never calls
+  `createSession`. The old fresh-chat behaviour moved to its own verb `/new` (catalogue +
+  first-paint fallback, same id pinning), so no capability is lost. The catalogue hint for `/reset`
+  says what it does. Live proof: a probe session went 4 → 0 messages with the same id/workspace while
+  the Architect stayed at 16; `GET /api/slash` answers both rows. Pinned by `v1302` E1–E5 (and `G1`
+  now requires shell `v15`), `v1051` A1 (twelve built-ins).
 - **A slash command can no longer land in a different chat than the one it was typed in.** Operator:
   *"se eseguo un comando in una chat session per esempio /reset … me lo fa in un altra … nella architect
   chat me lo ha fatto nella chat che avevo selezionato PRIMA"*. Every session-scoped `/` action read the
@@ -227,11 +240,12 @@ All notable changes to Longrun are documented here. The format follows
   `await` and passes it to every action; one guard (`_commandTarget`) refuses with a toast when the
   active session changed, and each async body re-checks before touching the DOM. Both command tables
   (first-paint fallback and `_SLASH_RUN`) pass `(sid)`. `/reset ` with a trailing space also escaped the
-  solo-command regex and reached the MODEL as prose — the token now allows trailing whitespace. `/reset`
-  on Architect stays allowed but the session is stateless: the toast says a NEW chat was opened and the
-  Architect one was not touched. Locked by `v1302` (29/29); `v1250` D3/D6/E1, `v774` F5, `v775` E1,
+  solo-command regex and reached the MODEL as prose — the token now allows trailing whitespace. Its
+  first version still opened a NEW chat for `/reset` (the "stateless Architect" note); the entry above
+  replaces that verb with the harness's own `sessions.reset` and moves the fresh chat to `/new`. Locked
+  by `v1302` (29/29 at v14, 34/34 at v15); `v1250` D3/D6/E1, `v774` F5, `v775` E1,
   `v1053` A6/D4/H2/I8, `v1238` D1 and `v1244` 3c re-pointed to the new signatures (assertions
-  unchanged). Shell cache `longrun-shell-v14`.
+  unchanged). Shell cache `longrun-shell-v15`.
 - **A question ABOUT a file is no longer mistaken for a request to produce one.** Found by a LIVE
   session (`20c7543386dd`): "Quante righe ha il file src/longrun/memory/skills.py?" matched
   `plan/artifacts._TARGET_PATH`, so the harness opened the deliverable/READ-BACK check and the model

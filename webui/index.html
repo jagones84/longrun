@@ -8747,8 +8747,11 @@ let SLASH_COMMANDS = [
     hint: "report everything about this session: identity, model, context saturation vs the max context, the plan and its open steps, approvals",
     run: (sid) => openSessionStatus(sid) },
   { id: "reset", aliases: [], icon: "↺", kind: "ui", insert: "",
-    hint: "start a fresh chat (a new session in THIS session's workspace) — nothing is deleted",
+    hint: "reset THIS chat: wipe its transcript, tool cards and plan — the same session stays",
     run: (sid) => resetChat(sid) },
+  { id: "new", aliases: [], icon: "＋", kind: "ui", insert: "",
+    hint: "start a fresh chat (a new session in THIS session's workspace) — nothing is deleted",
+    run: (sid) => newChat(sid) },
   { id: "unlock", aliases: [], icon: "⏏", kind: "ui", insert: "",
     hint: "leave /plan or /spec mode: release the gate and forget that document",
     run: (sid) => docUnlock(sid) },
@@ -8827,6 +8830,7 @@ const _SLASH_RUN = {
   compact: (sid) => compactNow(sid),
   status: (sid) => openSessionStatus(sid),
   reset: (sid) => resetChat(sid),
+  new: (sid) => newChat(sid),
   unlock: (sid) => docUnlock(sid),
   context: (sid) => openContextDetails(sid),   // 2026-11-22: `/context` runs the RH card
   restart: () => restartService(),       // 2026-11-22: `/restart` calls `harness.restart`
@@ -10469,27 +10473,51 @@ async function createNewSession() {
   if (r.error) { $("nsResult").textContent = "error: " + r.error; return; }
   closeNewSess();
 }
-/* `/reset`: a fresh chat in the SAME workspace, without the dialog. The old
+/* `/new`: a fresh chat in the SAME workspace, without the dialog. The old
    session is NOT deleted — it stays in the rail with its transcript. Uses the
    one creation path above; a distinct function would be a second truth. */
-async function resetChat(sid) {
-  const S = _commandTarget(sid, "reset");
+async function newChat(sid) {
+  const S = _commandTarget(sid, "new");
   if (!S) return;
   let ws = "";
   try { const w = await api("GET", "/api/workspace?session=" + encodeURIComponent(S)); ws = w.workspace || ""; }
   catch (_) {}
   // The workspace read is async: re-check the target before creating anything.
-  if (S !== sessionId) { toast("/reset cancelled — the active session changed", "warn"); return; }
-  const _row = (_sessList || []).find(x => x && x.id === S) || {};
-  const _sys = _isSystemSess(_row) || S === "architect";
+  if (S !== sessionId) { toast("/new cancelled — the active session changed", "warn"); return; }
   const r = await createSession("", ws);
-  if (r.error) { toast("reset: " + r.error, "err"); return; }
+  if (r.error) { toast("new chat: " + r.error, "err"); return; }
   // A fresh chat starts with an empty box: an attachment ingested into the OLD
   // session's knowledge must not ride into the new one.
   _attachments = []; _renderAttach(); _renderPendingCtxItems();
-  toast("new chat in " + (ws || "the default workspace") + " — " + S + " was not touched"
-        + (_sys ? " (the Architect session is stateless: /reset opens a NEW chat there)" : ""),
-        "ok");
+  toast("new chat in " + (ws || "the default workspace") + " — " + S + " was not touched", "ok");
+}
+/* `/reset`: reset the chat it is typed in — the SAME session id, so the command
+   can never land on (or create) another session. This is the harness's own
+   meaning of "reset a session" (`sessions.reset` → `stores.clear_session`: the
+   transcript, tool cards, harness injections, plan and threads are wiped; the
+   id, workspace and model stay). The old "start a fresh chat" behaviour is
+   `/new` — one verb, one meaning, the defect the operator reported twice. */
+async function resetChat(sid) {
+  const S = _commandTarget(sid, "reset");
+  if (!S) return;
+  const _row = (_sessList || []).find(x => x && x.id === S) || {};
+  const _title = _row.title || _sessTitle[S] || S;
+  let r = {};
+  try { r = await api("POST", "/api/sessions/" + encodeURIComponent(S) + "/clear", {}); }
+  catch (e) { toast("reset failed: " + e, "err"); return; }
+  if (r && (r.error || r.ok === false)) {
+    toast("reset: " + ((r && r.error) || "refused"), "err"); return;
+  }
+  // The wipe is async: a switch during it owns a DIFFERENT transcript.
+  if (S !== sessionId) {
+    toast("/reset cleared " + _title + " (" + S + ") — the chat you left", "ok"); return;
+  }
+  _attachments = []; _renderAttach(); _renderPendingCtxItems();
+  _draftClear(S);
+  $("log").innerHTML = ""; curThink = curAns = null; _resetChatTree();
+  renderQueue();
+  loadHistory(); loadPlan(); loadGraph(); loadCtx(); loadDocBar(); cbStatus();
+  toast("reset " + _title + " (" + S + ") — same chat, transcript and plan cleared", "ok");
 }
 /* JAG-121: folder picker (file-browser) for the session workspace.
    JAG-496: the picker serves whoever opened it. `_dirTarget` is the input id it

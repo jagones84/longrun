@@ -44,8 +44,10 @@
  * 2026-11-24 — bumped to v14: a `/` command is pinned to the session it was typed in
  * (never the one selected afterwards), and a trailing space no longer turns it into
  * prose for the model.
+ * 2026-11-24 — bumped to v15: `/reset` now resets the chat it is typed in (the same
+ * session id, the harness's own `sessions.reset`), and the fresh-chat verb is `/new`.
  */
-const CACHE = "longrun-shell-v14";
+const CACHE = "longrun-shell-v15";
 const SHELL = ["/", "/orbit", "/assets/dragsort.js", "/assets/icon-192.png",
                "/assets/icon-512.png", "/assets/apple-touch-icon.png",
                "/assets/icon-maskable-512.png"];

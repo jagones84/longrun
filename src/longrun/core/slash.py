@@ -43,6 +43,11 @@ BUILTINS = [
              "saturation vs the max context, the plan and its open steps, approvals"},
     {"id": "reset", "aliases": [], "title": "Reset", "icon": "\u21ba", "kind": "ui",
      "insert": "",
+     "hint": "reset THIS chat: wipe its transcript, tool cards and plan — the same "
+             "session (and workspace) stays; this is the harness's own "
+             "`sessions.reset`"},
+    {"id": "new", "aliases": [], "title": "New chat", "icon": "\uff0b", "kind": "ui",
+     "insert": "",
      "hint": "start a fresh chat (a new session in this workspace) — nothing is deleted"},
     {"id": "unlock", "aliases": [], "title": "Unlock", "icon": "\u23cf", "kind": "ui",
      "insert": "",
