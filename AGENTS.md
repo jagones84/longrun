@@ -1,112 +1,81 @@
 # AGENTS.md — start here (Longrun)
 
-Orientation for an AI agent (or human) landing in this repo. Read in this order;
-you should be productive within minutes and operate at the level of the agents
-that built this.
+Orientation for an AI agent (or human) landing in this repo. `.agent/` is the
+maintainer's local working memory (gitignored, development checkout only); everything
+below is tracked and present in every clone.
 
 ## Read order (do not skip)
 
-> `.agent/` is the maintainer's **local** working memory (all documents under
-> `docs/` — `handoff/`, `runbooks/`, `plans/`, `research/` — plus tooling;
-> update rules in `docs/MAINTENANCE.md`) and is **gitignored** — it
-> exists only in a development checkout, never in a clone. Everything listed below
-> is tracked and present in every clone.
-
-1. **`GLOSSARY.md`** — the project's own vocabulary. Read it first: it is what makes every
-   later file read the same way, and what stops `job` / `run` / `turn` from drifting.
-2. **`docs/adr/`** — the decisions that are hard to reverse, each with the alternative that
-   was rejected. Do not re-litigate one silently; surface the conflict.
+1. **`GLOSSARY.md`** — the project vocabulary; it stops `job`/`run`/`turn` from drifting.
+2. **`docs/adr/`** — hard-to-reverse decisions and the rejected alternative; surface a
+   conflict instead of re-litigating it silently.
 3. **`docs/ARCHITECTURE.md`** and **`docs/CLI.md`** — how the system is wired.
 4. **`docs/TESTING-PLAYBOOK.md`** — the mindset for testing the harness live.
-5. **`CONTRIBUTING.md`** — how to run the gate and write a test; the standards it points at
-   are [`CODING_STANDARDS.md`](CODING_STANDARDS.md).
-6. **`docs/RESEARCH-frontier-harnesses-2026.md`** — the research base and where Longrun
-   sits vs. the 2026 frontier.
+5. **`CONTRIBUTING.md`** + **`CODING_STANDARDS.md`** — the gate and the standards.
+6. **`docs/RESEARCH-frontier-harnesses-2026.md`** — the research base.
 
 ## The 60-second mental model
 
-- A stdlib-only Python **agent harness** (`src/longrun/`), HTTP on `:8790`,
-  SPA at `webui/index.html`, optional Orbit deck at `src/longrun/orbit/`.
-- **Five object levels**: `Team (TN) → Job (JN) → Subjob (JN.k) → Agent (AX) → Todo
-  (AX.nY)`. A **team** owns its roster; an **agent IS a session**
-  (`agent["session"] == sid`). A **job** runs a coordinator + its team in dependency
-  waves — the coordinator's PLAN turn is plan-only and read-only, the workers execute.
-  An in-chat `batch` of subagents is a **Session Job (SJ<n>)**, not a team job: it is
-  never dispatched, lives in the session's own ledger, and dies with the chat.
-- **Everything is gated** behind `Authorization: Bearer <token>` (or `?token=`);
-  the token lives in the service `EnvironmentFile`, never in the repo.
+- Stdlib-only Python **agent harness** (`src/longrun/`), HTTP on `:8790`, SPA at
+  `webui/index.html`, optional Orbit deck at `src/longrun/orbit/`.
+- **Five levels**: `Team (TN) → Job (JN) → Subjob (JN.k) → Agent (AX) → Todo (AX.nY)`.
+  An **agent IS a session** (`agent["session"] == sid`). A **job** runs a read-only
+  coordinator PLAN + workers in dependency waves; an in-chat `batch` is a **Session Job
+  (SJ<n>)** that lives in the session's ledger and dies with the chat.
+- **Everything is gated** behind `Authorization: Bearer <token>` (or `?token=`); the
+  token lives in the service `EnvironmentFile`, never in the repo.
 - State is files under `data/` (sessions, graphs, runs, edits, events.db, jobs,
-  session_jobs). Team jobs live in `jobs.json`; in-chat Session Jobs live in
-  `session_jobs/<sid>.json` and die with the chat.
-- The **harness is the model's secretary**: it injects synthetic turns tagged
-  `nudge` / `observation` / `continue`, persisted so the chat rebuilds them on reload.
+  session_jobs).
+- The **harness is the model's secretary**: it injects synthetic `nudge` / `observation` /
+  `continue` turns, persisted so the chat rebuilds them on reload.
 
 ## The commands that matter
 
 ```bash
-bash scripts/check.sh     # FAST static gate: syntax + lint + types, ratcheted — after every edit
-bash tests/battery.sh     # FULL deterministic gate (964 tests); trust its reported count
+bash scripts/check.sh     # syntax + lint + types, ratcheted — after every edit
+bash tests/battery.sh     # full deterministic gate; trust its reported count
 ```
 
-Run the cheap one constantly. It is deliberately a **ratchet**: it fails when a count
-*increases*, so a new unused import, undefined name or type slip is caught in seconds
-while the existing debt is paid down ([`pyproject.toml`](pyproject.toml) owns the rules).
+`check.sh` is a **ratchet**: it fails when a count *increases*, so a new unused import,
+undefined name or type slip is caught in seconds (`pyproject.toml` owns the rules).
 
 ## Non-negotiables
 
-- **Skills are local-only.** The user's personal skill library under `skills/`
-  (symlinked categories) is **gitignored** — it is a development-checkout only artefact.
-  The single tracked exception is the first-party `skills/core/repo-orientation` skill
-  (self-orientation for an LLM landing here). See `.gitignore`.
+- **Skills are local-only** under `skills/` (gitignored, dev checkout only); the single
+  tracked exception is `skills/core/repo-orientation`.
 - **No secrets in the repo.** `.env.template` is the only tracked env file.
 - **Evidence over belief.** A claim needs a number (test count, HTTP status, file field).
-- **`ast.parse` after any scripted patch.** Inspect the diff and restore only the
-  affected hunk if a patch breaks; never overwrite unrelated user changes.
-- **A CLI route is declared once.** `core/forge.py` holds `ROUTES` — one `(method, path)`
-  per route — and handlers call `req(*_route("name"))`; `v588` (route parity) and `v1276`
-  (the contract, from the live parser) hold you to it. Adding a command means adding its
-  route to the table; paths built at call time stay inline. See `docs/adr/0006`.
-- **Checkpoint large refactors**, but never use destructive rollback commands
-  (`git reset --hard`, `git checkout --`, `git clean`) over a dirty worktree.
-- **Temporary agent scripts go to `.agent/trash/`**; do not put them in `scripts/`
-  or the repo-root `trash/` data directory.
-- **Maintainers: update the local (gitignored) `.agent/docs/handoff/HANDOFF.md` + the matching
-  `docs/runbooks/*.md` in the same session. Section update rules: `.agent/docs/reference/MAINTENANCE.md`; the single spec index is `.agent/docs/tech-spec/SPEC-INDEX.md`.
-- **Never kill an agent turn.** Restart only after BOTH the chat gate
-  (`curl -s -H "Authorization: Bearer <token>" http://127.0.0.1:8790/api/chat/live` →
-  `{"active": []}`) and the tool gate
-  (`curl -s -H "Authorization: Bearer <token>" http://127.0.0.1:8790/api/tools/running` →
-  `{"running": []}`) are empty — never chained with `&&`, then announce the restart and
-  read the `service.resume` event afterwards. Full runbook: `docs/OPERATIONS.md`.
+- **`ast.parse` after any scripted patch**; never overwrite unrelated user changes.
+- **A CLI route is declared once** in `core/forge.py` `ROUTES` (handlers call
+  `req(*_route("name"))`); `v588`/`v1276` hold you to it, adding a command adds its route.
+- **Checkpoint large refactors**, never destructive rollback (`git reset --hard`,
+  `git checkout --`, `git clean`) over a dirty worktree.
+- **Temporary agent scripts go to `.agent/trash/`**, not `scripts/`.
+- **Maintainers** update `.agent/docs/handoff/HANDOFF.md` + the matching
+  `docs/runbooks/*.md` in the same session (`.agent/docs/reference/MAINTENANCE.md`;
+  spec index `.agent/docs/tech-spec/SPEC-INDEX.md`).
+- **Never kill an agent turn.** Restart only when both `/api/chat/live` and
+  `/api/tools/running` answer empty (never chained with `&&`), then announce it and read
+  `service.resume` (`docs/OPERATIONS.md`).
 - **Reports to the operator** (proposals, rankings, diagrams) follow `docs/REPORTING.md`.
 
-## Source layout — place by runtime role, not by subject (2026-11-20)
+## Source layout — by runtime role, not by subject
 
-A new module goes where its ROLE lives; the folder answers "who may import it, and what can start it?".
-Place it by these three questions, in order:
+Place a new module by its ROLE ("who may import it, and what can start it?"), in order:
 
-1. **Imported by the running app** (agent loop, HTTP route, tool dispatch, memory/model/plan
-   machinery) → the owning package: `agent/`, `core/`, `tools/`, `memory/`, `model/`, `plan/`,
-   `orchestrate/`, `evolve/`, `orbit/`, `research/`, `interop/`, `util/`.
-2. **Pure — data in, verdict out, no app imports — reachable only from the CLI** →
-   `src/longrun/harness/checks/`. Report-only; `core/forge.py` is the only adapter.
-3. **Executes a run, spawns a process or spends model tokens** →
-   `src/longrun/harness/execution/`. Gated; never reachable from a chat turn.
+1. **Imported by the running app** → the owning package: `agent/`, `core/`, `tools/`,
+   `memory/`, `model/`, `plan/`, `orchestrate/`, `evolve/`, `orbit/`, `research/`,
+   `interop/`, `util/`.
+2. **Pure, no app imports, CLI-only** → `src/longrun/harness/checks/` (report-only;
+   `core/forge.py` is the only adapter).
+3. **Spawns a process or spends tokens** → `src/longrun/harness/execution/` (gated).
 
-Anything the app imports from `harness/` stays at the `harness/` root. No new top-level package for one
-subject; no round/paper names in paths (the reference goes in the docstring); a module only tests import
-belongs in `checks/` (or it is dead — say so). A move updates every importer, `core/forge.py`, tests and
-docs in the same commit, and is proven by the import-audit pin (`v1273`) + `python3 forge.py harness` + the battery.
+No new top-level package; no round/paper names in paths; a module only tests import
+belongs in `checks/` (or it is dead). A move updates every importer, `core/forge.py`,
+tests and docs in the same commit (proven by `v1273` + `python3 forge.py harness` + battery).
 
 ## Agent skills
 
-### Issue tracker
-
-Work is tracked as local markdown: one feature per directory under `.scratch/<feature>/`
-(`spec.md` plus one file per ticket under `issues/<NN>-<slug>.md`). See `docs/agents/issue-tracker.md`.
-
-### Domain docs
-
-Single-context: one `GLOSSARY.md` and `docs/adr/` at the repo root, consumed before
-exploring. See `docs/agents/domain.md`.
-
+Work is tracked as local markdown under `.scratch/<feature>/` (`spec.md` +
+`issues/<NN>-<slug>.md`, see `docs/agents/issue-tracker.md`); domain docs are one
+`GLOSSARY.md` + `docs/adr/` (see `docs/agents/domain.md`).
