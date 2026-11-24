@@ -267,6 +267,21 @@ All notable changes to Longrun are documented here. The format follows
   (lint 413/414, types 88/88); battery 980/987 (same 7 pre-existing reds). Live: served
   `SHELL_VERSION 02fb8b7751de` == `sha1(/api/build)`, `touch webui/index.html` → `27d56d086ead` (the cache
   retires itself), `node --check` OK, `Cache-Control: no-store`.
+- **`/restart` gave the operator no evidence it had been sent or received.** Operator: *"non sembra
+  succedere nulla con slash restart, neanche un messaggio in webui che accerti che il restart command è
+  stato effettivamente mandato e recepito nella chat"*. The only feedback was a toast, and the reload
+  that follows a successful restart erases it — so a WORKING restart looked exactly like a dead command
+  (the event log showed the operator's clicks had restarted the service: `approval.auto` + `tool.result`
+  with `run:"ui-restart"`, then `service.start`). Now `restartService(sid)` writes the command (**`/restart`**)
+  and the service's answer (**accepted / refused / not delivered**, with the ticket time) as two rows in
+  the transcript of the chat it was typed in — the session id comes from `send()`'s capture, the same pin
+  every other command uses — plus a row for each failure end (no return within 60 s, or the service never
+  went down). The reload itself keeps a one-shot `lr_restart_at` marker, written ONLY when the tab saw the
+  service die, and the next paint turns it into a persistent chip ("↻ harness restarted at HH:MM — the
+  service is back") that stays until dismissed; an aborted restart can never claim one. Pinned by `v1302`
+  H4–H11 (`v1250` D3/D4 re-pointed to the new signature); battery targeted 40/40 GREEN. Live probe with the
+  exact request the row sends: `harness.restart` answered `ok` with ticket `ts`, `GET /api/build` DOWN at
+  t+1 s and UP at t+13 s (the point where the page reloads), `ActiveEnterTimestamp` 22:28:00 CET.
 - **`/restart` scheduled the exit and then left the page on a dead socket.** Operator: *"/restart command in
   webui doesn't work"*. The composer called `feedReconnect()` — a function that does not exist in
   `webui/index.html` — instead of `connectFeed()`, so the only reconnect was the feed's own 5 s retry,

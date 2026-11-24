@@ -8806,7 +8806,7 @@ let SLASH_COMMANDS = [
     run: (sid) => openContextDetails(sid) },
   { id: "restart", aliases: [], icon: "⟳", kind: "ui", insert: "",
     hint: "restart the harness now — the same door the agent's harness tool uses",
-    run: () => restartService() },
+    run: (sid) => restartService(sid) },
 ];
 const SLASH_BY_ID = {};
 function _indexSlash() {
@@ -8879,7 +8879,7 @@ const _SLASH_RUN = {
   new: (sid) => newChat(sid),
   unlock: (sid) => docUnlock(sid),
   context: (sid) => openContextDetails(sid),   // 2026-11-22: `/context` runs the RH card
-  restart: () => restartService(),       // 2026-11-22: `/restart` calls `harness.restart`
+  restart: (sid) => restartService(sid),  // 2026-11-22: `/restart` calls `harness.restart`
 };
 function _applySlashCatalog(r) {
   if (!r || r.ok === false) return;
@@ -13876,17 +13876,41 @@ async function openContextDetails(sid) {
 }
 /* 2026-11-22 (operator): `/restart` — restart the harness from the composer. It calls
    the SAME tool an agent calls (`harness` → `restart.schedule_restart`), so the UI and
-   the model share one door; no session is passed, so no continuation turn is spawned. */
-async function restartService() {
+   the model share one door; no session is passed, so no continuation turn is spawned.
+   2026-11-25 (operator: *"non sembra succedere nulla con slash restart, neanche un
+   messaggio in webui che accerti che il restart command e stato effettivamente mandato
+   e recepito nella chat"*): the ONLY feedback used to be a toast, which the reload
+   below erases — so a working restart looked exactly like a dead command. The command
+   and the service's answer are now two rows IN THE TRANSCRIPT, written before the
+   request leaves, so "sent" and "received" are both visible where the operator typed. */
+async function restartService(sid) {
+  // The reply belongs to the chat the command was typed in (`send()` passes it): if the
+  // screen moved meanwhile we still restart (it is global) but never write into a chat
+  // the operator did not type in.
+  const _sid = sid || sessionId;
+  const _here = !!_sid && _sid === sessionId;
+  if (_here) who("user", "/restart");
   let r = {};
   try {
     const j = await api("POST", "/api/tools/call",
       { tool: "harness", run_id: "ui-restart",
         args: { action: "restart", reason: "operator /restart (webui)" } });
     r = (j && j.result) || j || {};
-  } catch (e) { toast("restart failed: " + e, "err"); return; }
+  } catch (e) {
+    if (_here) who("ai", "↻ restart **not delivered** — the request failed: " + e);
+    toast("restart failed: " + e, "err"); return;
+  }
   if (!r || r.ok === false) {
-    toast("restart refused: " + ((r && (r.error || r.reason)) || "unknown"), "err"); return;
+    const _why = (r && (r.error || r.reason)) || "unknown";
+    if (_here) who("ai", "↻ restart **refused** by the service: " + _why);
+    toast("restart refused: " + _why, "err"); return;
+  }
+  if (_here) {
+    const _tk = (r.ticket && r.ticket.ts) ? " (ticket at " + new Date(r.ticket.ts * 1000).toLocaleTimeString() + ")" : "";
+    who("ai", "↻ restart **accepted** by the service" + _tk +
+      " — it exits in under a second and comes back in a few. " +
+      "This page reloads by itself as soon as it answers again; " +
+      "if it does not, reload manually and read the restart ticket.");
   }
   toast("restart scheduled — this page reloads as soon as the service is back", "ok");
   // 2026-11-24: this used to call a reconnect helper that does NOT exist in this
@@ -13899,12 +13923,21 @@ async function restartService() {
   let _down = false;
   const _poll = async () => {
     if (Date.now() - _t0 > 60000) {
+      if (_here) who("ai", "↻ the service did not come back within 60 s — reload this page, then check the restart ticket.");
       toast("the service did not come back — reload this page", "err"); return;
     }
     try { await api("GET", "/api/build"); }
     catch (_) { _down = true; setTimeout(_poll, 1200); return; }
-    if (_down) { location.reload(); return; }
+    if (_down) {
+      // 2026-11-25: the rows above die with this reload, so the ONE fact worth keeping
+      // — "the tab saw the service go down and come back" — rides to the next paint in
+      // localStorage. `_restartArrival()` turns it into a persistent chip; without a
+      // real downtime it is never written, so a refused/aborted restart cannot claim one.
+      try { localStorage.setItem("lr_restart_at", String(Date.now())); } catch (_) {}
+      location.reload(); return;
+    }
     if (Date.now() - _t0 > 15000) {
+      if (_here) who("ai", "↻ the service answered, but it is still the OLD process (no downtime seen) — see the restart ticket.");
       toast("the service is still the old process — see the restart ticket", "warn");
       try { connectFeed(); } catch (_) {}
       return;
@@ -25167,6 +25200,29 @@ ensureToken().then(() => {
    index.html while the user reads). It never reloads now: the tab stays intact
    and a click-to-reload chip appears instead. */
 let _build0 = null, _buildOffered = null;
+/* 2026-11-25 (operator: *"neanche un messaggio in webui che accerti che il restart
+   command e stato effettivamente mandato e recepito nella chat"*): the transcript rows
+   `/restart` writes are erased by the reload that follows them. The tab therefore
+   leaves ONE marker before it reloads — only after it actually saw the service go
+   down — and the next paint turns that marker into a chip that stays until dismissed.
+   So the operator gets a durable "it really restarted at HH:MM", not a vanished toast. */
+function _restartArrival() {
+  let at = 0;
+  try { at = Number(localStorage.getItem("lr_restart_at") || 0); } catch (_) { return; }
+  if (!at) return;
+  try { localStorage.removeItem("lr_restart_at"); } catch (_) {}
+  if (!(Date.now() - at >= 0 && Date.now() - at < 10 * 60 * 1000)) return;  // stale: not this restart
+  let box = $("sfToast");
+  if (!box) { box = document.createElement("div"); box.id = "sfToast"; document.body.appendChild(box); }
+  if (box.querySelector(".sf-toast.action")) return;
+  const t = document.createElement("div");
+  t.className = "sf-toast action show";
+  t.setAttribute("role", "status");
+  t.textContent = "↻ harness restarted at " + new Date(at).toLocaleTimeString() + " — the service is back";
+  t.title = "You ran /restart: the page saw the service go down and answer again, then reloaded itself. Click to dismiss.";
+  t.onclick = () => t.remove();
+  box.appendChild(t);
+}
 function _offerReload() {
   let box = $("sfToast");
   if (!box) { box = document.createElement("div"); box.id = "sfToast"; document.body.appendChild(box); }
@@ -25189,6 +25245,7 @@ async function _checkBuild() {
   } catch (e) { /* offline is fine — never break the app for a build check */ }
 }
 _checkBuild();
+_restartArrival();   // 2026-11-25: the durable "/restart did happen" chip (one-shot marker)
 setInterval(_checkBuild, 60000);
 addEventListener("focus", _checkBuild);
 document.addEventListener("visibilitychange", function () {

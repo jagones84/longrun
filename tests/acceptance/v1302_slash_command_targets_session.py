@@ -123,7 +123,7 @@ check("F2 send() hands the captured id to the document command",
       "_runDocCommand(_docKind, _docAsk, _cmdSid)" in SEND)
 
 # ---- H: /restart really comes back, and a turn keeps its captured session ----
-RESTART = _between("async function restartService() {", "\n/* ---- approvals")
+RESTART = _between("async function restartService(sid) {", "\n/* ---- approvals")
 check("H1 /restart waits for the service to go down and to answer again",
       '"GET", "/api/build"' in RESTART and "location.reload()" in RESTART)
 check("H2 /restart never calls a function that does not exist",
@@ -131,6 +131,38 @@ check("H2 /restart never calls a function that does not exist",
 check("H3 a message (and `/goal`) runs in the chat it was typed in",
       "let turnSession = _cmdSid || sessionId;" in HTML
       and "_pendingUserAdd(turnSession," in HTML)
+# 2026-11-25 (operator: *"non sembra succedere nulla con slash restart, neanche un
+# messaggio in webui che accerti che il restart command e stato effettivamente mandato
+# e recepito nella chat"*): a toast is erased by the reload, so a WORKING restart used
+# to look like a dead command. The command and the service's answer must be transcript
+# rows, written in the capped session, before the request leaves.
+check("H4 /restart is declared with the captured session in BOTH tables",
+      "run: (sid) => restartService(sid)" in FALLBACK
+      and "restart: (sid) => restartService(sid)" in RUNMAP)
+check("H5 the command appears in the chat as a row, not only as a toast",
+      'who("user", "/restart")' in RESTART, RESTART[:200])
+check("H6 the service's answer appears in the chat (accepted / refused / not delivered)",
+      "restart **accepted**" in RESTART and "restart **refused**" in RESTART
+      and "restart **not delivered**" in RESTART)
+check("H7 the rows are written only in the chat the command was typed in",
+      "const _here = !!_sid && _sid === sessionId;" in RESTART
+      and "if (_here) who(" in RESTART)
+check("H8 both failure ends leave a row too (timeout / still the old process)",
+      "did not come back within 60 s" in RESTART
+      and "still the OLD process" in RESTART)
+# The rows die with the reload, so the reload itself must leave a durable proof.
+ARRIVAL = _between("function _restartArrival() {", "\nfunction _offerReload() {")
+check("H9 the reload keeps a marker only when the tab SAW the service go down",
+      'localStorage.setItem("lr_restart_at"' in RESTART
+      and "if (_down) {" in RESTART
+      and RESTART.find('localStorage.setItem("lr_restart_at"') > RESTART.find("if (_down) {"))
+check("H10 the next paint turns that marker into a persistent chip (cleared, age-capped)",
+      'localStorage.getItem("lr_restart_at"' in ARRIVAL
+      and 'localStorage.removeItem("lr_restart_at")' in ARRIVAL
+      and "10 * 60 * 1000" in ARRIVAL
+      and "harness restarted at" in ARRIVAL)
+check("H11 the chip is actually wired into boot",
+      "_restartArrival();" in HTML)
 
 # ---- G: the offline shell follows (a cached old composer is a stale contract) --
 check("G1 the service-worker cache is DERIVED from the served build (no hand-bump)",

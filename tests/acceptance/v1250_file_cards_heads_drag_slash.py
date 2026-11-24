@@ -115,9 +115,10 @@ check("D2 the backend catalogue owns both (a boot with the API up keeps them)",
 check("D3 the backend catalogue REPLACES the fallback, so the callbacks are re-attached",
       # 2026-11-24: the action receives the session captured by `send()` (`_cmdSid`),
       # so an async session switch can never retarget the command (v1302 D2).
+      # 2026-11-25: `/restart` takes it too — the confirmation rows go in that chat.
       "context: (sid) => openContextDetails(sid)" in HTML
-      and "restart: () => restartService()" in HTML)
-_RESTART = block("async function restartService() {", "/* ---- approvals")
+      and "restart: (sid) => restartService(sid)" in HTML)
+_RESTART = block("async function restartService(sid) {", "/* ---- approvals")
 check("D4 /restart calls the agent's OWN tool (`harness` → restart), not a second door",
       'tool: "harness"' in _RESTART and 'action: "restart"' in _RESTART
       and "/api/harness/restart" not in HTML)
