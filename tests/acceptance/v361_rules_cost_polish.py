@@ -6,8 +6,8 @@
   B) the cost ledger uses the provider's OWN charge when it reports one (EXACT,
      `src: "provider"`) and otherwise prices the real token counts with the full
      rate set — cache-read rate for cached tokens + the fixed per-request fee;
-  C) my duplicate `#ctxPct` id is fixed (the topbar uses `#ctxPctTop`, so the
-     inspector meter works again) and the interface-polish guards hold.
+  C) the context inspector keeps its own `#ctxPct`; rail snapshots no longer add
+     active-only meter IDs that can collide with it, and the interface-polish guards hold.
 
 Run: python3 tests/acceptance/v361_rules_cost_polish.py
 """
@@ -78,8 +78,9 @@ check("A11 diagnostics presents unauthorized responses as an auth issue",
       and "Longrun rejected this browser token" in HTML, "")
 
 # --- C: my duplicate-id regression + the interface polish --------------------
-check("C1 the topbar element no longer shadows the inspector #ctxPct",
-      'id="ctxPctTop"' in HTML and '<span id="ctxPct" class="ctxpct">' in HTML, "")
+check("C1 rail snapshots add no active-only context ids beside the inspector #ctxPct",
+      'id="ctxPctTop"' not in HTML and 'id="ctxRing"' not in HTML
+      and '<span id="ctxPct" class="ctxpct">' in HTML, "")
 check("C2 the polish guards hold",
       "#nowbar[hidden] { display: none; }" in HTML and "a.ghost {" in HTML
       and "button:disabled {" in HTML and "#dotrail button:focus-visible" in HTML, "")

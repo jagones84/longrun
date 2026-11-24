@@ -183,7 +183,7 @@ with tempfile.TemporaryDirectory() as tmp:
           str(res_py.get("error")))
 
     # ---- I) the prompt-bearing surfaces are Nucleous now ----------------------
-    prompt_files = [os.path.join(tmp, ".longrun", "Project_rules.md"),
+    prompt_files = [os.path.join(tmp, ".longrun", "rules", "Project_rules.md"),
                     os.path.join(tmp, ".longrun", "rules", "01-evil.md"),
                     os.path.join(tmp, "AGENTS.md")]
     for p in prompt_files:

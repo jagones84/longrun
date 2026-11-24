@@ -31,7 +31,7 @@ DRAFT_DIR = os.path.join(PROPOSAL_DIR, "skills")
 AGENT_WRITE = {
     "memory": "auto",       # data/memory/**  -> free write (silent)
     "skill": "propose",     # skills/**       -> proposal, threshold
-    "project": "propose",   # <data>/projects/<ws>/Project_rules.md -> PROPOSAL only
+    "project": "propose",   # <workspace>/.longrun/rules/Project_rules.md -> PROPOSAL only
     "global": "propose",    # <config>/Global_rules.md (~/.longrun/config) -> PROPOSAL only
     "matrix": "propose",    # src/Matrix/** + matrix runtime -> PROPOSAL only (verified bundle)
     "code": "forbidden",    # longrun/*.py -> out of scope
@@ -993,11 +993,18 @@ def diff_preview(rec):
     except Exception:  # noqa: BLE001 — a preview must never raise
         return {"applies": False, "path": "", "diff": "", "added": 0,
                 "note": "rules module unavailable"}
-    try:
-        with open(path, encoding="utf-8", errors="replace") as f:
-            cur = f.read()
-    except OSError:
-        cur = ""
+    if scope == "project":
+        ws = rec.get("ws") or rules.get_workspace()
+        if not rules.project_rules_path_is_local(ws):
+            return {"applies": False, "path": path, "diff": "", "added": 0,
+                    "note": "project rules path resolves outside workspace"}
+        cur = rules.read_project_rules(ws)
+    else:
+        try:
+            with open(path, encoding="utf-8", errors="replace") as f:
+                cur = f.read()
+        except OSError:
+            cur = ""
     sep = "" if (cur.endswith("\n") or not cur) else "\n"
     new = cur + sep + content
     diff = list(difflib.unified_diff(cur.splitlines(), new.splitlines(),
@@ -1494,7 +1501,10 @@ def decide(pid, decision):
         return {"ok": True, **saved, "applied": applied}
     if rec["scope"] in ("project", "global"):
         from longrun.memory import rules
-        rules.append(rec["scope"], rec["content"], ws=rec.get("ws"))
+        applied = rules.append(rec["scope"], rec["content"], ws=rec.get("ws"))
+        if not applied.get("ok"):
+            return {"ok": False,
+                    "error": applied.get("error") or "rules append refused"}
     rec["status"] = "approved"
     saved = _save(rec)
     try:

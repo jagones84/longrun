@@ -116,8 +116,14 @@ def _rules(extra):
     out = {}
     try:
         from longrun.memory import rules
+        sid = (extra or {}).get("session")
+        ws = None
+        if sid:
+            from longrun.memory import stores
+            sess = stores.load_session(sid) or {}
+            ws = rules.resolve_workspace(sess)
         out["global_rules"] = _read_text(rules.global_rules_path())
-        out["project_rules"] = _read_text(rules.project_rules_path())
+        out["project_rules"] = rules.read_project_rules(ws)
     except Exception:  # noqa: BLE001
         pass
     return out

@@ -58,7 +58,7 @@ check("B4 it reads the SAME number as the rail meter (no second source)",
 check("B5 the ring geometry is ONE shared helper (rail + composer)",
       "function _ringCircles(" in UI
       and UI.count("function _ringCircles(") == 1
-      and "+ _ringCircles(iR, pct) +" in UI          # the rail pill uses it
+      and "+ _ringCircles(\"\", pct) +" in UI         # the rail snapshot uses it
       and "+ _ringCircles(' id=\"cmpCtxRing\"', p) +" in UI)  # the composer ring uses it
 
 print("---")

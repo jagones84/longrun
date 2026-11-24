@@ -74,7 +74,8 @@ check("A6 no session id -> empty (never raises)",
       prompt._provider_role({}, None, None) == "" and prompt._provider_role(None, None, None) == "", "")
 check("A7 the docstring names the layer order",
       "GLOBAL Global_rules.md" in prompt._provider_role.__doc__
-      and "PROJECT Project_rules.md" in prompt._provider_role.__doc__, "")
+      and "PROJECT workspace `.longrun/rules/*.md` + root AGENTS.md"
+      in prompt._provider_role.__doc__, "")
 
 # --- B: the panel shows who, and a stale tab self-heals ----------------------
 check("B1 the Rules panel states the agent identity",
@@ -97,4 +98,3 @@ print("---")
 ok = sum(results)
 print("%d/%d PASS" % (ok, len(results)))
 sys.exit(0 if ok == len(results) else 1)
-

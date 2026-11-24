@@ -9,7 +9,7 @@
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776ab.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![deps](https://img.shields.io/badge/deps-stdlib%20%2B%20PyYAML-brightgreen.svg)](#quick-start-windows)
-[![tests](https://img.shields.io/badge/battery-984%2F984%20tests-blue.svg)](#tests)
+[![tests](https://img.shields.io/badge/battery-988%2F988%20tests-blue.svg)](#tests)
 
 **Longrun is the self-hosted AI agent harness that drives the LLM — teams of
 agents, real tools, and verification, on your own machine.** One Python process
@@ -288,15 +288,16 @@ Other variables used by configured MCP servers can also be added in **Settings �
 | Keys and server token | `<repository>/.env` |
 | User provider settings | `config/providers.local.yaml` |
 | Sessions, events, indexes, and other app data | the **data home** (see below) |
+| Project instructions | `<workspace>/.longrun/rules/*.md` and root `AGENTS.md` |
 | User MCP definitions | `config/mcp_clients.local.json` |
 | User-installed skills | `skills/local/` |
 
 ### Where your data lives (not in the repository)
 
-Everything the harness owns lives under ONE root, `~/.longrun` (`%LOCALAPPDATA%\Longrun`
-on Windows), never inside the checkout: a `git pull`, a fresh clone or a container
-image must not be able to replace or expose sessions, the event log, indexes, costs,
-the self-evolution runtime or your project rules.
+Runtime data lives under ONE root, `~/.longrun` (`%LOCALAPPDATA%\Longrun` on Windows),
+never inside the checkout: a `git pull`, a fresh clone or a container image must not
+replace or expose sessions, the event log, indexes, costs, or the self-evolution
+runtime. Project instructions are the explicit workspace-local exception.
 
 ```
 ~/.longrun/
@@ -311,11 +312,13 @@ The data root can be moved: `LONGRUN_DATA_HOME` (explicit override) →
 writes) → the platform default above. `config/` always stays at the DEFAULT
 location, because it is the file that records where the data root is.
 
-Per-workspace PROJECT state (`Project_rules.md`, `rules/`, `prompt.d/`) is kept in
-`<data>/projects/<slug>-<sha8>/`, exactly like the per-workspace codebase index —
-a harness checkout must not drop a `.longrun/` folder into your projects. A legacy
-`<workspace>/.longrun` is moved there the first time that workspace is used, so
-nothing is lost.
+Per-workspace runtime state such as `prompt.d/` and the always-apply settings stays
+under `<data>/projects/<slug>-<sha8>/`. Project instructions are sourced ONLY from
+`<workspace>/.longrun/rules/*.md` and `<workspace>/AGENTS.md`; `.trae/rules`, rule
+files outside that folder, and external project-state rule copies are not loaded.
+The `.longrun/` folder is gitignored; root `AGENTS.md` is the versioned instruction file.
+The state resolver leaves `.longrun/rules/` in the workspace while adopting unrelated
+runtime files.
 
 **Settings → Info → Data home** shows the current location and can MOVE it: the
 old tree is copied, the copy is verified file by file, and only then is the source
@@ -532,7 +535,7 @@ launcher (`tests/battery_tmp.sh`, gitignored and never shipped); every checkout
 scopes the tracked battery with `LONGRUN_BATTERY_TESTS`. The full suite runs on
 request. The fast run skips six heavy indexing and document-ingestion tests:
 
-The suite is 984/984 tests — every acceptance file under `tests/acceptance/` is
+The suite is 988/988 tests — every acceptance file under `tests/acceptance/` is
 counted, and the badge above is the same number (one truth, pinned by `v354`).
 
 ```bash

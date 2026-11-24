@@ -14,7 +14,7 @@ Locks:
   E  a move refuses a target inside the repo (the whole point);
   F  the status/percentages the progress bar reads;
   G  the sandbox scratch root follows the data home too;
-  H  workspace project state (rules, prompt.d) never lands in the workspace;
+  H  project rules remain workspace-local while prompt.d state lives in the data home;
   I  the pre-JAG-534 ~/.config/longrun is adopted into ~/.longrun/config.
 
 Deterministic: temp dirs, no live model, no network.
@@ -117,24 +117,33 @@ check("C3 the legacy in-repo data dir is still recognised (a move must find it)"
       open(os.path.join(REPO, "src", "longrun", "util", "paths.py"),
            encoding="utf-8").read(), "")
 
-# --- H: workspace project state never lands inside the workspace ------------
+# --- H: project instructions stay local; unrelated state lives in the data home
 _ws = os.path.join(TMP, "ws")
-os.makedirs(os.path.join(_ws, ".longrun", "rules"), exist_ok=True)
-with open(os.path.join(_ws, ".longrun", "Project_rules.md"), "w", encoding="utf-8") as f:
-    f.write("legacy project rule")
+_local_rules = os.path.join(_ws, ".longrun", "rules")
+os.makedirs(_local_rules, exist_ok=True)
+os.makedirs(os.path.join(_ws, ".longrun", "prompt.d"), exist_ok=True)
+with open(os.path.join(_local_rules, "Project_rules.md"), "w", encoding="utf-8") as f:
+    f.write("workspace project rule")
+with open(os.path.join(_ws, ".longrun", "prompt.d", "addendum.md"),
+          "w", encoding="utf-8") as f:
+    f.write("runtime prompt addendum")
 _state = paths.workspace_state_dir(_ws)
 check("H1 workspace state lives under the data home, not the workspace",
       os.path.realpath(_state).startswith(os.path.realpath(paths.DATA_DIR) + os.sep)
       and not os.path.realpath(_state).startswith(os.path.realpath(_ws) + os.sep), _state)
-check("H2 the legacy <ws>/.longrun is ADOPTED (moved), not duplicated",
-      os.path.isfile(os.path.join(_state, "Project_rules.md"))
-      and not os.path.isdir(os.path.join(_ws, ".longrun")), _state)
+check("H2 project rules stay in .longrun/rules while prompt.d is adopted",
+      os.path.isfile(os.path.join(_local_rules, "Project_rules.md"))
+      and os.path.isdir(_local_rules)
+      and os.path.isfile(os.path.join(_state, "prompt.d", "addendum.md"))
+      and not os.path.exists(os.path.join(_ws, ".longrun", "prompt.d")), _state)
 check("H3 the same workspace always maps to the same state dir",
       paths.workspace_state_dir(_ws) == _state, _state)
 _rules_src = open(os.path.join(REPO, "src", "longrun", "memory", "rules.py"),
                   encoding="utf-8").read()
-check("H4 project rules resolve through paths.workspace_state_dir (never <ws>/.longrun)",
-      "paths.workspace_state_dir" in _rules_src and 'get_workspace(), ".longrun"' not in _rules_src)
+check("H4 project rules resolve directly to workspace/.longrun/rules",
+      'os.path.join(workspace_rules_dir(ws), "Project_rules.md")' in _rules_src
+      and 'os.path.join(os.path.realpath(ws or get_workspace()), ".longrun", "rules")'
+      in _rules_src)
 
 # --- I: the pre-JAG-534 preferences are adopted, never stranded -------------
 if os.name != "nt":

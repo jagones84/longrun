@@ -1409,6 +1409,16 @@ def context_usage(session_id=None, message=None, model=None,
     """
     from longrun.model import context_engine
     from longrun.model import compaction_config as _ccfg
+    sess = load_session(session_id) if session_id else None
+    # JAG-258 (2026-11-24): measure against the SAME model a turn would use —
+    # explicit > the session's own model > the default. The rail rows are filled
+    # by the backfill worker (`stores._ctx_backfill_loop`), which calls this with
+    # NO model: the budget then fell back to whatever the local router happened to
+    # have LOADED, so a session on glm-5.3-flash (1M window) read 6.7% in the rail
+    # while the live meter read 1.7% — and the number jumped the moment focus
+    # moved (the active row is painted from this function, the others from the
+    # stored/backfilled value). ONE rule, one owner: `resolve_ctx_model`.
+    model = resolve_ctx_model(sess, model)
     budget = context_budget(model)
     base = {"budget_tokens": budget, "session": session_id, "model": model,
             "auto_compact_pct": rllm.AUTOCOMPACT_PCT,
@@ -1418,7 +1428,6 @@ def context_usage(session_id=None, message=None, model=None,
             "policy_local_exists": os.path.isfile(_ccfg.local_path()),
             "summarizer_input_chars": rllm.SUMMARIZER_INPUT_CHARS,
             "summarizer_output_chars": rllm.SUMMARIZER_OUTPUT_CHARS}
-    sess = load_session(session_id) if session_id else None
     if not sess:
         return {**base, "available": False, "messages": 0, "tokens_used": 0,
                 "pct": 0.0, "over_threshold": False, "over_budget": False,

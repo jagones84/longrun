@@ -128,8 +128,10 @@ state from its nodes (`n done` / `n open`): it is never stored twice.
 ## Request / turn lifecycle (one chat turn)
 
 `assemble_turn` builds the exact prompt (system sections + compacted transcript +
-message + enabled-tool name index + skills index); full tool schemas are discovered
-through `self.tools` instead of dumping the registry into every prompt. The provider
+message); the tool CALL CONTRACT and the discovery RECIPE (`self.tools {query|tool}`,
+plus `scope:"all"` for one search over tools + MCP + skills + plugins) ride in the
+prompt instead of a registry dump, and skills are found with `skills.search`
+(lexical, blended with a semantic cosine when the embedding backend is warm). The provider
 is called over an OpenAI-compatible stream; the model may answer **or** emit a
 harness action (`tool`, `todo.write`, `todo.update`, `todo.replan`, `subagent`).
 Tool calls go through the **approval gate** and the **sandbox**; observations are
@@ -930,13 +932,14 @@ inside a workspace) ·
 notebook index + its cost log) · `costs/` (per-session model-call ledger) · `prices.json` ·
 `tls/` (auto self-signed cert for HTTPS) · `agents.json` · `teams.json` · `jobs.json` ·
 `session_jobs/` (one in-chat SJ ledger per session) ·
-`events.db` (durable SSE feed) · `projects/` (per-workspace Project_rules.md, rules/,
-prompt.d/ — the project scope ALSO loads every `.md` of `<workspace>/.trae/rules/`, the
-operator's own rules folder, exactly like Trae's Reference list; see
-`memory/rules.py:project_rules_dirs`). `projects/<ws>/rules_state.json` holds the
+`events.db` (durable SSE feed) · `projects/` (per-workspace runtime addenda such as
+`prompt.d/` and `rules_state.json`; project instructions themselves stay in the
+workspace). The only project instruction sources are every `.md` in
+`<workspace>/.longrun/rules/` plus `<workspace>/AGENTS.md`; `.trae/rules` and
+external data-home project rules are not loaded. `rules_state.json` holds the
 per-file "always apply" switches (absent = ON), flipped from Settings ▸ Rules and read by
-`memory/rules.py:collect`; a switched-off file is excluded from the prompt, the file
-list and the audit. Writes are atomic (`tmp` + `os.replace`). The root is resolved by
+`memory/rules.py:collect`; switched-off files are excluded from the prompt and loaded
+file list. Writes are atomic (`tmp` + `os.replace`). The root is resolved by
 `util/paths.py` (`LONGRUN_DATA_HOME` → `data_home` in `~/.longrun/config/config.json`
 → platform default) and can be moved from Settings ▸ Info.
 

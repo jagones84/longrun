@@ -141,8 +141,6 @@
   .sess-ctx .mfill { stroke-width: 4.5; }
   .sess-ctx .pill.meter b { font-size: 10.5px; letter-spacing: 0; }
   .sess-ctx .pill.meter.hot { color: var(--err); }
-  #ctx-meter { margin: 0; padding: 0; gap: 2px; background: transparent; border: 0; }
-  #ctx-meter .mring { width: 13px; height: 13px; }
   .pill.sbox { display: inline-flex; align-items: center; gap: 6px; font-size: 11px;
     padding: 3px 11px; }
   /* JAG-424: on a phone the banner keeps only the sandbox DOT (no word) and drops the
@@ -9277,7 +9275,9 @@ function selectSession(s) {
   if (!s || !s.id) return;
   _saveChatScrollState(sessionId, $("log").scrollTop);
   const _fromSid = sessionId;   // 2026-11-10: the unsent text moves with its session
+  const _changedSession = sessionId !== s.id;
   sessionId = s.id; localStorage.setItem("sf_session", sessionId);
+  if (_changedSession) ctxNa("loading");
   _syncAttachmentBusyUI();
   _forceExpandActive = true;   // JAG-415: reveal this session's team group in the rail
   clearDone(s.id);   // JAG-218: opening a session clears its "finished" bell
@@ -9741,15 +9741,11 @@ function _orgRankMap() {
   agents.forEach(a => { if (!seen[a.id]) walk(a); });
   return rank;
 }
-/* JAG-424g: the context ring belongs to ONE session — it is drawn on the ACTIVE session's
-   row (its own saturation), once per render (the active session may be drawn in several
-   team groups). The state is re-applied after every rail render. */
-/* 2026-11-16 (operator): EVERY chat shows its own saturation, not only the one on
-   screen. The number is what the router really sent on that session's last request
-   (`s.ctx_pct`, recorded by the turn and served by `/api/sessions`). The ACTIVE row
-   keeps the ids, so the live `/api/context` meter still repaints it; a row with no
-   number (a session that never ran) renders nothing — never a fabricated 0%. */
-let _ctxRingPlaced = false, _ctxPct = null, _ctxTitle = "context tokens / budget";
+/* Every rail row uses its own `/api/sessions` snapshot. The selected chat has a
+   separate live meter in the composer; mixing that value into the active rail row
+   made the same row jump between the live estimate and its last-turn snapshot as
+   focus changed. Rows without a measurement render nothing, never a fake 0%. */
+let _ctxPct = null;
 /* ONE ring geometry for every saturation circle in the app (the rail row's pill and the
    composer's `#cmpCtx`): a track + a fill whose dash offset is the UNUSED fraction.
    `attr` is the optional id attribute of the fill, so a live repaint can address it. */
@@ -9759,22 +9755,15 @@ function _ringCircles(attr, pct) {
     + '<circle class="mfill"' + (attr || "") + ' cx="18" cy="18" r="15.9155" style="stroke-dashoffset:' + off + '"></circle>';
 }
 function _ctxRingHtml(s) {
-  const isActive = s.id === sessionId;
   const _n = Number(s.ctx_pct);
   const pct = (s.ctx_pct == null || !isFinite(_n)) ? null : _n;
-  if (!isActive && pct == null) return "";
-  if (isActive && _ctxRingPlaced) return "";
-  if (isActive) _ctxRingPlaced = true;
-  const iM = isActive ? ' id="ctx-meter"' : "";
-  const iR = isActive ? ' id="ctxRing"' : "";
-  const iP = isActive ? ' id="ctxPctTop"' : "";
-  const tip = pct == null ? "context tokens / budget"
-    : ("context: " + pct + "% of the budget (" + (s.ctx_tokens || "?") + " / "
-       + (s.ctx_budget || "?") + " tokens)");
-  return '<span class="sess-ctx"><span class="pill meter' + (pct != null && pct >= 70 ? " hot" : "") + '"' + iM
+  if (pct == null) return "";
+  const tip = "context: " + pct + "% of the budget (" + (s.ctx_tokens || "?") + " / "
+    + (s.ctx_budget || "?") + " tokens)";
+  return '<span class="sess-ctx"><span class="pill meter' + (pct >= 70 ? " hot" : "")
     + ' title="' + esc(tip) + '">'
-    + '<svg class="mring" viewBox="0 0 36 36" aria-hidden="true">' + _ringCircles(iR, pct) + '</svg>'
-    + '<b' + iP + '>' + (pct == null ? "…" : Math.round(pct) + "%") + '</b></span></span>';
+    + '<svg class="mring" viewBox="0 0 36 36" aria-hidden="true">' + _ringCircles("", pct) + '</svg>'
+    + '<b>' + Math.round(pct) + "%</b></span></span>";
 }
 /* The composer's numberless ring beside the model name. Rebuilt only when the value
    moves a colour band, so the 5 s poll never thrashes the DOM. */
@@ -9798,11 +9787,8 @@ function _setCmpRing(pct) {
     + _ringCircles(' id="cmpCtxRing"', p) + '</svg>';
 }
 function _repaintCtx() {
-  const pill = $("ctx-meter");
-  if (pill) { pill.title = _ctxTitle; pill.className = "pill meter" + (_ctxPct >= 70 ? " hot" : ""); }
-  const p = $("ctxPctTop"); if (p) p.textContent = (_ctxPct == null ? "–" : Math.round(_ctxPct) + "%");
-  const ring = $("ctxRing");
-  if (ring) ring.style.strokeDashoffset = String(100 - Math.max(0, Math.min(100, _ctxPct || 0)));
+  // The LH rail is a per-session snapshot; only the composer's ring follows this
+  // focused chat's live `/api/context` value.
   _setCmpRing(_ctxPct);
 }
 /* 2026-11-20 (operator): click the composer context ring → a MINIMAL popover (the numbers
@@ -10148,7 +10134,6 @@ async function _loadSessionsOnce() {
   _sessionOrderBase = {};
 
   // No teams configured -> keep the flat, header-less list (backward compatible).
-  _ctxRingPlaced = false;   // JAG-424g: one ctx ring per render, on the active row
   if (!teams.length) {
     _lastGroupKeys = [];
     box.dataset.flatOrderGroup = "__none__";
@@ -10844,11 +10829,8 @@ function ctxNa(reason) {
   _isum("sContext", "");
   const _bar = $("ctxBar");
   if (_bar) { _bar.style.width = "0%"; _bar.style.minWidth = "0px"; _bar.className = ""; }
-  _ctxPct = null; _ctxTitle = "context tokens / budget";   // JAG-424g: the ring lives on the row
+  _ctxPct = null;
   _setCmpRing(null);   // 2026-11-21: no session's saturation — never the previous one's
-  const _cm = $("ctx-meter"); if (_cm) { _cm.className = "pill meter"; _cm.title = _ctxTitle; }
-  const _cp = $("ctxPctTop"); if (_cp) _cp.textContent = "–";
-  const _cr = $("ctxRing"); if (_cr) _cr.style.strokeDashoffset = "100";
 }
 /* JAG-361: this panel shows the full prompt stack for a session:
    (1) ROLE.md — per-session, editable here (same as the AGENTS panel PROMPT button)
@@ -10898,7 +10880,7 @@ async function loadRulesPanel() {
     rows.push(_rulesRefRow("global", "global rules", d.global));
   }
   if (d.project && d.project.path) {
-    rows.push(_rulesRefRow("project", "project rules", d.project));
+    rows.push(_rulesRefRow("project", "project rules", d.project, d.workspace));
   }
   box.innerHTML = rows.join("");
   // ROUND 177: one link per loaded project rule file — the click opens the REAL file in
@@ -10927,7 +10909,7 @@ async function loadRulesPanel() {
    of the project rules folders is loaded (Trae parity), so the row is a LIST of links,
    one per file, and a click opens it in the editor. Edited in the code editor, not in a
    second textarea that would only own one of the files. */
-function _rulesRefRow(kind, label, src) {
+function _rulesRefRow(kind, label, src, wsBase) {
   const id = "rule_" + kind;
   const chars = src.chars || 0;
   const ok = src.exists && chars > 0;
@@ -10935,20 +10917,30 @@ function _rulesRefRow(kind, label, src) {
   if (kind === "project") {
     const rows = src.file_rows || (src.files || []).map(p =>
       ({path: p, name: String(p).split("/").pop(), chars: 0}));
-    const dir = src.rules_dir || (src.dirs || [])[0] || src.path;
-    // ROUND 179 (operator): ONE path, clickable — the workspace rules folder. The
-    // harness-owned state folder is loaded silently and is not shown twice; the long
-    // green footer sentence is gone (the file rows say what they do by themselves).
+    // Project files come only from workspace `.longrun/rules/*.md` plus root
+    // `AGENTS.md`. Keep rendering folders supplied by the rules API so this panel
+    // stays aligned with the resolver if its presentation changes.
+    const base = String(wsBase || "").replace(/\/+$/, "");
+    const short = p => {
+      const s = String(p || "");
+      if (!s) return "";
+      if (base && s === base) return "(workspace root)";
+      if (base && s.startsWith(base + "/")) return s.slice(base.length + 1);
+      return s.replace(/^\/home\/[^/]+/, "~");
+    };
+    const dirs = (src.dirs && src.dirs.length) ? src.dirs
+      : [src.rules_dir || src.path].filter(Boolean);
     return '<details class="rulesrc" open>'
       + '<summary><b>' + esc(label) + '</b><span class="rbadge' + (rows.length ? " ok" : "") + '">'
       + esc(rows.length + (rows.length === 1 ? " file" : " files") + " · " + _kb(chars)) + '</span></summary>'
-      + '<div class="rpath" title="' + esc(dir) + '">'
-      + '<button type="button" class="lnk" data-rulesdir="' + _attr(dir) + '" '
-      + 'title="open the rules folder in the editor">' + esc(dir) + '</button></div>'
+      + dirs.map(d => '<div class="rpath" title="' + esc(d) + '">'
+          + '<button type="button" class="lnk" data-rulesdir="' + _attr(d) + '" '
+          + 'title="open the rules folder in the editor">' + esc(short(d)) + '</button></div>').join("")
       + '<div class="rlist">' + rows.map(r =>
           '<button type="button" class="rfile" data-rulepath="' + _attr(r.path) + '" '
           + 'title="open ' + _attr(r.path) + ' in the editor">'
-          + '<span class="rfile-n">' + esc(r.name) + '</span>'
+          + '<span class="rule-txt"><span class="rfile-n">' + esc(r.name) + '</span>'
+          + '<span class="rfile-sub">' + esc(short(r.dir)) + '</span></span>'
           + '<span class="remaining">' + esc(_kb(r.chars)) + '</span></button>').join("")
       + '</div></details>';
   }
@@ -11039,14 +11031,9 @@ async function loadCtx() {
     // JAG-359: the topbar ctx indicator is a small ring + % (red from 70% up); the
     // full "used / budget · %" string moves to the tooltip instead of the label.
     const pct = (d.pct != null ? d.pct : 0);
-    _ctxPct = pct; _ctxTitle = d.detail || d.short || "context tokens / budget";
+    _ctxPct = pct;
     _ctxDisplay = d;   // 2026-11-20: the click-popover reads these same numbers
     _setCmpRing(pct);   // 2026-11-21: the composer ring follows the same number
-    const pill = $("ctx-meter");
-    if (pill) { pill.title = _ctxTitle; pill.className = "pill meter" + (pct >= 70 ? " hot" : ""); }
-    const pctEl = $("ctxPctTop"); if (pctEl) pctEl.textContent = Math.round(pct) + "%";
-    const ring = $("ctxRing");
-    if (ring) ring.style.strokeDashoffset = String(100 - Math.max(0, Math.min(100, pct)));
   } catch {
     // JAG-238: a failed /api/context (network, or a session it cannot read) must
     // NOT leave the PREVIOUS session's meter on screen — that made a small chat
@@ -18292,15 +18279,17 @@ async function loadRules() {
       const c = $(cid), ta = $(tid);
       if (c && ta) mountSparkle(c, sid, { field: ta });
     });
-    // ROUND 179: ONE clickable folder path, then the rule files with their switches.
-    const _dir = p.rules_dir || "";
+    // The resolver supplies the single allowed workspace `.longrun/rules/` folder;
+    // render the API list so the UI follows its source of truth.
+    const _dirs = (p.dirs && p.dirs.length) ? p.dirs : [p.rules_dir].filter(Boolean);
     const _rp = $("rulesProjectPath");
-    _rp.innerHTML = _dir
-      ? '<button type="button" class="lnk rule-dir" data-rulesdir="' + esc(_dir)
-        + '" title="open the rules folder in the editor">' + esc(_dir) + "</button>"
+    _rp.innerHTML = _dirs.length
+      ? _dirs.map(dd => '<button type="button" class="lnk rule-dir" data-rulesdir="' + esc(dd)
+          + '" title="open the rules folder in the editor">' + esc(dd) + "</button>").join("")
       : '<span class="remaining">no rules folder</span>';
-    const _rd = _rp.querySelector("[data-rulesdir]");
-    if (_rd) _rd.onclick = () => openRulesDir(_dir);
+    _rp.querySelectorAll("[data-rulesdir]").forEach(b => {
+      b.onclick = () => openRulesDir(b.dataset.rulesdir);
+    });
     _rulesProjectRows(p.all_rows || []);
     // HA-1 (lot H): the doctor travels in this SAME payload (`audit`). A clean corpus
     // renders NOTHING (the card is hidden), so advice never costs space until it exists.

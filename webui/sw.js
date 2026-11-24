@@ -30,8 +30,17 @@
  * "/" shell changed shape again.
  * 2026-11-17 — bumped to v9 (JAG-935/936): the composer doc bar closes on a
  * rejected document and the sessions rail head wraps instead of clipping.
+ * 2026-11-23 — bumped to v10: 2026-11-21 shipped the compact status strip, the
+ * themed selects, the Rules/Skills editors and the session-queue changes, but
+ * the cache name stayed at v9, so an installed phone PWA could still render the
+ * 2026-11-17 shell whenever the tailnet was not up yet.
+ * 2026-11-24 — bumped to v11: the Rules panel now lists every loaded rules folder
+ * (and each row names its own folder) instead of one wrong path, so the shell changed.
+ * 2026-11-24 — bumped to v12: the active session's live context meter no longer
+ * overwrites its per-session snapshot in the LH rail; all rail rows stay stable
+ * across focus changes.
  */
-const CACHE = "longrun-shell-v9";
+const CACHE = "longrun-shell-v12";
 const SHELL = ["/", "/orbit", "/assets/dragsort.js", "/assets/icon-192.png",
                "/assets/icon-512.png", "/assets/apple-touch-icon.png",
                "/assets/icon-maskable-512.png"];

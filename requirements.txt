@@ -33,3 +33,12 @@ docling>=2.138
 # 2. markitdown (Microsoft, MIT) — a light alternative when docling is not
 #    installed: PDF/DOCX/PPTX/XLSX/HTML → Markdown, no torch.
 markitdown[pdf,docx,pptx,xlsx]>=0.0.1
+
+# --- Optional SEMANTIC search (memory + skills discovery) ---------------------
+# `memory.semantic_query` and the hybrid half of `skills.search` use a local
+# sentence-embedding model (all-MiniLM-L6-v2, 384 dims) through these two. Without
+# them both searches stay purely lexical — same answer shape, narrower recall.
+# `local_files_only=True` is enforced in code: a turn never downloads weights, so
+# a missing model degrades to the bag-of-words fallback instead of fetching.
+numpy>=1.26
+sentence-transformers>=3.0

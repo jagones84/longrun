@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""v1048 — every chat shows its context saturation, and a manager sees its team.
+"""v1048 — every chat shows its own context snapshot, and a manager sees its team.
 
 Operator 2026-11-16: *"each chat context status shall be visible in the sessions webui
 even if not the active one selected at the moment … and the boss team of an agent
@@ -86,7 +86,7 @@ def row(sid):
 
 
 # The background backfill runs its own thread; keep it out of a deterministic test.
-stores._ctx_backfill_request = lambda sid: None
+stores._ctx_backfill_request = lambda sid, stamp=None: None
 
 
 # --- A) the row carries the real number -----------------------------------
@@ -103,11 +103,17 @@ check("A2 a session that never ran has NO number (never a fabricated 0)",
       r2.get("ctx_pct") is None and r2.get("ctx_tokens") is None, r2)
 
 # A3 — the live router number is fresher than the persisted one: a turn in flight.
+#      Only a RUNNING turn may override: after the turn the persisted snapshot wins,
+#      otherwise the rail would mix a live count with an older budget forever.
+with stores._ACTIVE_CHAT_LOCK:
+    stores._ACTIVE_CHAT[SID] = {"id": SID}
 stores._REAL_PROMPT_TOKENS[SID] = 800
 r3 = row(SID)
 check("A3 a running turn's router number overrides the persisted one",
       r3.get("ctx_pct") == 80.0 and r3.get("ctx_tokens") == 800, r3)
 stores._REAL_PROMPT_TOKENS.pop(SID, None)
+with stores._ACTIVE_CHAT_LOCK:
+    stores._ACTIVE_CHAT.pop(SID, None)
 
 # A4 — an old session (no recorded ctx) is served the background value once computed.
 stores._CTX_BACKFILL[NEVER] = {"pct": 12.5, "tokens_used": 125, "budget_tokens": 1000}
@@ -126,11 +132,11 @@ check("B1 the turn records sess[\"ctx\"] before the reply is saved",
 
 # --- C) every surface -----------------------------------------------------
 _i_ring = HTML.find("function _ctxRingHtml(")
-_ring = HTML[_i_ring:HTML.find("function _repaintCtx(", _i_ring)]
-check("C1 the rail renders the pill for a NON-active row too",
-      "if (!isActive && pct == null) return \"\";" in _ring
-      and "const isActive = s.id === sessionId;" in _ring
-      and "s.ctx_pct" in _ring, _ring[:200])
+_ring = HTML[_i_ring:HTML.find("function _setCmpRing(", _i_ring)]
+check("C1 every rail row paints only its own snapshot, independent of focus",
+      "s.ctx_pct" in _ring and "sessionId" not in _ring
+      and "isActive" not in _ring and 'id="ctxRing"' not in _ring
+      and 'id="ctxPctTop"' not in _ring, _ring[:200])
 
 # 2026-11-16 (operator): "i don't have space neither horizontal neither vertical" — the
 # rail meter is a bare 13px ring + a 10.5px number (the rail's legibility floor, v765),

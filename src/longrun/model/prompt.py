@@ -249,7 +249,8 @@ def _provider_role(sess, ws, ctx):
 
     Layers, in prompt order: agent identity + ROLE.md (this section, order 52)
     then the standing rules (order 60: GLOBAL Global_rules.md + AGENTS.md, then the
-    PROJECT Project_rules.md + rules/*.md + AGENTS.md — the project wins on conflict).
+    PROJECT workspace `.longrun/rules/*.md` + root AGENTS.md — the project wins on
+    conflict).
     """
     sid = (sess or {}).get("id") if isinstance(sess, dict) else sess
     if not sid:

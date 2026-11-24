@@ -84,7 +84,8 @@ def set_enabled(enabled):
 
 MATRIX_SYSTEM_PROMPT = (
     "## Matrix Self-Evolution (Nucleous vs. Matrix)\n"
-    "- **NUCLEOUS (Immutable):** `src/longrun/**`, `webui/**`, `config/**`, `tests/**`, `Global_rules.md` / `Project_rules.md` "
+    "- **NUCLEOUS (Immutable):** `src/longrun/**`, `webui/**`, `config/**`, `tests/**`, "
+    "`~/.longrun/config/Global_rules.md`, `<workspace>/.longrun/rules/**`, and `<workspace>/AGENTS.md` "
     "are hard-protected (`NUCLEOUS_PROTECTED`). Import Nucleous functions freely; never edit them.\n"
     "- **MATRIX — code in `src/Matrix/`, runtime in the matrix dir shown by `matrix.status.matrix_dot` "
     "(default `~/.longrun/matrix`; `.Matrix/` is only its legacy name):** the %d hook subpackages (%s) "

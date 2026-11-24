@@ -152,7 +152,8 @@ _AUTOMATE_PROMPTS = {
         "with `webui.configure` (`target:'compaction'`)."
     ),
     "rules": (
-        "You are `Architect` automating the Rules section (`Global_rules.md` / `Project_rules.md`). "
+        "You are `Architect` automating the Rules section (`Global_rules.md`, and "
+        "the workspace's `.longrun/rules/*.md` plus its root `AGENTS.md`). "
         "Inspect with `webui.inspect` (`section:'rules'`) and write updated rules "
         "with `webui.configure` (`target:'rules'`)."
     ),

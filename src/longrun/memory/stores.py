@@ -603,7 +603,7 @@ def _forget_session_runtime(sid):
     # the transcript that no longer exists (it can be recomputed on demand).
     with _CTX_BACKFILL_LOCK:
         _CTX_BACKFILL.pop(sid, None)
-        _CTX_BACKFILL_TRIED.discard(sid)
+        _CTX_BACKFILL_TRIED.pop(sid, None)
     with _steer_lock:
         STEER_INBOX.pop(sid, None)
     forget_steers(sid)   # JAG-796: the durable steer log would otherwise leak too
@@ -719,8 +719,8 @@ _SESSION_SUMMARY_LOCK = threading.Lock()
 # assembler the Context panel uses (`context_usage`), cached IN MEMORY only — never
 # written to the session document (that would be a second truth) and never on the
 # request path (the first build costs seconds: it warms the model weights).
-_CTX_BACKFILL = {}            # sid -> {"pct", "tokens_used", "budget_tokens"}
-_CTX_BACKFILL_TRIED = set()   # one attempt per session per process
+_CTX_BACKFILL = {}            # sid -> {"pct","tokens_used","budget_tokens","stamp"}
+_CTX_BACKFILL_TRIED = {}      # sid -> the file stamp requested last
 _CTX_BACKFILL_LOCK = threading.Lock()
 _CTX_BACKFILL_Q = None        # queue.Queue, created with the single worker
 _CTX_BACKFILL_WORKER = None   # the thread handle, joined at interpreter exit
@@ -733,7 +733,7 @@ def _ctx_backfill_loop(stop):
     import queue
     while not stop.is_set():
         try:
-            sid = _CTX_BACKFILL_Q.get(timeout=0.5)
+            sid, stamp = _CTX_BACKFILL_Q.get(timeout=0.5)
         except queue.Empty:
             continue
         try:
@@ -742,7 +742,8 @@ def _ctx_backfill_loop(stop):
                 with _CTX_BACKFILL_LOCK:
                     _CTX_BACKFILL[sid] = {"pct": u.get("pct"),
                                           "tokens_used": u.get("tokens_used"),
-                                          "budget_tokens": u.get("budget_tokens")}
+                                          "budget_tokens": u.get("budget_tokens"),
+                                          "stamp": stamp}
         except Exception:  # noqa: BLE001 — a meter must never kill the worker
             pass
 
@@ -770,13 +771,19 @@ def _ctx_backfill_shutdown():
 atexit.register(_ctx_backfill_shutdown)
 
 
-def _ctx_backfill_request(sid):
-    """Ask for one session's saturation, at most once per process."""
+def _ctx_backfill_request(sid, stamp=None):
+    """Ask for one session's saturations, once per file version.
+
+    The value is recomputed whenever the transcript changes (a turn, a
+    compaction, a model change all rewrite the file), so the rail and the
+    selected chat read the SAME snapshot instead of a persisted turn-end number
+    that a later compaction made stale.
+    """
     global _CTX_BACKFILL_Q, _CTX_BACKFILL_WORKER, _CTX_BACKFILL_STOP
     with _CTX_BACKFILL_LOCK:
-        if sid in _CTX_BACKFILL_TRIED:
+        if _CTX_BACKFILL_TRIED.get(sid) == stamp:
             return
-        _CTX_BACKFILL_TRIED.add(sid)
+        _CTX_BACKFILL_TRIED[sid] = stamp
         if _CTX_BACKFILL_Q is None:
             import queue
             _CTX_BACKFILL_Q = queue.Queue()
@@ -785,7 +792,7 @@ def _ctx_backfill_request(sid):
                 target=_ctx_backfill_loop, args=(_CTX_BACKFILL_STOP,),
                 daemon=True, name="ctx-backfill")
             _CTX_BACKFILL_WORKER.start()
-        _CTX_BACKFILL_Q.put(sid)
+        _CTX_BACKFILL_Q.put((sid, stamp))
 
 
 
@@ -872,25 +879,30 @@ def list_sessions():
             if not row:
                 continue
             # A RUNNING turn's router number is fresher than the one it persisted at its
-            # last end, so the rail follows the live request while the turn works.
+            # last end, so the rail follows the live request WHILE the turn works. Once
+            # the turn ends the persisted snapshot is the truth again: `_REAL_PROMPT_TOKENS`
+            # survives the turn, and using it forever mixed the live token count with an
+            # older budget (rail % disagreed with the selected chat's meter).
             _live = _REAL_PROMPT_TOKENS.get(row["id"])
-            if _live and row.get("ctx_budget"):
+            if _live and row.get("ctx_budget") and row["id"] in _active:
                 try:
                     _lp = round(int(_live) / int(row["ctx_budget"]) * 100, 1)
                     row = {**row, "ctx_tokens": int(_live), "ctx_pct": _lp}
                 except (TypeError, ValueError, ZeroDivisionError):
                     pass
-            if row.get("ctx_pct") is None and row["id"] not in _active:
-                # No turn has recorded this session yet: serve the background value
-                # while the worker computes it (the request never waits for it).
+            elif row["id"] not in _active:
+                # ONE snapshot per session: the same `context_usage` the selected chat
+                # reads, recomputed when the transcript's file version changes. A stale
+                # persisted turn-end number (e.g. written before a compaction) is only a
+                # fallback while that refresh is in flight.
                 with _CTX_BACKFILL_LOCK:
                     _bf = _CTX_BACKFILL.get(row["id"])
-                if _bf:
+                if _bf and (not _bf.get("stamp") or _bf.get("stamp") == stamp):
                     row = {**row, "ctx_pct": _bf.get("pct"),
                            "ctx_tokens": _bf.get("tokens_used"),
                            "ctx_budget": _bf.get("budget_tokens")}
                 else:
-                    _ctx_backfill_request(row["id"])
+                    _ctx_backfill_request(row["id"], stamp)
             upd = row["updated"]
             out.append({
                 **row,

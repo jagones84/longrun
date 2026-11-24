@@ -61,8 +61,8 @@ check("A1 prompt carries the tool-discovery contract in the canonical form",
 names = [t["name"] for t in registry.catalog()]
 check("A2 a `self` tool exists (self-knowledge)", "self" in names or "self.info" in names, str(names)[:140])
 check("A3 a `skills` tool exists", "skills" in names or "skills.list" in names, str(names)[:140])
-check("A4 the prompt maps the enabled NAMESPACES with counts, not their members",
-      "fs(" in sp and "shell(" in sp and "fs{" not in sp, "")
+check("A4 the prompt carries NO namespace counts, only the discovery recipe",
+      "fs(" not in sp and "shell(" not in sp and "self.tools {query:" in sp, "")
 
 # ---- B: skills known WITHOUT a discovery round-trip ----
 check("B1 skills policy present", "installed skill library" in sp, "")
@@ -70,8 +70,8 @@ sk = skills.list_skills()
 check("B2 at least one skill installed", len(sk) > 0, "count=%d" % len(sk))
 if sk:
     _cats = sorted({s["category"] for s in sk})
-    check("B3 prompt orients on the installed library (count + categories)",
-          str(len(sk)) in sp and _cats[0] in sp, "cats=%s" % _cats[:3])
+    check("B3 prompt states the library SIZE but names no category",
+          str(len(sk)) in sp and _cats[0] not in sp, "cats=%s" % _cats[:3])
     check("B4 skills block tells HOW to find one (search/list/read)",
           '"action":"search"' in skills.skills_context()
           and '"action":"read"' in skills.skills_context(), "")

@@ -53,8 +53,8 @@ NUCLEOUS_PROTECTED_REL = (
     ".trae",
     # JAG-510/C4: the surfaces the system prompt READS. Writing here is not a code
     # change but a persistent prompt injection, so they are part of the Nucleous.
-    # JAG-534: project rules moved to the data home, so `.longrun/` is only a
-    # LEGACY alias — kept protected in case such a folder reappears in a checkout.
+    # Project rules are workspace-local under `.longrun/rules/`; protect the
+    # prompt-bearing directory from matrix self-evolution.
     ".longrun",
     "docs",
     "Global_rules.md",
@@ -80,7 +80,7 @@ _DEFAULT_HANDOFF = (
     "## Recent Changes & Verification\n"
     "- Initialized Matrix layout.\n\n"
     "## Failed Attempts / Do Not Repeat\n"
-    "- Never attempt to modify Nucleous files (`src/longrun/`, `webui/`, `config/`, `Global_rules.md` / `Project_rules.md`).\n"
+    "- Never attempt to modify Nucleous files (`src/longrun/`, `webui/`, `config/`, project `.longrun/rules/`, `AGENTS.md`).\n"
 )
 
 _DEFAULT_MANUAL = (

@@ -1,8 +1,8 @@
 """CODEBASE index — PER WORKSPACE (JAG-400) — stdlib only.
 
 One sqlite DB per workspace PATH (``data/codebase/<hash>.db``), kept OUTSIDE the
-user's project in the app data dir. Scoped exactly like project rules: two
-different workspaces have two different, fully isolated indexes. Retrieval is
+user's project in the app data dir. Each workspace gets a different, fully isolated
+index. Retrieval is
 SQLite **FTS5** (``bm25()`` + ``snippet()``); vectors are optional (``model.embed``)
 and make retrieval hybrid (bm25 + cosine fused with RRF).
 """

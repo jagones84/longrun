@@ -81,6 +81,20 @@ check("D3 'no file' alone is not a request either",
       A.names_artifact("Summarise the ledger in one sentence; no file needed.") is False,
       A.names_artifact("Summarise the ledger in one sentence; no file needed."))
 
+# --- E: a QUESTION about a named file is not a deliverable (2026-11-24) -------
+# Live probe 20c7543386dd: the operator asked how many lines a `.py` has, the
+# `.py` target path matched, and the harness demanded a file the user never asked
+# for — the model had to call the READ-BACK a false positive in its own reply.
+check("E1 a question about an existing file is not a deliverable",
+      A.names_artifact("Quante righe ha il file src/longrun/memory/skills.py? "
+                       "Rispondi solo con il numero.") is False)
+check("E2 a read-and-explain request is not a deliverable",
+      A.names_artifact("read src/longrun/tools/diag.py and explain it") is False)
+check("E3 the same question WITH a produce verb is still a deliverable",
+      A.names_artifact("read out/report.md and fix the typos") is True)
+check("E4 an explicit path with no verb stays a deliverable",
+      A.names_artifact("out/report.csv with the quarterly numbers") is True)
+
 print("---")
 ok = sum(RESULTS)
 print("%d/%d PASS" % (ok, len(RESULTS)))

@@ -83,23 +83,24 @@ check("A3b prompt states that args is ONE JSON object",
       and '"args":{"path"' in tctx)
 check("A3b2 the prompt forbids a second nested args wrapper",
       "never nest another `args` object" in tctx)
-check("A3c the prompt maps the enabled NAMESPACES (with counts), not their members",
-      "fs(" in tctx and "shell(" in tctx and "memory(" in tctx and "fs{" not in tctx)
+check("A3c the prompt carries NO namespace/count catalogue",
+      "fs(" not in tctx and "shell(" not in tctx and "namespaces and how many" not in tctx)
 check("A3d the block is COMPACT and free of a member catalogue",
       # 2026-11-15: the registry gained the `harness` namespace (one line in the
       # counts), which is what pushed this to 4003. The cap guards against a
       # member catalogue (the old dump was >10k chars), so it carries headroom
       # for a few more namespaces rather than being a byte target.
       len(tctx) < 4200, "%d chars" % len(tctx))
-# 2026-11-18: a self-evolving harness FORGES tools (`learned_<meaning>_<hash>`),
-# and each 40–60-char namespace name used to enter the map on every turn. They
-# now collapse to one entry; the member is reached with `self.tools {query}`.
-_ns_labels = api_v02._namespace_labels({"fs": 3, "learned_a": 2, "learned_b": 1})
-check("A3d2 promoted `learned_*` namespaces collapse to ONE entry",
-      _ns_labels == ["fs(3)", "learned_*(3)"], _ns_labels)
+# 2026-11-24: the namespace map is GONE (a count catalogue is a list); the RECIPE
+# must still be there — `self.tools {query}` and the MCP gateway calls.
+check("A3d2 discovery stays a RECIPE (self.tools + MCP gateway), never a list",
+      "self.tools {query:...}" in tctx
+      and "pmcp__gateway.catalog_search" in tctx
+      and "learned_" not in tctx)
 _chat_tool_context = _server._tool_context()
-check("A3e chat assembly includes the discovery contract",
-      "Tool discovery" in _chat_tool_context and "shell(" in _chat_tool_context)
+check("A3e chat assembly includes the discovery recipe",
+      "Tool discovery" in _chat_tool_context
+      and "self.tools {query:" in _chat_tool_context)
 
 # ------------------------------------------------- A4 the schema lookup ----
 full = diag.tools_report(tool="fs.read")

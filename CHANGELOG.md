@@ -7,6 +7,25 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **The optional semantic backend is declared, not implied.** `requirements.txt` names the two extras
+  the hybrid search needs — `numpy>=1.26` and `sentence-transformers>=3.0` — with the
+  `local_files_only=True` contract stated in the same comment: `memory.semantic_query` and the hybrid
+  half of `skills.search` use all-MiniLM-L6-v2 (384 dims) when it is installed, and both stay purely
+  lexical with the same answer shape when it is not. Verified on this host: after the restart the
+  service loads the embedder (10 libtorch mappings) and `skills.search` takes the semantic path.
+- **One discovery search over every library; no catalogue in the prompt.** `self {action:"tools",
+  scope:"all", query:…}` answers ONE ranked list across native tools, MCP tools, skills and plugins —
+  each row names its `kind` and the call that opens it — while `scope:"skills"`/`"plugins"` narrows the
+  same search and the default (`scope:"tools"`) keeps the historical answer byte-identical. It is a
+  fan-out to the rankers that already own each library (`diag.tools_report`, `skills.search_skills`,
+  the plugin scan), never a second implementation (`diag.search_all`). `skills.search` becomes HYBRID:
+  the lexical score is blended with a cosine over each skill's title+description, used only when the
+  embedding backend is already warm (a search never pays the ~9 s model load) and forced by
+  `semantic:true`; a cold process stays purely lexical with the same shape. The prompt carries the
+  RECIPE only: the per-namespace count catalogue is gone and the skills section states the real
+  absolute path (`<repo>/skills/<category>/<name>/SKILL.md`) instead of the old, false
+  `<workspace>/skills` claim (also fixed in `Global_rules.md`). Locked by `v1301` (16/16), with
+  `v198`/`v510` re-pointed from "lists namespaces" to "carries a recipe, never a list".
 - **The harness cycle gains RRSI's pre-scoring regularizers (RSI R2).** Source: arXiv:2609.24972
   §3.2–§3.3 and Table 2 (the unregularized arm wins its evolve split 92.8 and loses transfer 40.3 vs
   43.6, at 3.80M vs 2.42M tokens/trial). New `harness/regularizer.py`: an **annealed edit budget**
@@ -173,6 +192,13 @@ All notable changes to Longrun are documented here. The format follows
   Locked by `v1250` (32/32); battery 953/953.
 
 ### Fixed
+- **A question ABOUT a file is no longer mistaken for a request to produce one.** Found by a LIVE
+  session (`20c7543386dd`): "Quante righe ha il file src/longrun/memory/skills.py?" matched
+  `plan/artifacts._TARGET_PATH`, so the harness opened the deliverable/READ-BACK check and the model
+  had to explain the false warning away inside its own answer. `names_artifact` now decides in this
+  order: a question or a read verb without a produce verb is NOT an artifact; an explicit target path
+  still wins over a negation (the previous C2 contract); then the negation; then artifact word +
+  produce verb. Locked by `v839` E1–E4 (12/12), with the same live shape re-run green.
 - **A skill bundle from a self-improvement proposal installs whole or not at all (RSI, I-1).**
   `improve.decide(approve)` validated and installed a skill bundle one artifact per loop iteration, so
   a failure on the second left the first live while the proposal stayed `pending` — a half-installed

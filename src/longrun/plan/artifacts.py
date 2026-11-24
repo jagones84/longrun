@@ -735,7 +735,19 @@ _ARTIFACT_WORDS = ("file", "files", "document", "report", "workbook", "spreadshe
 #: argued with the floor instead of answering, and 27 turns were spent on nothing).
 _PRODUCE_VERBS = ("write", "create", "produce", "generate", "save", "export", "make",
                   "build", "prepare", "draft", "compose", "assemble", "fill in",
-                  "fill out", "update the", "edit the", "convert", "compile", "render")
+                  "fill out", "update the", "edit the", "convert", "compile", "render",
+                  # 2026-11-24: verbs that IMPLY a write — without them "review
+                  # out/report.md and fix the typos" would read as a question.
+                  "fix", "refactor", "rewrite", "apply")
+#: 2026-11-24 (live probe 20c7543386dd): "How many lines does
+#: src/longrun/memory/skills.py have?" matched the `.py` TARGET PATH and the harness
+#: demanded a deliverable the user never asked for; the model had to call the
+#: warning a false positive in its own reply. A turn that READS a named file is a
+#: question about it, not production — unless a produce verb is also present.
+_READ_VERBS = ("read", "how many", "count", "list", "show", "inspect", "open",
+               "summar", "explain", "describe", "review", "look at", "tell me",
+               "leggi", "quante", "quanti", "conta", "mostra", "elenca", "spiega",
+               "riassumi", "descrivi", "dimmi")
 #: An explicit target (`out/report.csv`, `notes.md`) is a deliverable on its own.
 #: It must carry a FILE EXTENSION: the first version accepted any `a/b`, which made
 #: the phrase "a comma separated list of numbers and/or strings" (in every GAIA
@@ -773,19 +785,27 @@ def _artifact_negated(text):
 def names_artifact(request):
     """True when the request asks to PRODUCE a file (so writing nothing is a failure)."""
     text = " ".join(str(request or "").lower().split())
-    if _TARGET_PATH.search(text):
-        return True
     # 2026-11-06: "do not write any file: the answer belongs in the chat" matched
     # `write` (a produce verb) + `file` (an artifact word), so the read-back
     # demanded a deliverable the user had just FORBIDDEN. The model spent its
     # closing round arguing with the harness (session bfce1004dd85). A negated
     # instruction is not a request for a file — but only when the negation is not
     # about a DESTINATION ("do not write to /tmp" still leaves the deliverable).
+    produce = any(v in text for v in _PRODUCE_VERBS)
+    # 2026-11-24: a QUESTION about a named file ("how many lines does x.py have?",
+    # "read y.md and explain it") is not a request to produce one — the path alone
+    # is not a deliverable when nothing asks to write.
+    if not produce and ("?" in text or any(v in text for v in _READ_VERBS)):
+        return False
+    # An explicit target still wins over a negation ("do not write elsewhere;
+    # produce out/report.md"), as it did before the read-question guard existed.
+    if _TARGET_PATH.search(text):
+        return True
     if _artifact_negated(text):
         return False
     if not any(w in text for w in _ARTIFACT_WORDS):
         return False
-    return any(v in text for v in _PRODUCE_VERBS)
+    return produce
 
 
 def nothing_written(request, workspace="", since=0.0, exclude=()):

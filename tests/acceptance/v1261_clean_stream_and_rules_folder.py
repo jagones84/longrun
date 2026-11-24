@@ -12,7 +12,7 @@ come fa trae … nel RH panel … hyperlink che me li apre nell'editor"*.
   B  a date-only stamp on the LEFT of user messages and agent answers only
   C  a Thought row keeps the transcript rhythm (no 16px message gap)
   D  a written file keeps its path in the persisted card (valid JSON under the cap)
-  E  every `.md` of the project rules folder is loaded and listed as a link
+  E  only workspace `.longrun/rules/*.md` plus root AGENTS.md are project sources
 
 Deterministic and offline. Run: python3 tests/acceptance/v1261_clean_stream_and_rules_folder.py
 """
@@ -106,18 +106,31 @@ check("D3 a real persist keeps the path the UI names the file with",
       json.loads(card["args"]).get("path") == ".agent/x/Written file.md")
 
 # ---- E: the rules FOLDER is loaded whole -----------------------------------
-check("E1 the workspace rules folder is discovered",
-      'return os.path.join(ws or get_workspace(), ".trae", "rules")' in RULES
+check("E1 the only project rules folder is workspace/.longrun/rules",
+      'os.path.join(os.path.realpath(ws or get_workspace()), ".longrun", "rules")' in RULES
+      and "return [workspace_rules_dir(ws)]" in RULES
       and "extra_dirs=project_rules_dirs(ws)" in RULES)
-check("E2 folders load even without the native Project_rules.md",
-      "# folders load even when the native file is absent" in RULES)
-ws_real = REPO
+check("E2 the native Project_rules.md is inside the allowed rules folder",
+      "return os.path.join(workspace_rules_dir(ws), \"Project_rules.md\")" in RULES)
+ws_real = tempfile.mkdtemp(prefix="lr-v1261-e-")
+_rules_dir = os.path.join(ws_real, ".longrun", "rules")
+_trae_dir = os.path.join(ws_real, ".trae", "rules")
+os.makedirs(_rules_dir, exist_ok=True)
+os.makedirs(_trae_dir, exist_ok=True)
+for _path, _text in (
+        (os.path.join(_rules_dir, "Project_rules.md"), "LOCAL NATIVE RULE\n"),
+        (os.path.join(_rules_dir, "git-commit-message.md"), "LOCAL FOLDER RULE\n"),
+        (os.path.join(_trae_dir, "forbidden.md"), "FORBIDDEN TRAE RULE\n")):
+    with open(_path, "w", encoding="utf-8") as f:
+        f.write(_text)
 from longrun.memory import rules  # noqa: E402
 
 col = rules.collect(ws=ws_real)
 names = [os.path.basename(p) for p in col["project"]["files"]]
-check("E3 every .md of .trae/rules is in the loaded set",
-      "project_rules.md" in names and "git-commit-message.md" in names, names)
+check("E3 every allowed local rule is loaded and .trae rules are excluded",
+      "Project_rules.md" in names and "git-commit-message.md" in names
+      and all("FORBIDDEN" not in x for x in col["project"]["text"].splitlines())
+      and os.path.join(_trae_dir, "forbidden.md") not in col["project"]["files"], names)
 block = rules.rules_prompt_block(ws=ws_real)
 check("E4 the composed block holds the whole corpus (no mid-file cut)",
       not block.endswith("[truncated]") and all(n in block for n in names))
@@ -138,31 +151,28 @@ check("E7 the RH panel renders the file LINKS and drops the single editable text
 from unittest import mock  # noqa: E402
 
 _tmp = tempfile.mkdtemp(prefix="lr-v1261-f-")
-_fd = os.path.join(_tmp, ".trae", "rules")
+_fd = os.path.join(_tmp, ".longrun", "rules")
 os.makedirs(_fd, exist_ok=True)
 _one = os.path.join(_fd, "one.md")
 with open(_one, "w", encoding="utf-8") as f:
     f.write("FOLDER RULE\n")
-_native = os.path.join(_tmp, "native_project.md")
+_native = os.path.join(_fd, "Project_rules.md")
 with open(_native, "w", encoding="utf-8") as f:
     f.write("NATIVE RULE\n")
-with mock.patch.object(rules, "project_rules_path", lambda ws=None: _native):
-    _st = rules.status(ws=_tmp)
+_st = rules.status(ws=_tmp)
 check("F1 file_text is the native file only, while text is the composed corpus",
       _st["project"]["file_text"] == "NATIVE RULE\n"
       and "FOLDER RULE" in _st["project"]["text"]
       and _st["project"]["file_text"] != _st["project"]["text"])
 with mock.patch.object(rules, "always_apply_map",
-                       lambda ws=None: {os.path.abspath(_one): False}), \
-        mock.patch.object(rules, "project_rules_path", lambda ws=None: _native):
+                       lambda ws=None: {os.path.abspath(_one): False}):
     _col = rules.collect(ws=_tmp)
 check("F2 a file switched OFF leaves the prompt (and the loaded list)",
       "FOLDER RULE" not in _col["project"]["text"]
       and "NATIVE RULE" in _col["project"]["text"]
       and all(not p.endswith("/one.md") for p in _col["project"]["files"]))
 _state = tempfile.mkdtemp(prefix="lr-v1261-state-")
-with mock.patch.object(rules, "project_dir", lambda ws=None: _state), \
-        mock.patch.object(rules, "project_rules_path", lambda ws=None: _native):
+with mock.patch.object(rules, "project_dir", lambda ws=None: _state):
     _r1 = rules.set_always_apply(_one, False, ws=_tmp)
     _r2 = rules.set_always_apply("/etc/passwd", False, ws=_tmp)
     _st2 = rules.status(ws=_tmp)
@@ -178,12 +188,16 @@ check("F4 every rule row is a link plus its own always-apply checkbox",
       and "always apply" in ROWS and "always_apply: chk.checked" in ROWS
       and 'api("POST", "/api/rules"' in ROWS)
 LOAD = between(UI, "async function loadRules() {", "async function saveRules(")
-check("F5 the project card is ONE clickable folder path and has NO project textarea",
-      'data-rulesdir="' in LOAD and "openRulesDir(_dir)" in LOAD
+# The project card renders the allowed workspace-local rules folder from `p.dirs`
+# as a clickable path, keeping the panel aligned with the resolver.
+check("F5 the project card renders EVERY loaded folder as a clickable path, no textarea",
+      'data-rulesdir="' in LOAD and "p.dirs" in LOAD
+      and "openRulesDir(b.dataset.rulesdir)" in LOAD
       and "rulesProjectText" not in UI and "rulesFiles" not in UI)
-RR = between(UI, "function _rulesRefRow(kind, label, src) {", "function _rulesRow(")
-check("F6 the RH panel shows one folder link and drops the green footer sentence",
-      'data-rulesdir="' in RR and "every .md is loaded in this session" not in RR
+RR = between(UI, "function _rulesRefRow(kind, label, src, wsBase) {", "function _rulesRow(")
+check("F6 the RH panel lists every loaded folder and each row names its own folder",
+      'data-rulesdir="' in RR and "src.dirs" in RR and "rfile-sub" in RR
+      and "every .md is loaded in this session" not in RR
       and "folder · " not in RR)
 EDITOR = src("webui", "assets", "editor.js")
 check("F7 the folder link OPENS the dock and reveals that folder (closed / phone too)",

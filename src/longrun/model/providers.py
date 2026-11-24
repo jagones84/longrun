@@ -861,6 +861,21 @@ _OPENROUTER_FAIL_TS = [0.0]   # last failed fetch (avoid retrying on every turn)
 _CTX_TTL = 6 * 3600
 
 
+def _offline():
+    """True when this process promised not to touch the network (`LONGRUN_OFFLINE`).
+
+    2026-11-24: the context meter resolves a model's window from LIVE vendor
+    metadata (`_fetch_openrouter_contexts`) or a local router roster
+    (`_fetch_local_contexts`). A deterministic/offline run must never open a
+    socket from either — the same total promise `rllm.router_models` and the MCP
+    client (A54 round 105) already honour. Without this, the meter's new
+    model-aware budget reached openrouter.ai from a process that promised no
+    network (v693 caught it).
+    """
+    return str(os.environ.get("LONGRUN_OFFLINE") or "").strip().lower() \
+        in ("1", "true", "yes", "on")
+
+
 def _normalise_modalities(raw):
     """Flatten OpenRouter's two modality spellings into a lowercase list.
 
@@ -886,6 +901,8 @@ def _fetch_openrouter_contexts():
     """
     m = {}
     modal = {}
+    if _offline():
+        return _OPENROUTER_CTX["map"] or {}
     try:
         import urllib.request
         req = urllib.request.Request("https://openrouter.ai/api/v1/models",
@@ -974,7 +991,7 @@ def _fetch_local_contexts(p):
     """
     m = {}
     base = (p.get("base_url") or "").rstrip("/")
-    if not base:
+    if not base or _offline():
         return m
     try:
         import urllib.request

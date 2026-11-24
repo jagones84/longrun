@@ -32,7 +32,7 @@ from longrun.plan import verify as plan_verify
 from longrun.harness import shellread
 from longrun.core import server
 from longrun.core.events import publish
-from longrun.util.paths import DATA_DIR, SESSIONS_DIR, WEBUI_DIR
+from longrun.util.paths import DATA_DIR, SESSIONS_DIR
 from longrun.util.paths import REPO_ROOT as REPO
 from longrun.model.rllm import ROUTER_BASE, _router_stream, context_budget, default_model
 from longrun.model.rllm import model_supports_vision
@@ -134,7 +134,8 @@ def system_prompt():
 RULES_POLICY = (
     "## Rules (global + project)\n"
     "Your standing rules are FILES on disk (paths given below): a GLOBAL file for "
-    "every project and a PROJECT file for the current workspace, each also "
+    "every project and a PROJECT file for the current workspace "
+    "(`<workspace>/.longrun/rules/`), each also "
     "loading its scope's AGENTS.md (additive, not a fallback). GLOBAL rules come "
     "from your user config; PROJECT rules override global ones on conflict. "
     "Follow them; if a rule conflicts with the "
@@ -213,9 +214,8 @@ SKILLS_POLICY = (
     "Skills: you have an installed skill library — its size, categories and the "
     "exact calls are in the skills section below. Before solving a task, SCAN it "
     'with `skills.search` ({"action":"search","query":"..."}) (the ranking reads each skill\'s '
-    "instructions, not just its title): if a skill matches (e.g. "
-    "using-superpowers, brainstorming, writing-plans, tdd, systematic-debugging, "
-    "research, mcp-builder, code-review), LOAD it with `skills.read` / LOAD it with the `skills` tool "
+    "instructions, not just its title): if a skill matches, LOAD it with "
+    '`skills.read` / LOAD it with the `skills` tool '
     '({\"action\":\"read\",\"name\":\"<name>\"}) and FOLLOW its instructions '
     'step by step instead of improvising. Use `skills.list` ({\"action\":\"list\"}) for every '
     "name with descriptions."

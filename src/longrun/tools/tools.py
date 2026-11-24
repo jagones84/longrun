@@ -1968,7 +1968,8 @@ def _skills(args, run_id):
             limit = int(args.get("limit") or 10)
         except (TypeError, ValueError):
             limit = 10
-        hits = skills_mod.search_skills(q, limit=limit)
+        hits = skills_mod.search_skills(q, limit=limit,
+                                        semantic=args.get("semantic"))
         # RSI-G-2: a search SHOWS these skills (injected, not used) — the other
         # half of "opened != shown" in the shared attribution ledger.
         skills_mod.note_retrieved([h.get("name") for h in hits])
@@ -2252,8 +2253,21 @@ def _self(args, run_id):
         elif action in ("context", "ctx"):
             info["context"] = diag_mod.context((args or {}).get("session") or run_id)
         elif action in ("tools", "tooling"):
-            info["tools"] = diag_mod.tools_report(tool=(args or {}).get("tool"),
-                                                  query=(args or {}).get("query"))
+            # 2026-11-24 (operator): ONE search over every discovery surface.
+            # `scope` defaults to "tools" (the historical answer); "all" fans out
+            # to tools + MCP + skills + plugins, "skills"/"plugins" narrow it.
+            _scope = str((args or {}).get("scope") or "tools").strip().lower()
+            _q = (args or {}).get("query")
+            _lim = (args or {}).get("limit") or 10
+            if _scope in ("all", "any", "everything"):
+                info["tools"] = diag_mod.search_all(_q, limit=_lim)
+            elif _scope == "skills":
+                info["tools"] = diag_mod.search_all(_q, limit=_lim, kinds=("skill",))
+            elif _scope == "plugins":
+                info["tools"] = diag_mod.search_all(_q, limit=_lim, kinds=("plugin",))
+            else:
+                info["tools"] = diag_mod.tools_report(tool=(args or {}).get("tool"),
+                                                      query=_q)
         elif action in ("diagnostics", "settings", "config-check"):
             info["diagnostics"] = diag_mod.settings_report(
                 session=(args or {}).get("session") or run_id,

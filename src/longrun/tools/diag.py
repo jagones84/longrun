@@ -579,6 +579,88 @@ def tools_report(tool=None, query=None) -> dict:
     return out
 
 
+def search_all(query, limit=10, kinds=None) -> dict:
+    """ONE ranked answer across tools + MCP + skills + plugins (2026-11-24).
+
+    The operator's rule: discovery must be able to SEARCH every library without
+    listing any of them in the prompt. Each kind is ranked by the ranker that
+    already OWNS it — `tools_report` for native tools, the registry's external
+    (MCP) half, `skills.search_skills` (lexical + semantic when warm) and the
+    plugin scan — so this function is a fan-out, never a second implementation.
+
+    Scores are NOT comparable across kinds (a tool's word score and a skill's
+    cosine measure different things), so the merged list is ordered by each
+    kind's own rank, best-first, and every row names its `kind`. The model then
+    opens the ONE hit it wants with the `where` call.
+    """
+    q = str(query or "").strip()
+    if not q:
+        return {"ok": False, "error": "query required for a search",
+                "exit_code": 64}
+    lim = max(1, int(limit))
+    want = set(kinds or ("tool", "mcp", "skill", "plugin"))
+    rows = []
+
+    def _add(kind, name, rank, description, where):
+        rows.append({"kind": kind, "name": name, "rank": rank,
+                     "description": (description or "").strip()[:160],
+                     "where": where})
+
+    # ---- tools: native + external (MCP), ranked by the ONE discovery surface ----
+    tr = tools_report(query=q) or {}
+    idx = tr.get("tools") or {}
+    if "tool" in want:
+        for i, n in enumerate((tr.get("native") or [])[:lim]):
+            _add("tool", n, i + 1, (idx.get(n) or {}).get("description"),
+                 "self.tools {tool:'%s'}" % n)
+    if "mcp" in want:
+        for i, n in enumerate((tr.get("external") or [])[:lim]):
+            _add("mcp", n, i + 1, (idx.get(n) or {}).get("description"),
+                 "call %s" % n)
+
+    # ---- skills ----
+    if "skill" in want:
+        try:
+            from longrun.memory import skills as _skills
+            for i, h in enumerate(_skills.search_skills(q, limit=lim) or []):
+                _add("skill", h.get("name"), i + 1, h.get("description"),
+                     "skills.read {name:'%s'}" % h.get("name"))
+        except Exception:  # noqa: BLE001 — one library failing must not kill the search
+            pass
+
+    # ---- plugins (market scan: names, never a prompt catalogue) ----
+    if "plugin" in want:
+        try:
+            import re
+            from longrun.core import market_plugins as _mp
+            words = set(re.findall(r"[a-z0-9]{3,}", q.lower()))
+            hits = []
+            for pkg in ((_mp.scan() or {}).get("packages") or []):
+                hay = " ".join(str(pkg.get(k) or "") for k in
+                               ("name", "title", "description", "category")).lower()
+                n = sum(1 for w in words if w in hay)
+                if n:
+                    hits.append((n, pkg))
+            hits.sort(key=lambda x: (-x[0], str(x[1].get("name") or "")))
+            for i, (_n, pkg) in enumerate(hits[:lim]):
+                _add("plugin", pkg.get("name") or pkg.get("path"), i + 1,
+                     pkg.get("description"), pkg.get("path"))
+        except Exception:  # noqa: BLE001
+            pass
+
+    # Best of EACH kind first: rank 1 of every library outranks rank 2 of any.
+    rows.sort(key=lambda r: (r["rank"], r["kind"], str(r["name"])))
+    kinds_all = ("tool", "mcp", "skill", "plugin")
+    out = {"ok": True, "query": q, "count": len(rows),
+           "counts": {k: sum(1 for r in rows if r["kind"] == k) for k in kinds_all
+                      if k in want},
+           "results": rows}
+    if not rows:
+        out["hint"] = ("nothing matched — try fewer/different words; the tools "
+                       "index alone is still readable with self.tools {}")
+    return out
+
+
 def namespaces(allow=None) -> dict:
     """Which tool NAMESPACES exist, how many tools each exposes, and who admits them.
 

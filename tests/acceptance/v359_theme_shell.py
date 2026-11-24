@@ -38,21 +38,19 @@ check("A3 the harness/tools cards use tokens, not raw slate hexes",
       "#1e293b" not in HTML and "#0b1020" not in HTML, "")
 
 # --- B: the topbar indicators are graphics -----------------------------------
-check("B1 the ctx meter carries a ring svg + a % readout",
-      # 2026-11-16: the hot class is interpolated ("pill meter" + hot), so the pin reads
-      # the two parts instead of one frozen literal.
-      'class="pill meter' in HTML and 'id="ctx-meter"' in HTML and 'class="mring"' in HTML
-      and 'id="ctxRing"' in HTML and 'id="ctxPct"' in HTML, "")
-check("B2 the ctx JS drives the ring and the 70% red threshold",
-      'pill.className = "pill meter" + (pct >= 70 ? " hot" : "")' in HTML
-      and "ring.style.strokeDashoffset = String(100 - Math.max(0, Math.min(100, pct)))" in HTML, "")
+check("B1 the composer context control is a ring; the inspector shows its percentage",
+      'class="cmp-ctx" id="cmpCtx"' in HTML and 'class="mring"' in HTML
+      and '<span id="ctxPct" class="ctxpct">' in HTML, "")
+check("B2 the composer ring uses model-aware 50% and 70% colour bands",
+      'const lvl = p >= 70 ? "lvl-hot" : (p >= 50 ? "lvl-warn" : "lvl-ok")' in HTML
+      and "function _setCmpRing(pct)" in HTML
+      and "function _ringCircles(attr, pct)" in HTML, "")
 check("B3 the ctx CSS turns the ring AND the % red when hot",
       ".pill.meter.hot .mfill { stroke: var(--err); }" in HTML
       and ".pill.meter.hot b { color: var(--err); }" in HTML, "")
-check("B4 the ctx tooltip carries the full used/budget detail",
-      # JAG-424g: the ring moved off the panel header onto the active session ROW, so the
-      # detail now flows through the shared _ctxTitle (still "used / budget · %").
-      "_ctxTitle = d.detail || d.short" in HTML, "")
+check("B4 each rail tooltip carries that session's used/budget detail",
+      '"context: " + pct + "% of the budget ("' in HTML
+      and "s.ctx_tokens" in HTML and "s.ctx_budget" in HTML, "")
 check("B5 the sandbox pill is a status dot + one short word",
       'class="pill sbox" id="sbxPill"' in HTML and 'class="sdot" id="sbxDot"' in HTML
       and 'id="sbxTxt"' in HTML, "")
@@ -75,4 +73,3 @@ print("---")
 ok = sum(results)
 print("%d/%d PASS" % (ok, len(results)))
 sys.exit(0 if ok == len(results) else 1)
-

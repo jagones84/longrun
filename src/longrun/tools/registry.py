@@ -288,7 +288,10 @@ _LEGACY_SCHEMAS = {
                         "action=tools: TOOL DISCOVERY — every enabled tool with its "
                         "one-line description; add `query` to filter, or `tool` to get "
                         "that tool's FULL input schema (properties, types, defaults, "
-                        "required). ALWAYS read the schema before the first use of a "
+                        "required). `scope` widens the SAME search: scope=all answers "
+                        "tools + MCP + skills + plugins in ONE ranked list, "
+                        "scope=skills / scope=plugins narrow it to one library. "
+                        "ALWAYS read the schema before the first use of a "
                         "tool you have not called in this session. "
                         "action=sj: this session's Session Jobs (SJ) — the "
                         "dependency-ordered subagents a `batch` action spawned, with "
@@ -337,6 +340,12 @@ _LEGACY_SCHEMAS = {
             "query": {"type": "string",
                       "description": ("action=tools: substring filter over name + "
                                       "description, e.g. 'pdf' or 'read'")},
+            "scope": {"type": "string",
+                      "enum": ["tools", "skills", "plugins", "all"],
+                      "description": ("action=tools: which library to search — "
+                                      "'tools' (default: native + MCP), 'skills', "
+                                      "'plugins', or 'all' for ONE ranked answer "
+                                      "across every library")},
         },
     },
     "reconcile": {
@@ -370,6 +379,12 @@ _LEGACY_SCHEMAS = {
             "name": {"type": "string", "description": "skill name (for action=read)"},
             "query": {"type": "string", "description": "keywords to find matching skills (action=search)"},
             "limit": {"type": "integer", "default": 10, "description": "max skills to return (action=search)"},
+            "semantic": {"type": "boolean",
+                         "description": ("action=search: true adds the semantic half "
+                                         "(cosine over each skill's title+description); "
+                                         "omit for auto — it is used only when the "
+                                         "embedding backend is already warm, so a "
+                                         "search never pays the model load")},
             "confirm": {"type": "boolean", "default": False,
                         "description": ("action=retire: actually move the never-opened "
                                         "skills to skills/_retired/ (default: dry run, "
@@ -1079,7 +1094,7 @@ _SUBTOOL_FIELDS = {
         "sj": ["session", "job"], "trace": ["session"],
     },
     "skills": {
-        "list": [], "search": ["query", "limit"], "read": ["name"],
+        "list": [], "search": ["query", "limit", "semantic"], "read": ["name"],
         "audit": [], "retire": ["days", "confirm"],
     },
     "index": {
@@ -1395,7 +1410,9 @@ _SUBTOOL_GUIDANCE = {
         "Create ONE proposal. `scope` must be exactly `skill`, `project` or "
         "`global`; `content` must state WHAT the proposal accomplishes — the "
         "purpose, the steps and the observable outcome. A bare tool sequence "
-        "is not a proposal: name what it does first. For a skill, pass `path` "
+        "is not a proposal: name what it does first. A `project` proposal "
+        "appends to `<workspace>/.longrun/rules/Project_rules.md`, the only "
+        "project rule file. For a skill, pass `path` "
         "with the mined draft folder so approval installs THAT draft."
     ),
     # v656: the miner writes drafts; the AGENT is the one who decides whether a

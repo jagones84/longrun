@@ -1172,65 +1172,25 @@ AGENT_PROMPT_V2 = (
 )
 
 
-_GATEWAY_PREFIX = "pmcp__gateway."
-# The gateway's DISCOVERY + CALL interface. These three stay listed with their
-# full schema; every OTHER `pmcp__gateway.*` tool (auth/provision/tasks/config/…)
-# is a management helper the model reaches through them.
-_GATEWAY_KEEP = ("catalog_search", "describe", "invoke")
-
-
-def _namespace_labels(counts):
-    """`ns(n)` labels for the discovery block, with promoted tools collapsed.
-
-    A self-evolving harness FORGES tools: each one is a `learned_<meaning>_<hash>`
-    namespace whose name is 40–60 chars, so the namespace map grew with every
-    forge (measured 2026-11-18: four of them, ~240 chars, and the block had just
-    crossed its 4200-char guard). They collapse to ONE `learned_*(n)` entry —
-    the block already says a namespace is a PREFIX and the member is found with
-    `self.tools {query:...}`, which matches `learned` in every such name.
-    """
-    labels = ["%s(%d)" % (ns, c) for ns, c in sorted(counts.items())
-              if not ns.startswith("learned_")]
-    forged = [(ns, c) for ns, c in counts.items() if ns.startswith("learned_")]
-    if forged:
-        labels.append("learned_*(%d)" % sum(c for _ns, c in forged))
-    return labels
+# 2026-11-24: the namespace catalogue (`_GATEWAY_PREFIX`/`_GATEWAY_KEEP`/
+# `_namespace_labels`) is gone with the prompt LIST. MCP discovery is stated as the
+# gateway's own calls (catalog_search -> describe -> invoke), never as a count map.
 
 
 def tool_context():
-    """Render the tool DISCOVERY contract + a NAMESPACE map for the prompt.
+    """Render the tool DISCOVERY contract (recipe) for the prompt.
 
-    JAG-513 removed the registry dump from the prompt; JAG-513b (2026-11-01) removes
-    the member list too. The prompt used to name every enabled tool (`fs{a,b,c…}`),
-    which is a static enumeration of a registry that changes with the config: it
-    grows until it is unreadable and it teaches the model to pick a name from a
-    list instead of reading that tool's contract. Frontier harnesses keep the
-    prompt to the PROTOCOL and let the model SEARCH (progressive disclosure), so
-    the prompt now answers only:
+    JAG-513 removed the registry dump from the prompt; JAG-513b (2026-11-01) removed
+    the member list too. The prompt states the PROTOCOL and the RECIPE and lets the
+    model SEARCH (progressive disclosure):
       * the protocol (args is one JSON object, never positional/`key=value`),
       * HOW to list / search / read a schema (`self.tools`),
-      * WHICH namespaces exist and how many tools each holds — enough to aim a
-        search, never a catalogue,
       * plus (2026-11-07) the REQUIRED args of the five core tools, because a
         lookup for `fs.write`'s arguments was a round-trip on almost every task.
+    2026-11-24 (operator): the discovery RECIPE stays — only the LIST went. The
+    per-namespace COUNT line was a catalogue that grows with the config and goes
+    stale; MCP tools are named by their gateway calls, never enumerated.
     """
-    counts = {}
-    gw_collapsed = 0
-    disabled = 0
-    for t in registry.catalog():
-        if not t["enabled"]:
-            disabled += 1
-            continue
-        nm = t["name"]
-        if nm.startswith(_GATEWAY_PREFIX):
-            if nm[len(_GATEWAY_PREFIX):] not in _GATEWAY_KEEP:
-                gw_collapsed += 1
-                continue
-            counts[_GATEWAY_PREFIX.rstrip(".")] = counts.get(
-                _GATEWAY_PREFIX.rstrip("."), 0) + 1
-            continue
-        ns = nm.split("__", 1)[0] if "__" in nm else nm.split(".", 1)[0]
-        counts[ns] = counts.get(ns, 0) + 1
     lines = [
         "## Tool discovery — read before you call",
         "The tools are NOT listed here on purpose: the registry depends on this "
@@ -1245,6 +1205,12 @@ def tool_context():
         "property, its type, its default, which ones are REQUIRED, and a valid "
         "example call. Read it BEFORE the first call of a tool you have not used in "
         "this session — the schema is authoritative, your memory is not.",
+        # 2026-11-24 (operator): ONE search across every library — tools, MCP,
+        # skills and plugins — without listing any of them here.
+        '- `self.tools {query:"<words>", scope:"all"}` → ONE ranked answer across '
+        "tools, MCP, skills and plugins (each row names its `kind` and the call "
+        'that opens it); scope:"skills" or scope:"plugins" narrows the same search '
+        "to one library.",
         # 2026-11-07: the FIVE core tools are stable enough to spell out here, and
         # not doing so cost a lookup round-trip on almost every task (ladder r1:
         # `self.tools {query:"write file"}` before a two-byte fs.write; LHB: 14 such
@@ -1296,20 +1262,15 @@ def tool_context():
         "`## Input from dependencies` (use `input_from:\"<label>\"` to take just "
         "one dependency's output). Never invent `deps` you do not need: items with "
         "no `deps` start together, which is faster.",
-        "Enabled namespaces and how many tools each holds. A NAMESPACE IS NOT A "
-        "TOOL — `grep` is only a PREFIX and is not callable; the callable name is "
-        "a MEMBER (`grep.search`). Resolve the member with `self.tools "
-        "{query:...}` before calling:",
-        "  " + " ".join(_namespace_labels(counts)),
+        # 2026-11-24 (operator): the per-namespace COUNT list is gone — a catalogue
+        # of what exists is a list, and a list goes stale. Discovery stays a RECIPE.
+        "A NAMESPACE IS NOT A TOOL — `grep` is only a PREFIX and is not callable; "
+        "the callable name is a MEMBER (`grep.search`). Resolve the member with "
+        "`self.tools {query:...}` before calling.",
+        "Managed MCP tools are reached through the gateway's own discovery calls: "
+        "`pmcp__gateway.catalog_search` -> `pmcp__gateway.describe` -> "
+        "`pmcp__gateway.invoke`.",
     ]
-    if gw_collapsed:
-        lines.append("  (+ %d more `%s*` tools — reach them via "
-                     "`%scatalog_search` -> `describe` -> `invoke`)"
-                     % (gw_collapsed, _GATEWAY_PREFIX, _GATEWAY_PREFIX))
-    if disabled:
-        lines.append("  (%d tool(s) present in the registry are DISABLED by "
-                     "policy and omitted above; enable them in Settings -> "
-                     "Tools & approvals or config/tools.yaml.)" % disabled)
     return "\n".join(lines)
 
 

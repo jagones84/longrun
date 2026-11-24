@@ -236,8 +236,8 @@ MATRIX_DOT_DIR = os.environ.get("LONGRUN_MATRIX_DOT") or os.path.join(HOME_DIR, 
 # The default root for new workspaces (user PROJECTS, not app data).
 WORKSPACES_DIR = os.environ.get("LONGRUN_WORKSPACES_ROOT") or \
     os.path.join(HOME_DIR, "workspaces")
-# JAG-534: per-workspace PROJECT state (Project_rules.md, rules/, prompt.d/).
-# Lives beside the codebase index, under DATA_DIR, so a home move carries it.
+# JAG-534: per-workspace runtime state (prompt.d/ and rules_state.json).
+# Project instruction files themselves live in <workspace>/.longrun/rules/.
 PROJECTS_DIR = os.environ.get("LONGRUN_PROJECTS_DIR") or os.path.join(DATA_DIR, "projects")
 
 # v661: the ceiling used when the operator does not set `LONGRUN_ATTACH_MAX`.
@@ -267,13 +267,12 @@ def attach_max_bytes():
 
 
 def workspace_state_dir(ws):
-    """Per-workspace harness state, OUTSIDE the workspace itself.
+    """Per-workspace runtime state, outside the workspace itself.
 
-    Project rules and prompt addenda used to live in ``<ws>/.longrun``, which
-    meant the harness wrote a dot-folder into every checkout it touched (the
-    harness repo included). They now live in ``<data>/projects/<slug>-<sha8>/``
-    — exactly like the per-workspace codebase index. A legacy ``<ws>/.longrun``
-    is MOVED here the first time that workspace is used, so nothing is lost.
+    Project instructions are intentionally NOT harness state: `<ws>/.longrun/rules/`
+    is operator-owned and stays in the workspace. The root `Project_rules.md` is
+    also left untouched as legacy data; only the rules folder and root AGENTS.md
+    are instruction sources. Other legacy `.longrun/` entries are adopted here.
     """
     root = os.path.abspath(os.path.expanduser(str(ws or os.getcwd())))
     name = os.path.basename(root.rstrip(os.sep)) or "workspace"
@@ -282,16 +281,14 @@ def workspace_state_dir(ws):
         safe or "workspace", hashlib.sha1(root.encode("utf-8")).hexdigest()[:8]))
     legacy = os.path.join(root, ".longrun")
     if os.path.isdir(legacy):
-        # v1051: `documents/` is the operator's deliverable area (plans/specs),
-        # not harness state — it stays in the workspace. Every other entry is
-        # adopted into the data home, one at a time: a legacy state file is
-        # never lost, and a second call retries anything a failed move left
-        # behind. `dest` existing no longer stops the adoption.
+        # `documents/` is deliverable output and `rules/` is the one allowed
+        # project-instruction source; neither is external harness state. Other
+        # entries are adopted one at a time, so a second call retries failures.
         try:
             os.makedirs(PROJECTS_DIR, exist_ok=True)
             os.makedirs(dest, exist_ok=True)
             for entry in os.listdir(legacy):
-                if entry == "documents":
+                if entry in ("documents", "rules", "Project_rules.md"):
                     continue
                 src = os.path.join(legacy, entry)
                 dst = os.path.join(dest, entry)
@@ -302,7 +299,7 @@ def workspace_state_dir(ws):
                 except OSError:
                     continue
             try:
-                os.rmdir(legacy)      # succeeds only when `documents/` is absent
+                os.rmdir(legacy)      # succeeds only when preserved entries are absent
             except OSError:
                 pass
         except OSError:
