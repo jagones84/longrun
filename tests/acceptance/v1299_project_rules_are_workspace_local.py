@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""v1299 — project rules come only from workspace/.longrun/rules and root AGENTS.md.
+"""v1299 — the rules layering: GLOBAL harness default + user, PROJECT workspace-only.
 
-Operator clarification (2026-11-24): project rules are allowed ONLY in the
-selected workspace's `.longrun/rules/`; the only additional project instruction
-file is `AGENTS.md` directly at that workspace root. Do not load project rules
-from `.trae/rules` or Longrun's external data home.
+Operator clarification (2026-11-24): `AGENTS.md` is NOT a project file — it is the
+HARNESS DEFAULT general rule (`<repo>/AGENTS.md`, applied to every project). The
+GLOBAL scope is that default followed by the user's `Global_rules.md`, which is
+OPTIONAL: its normal state is "does not exist" and the operator creates it. PROJECT
+rules are allowed ONLY in the selected workspace's `.longrun/rules/`; nothing is
+read from `.trae/rules`, a workspace-root `AGENTS.md`, or Longrun's data home.
 
 The workspace state resolver must also leave `.longrun/rules/` in place while it
 migrates unrelated state such as `prompt.d/` to the data home.
@@ -88,22 +90,30 @@ with tempfile.TemporaryDirectory(prefix="lr-v1299-") as tmp:
     collected = rules.collect(ws=ws)["project"]
     text = collected["text"]
     loaded = set(collected["files"])
-    check("C1 the prompt includes all local .longrun/rules markdown and root AGENTS",
-          {allowed_rule, extra_rule, root_agents} <= loaded
+    check("C1 the prompt includes every local .longrun/rules markdown",
+          {allowed_rule, extra_rule} <= loaded
           and "ALLOWED PROJECT RULE" in text
-          and "ALLOWED EXTRA RULE" in text
-          and "ALLOWED ROOT AGENTS" in text)
-    check("C2 no project rule is read from .trae, outside .longrun/rules, or data home",
+          and "ALLOWED EXTRA RULE" in text)
+    check("C2 no project rule is read from .trae, outside .longrun/rules, the data home, "
+          "or a workspace-root AGENTS.md",
           not any(token in text for token in (
-              "FORBIDDEN", "FORBIDDEN EXTERNAL", "NOT A PROJECT RULE SOURCE"))
+              "FORBIDDEN", "FORBIDDEN EXTERNAL", "NOT A PROJECT RULE SOURCE",
+              "ALLOWED ROOT AGENTS"))
           and legacy_trae not in loaded
           and legacy_root not in loaded
+          and root_agents not in loaded
           and os.path.join(state, "Project_rules.md") not in loaded
           and os.path.join(state, "rules", "external.md") not in loaded,
           sorted(loaded))
-    check("C3 every loaded project instruction file is one of the two allowed sources",
-          all(os.path.commonpath((p, rule_dir)) == rule_dir or p == root_agents
+    check("C3 every loaded project instruction file is inside the one allowed folder",
+          all(os.path.commonpath((p, rule_dir)) == rule_dir
               for p in loaded), sorted(loaded))
+    gcollected = rules.collect(ws=ws)["global"]
+    gloaded = set(gcollected["files"])
+    check("C4 GLOBAL is the harness default AGENTS.md, and the user file is optional",
+          os.path.join(REPO, "AGENTS.md") in gloaded
+          and rules.global_agents_path() == os.path.join(REPO, "AGENTS.md")
+          and rules.global_rules_path() not in gloaded)   # absent -> simply not loaded
 
     saved = rules.save("project", "SAVED LOCAL RULE\n", ws=ws)
     check("D1 saving project rules writes only the allowed local Project_rules.md",
@@ -112,10 +122,12 @@ with tempfile.TemporaryDirectory(prefix="lr-v1299-") as tmp:
           saved)
 
     rejected = rules.set_always_apply(legacy_trae, False, ws=ws)
+    rejected_agents = rules.set_always_apply(root_agents, False, ws=ws)
     accepted = rules.set_always_apply(extra_rule, False, ws=ws)
-    check("D2 always-apply accepts only loaded local rules and root AGENTS",
-          not rejected.get("ok") and accepted.get("ok") is True,
-          (rejected, accepted))
+    check("D2 always-apply accepts only files inside the project rules folder",
+          not rejected.get("ok") and not rejected_agents.get("ok")
+          and accepted.get("ok") is True,
+          (rejected, rejected_agents, accepted))
 
     external_rules = os.path.join(tmp, "external-rules")
     os.makedirs(external_rules, exist_ok=True)
@@ -131,7 +143,7 @@ with tempfile.TemporaryDirectory(prefix="lr-v1299-") as tmp:
     os.symlink(os.path.join(external_rules, "AGENTS.md"),
                os.path.join(linked_ws, "AGENTS.md"))
     linked = rules.collect(ws=linked_ws)["project"]
-    check("E1 symlinked rule folders, files, and AGENTS cannot import outside text",
+    check("E1 symlinked rule folders and files cannot import outside text",
           linked["files"] == [] and "FORBIDDEN" not in linked["text"], linked)
     linked_status = rules.status(ws=linked_ws)["project"]
     check("E2 Settings status does not read through a symlinked rules folder",
@@ -180,18 +192,36 @@ with tempfile.TemporaryDirectory(prefix="lr-v1299-") as tmp:
           (linked_file_status, linked_file_save))
 
     # The text injected into the model must describe the SAME boundary as the
-    # resolver: the workspace rules folder + root AGENTS.md, and nothing else.
+    # resolver: the GLOBAL harness default (+ optional user file) and the workspace
+    # `.longrun/rules/` folder — and no other project source.
     block = rules.rules_prompt_block(ws=ws)
     allowed_folder_text = os.path.join(os.path.realpath(ws), ".longrun", "rules")
-    check("F1 the injected rules block names the workspace rules folder and root AGENTS",
+    check("F1 the injected rules block names the project folder and the harness default",
           allowed_folder_text in block
-          and os.path.join(os.path.realpath(ws), "AGENTS.md") in block,
+          and os.path.join(REPO, "AGENTS.md") in block
+          and os.path.join(os.path.realpath(ws), "AGENTS.md") not in block,
           block[:400])
     check("F2 the injected rules block offers no other project rule source",
           ".trae" not in block
           and os.path.join(state, "Project_rules.md") not in block
           and os.path.join(state, "rules") not in block,
           block[:400])
+    # The user's general rules are OPTIONAL: absent is the default, and creating the
+    # file loads it AFTER the harness default (more specific, wins on a conflict).
+    check("F6 the user Global_rules.md is optional, and loads after the harness default",
+          "may not exist" in block)
+    user_rules = rules.global_rules_path()
+    os.makedirs(os.path.dirname(user_rules), exist_ok=True)
+    with open(user_rules, "w", encoding="utf-8") as f:
+        f.write("USER GENERAL RULE\n")
+    try:
+        gtext = rules.collect(ws=ws)["global"]["text"]
+        check("F7 a user Global_rules.md is appended after the harness AGENTS.md",
+              "USER GENERAL RULE" in gtext
+              and gtext.find("# AGENTS.md") >= 0
+              and gtext.find("USER GENERAL RULE") > gtext.find("# AGENTS.md"))
+    finally:
+        os.remove(user_rules)
 
     def _src(*parts):
         with open(os.path.join(REPO, "src", "longrun", *parts), encoding="utf-8") as f:

@@ -73,8 +73,11 @@ check("A5 a plain session with nothing set contributes nothing",
 check("A6 no session id -> empty (never raises)",
       prompt._provider_role({}, None, None) == "" and prompt._provider_role(None, None, None) == "", "")
 check("A7 the docstring names the layer order",
-      "GLOBAL Global_rules.md" in prompt._provider_role.__doc__
-      and "PROJECT workspace `.longrun/rules/*.md` + root AGENTS.md"
+      # 2026-11-24: AGENTS.md is the HARNESS DEFAULT (global), never a project file;
+      # the project scope is the workspace `.longrun/rules/` folder only.
+      "GLOBAL harness `AGENTS.md`" in prompt._provider_role.__doc__
+      and "Global_rules.md" in prompt._provider_role.__doc__
+      and "PROJECT workspace `.longrun/rules/*.md`"
       in prompt._provider_role.__doc__, "")
 
 # --- B: the panel shows who, and a stale tab self-heals ----------------------

@@ -934,9 +934,11 @@ notebook index + its cost log) · `costs/` (per-session model-call ledger) · `p
 `session_jobs/` (one in-chat SJ ledger per session) ·
 `events.db` (durable SSE feed) · `projects/` (per-workspace runtime addenda such as
 `prompt.d/` and `rules_state.json`; project instructions themselves stay in the
-workspace). The only project instruction sources are every `.md` in
-`<workspace>/.longrun/rules/` plus `<workspace>/AGENTS.md`; `.trae/rules` and
-external data-home project rules are not loaded. `rules_state.json` holds the
+workspace). The only PROJECT instruction source is every `.md` in
+`<workspace>/.longrun/rules/`; `AGENTS.md` is the GLOBAL harness default
+(`<repo>/AGENTS.md`, applied to every project) followed by the optional user
+`Global_rules.md`. `.trae/rules`, a workspace-root `AGENTS.md`, and external
+data-home project rules are not loaded. `rules_state.json` holds the
 per-file "always apply" switches (absent = ON), flipped from Settings ▸ Rules and read by
 `memory/rules.py:collect`; switched-off files are excluded from the prompt and loaded
 file list. Writes are atomic (`tmp` + `os.replace`). The root is resolved by

@@ -270,9 +270,10 @@ def workspace_state_dir(ws):
     """Per-workspace runtime state, outside the workspace itself.
 
     Project instructions are intentionally NOT harness state: `<ws>/.longrun/rules/`
-    is operator-owned and stays in the workspace. The root `Project_rules.md` is
-    also left untouched as legacy data; only the rules folder and root AGENTS.md
-    are instruction sources. Other legacy `.longrun/` entries are adopted here.
+    is operator-owned and stays in the workspace, and it is the ONLY project
+    instruction source (`AGENTS.md` is the GLOBAL harness default in the repo, never a
+    workspace file). The root `Project_rules.md` is left untouched as legacy data.
+    Other legacy `.longrun/` entries are adopted here.
     """
     root = os.path.abspath(os.path.expanduser(str(ws or os.getcwd())))
     name = os.path.basename(root.rstrip(os.sep)) or "workspace"

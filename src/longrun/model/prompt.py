@@ -248,9 +248,9 @@ def _provider_role(sess, ws, ctx):
     own name/label never reached the prompt at all).
 
     Layers, in prompt order: agent identity + ROLE.md (this section, order 52)
-    then the standing rules (order 60: GLOBAL Global_rules.md + AGENTS.md, then the
-    PROJECT workspace `.longrun/rules/*.md` + root AGENTS.md — the project wins on
-    conflict).
+    then the standing rules (order 60: GLOBAL harness `AGENTS.md` + user
+    `Global_rules.md`, then the PROJECT workspace `.longrun/rules/*.md` — the project
+    wins on conflict).
     """
     sid = (sess or {}).get("id") if isinstance(sess, dict) else sess
     if not sid:

@@ -373,14 +373,10 @@ def _prepare_plan(base, candidates, c=None, probe_id=None):
                 "stage": stage_dir, "workspace": scratch, "copy": copied}
     from longrun.memory import rules
     collected = rules.collect(ws=base["workspace"])
-    # The copied workspace already carries its AGENTS.md. Do not duplicate it
-    # by also turning the collected addendum into a native project rule.
     snapshot = {}
     for scope in ("global", "project"):
         texts = []
         for path in collected[scope]["files"]:
-            if scope == "project" and path == rules.project_agents_path(base["workspace"]):
-                continue
             with open(path, encoding="utf-8") as f:
                 texts.append(f.read())
         snapshot[scope] = "\n\n".join(texts)

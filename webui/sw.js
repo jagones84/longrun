@@ -39,8 +39,10 @@
  * 2026-11-24 — bumped to v12: the active session's live context meter no longer
  * overwrites its per-session snapshot in the LH rail; all rail rows stay stable
  * across focus changes.
+ * 2026-11-24 — bumped to v13: the Rules panel lists the GLOBAL files too (harness
+ * `AGENTS.md` + optional `Global_rules.md`), so the shell changed shape.
  */
-const CACHE = "longrun-shell-v12";
+const CACHE = "longrun-shell-v13";
 const SHELL = ["/", "/orbit", "/assets/dragsort.js", "/assets/icon-192.png",
                "/assets/icon-512.png", "/assets/apple-touch-icon.png",
                "/assets/icon-maskable-512.png"];

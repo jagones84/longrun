@@ -288,7 +288,8 @@ Other variables used by configured MCP servers can also be added in **Settings �
 | Keys and server token | `<repository>/.env` |
 | User provider settings | `config/providers.local.yaml` |
 | Sessions, events, indexes, and other app data | the **data home** (see below) |
-| Project instructions | `<workspace>/.longrun/rules/*.md` and root `AGENTS.md` |
+| Project instructions | `<workspace>/.longrun/rules/*.md` |
+| Global instructions | `<repo>/AGENTS.md` (harness default) + optional `Global_rules.md` |
 | User MCP definitions | `config/mcp_clients.local.json` |
 | User-installed skills | `skills/local/` |
 
@@ -301,7 +302,7 @@ runtime. Project instructions are the explicit workspace-local exception.
 
 ```
 ~/.longrun/
-  config/       config.json, Global_rules.md, AGENTS.md, prompt.d/   (tiny, human-editable)
+  config/       config.json, Global_rules.md (optional), prompt.d/   (tiny, human-editable)
   data/         sessions, events.db, knowledge/, codebase/, costs/, projects/ ...
   matrix/       the self-evolution runtime (ex .Matrix)
   workspaces/   default root for new projects
@@ -314,11 +315,12 @@ location, because it is the file that records where the data root is.
 
 Per-workspace runtime state such as `prompt.d/` and the always-apply settings stays
 under `<data>/projects/<slug>-<sha8>/`. Project instructions are sourced ONLY from
-`<workspace>/.longrun/rules/*.md` and `<workspace>/AGENTS.md`; `.trae/rules`, rule
-files outside that folder, and external project-state rule copies are not loaded.
-The `.longrun/` folder is gitignored; root `AGENTS.md` is the versioned instruction file.
-The state resolver leaves `.longrun/rules/` in the workspace while adopting unrelated
-runtime files.
+`<workspace>/.longrun/rules/*.md`; global ones are the harness default `<repo>/AGENTS.md`
+plus the user's `Global_rules.md` when it exists (optional, absent by default).
+`.trae/rules`, a workspace-root `AGENTS.md`, and rule files outside that folder are
+not loaded. The `.longrun/` folder is gitignored; root `AGENTS.md` is the versioned
+harness-default instruction file. The state resolver leaves `.longrun/rules/` in the
+workspace while adopting unrelated runtime files.
 
 **Settings → Info → Data home** shows the current location and can MOVE it: the
 old tree is copied, the copy is verified file by file, and only then is the source

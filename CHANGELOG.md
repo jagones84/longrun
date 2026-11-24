@@ -321,6 +321,22 @@ All notable changes to Longrun are documented here. The format follows
   it); the pin now matches `toolCard(d.tool, d.args)`.
 
 ### Changed
+- **`AGENTS.md` is the GLOBAL harness default; `Global_rules.md` is the user's optional
+  general rule; project rules are workspace-only.** Operator: *"AGENTS.md shall not be
+  from workspace — it is a global rule default of the longrun harness … general rule is
+  a specific user general rule applied to every project (so AGENTS.md is default,
+  Global_rules.md is from user, and its default is the non existence of the file)."*
+  The GLOBAL scope is now `<repo>/AGENTS.md` followed by `<config>/Global_rules.md`
+  (absent by default, created by the operator — never auto-created), and the PROJECT
+  scope is ONLY `<workspace>/.longrun/rules/*.md`: a workspace-root `AGENTS.md` is no
+  longer a rule source, and the old `<config>/AGENTS.md` fallback is gone. The
+  always-apply switch accepts only files inside the project folder; the Rules panel
+  lists the global files too (cache bumped to `longrun-shell-v13`). `v1299` is rewritten
+  around the new layering (23/23, incl. "Global_rules.md optional" and "appended after
+  the harness default"), with `v362` A7, `v1261` E, `v198` G1 and `v685` I6/J4 re-pointed;
+  gate **64/64 GREEN**. Proved live outside the repo: session `1845d7c41d72` in
+  `/tmp/live_proj_noagents` (no AGENTS.md, no `.longrun/rules`) still answers the gate
+  commands and names both global files.
 - **The always-on prompt loses its stale catalogues, never a rule.** Measured on the assembled prompt
   (new session `70cc957c04c1`, 16 sections): the `prompt-map` no longer prints the `sections:` inventory
   (ids + kind, which goes stale with every new section), `skills-policy`/`rules-policy` lose their

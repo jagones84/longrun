@@ -4,6 +4,11 @@ Orientation for an AI agent (or human) landing in this repo. `.agent/` is the
 maintainer's local working memory (gitignored, development checkout only); everything
 below is tracked and present in every clone.
 
+This file is the harness's GLOBAL default rule set: it applies to EVERY project, not
+only to this checkout. The user's own general rules are `Global_rules.md` in
+`~/.longrun/config/` (optional, absent by default); project rules live only in
+`<workspace>/.longrun/rules/*.md`.
+
 ## Read order (do not skip)
 
 1. **`GLOSSARY.md`** — the project vocabulary; it stops `job`/`run`/`turn` from drifting.

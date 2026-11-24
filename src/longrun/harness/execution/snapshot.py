@@ -217,8 +217,6 @@ def build(base, c=None, model=None, port=None, context_length=32768):
         for scope in ("global", "project"):
             texts = []
             for name in collected[scope]["files"]:
-                if scope == "project" and name == rules.project_agents_path(workspace):
-                    continue
                 with open(name, encoding="utf-8", errors="replace") as f:
                     texts.append(f.read())
             rules_text[scope] = "\n\n".join(texts)

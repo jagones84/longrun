@@ -133,14 +133,14 @@ def system_prompt():
 # state it in the system prompt). Same file, no logic.
 RULES_POLICY = (
     "## Rules (global + project)\n"
-    "Your standing rules are FILES on disk (paths given below): a GLOBAL file for "
-    "every project and a PROJECT file for the current workspace "
-    "(`<workspace>/.longrun/rules/`), each also loading its scope's AGENTS.md "
-    "(additive, not a fallback). PROJECT rules override global ones on conflict. "
-    "Follow them; if one conflicts with the user's explicit request in this turn, "
-    "say so before proceeding. When a rule contradicts the code or the live state it "
-    "describes, the CODE wins: follow the code, say which rule is stale, and do not "
-    "rewrite working code to match the rule."
+    "Your standing rules are FILES on disk (paths given below) and their text is "
+    "already loaded. GLOBAL rules apply to EVERY project: the harness default "
+    "`AGENTS.md` first, then your own `Global_rules.md` when it exists. PROJECT rules "
+    "come only from this workspace's `.longrun/rules/` folder. PROJECT rules override "
+    "global ones on conflict. Follow them; if one conflicts with the user's explicit "
+    "request in this turn, say so before proceeding. When a rule contradicts the code "
+    "or the live state it describes, the CODE wins: follow the code, say which rule is "
+    "stale, and do not rewrite working code to match the rule."
 )
 
 

@@ -12,7 +12,7 @@ come fa trae … nel RH panel … hyperlink che me li apre nell'editor"*.
   B  a date-only stamp on the LEFT of user messages and agent answers only
   C  a Thought row keeps the transcript rhythm (no 16px message gap)
   D  a written file keeps its path in the persisted card (valid JSON under the cap)
-  E  only workspace `.longrun/rules/*.md` plus root AGENTS.md are project sources
+  E  only workspace `.longrun/rules/*.md` are project sources (AGENTS.md is global)
 
 Deterministic and offline. Run: python3 tests/acceptance/v1261_clean_stream_and_rules_folder.py
 """

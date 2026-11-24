@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
-"""Longrun rules — global (user) + project (workspace) instructions (JAG-114).
+"""Longrun rules — GLOBAL (harness default + user) and PROJECT (workspace).
 
-Mirrors the AGENTS.md convention: instructions are discovered at two scopes and
-concatenated broadest -> most specific (project wins), then injected into the
-system prompt of both chat and the agent loop.
+Instructions are discovered at two scopes and concatenated broadest -> most
+specific (project wins), then injected into the system prompt of both chat and the
+agent loop.
 
-  * GLOBAL (user, all sessions):  <config dir>/Global_rules.md  (~/.longrun/config/)
-                                  (also loaded, additive: <config dir>/AGENTS.md)
-  * PROJECT (the selected workspace): <ws>/.longrun/rules/*.md
-                                  (also loaded, additive: <ws>/AGENTS.md)
+  * GLOBAL (every project, in this order):
+      1. <repo>/AGENTS.md          the HARNESS DEFAULT that ships with Longrun
+      2. <config>/Global_rules.md  the USER's own general rules — OPTIONAL, absent
+                                   by default and created by the operator
+  * PROJECT (the selected workspace): <ws>/.longrun/rules/*.md — ONLY this folder.
+                                  `AGENTS.md` is never a project source.
 
 Project instructions are workspace-local by contract: no project rules are read
 from Longrun's external data home, `.trae/rules`, or other workspace paths.
@@ -39,7 +41,13 @@ def global_rules_path():
 
 
 def global_agents_path():
-    return os.path.join(_config_dir(), "AGENTS.md")
+    """The HARNESS DEFAULT general rule: the shipped `<repo>/AGENTS.md`.
+
+    2026-11-24 (operator): `AGENTS.md` is not a workspace file — it is Longrun's
+    own default rule, applied to every project, and the user's general rules live
+    beside it in `Global_rules.md` (optional, absent by default).
+    """
+    return os.path.join(REPO, "AGENTS.md")
 
 
 def _config_file():
@@ -245,12 +253,14 @@ def always_apply_map(ws=None):
 
 
 def set_always_apply(path, always, ws=None):
-    """Turn ONE project rule file on/off for the prompt. Only loaded files are valid."""
+    """Turn ONE project rule file on/off for the prompt. Only loaded files are valid.
+
+    `AGENTS.md` is a GLOBAL rule (harness default), never a project file — the switch
+    applies only to `<workspace>/.longrun/rules/*.md`.
+    """
     ws = ws or get_workspace()
     real = os.path.abspath(str(path or ""))
-    allowed = {os.path.abspath(project_agents_path(ws))}
-    if not _canonical_path(project_agents_path(ws)):
-        allowed.clear()
+    allowed = set()
     for d in project_rules_dirs(ws):
         if not _canonical_path(d) or not os.path.isdir(d):
             continue
@@ -264,10 +274,6 @@ def set_always_apply(path, always, ws=None):
     m[real] = bool(always)
     write_json(project_rules_state_path(ws), {"always_apply": m})
     return {"ok": True, "path": real, "always_apply": bool(always)}
-
-
-def project_agents_path(ws=None):
-    return os.path.join(os.path.realpath(ws or get_workspace()), "AGENTS.md")
 
 
 def _canonical_path(path):
@@ -329,6 +335,8 @@ def _collect_scope(native, agents, extra_dirs=None, always_map=None,
                 continue
             files.append(p)
             parts.append(_read(p))
+    if not agents:
+        agents = ""
     if (canonical(agents) and os.path.isfile(agents) and agents not in files
             and amap.get(os.path.abspath(agents), True) is not False):
         agents_text = _read(agents)
@@ -342,12 +350,14 @@ def _collect_scope(native, agents, extra_dirs=None, always_map=None,
 def collect(ws=None):
     """Everything the model would see: global + project rules and their files.
 
-    `ws` selects the project root (defaults to the global workspace). The project
-    scope honours the per-file always-apply switches (ROUND 179).
+    GLOBAL = the harness default `<repo>/AGENTS.md` FOLLOWED BY the user's optional
+    `<config>/Global_rules.md` (more specific, so it wins on a conflict).
+    PROJECT = `<ws>/.longrun/rules/*.md`, the only project source, and it honours the
+    per-file always-apply switches (ROUND 179). `ws` selects the project root.
     """
-    gtext, gfiles = _collect_scope(global_rules_path(), global_agents_path())
+    gtext, gfiles = _collect_scope(global_agents_path(), global_rules_path())
     ws = ws or get_workspace()
-    ptext, pfiles = _collect_scope(project_rules_path(ws), project_agents_path(ws),
+    ptext, pfiles = _collect_scope(project_rules_path(ws), None,
                                    extra_dirs=project_rules_dirs(ws),
                                    always_map=always_apply_map(ws),
                                    reject_symlinks=True)
@@ -387,10 +397,9 @@ def prompt_paths(ws=None):
     ws = ws or get_workspace()
     return {
         "workspace": ws,
-        "global_rules": global_rules_path(),
-        "global_fallback": global_agents_path(),
+        "global_agents": global_agents_path(),   # harness default (shipped)
+        "global_rules": global_rules_path(),     # user, OPTIONAL (absent by default)
         "project_rules": project_rules_path(ws),
-        "project_fallback": project_agents_path(ws),
         "project_extra_dirs": project_rules_dirs(ws),
     }
 
@@ -398,44 +407,40 @@ def prompt_paths(ws=None):
 def rules_prompt_block(max_bytes=None, ws=None):
     """Prompt block that ALWAYS carries the rule-file paths (JAG-125).
 
-    Unlike `rules_block` (empty when no rules), this always renders the header
-    with the absolute paths of the global + project rule files, their AGENTS.md
-    additions (also loaded, additive) and the workspace project-rules FOLDER —
-    every `.md` inside it is loaded. The rules text, when present, follows.
+    GLOBAL = the harness default `AGENTS.md` + the user's optional `Global_rules.md`;
+    PROJECT = the workspace `.longrun/rules/` folder (its every `.md` is loaded).
+    The rules text, when present, follows. Never empty, so the model always knows
+    where its own rules live.
     """
     cap = max_bytes or MAX_BYTES
     c = collect(ws)
     pp = prompt_paths(c["workspace"])
 
-    def _scope(title, sc, fallback, extra=None):
-        head = ("### %s\n- file: %s\n- AGENTS.md (also loaded, additive): %s\n"
-                % (title, sc["path"], fallback))
+    def _scope(title, sc, extra=None):
+        head = "### %s\n- loaded: %s\n" % (
+            title, ", ".join(sc["files"]) or "(none yet)")
         if extra:
             head += "- folder (every .md with always-apply on): %s\n" % ", ".join(
                 d + "/*.md" for d in extra)
-        head += "- loaded: %s\n" % (", ".join(sc["files"]) or "(none yet)")
         body = (sc["text"] or "").strip()
         return head + (body if body else "_(no rules set here yet)_")
 
     intro = ("## Rules on disk (global + project)\n"
              "Your standing rules — their text is ALREADY LOADED below, so you do NOT "
-             "need to open these files (read them only if you intend to edit). Global "
-             "rules apply to every project; project rules win on "
-             "conflict. Within each scope Global_rules.md/Project_rules.md and AGENTS.md are BOTH loaded "
-             "(additive, not a fallback), and EVERY `.md` of the workspace "
-             "`.longrun/rules/` folder whose always-apply switch is on (the default) is "
-             "loaded too (additive). Project rules come ONLY from that folder and the "
-             "workspace root AGENTS.md.\n"
-             "- GLOBAL file: %s   (AGENTS.md also loaded, additive: %s)\n"
-             "- PROJECT file: %s   (AGENTS.md also loaded, additive: %s)\n"
-             "- PROJECT folder: %s\n"
-             % (pp["global_rules"], pp["global_fallback"],
-                pp["project_rules"], pp["project_fallback"],
+             "need to open these files (read them only if you intend to edit). GLOBAL "
+             "rules apply to EVERY project, broadest first: the harness default "
+             "`AGENTS.md`, then the user's `Global_rules.md` when it exists. PROJECT "
+             "rules come ONLY from the workspace `.longrun/rules/` folder (every `.md` "
+             "whose always-apply switch is on, the default) and win on conflict.\n"
+             "- GLOBAL harness default: %s\n"
+             "- GLOBAL user rules (optional, may not exist): %s\n"
+             "- PROJECT folder (the only project source): %s\n"
+             % (pp["global_agents"], pp["global_rules"],
                 ", ".join(d + "/*.md" for d in pp["project_extra_dirs"])))
     chunks = [
-        _scope("GLOBAL rules (user, all projects)", c["global"], pp["global_fallback"]),
+        _scope("GLOBAL rules (harness default + user, all projects)", c["global"]),
         _scope("PROJECT rules (workspace: %s)" % c["workspace"], c["project"],
-               pp["project_fallback"], pp["project_extra_dirs"]),
+               pp["project_extra_dirs"]),
     ]
     block = intro + "\n" + "\n\n".join(chunks)
     if len(block) > cap:
@@ -526,8 +531,6 @@ def _project_rows(ws=None):
             p = os.path.join(d, fn)
             if fn.endswith(".md") and _canonical_path(p):
                 _add(p)
-    if _canonical_path(project_agents_path(ws)) and os.path.isfile(project_agents_path(ws)):
-        _add(project_agents_path(ws))
     return out
 
 
@@ -537,9 +540,10 @@ def status(ws=None):
     `file_rows` is what the RH panel renders as one link per `.md` from the sole
     workspace-local `.longrun/rules/` source.
 
-    `text` is the COMPOSED corpus (rules-folder `.md` + root AGENTS.md) because
-    that is what the model reads; `file_text` is the native
-    file's OWN bytes, and it is what an editor must load and save.
+    `text` is the COMPOSED corpus (global: harness `AGENTS.md` + user
+    `Global_rules.md`; project: the `.longrun/rules/` files) because that is what the
+    model reads; `file_text` is the native file's OWN bytes, and it is what an editor
+    must load and save.
 
     `rules_dir` is the sole allowed workspace folder; `all_rows` carries each rule
     file with its always-apply switch.

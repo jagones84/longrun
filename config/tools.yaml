@@ -127,11 +127,11 @@ context:
   # injection of everything. Records that carry a `support` count are shown
   # highest-support first; this cap bounds the block itself.
   memory_lessons_cap: 4
-  # System-prompt rules block (global + project + AGENTS.md + every project .md).
-  # Project sources are only <workspace>/.longrun/rules/*.md and root AGENTS.md.
-  # This cap must hold the full corpus or the block is cut mid-file. Cost: ~22k
-  # tokens on every turn at 1M context (~2%); lower LONGRUN_RULES_MAX (or this
-  # value) for a small local window.
+  # System-prompt rules block (GLOBAL harness default AGENTS.md + optional user
+  # Global_rules.md + every project .md). Project sources are only
+  # <workspace>/.longrun/rules/*.md. This cap must hold the full corpus or the block
+  # is cut mid-file. Cost: ~22k tokens on every turn at 1M context (~2%); lower
+  # LONGRUN_RULES_MAX (or this value) for a small local window.
   rules_prompt_max_bytes: 131072
   # A shell command's captured stdout returned to the agent (hard cut).
   shell_capture_max: 200000

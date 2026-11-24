@@ -10914,11 +10914,12 @@ function _rulesRefRow(kind, label, src, wsBase) {
   const chars = src.chars || 0;
   const ok = src.exists && chars > 0;
   const _kb = n => n >= 1024 ? (n / 1024).toFixed(1) + " KB" : (n || 0) + " B";
-  if (kind === "project") {
+  if (kind === "project" || (kind === "global" && (src.file_rows || []).length)) {
     const rows = src.file_rows || (src.files || []).map(p =>
       ({path: p, name: String(p).split("/").pop(), chars: 0}));
-    // Project files come only from workspace `.longrun/rules/*.md` plus root
-    // `AGENTS.md`. Keep rendering folders supplied by the rules API so this panel
+    // Project files come only from workspace `.longrun/rules/*.md`; the GLOBAL scope
+    // is the harness default `<repo>/AGENTS.md` plus the user's `Global_rules.md`
+    // (optional). Keep rendering folders supplied by the rules API so this panel
     // stays aligned with the resolver if its presentation changes.
     const base = String(wsBase || "").replace(/\/+$/, "");
     const short = p => {
@@ -10929,7 +10930,9 @@ function _rulesRefRow(kind, label, src, wsBase) {
       return s.replace(/^\/home\/[^/]+/, "~");
     };
     const dirs = (src.dirs && src.dirs.length) ? src.dirs
-      : [src.rules_dir || src.path].filter(Boolean);
+      : (kind === "global"
+          ? [...new Set(rows.map(r => r.dir).filter(Boolean))]
+          : [src.rules_dir || src.path].filter(Boolean));
     return '<details class="rulesrc" open>'
       + '<summary><b>' + esc(label) + '</b><span class="rbadge' + (rows.length ? " ok" : "") + '">'
       + esc(rows.length + (rows.length === 1 ? " file" : " files") + " · " + _kb(chars)) + '</span></summary>'
@@ -18270,7 +18273,7 @@ async function loadRules() {
     _isum("sWorkspace", _base(d.workspace), "");
     $("rulesGlobalPath").textContent = "file: " + (g.path || "—") + (g.exists ? "" : " (does not exist)");
     // ROUND 178 (A54): the global editor shows the file's OWN bytes (`file_text`), never
-    // the composed corpus (`text` = Global_rules.md + AGENTS.md).
+    // the composed corpus (`text` = harness AGENTS.md + user Global_rules.md).
     $("rulesGlobalText").value = g.file_text || "";
     gateEnroll($("rulesGlobalCard"));     // JAG-496: Global_rules.md Save follows the shared dirty-gate
     // K-5: the ONE remaining rules ✨ (registry surface `rules.global`) drafts into the

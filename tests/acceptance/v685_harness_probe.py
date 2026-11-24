@@ -292,8 +292,13 @@ check("I5 the child's DATA_DIR is boxed (the probe cannot write live memory/prop
 rules_path = _plan_i["cmd"][_plan_i["cmd"].index("--rules") + 1]
 with open(rules_path, encoding="utf-8") as f:
     snapshot = json.load(f)
-check("I6 rule snapshot comes from real owners, excluding copied AGENTS.md",
-      snapshot == {"global": "Global owner rule.\n", "project": "Project owner rule.\n"}
+check("I6 rule snapshot comes from real owners, excluding the workspace AGENTS.md",
+      # 2026-11-24: GLOBAL = the harness default `<repo>/AGENTS.md` + the user's
+      # `Global_rules.md`; a workspace-root AGENTS.md is not a rule source any more.
+      "# AGENTS.md" in snapshot["global"]
+      and "Global owner rule." in snapshot["global"]
+      and snapshot["project"] == "Project owner rule.\n"
+      and "Workspace additive rule." not in json.dumps(snapshot)
       and open(os.path.join(_plan_i["workspace"], "AGENTS.md"),
                encoding="utf-8").read() == "Workspace additive rule.\n")
 check("I7 model and goal are pinned without claiming confinement",
@@ -333,7 +338,9 @@ check("J4 the runtime rule owner consumes baseline plus the staged guardrail",
       and "Project owner rule." in collected["project"]["text"]
       and "Always inventory inputs." in collected["project"]["text"]
       and "Never guess a path." not in collected["project"]["text"]
-      and collected["project"]["text"].count("Workspace additive rule.") == 1
+      # 2026-11-24: a workspace-root AGENTS.md is NOT a project source (it would be the
+      # harness default only when the workspace IS the harness repo).
+      and "Workspace additive rule." not in collected["project"]["text"]
       and not os.path.exists(os.path.join(_plan_j["workspace"], "Project_rules.md")))
 P.cleanup("j1")
 
