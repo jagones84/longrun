@@ -4473,15 +4473,39 @@ def _harness_status(sid):
     return out
 
 
+def _harness_graph():
+    """Round 170: the system's topology as ONE census — bounded, read-only.
+
+    The agent-facing half of graph engineering: the tools that WRITE the topology
+    (`agent.*` / `team.*` / `job.*`) are architect-exclusive, so this is the read
+    that lets any agent see the org those tools built. It never returns the node
+    set — per-graph counts, a bounded card and a capped frontier only.
+    """
+    from longrun.harness import graph_topology as _gt
+    payload = _gt.census()
+    graphs = payload.get("graphs") or {}
+    return {"ok": True,
+            "card": _gt.card(payload),
+            "totals": payload.get("totals") or {},
+            "frontier": _gt.frontier(payload)[:20],
+            "graphs": [{"name": n,
+                        "nodes": len((graphs[n].get("nodes") or [])),
+                        "edges": len((graphs[n].get("edges") or []))}
+                       for n in sorted(graphs)]}
+
+
 def _harness(args, run_id):
-    """Harness lifecycle actions (`harness.restart`, `harness.status`).
+    """Harness lifecycle actions (`harness.restart`, `harness.status`, `harness.graph`).
 
     2026-11-15: `restart` moved here from the Matrix suite. It kills the whole
     process, so it is a harness action, not a Matrix artifact operation.
     2026-11-21: `status` joins it — the ONE read-only report about a session.
+    2026-11-24: `graph` joins it — the ONE topology census (round 170).
     """
     from longrun.core import restart
     action = str((args or {}).get("action") or "restart").strip().lower()
+    if action == "graph":
+        return _harness_graph()
     if action in ("status", "info"):
         sid = str((args or {}).get("session") or run_id or "").strip()
         return _harness_status(sid)

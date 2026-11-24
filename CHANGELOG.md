@@ -7,6 +7,21 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **`harness.graph` — the agent-facing read of that census (round 170).** The tools that *write* the
+  topology (`agent.*` / `team.*` / `job.*`) are architect-exclusive; nothing let an agent *read* it.
+  One action joins the existing `harness` tool group (the one `harness.status` lives in, `v1238`):
+  `harness.graph` returns the ONE census as a **bounded** payload — a card, the totals, per-graph
+  COUNTS and a capped frontier, never the node set — so it cannot bloat a turn's context. Registry
+  contract (`tools/registry.py`: the action enum, `_SUBTOOL_FIELDS["harness"]["graph"] == []`, one
+  guidance line, no approval gate) + the handler `_harness_graph` in `tools/tools.py` (reaches the
+  `harness/` ROOT, never `checks/` — ADR-0003/`v1273`). Evidence: `v1304` **14/14** (RED first — the
+  handler answered `unknown harness action 'graph'`); targeted gate **52/53** (the single red is the
+  pre-existing `v520`); fast battery 979/986 (same 7 pre-existing reds); `scripts/check.sh` PASS.
+  Live: restart 21:13:18 CET > newest source 21:11:48, `/api/health` 200, and
+  `POST /api/tools/call {"tool":"harness","args":{"action":"graph"}}` → `status: executed`, `ok: true`,
+  the card (agents 140n/92e · jobs 95n/80e · teams 105n/110e), totals **340 nodes / 282 edges**.
+  Honest limit: the payload is a snapshot at read time and the read is bounded (a truncated graph is
+  named in the card).
 - **Graph engineering — one typed-graph primitive, one topology census, one audit (round 169).** The
   operator asked whether "graph engineering, the next step after harness engineering" is implementable
   *modularly*; the proposal `.agent/docs/proposals/2026-11/2026-11-25_graph-engineering.md` (rows G1–G3)
