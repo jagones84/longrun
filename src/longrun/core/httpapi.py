@@ -10,6 +10,7 @@ so the ``from .server import (...)`` below resolves against a fully-populated
 module and no import cycle forms.
 """
 import argparse
+import hashlib
 import hmac
 import json
 import os
@@ -206,6 +207,43 @@ def boot_url(ip, port, token="", scheme="http", path="/"):
 def first_run_setup_available():
     """Whether this process still accepts the local first-run token setup."""
     return not bool(AUTH_TOKEN)
+
+
+def shell_build(index_path=None):
+    """Fingerprint of every file the WebUI shell is made of (mtime + size).
+
+    ONE truth for TWO consumers: `/api/build` (the "UI updated — click to reload"
+    chip of a long-lived tab) and `/sw.js` (the NAME of the service-worker cache).
+
+    The cache name used to be a hand-bumped literal (`longrun-shell-v3` … `v16`),
+    and every bump was made only AFTER a phone had already painted an old shell:
+    `install` re-runs only when the worker BODY changes, so a forgotten bump keeps
+    the "/" copy captured at the app's own install alive forever. Deriving the name
+    from this fingerprint makes a shell change retire that copy by itself, with no
+    human rule left to forget.
+    """
+    paths = [index_path or os.path.join(WEBUI_DIR, "index.html"),
+             os.path.join(ORBIT_WEB, "orbit.html"),
+             os.path.join(WEBUI_DIR, "console.html")]
+    # EV-45c: the SPA's own JS/CSS live under webui/assets and are loaded ONCE by a
+    # tab. Fingerprinting only index.html meant a fix that lived in editor.js (the
+    # workbook viewer) was invisible: no reload chip, no change, the operator kept
+    # the old script while the server served the new one (live 2026-10-30, "xlsx
+    # doesn't open").
+    assets = os.path.join(WEBUI_DIR, "assets")
+    try:
+        for root, dirs, names in os.walk(assets):
+            dirs[:] = sorted(d for d in dirs if not d.startswith("."))
+            for n in sorted(names):
+                if n.lower().endswith((".js", ".css", ".html")):
+                    paths.append(os.path.join(root, n))
+    except OSError:
+        pass
+    try:
+        return "-".join("%d-%d" % (int(os.stat(p).st_mtime), os.stat(p).st_size)
+                        for p in paths)
+    except OSError:
+        return ""
 
 
 def lan_bind_allowed(host, token, insecure_lan=False):
@@ -2684,9 +2722,23 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/sw.js":
             try:
                 with open(os.path.join(WEBUI_DIR, "sw.js"), "r", encoding="utf-8") as f:
-                    return self._send(200, f.read(), ctype="text/javascript; charset=utf-8")
+                    _sw_src = f.read()
             except FileNotFoundError:
                 return self._send(404, {"error": "sw missing"})
+            # The cache NAME is the SERVED build, not a literal to bump by hand.
+            # `install` only re-runs when the worker BODY changes, so a constant name
+            # is precisely what kept an installed phone PWA on the "/" copy it captured
+            # at its own install (measured: a week, twice). The build hash changes with
+            # the shell, which makes the browser install a new worker and the old
+            # cache get deleted on activate — no human rule in the loop.
+            try:
+                from longrun.core import matrix as _mtx_sw
+                _sw_idx = _mtx_sw.webui_index_path()
+            except Exception:  # noqa: BLE001
+                _sw_idx = os.path.join(WEBUI_DIR, "index.html")
+            _sw_ver = hashlib.sha1(shell_build(_sw_idx).encode("utf-8")).hexdigest()[:12]
+            return self._send(200, _sw_src.replace("__SHELL_VERSION__", _sw_ver),
+                              ctype="text/javascript; charset=utf-8")
         if path == "/api/matrix/plugins.js":
             try:
                 from longrun.core import matrix as _mtx_pjs
@@ -2741,32 +2793,13 @@ class Handler(BaseHTTPRequestHandler):
             # Control deck's orbit.html. Fingerprinting only index.html left an
             # open tab blind to an orbit.html change (e.g. a new resize bar), so
             # the Control iframe stayed stale until a manual reload.
+            # Same value `/sw.js` uses as its cache NAME — see `shell_build`.
             try:
                 from longrun.core import matrix as _mtx_b
                 _active_idx = _mtx_b.webui_index_path()
             except Exception:  # noqa: BLE001
                 _active_idx = os.path.join(WEBUI_DIR, "index.html")
-            _uif = [_active_idx, os.path.join(ORBIT_WEB, "orbit.html")]
-            # EV-45c: the SPA's own JS/CSS live under webui/assets and are loaded
-            # ONCE by a tab. Fingerprinting only index.html meant a fix that lived
-            # in editor.js (the workbook viewer) was invisible to an open tab: no
-            # reload chip, no change, the operator kept the old script while the
-            # server served the new one (live 2026-10-30, "xlsx doesn't open").
-            _assets = os.path.join(WEBUI_DIR, "assets")
-            try:
-                for _root, _dirs, _names in os.walk(_assets):
-                    _dirs[:] = sorted(d for d in _dirs if not d.startswith("."))
-                    for _n in sorted(_names):
-                        if _n.lower().endswith((".js", ".css", ".html")):
-                            _uif.append(os.path.join(_root, _n))
-            except OSError:
-                pass
-            try:
-                _b = "-".join("%d-%d" % (int(os.stat(p).st_mtime), os.stat(p).st_size)
-                              for p in _uif)
-            except OSError:
-                _b = ""
-            return self._send(200, {"build": _b})
+            return self._send(200, {"build": shell_build(_active_idx)})
         if path == "/api/changelog":
             # 2026-11-21: the changelog button's ONE read — release notes from the
             # repo's CHANGELOG.md plus the recent git commits. Read-only.

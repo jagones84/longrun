@@ -9,8 +9,9 @@ request with that HTML, the browser refused the scripts/styles as `text/html` (M
 and the app booted half-dead — the operator's "not working PWA".
 
 Pins, on `webui/sw.js`:
-  A: the cache name is a NEW version — the only thing that retires an installed app's
-     stale shell (v4 was captured 2026-11-09).
+  A: the cache name is DERIVED from the served build (the server injects a hash of
+     the same fingerprint `/api/build` returns). The hand-bumped literal is gone —
+     v3 … v16 were each bumped only AFTER an installed app had painted a stale shell.
   B: the shell write is owned by the fetch event (`e.waitUntil`), so the worker being
      stopped right after the response cannot drop it (which froze the copy for a week
      although every launch was live).
@@ -37,11 +38,14 @@ def check(name, ok, detail=""):
     print(("PASS " if ok else "FAIL ") + name + ((" :: " + detail) if detail else ""))
 
 
-m = re.search(r'const CACHE = "longrun-shell-v(\d+)";', sw)
-version = int(m.group(1)) if m else 0
+m = re.search(r'const SHELL_VERSION = "([^"]+)";', sw)
+injected = bool(m) and "__SHELL_VERSION__" in (m.group(1) if m else "")
 
-check("A1 the shell cache carries a NEW version (an installed app retires its old copy)",
-      version >= 5, "longrun-shell-v%d" % version)
+check("A1 the shell cache name is DERIVED from the served build (no hand-bump to forget)",
+      injected and 'const CACHE = "longrun-shell-" +' in sw
+      and ".test(SHELL_VERSION)" in sw
+      and not re.search(r'const CACHE = "longrun-shell-v\d+";', sw),
+      (m.group(0) if m else sw[:80]))
 
 check("B1 the shell cache write is owned by the fetch event (e.waitUntil), not detached",
       "e.waitUntil(c.put(" in sw, "")

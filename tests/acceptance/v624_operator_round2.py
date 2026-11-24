@@ -98,10 +98,12 @@ check("E1 both shells watch /api/build with a reload chip",
 # 2026-11-01: the cache name is a VERSION, not a constant. It moved v2 -> v3 after
 # the phone PWA rendered a months-old offline shell: `install` runs once per worker
 # body, so an unchanged name keeps the "/" copy captured at install time forever.
-# Pin the SHAPE (a `longrun-shell-vN` name + the shell list), not one literal, so a
-# deliberate bump does not need a test edit but a silent drop still fails.
-check("E2 SW cache is versioned and covers orbit and the shared engine",
-      ('const CACHE = "longrun-shell-v' in SW) and '"/orbit"' in SW
+# 2026-11-24: the version is no longer hand-bumped (v3…v16 proved the rule gets
+# forgotten); the server injects a build hash into `SHELL_VERSION`. Pin the SHAPE
+# (a derived `longrun-shell-…` name + the shell list), not a literal.
+check("E2 SW cache is derived from the build and covers orbit and the shared engine",
+      'const SHELL_VERSION = "__SHELL_VERSION__";' in SW
+      and 'const CACHE = "longrun-shell-" +' in SW and '"/orbit"' in SW
       and 'dragsort.js' in SW and 'cache: "reload"' in SW)
 
 # ---------------- F: model-switch invalidation ----------------------

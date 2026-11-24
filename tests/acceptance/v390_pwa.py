@@ -41,7 +41,7 @@ check("A1 the manifest is injected at boot (so start_url can carry the token)",
       "function setupPWA()" in html and "setupPWA();" in html
       and "/manifest.webmanifest" in html, "")
 check("A2 the service worker is registered",
-      'navigator.serviceWorker.register("/sw.js")' in html, "")
+      'navigator.serviceWorker.register("/sw.js"' in html, "")
 check("A3 the icon + apple-touch-icon + standalone meta are present",
       'rel="icon" href="/assets/icon-192.png"' in html
       and 'rel="apple-touch-icon" href="/assets/apple-touch-icon.png"' in html

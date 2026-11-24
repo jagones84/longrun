@@ -133,8 +133,9 @@ check("H3 a message (and `/goal`) runs in the chat it was typed in",
       and "_pendingUserAdd(turnSession," in HTML)
 
 # ---- G: the offline shell follows (a cached old composer is a stale contract) --
-check("G1 the service-worker cache was bumped for this shell change",
-      'longrun-shell-v16' in SW)
+check("G1 the service-worker cache is DERIVED from the served build (no hand-bump)",
+      'const SHELL_VERSION = "__SHELL_VERSION__";' in SW
+      and 'const CACHE = "longrun-shell-" +' in SW)
 
 print("---")
 ok = sum(results)

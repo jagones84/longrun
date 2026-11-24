@@ -6542,6 +6542,30 @@ function authHeaders() { return TOKEN ? {"Authorization": "Bearer " + TOKEN} : {
  * static <link>) so its `start_url` can carry the SAME token this tab was opened
  * with — the installed icon then opens an AUTHENTICATED shell, and the HTML route
  * stays token-gated (no security change). The service worker is public. */
+/* 2026-11-24: the worker's cache NAME is injected by the server from the served
+ * build, so a shell change retires an installed app's "/" copy with no hand-bump.
+ * The page adds the two halves a worker cannot do alone:
+ *   1. adopt a new worker on resume instead of waiting for the browser's next
+ *      navigation/24 h check, and reload ONCE when it takes over;
+ *   2. recover from a launch that raced the tailnet and painted the CACHED shell:
+ *      probe a tiny public URL until the server answers, then reload once.
+ *      Measured on the phone: the old shell stayed on screen after the network
+ *      was already back, which is the "not working PWA" the operator kept seeing. */
+function _shellAlive() {
+  return fetch("/sw.js", { cache: "no-store" }).then((r) => !!r && r.ok, () => false);
+}
+function _shellRecover(n) {
+  let last = 0;
+  try { last = +sessionStorage.getItem("lr_shell_reload_ts") || 0; } catch (_) {}
+  if (Date.now() - last < 30000 || n > 60) return;   // bounded, at most one reload / 30 s
+  setTimeout(function () {
+    _shellAlive().then(function (ok) {
+      if (!ok) return _shellRecover(n + 1);
+      try { sessionStorage.setItem("lr_shell_reload_ts", String(Date.now())); } catch (_) {}
+      location.reload();
+    });
+  }, 5000);
+}
 function setupPWA() {
   try {
     let l = document.querySelector('link[rel="manifest"]');
@@ -6549,8 +6573,30 @@ function setupPWA() {
     l.href = "/manifest.webmanifest" + (TOKEN ? ("?token=" + encodeURIComponent(TOKEN)) : "");
   } catch (e) {}
   try {
-    if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
+    if ("serviceWorker" in navigator) {
+      const hadController = !!navigator.serviceWorker.controller;
+      navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" }).then(function (reg) {
+        let last = 0;
+        const update = function () {
+          if (Date.now() - last < 30000) return;
+          last = Date.now();
+          reg.update().catch(function () {});
+        };
+        addEventListener("online", update);
+        document.addEventListener("visibilitychange", function () { if (!document.hidden) update(); });
+        update();
+      }).catch(function () {});
+      let adopted = false;
+      navigator.serviceWorker.addEventListener("controllerchange", function () {
+        // A FIRST install has nothing stale to replace; a takeover does.
+        if (!hadController || adopted) return;
+        adopted = true;
+        location.reload();
+      });
+    }
   } catch (e) {}
+  // A cached launch is a launch whose network fetch failed: keep probing.
+  _shellAlive().then(function (ok) { if (!ok) _shellRecover(1); });
 }
 
 /* JAG-116: never yank the reader to the bottom mid-stream — auto-scroll only when

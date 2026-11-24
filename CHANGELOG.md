@@ -250,6 +250,23 @@ All notable changes to Longrun are documented here. The format follows
   Locked by `v1250` (32/32); battery 953/953.
 
 ### Fixed
+- **The PWA shell cache can no longer go stale — the hand-bumped version is gone.** Operator: *"Again stale pwa
+  ...fix forever please"*. The worker's cache NAME was a literal a human bumped after every shell change
+  (`longrun-shell-v3` … `v16`), and its own comments show what that cost: each bump was made only AFTER an
+  installed phone had already painted an old shell — `install` re-runs only when the worker BODY changes, so a
+  forgotten bump keeps the "/" copy captured at the app's install alive. The name is now **derived**: the new
+  `httpapi.shell_build()` (the fingerprint `/api/build` already returned, now the ONE shared helper) is hashed
+  and injected into `SHELL_VERSION` when `/sw.js` is served, so any change to `index.html`, `orbit.html`,
+  `console.html` or `webui/assets/*` changes the worker body AND the cache name; `install` re-runs and
+  `activate` deletes the old cache with no human in the loop. The page adds the halves a worker cannot do
+  alone: register with `updateViaCache: "none"`, `reg.update()` on resume/`online`, reload ONCE when a new
+  worker takes over (guarded so a first install does not), and — the measured "not working PWA" — a launch
+  that raced the tailnet and painted the cached shell now probes the public `/sw.js` and reloads once the
+  server answers (bounded: 60 tries, at most one reload / 30 s). Evidence: `v1305` **11/11** (new),
+  `v1043` 4/4, `v624` 13/13, `v778` 17/17, `v390` 14/14, `v1302` 37/37, `v621` 7/7; `scripts/check.sh` PASS
+  (lint 413/414, types 88/88); battery 980/987 (same 7 pre-existing reds). Live: served
+  `SHELL_VERSION 02fb8b7751de` == `sha1(/api/build)`, `touch webui/index.html` → `27d56d086ead` (the cache
+  retires itself), `node --check` OK, `Cache-Control: no-store`.
 - **`/restart` scheduled the exit and then left the page on a dead socket.** Operator: *"/restart command in
   webui doesn't work"*. The composer called `feedReconnect()` — a function that does not exist in
   `webui/index.html` — instead of `connectFeed()`, so the only reconnect was the feed's own 5 s retry,

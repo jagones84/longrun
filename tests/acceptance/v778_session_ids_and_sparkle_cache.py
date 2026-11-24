@@ -25,7 +25,6 @@ RH-22 (section D) adds the other half of the same contract: a backend write of
 deck — must reach the panel, which is only a VIEW of that file.
 """
 import os
-import re
 import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -61,13 +60,14 @@ check("A3 the surface lookup is unchanged for the caller",
       "function genSurface(id) { return (_genSurfaces || {})" in UI
       and 'mountSparkle($("subDraftHost"), "subagent.new"' in UI)
 
-# ------------------------------------------------------------- B. the shell version
-_shell = re.search(r'const CACHE = "longrun-shell-v(\d+)";', SW)
-check("B1 the service worker's shell cache is bumped past v3 (RH-18/RH-19 changed it)",
-      bool(_shell) and int(_shell.group(1)) > 3,
-      _shell.group(0) if _shell else SW[:80])
-check("B2 the bump is documented as a rule, not as a one-off",
-      "BUMP THIS WHENEVER THE SHELL CHANGES" in SW)
+# ------------------------------------------------------------- B: the shell version
+check("B1 the service worker keyed its shell cache past v3 (RH-18/RH-19 changed it)",
+      'const CACHE = "longrun-shell-" +' in SW and "SHELL_VERSION" in SW,
+      SW[:80])
+check("B2 the version rule is AUTOMATIC now, not a hand-bump to remember",
+      'const SHELL_VERSION = "__SHELL_VERSION__";' in SW
+      and "THE HAND-BUMP IS GONE" in SW
+      and "BUMP THIS WHENEVER THE SHELL CHANGES" not in SW)
 
 # ------------------------------------------------- C. the A-id a session already has
 check("C1 the orbit roster publishes the agent id",

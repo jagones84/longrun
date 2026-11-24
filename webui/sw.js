@@ -15,7 +15,8 @@
  * which is exactly what a version bump makes unnecessary.
  * 2026-11-03 (RH-20) — bumped to v4: the Subagents draft control and the landscape
  * rail changed the shell's shape, and an unchanged name would have kept a phone PWA
- * on the v3 copy captured at its own install. BUMP THIS WHENEVER THE SHELL CHANGES.
+ * on the v3 copy captured at its own install. (This began the hand-bump rule that
+ * the 2026-11-24 entry below replaces: it was forgotten between shell changes.)
  * 2026-11-16 — bumped to v5, measured on the tablet over Tailscale: its installed
  * PWA still held the 2026-11-09 "/" copy (1,052,587 B vs 1,203,162 B served) while
  * a week of shell changes shipped. A failed launch (Tailscale not up yet) therefore
@@ -49,8 +50,18 @@
  * 2026-11-24 — bumped to v16: `/restart` waits for the service to come back and
  * reloads the page (it called a `feedReconnect()` that does not exist), and a
  * message / `/goal` runs in the chat it was typed in.
+ * 2026-11-24 — THE HAND-BUMP IS GONE (v3 … v16 were each bumped only AFTER a
+ * phone had already painted an old shell). `SHELL_VERSION` is a placeholder the
+ * server replaces, when it serves this file, with a hash of the SERVED build —
+ * the SAME fingerprint `/api/build` returns. Any shell change therefore changes
+ * this worker's BODY and the cache NAME, `install` re-runs, `activate` deletes
+ * the old cache, and the installed app retires its stale "/" copy by itself.
+ * Nothing here needs a human version bump anymore; do not reintroduce one.
  */
-const CACHE = "longrun-shell-v16";
+const SHELL_VERSION = "__SHELL_VERSION__";
+// Served: the hex the server injected. Raw file (a plain static server): a
+// constant, which is exactly the old behaviour — never a crash.
+const CACHE = "longrun-shell-" + (/^[0-9a-f]{8,}$/.test(SHELL_VERSION) ? SHELL_VERSION : "static");
 const SHELL = ["/", "/orbit", "/assets/dragsort.js", "/assets/icon-192.png",
                "/assets/icon-512.png", "/assets/apple-touch-icon.png",
                "/assets/icon-maskable-512.png"];
