@@ -321,6 +321,18 @@ All notable changes to Longrun are documented here. The format follows
   it); the pin now matches `toolCard(d.tool, d.args)`.
 
 ### Changed
+- **The always-on prompt loses its stale catalogues, never a rule.** Measured on the assembled prompt
+  (new session `70cc957c04c1`, 16 sections): the `prompt-map` no longer prints the `sections:` inventory
+  (ids + kind, which goes stale with every new section), `skills-policy`/`rules-policy` lose their
+  duplicated wording, and the Matrix and batch/dispatch paragraphs are tightened with every rule kept
+  (parallel caps, detached dispatch + `job.get`/`wait`, per-teammate grouping, `max_steps>=3`,
+  coordinator-only `job.*`, SJ `label`/`deps`/`input_from`). Prompt **29,476 -> 28,017 chars**, live
+  system prompt **8,571 -> 8,231 tokens**. The discovery RECIPE is untouched (`self.tools`
+  query/index/schema/`scope:"all"`, `skills.search`/`read`, MCP `catalog_search -> describe -> invoke`),
+  and `v665`'s "code wins" clause plus `v198`'s SCAN/LOAD wording stay verbatim. `v764` P1 and `v507` E
+  are re-pointed from "the prompt maps namespaces with counts" (a catalogue that no longer exists) to
+  "the prompt carries no catalogue, only the recipe". Live after restart: 5/5 probes green, the model
+  still reaches MCP, skills and plugins on its own.
 - **The testing head is dispatched only for what it can actually check.** Operator: *"stop asking A54
   everything: he cannot access every part of the backend and frontend … he can be invoked only for
   things he can check. Verify before dispatch."* Project rules now list his reach (rendered WebUI over

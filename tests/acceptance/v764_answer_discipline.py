@@ -113,8 +113,11 @@ check("N2 it says where the disclosure belongs and that the answer stays the ans
 from longrun.core import api_v02  # noqa: E402
 
 _tctx = api_v02.tool_context()
-check("P1 the prompt maps namespaces with counts and no `ns{a,b}` member list",
-      "fs(" in _tctx and "fs{" not in _tctx, len(_tctx))
+check("P1 the prompt carries no namespace catalogue, only the discovery recipe",
+      # 2026-11-24: the per-namespace COUNTS went with the prompt list — a
+      # catalogue grows with the config and goes stale. The recipe is the contract.
+      "fs(" not in _tctx and "fs{" not in _tctx
+      and 'self.tools {query:' in _tctx, len(_tctx))
 check("P2 the prompt teaches list / search / schema, in that order",
       "self.tools {}" in _tctx and 'self.tools {query:' in _tctx
       and 'self.tools {tool:' in _tctx)

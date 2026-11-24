@@ -1236,32 +1236,23 @@ def tool_context():
         '{"tool":"fs.read","args":{"path":"b.py"}}]}',
         "Each item of `calls` is a FULL action — a tool call, "
         '{"action":"subagent","goal":"..."}, or '
-        '{"action":"dispatch","agent":"<A-id>","goal":"..."}. At most `runtime.max_parallel_tools` '
-        "tools run at once (config/tools.yaml); subagents are capped by "
-        "`max_parallel` (config/subagents.yaml). A dispatch is DETACHED: it returns "
-        "a job id at once and the teammate's reply arrives back as a message when "
-        'the job ends (read it with job.get); add "wait":true to get the reply '
-        "inside this turn. Dispatch items run grouped "
-        "per teammate (different concurrently, same sequentially); never a "
-        "spawn, never on the subagent budget. Give a tool-using subagent "
-        "max_steps>=3 (2 steps leave no turn for the answer). `job.*` belongs to a "
-        "coordinator: an agent with a direct report runs dependency-wave jobs over "
-        "its own subtree (no grant); a session with nobody below it, or a name "
-        "outside that subtree, answers permission_denied (exit 126, even on FULL). "
-        "Never "
-        "batch an approval-gated mutation with a read that depends on it.",
-        "A SUBAGENT item may declare ORDER over other subagent items of the same "
-        "batch, and the whole batch becomes one in-chat Session Job (SJ) — never "
-        "dispatched, never a team job (J<n>) — inspectable with `self.sj`:",
-        '  {"action":"batch","calls":['
-        '{"action":"subagent","label":"data","goal":"collect the numbers"},'
-        '{"action":"subagent","label":"report","goal":"write the summary",'
-        '"deps":["data"]}]}',
-        "`label` names the item; `deps` lists the labels that must FINISH first — "
-        "the item starts only then and automatically receives their output under "
-        "`## Input from dependencies` (use `input_from:\"<label>\"` to take just "
-        "one dependency's output). Never invent `deps` you do not need: items with "
-        "no `deps` start together, which is faster.",
+        '{"action":"dispatch","agent":"<A-id>","goal":"..."}. At most '
+        "`runtime.max_parallel_tools` tools run at once (config/tools.yaml); subagents are "
+        "capped by `max_parallel` (config/subagents.yaml). A dispatch is DETACHED: it returns "
+        "a job id at once and the teammate's reply arrives back as a message when the job ends "
+        '(read it with job.get); add "wait":true to get the reply inside this turn. Dispatch '
+        "items run grouped per teammate (different concurrently, same sequentially) — never a "
+        "spawn, never on the subagent budget. Give a tool-using subagent max_steps>=3 (2 steps "
+        "leave no turn for the answer). `job.*` belongs to a COORDINATOR: it runs dependency-wave "
+        "jobs over its own subtree; a session with nobody below it, or a name outside that "
+        "subtree, gets permission_denied (exit 126, even on FULL). Never batch an "
+        "approval-gated mutation with a read that depends on it.",
+        "A SUBAGENT item may declare ORDER: the whole batch becomes one in-chat Session Job "
+        "(SJ<n>) — never dispatched, never a team job — inspectable with `self.sj`. `label` "
+        "names the item; `deps` lists the labels that must FINISH first, and the item then "
+        "receives their output under `## Input from dependencies` "
+        '(`input_from:"<label>"` takes just one). Items with no `deps` start together, which '
+        "is faster.",
         # 2026-11-24 (operator): the per-namespace COUNT list is gone — a catalogue
         # of what exists is a list, and a list goes stale. Discovery stays a RECIPE.
         "A NAMESPACE IS NOT A TOOL — `grep` is only a PREFIX and is not callable; "

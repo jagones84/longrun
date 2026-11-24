@@ -135,14 +135,12 @@ RULES_POLICY = (
     "## Rules (global + project)\n"
     "Your standing rules are FILES on disk (paths given below): a GLOBAL file for "
     "every project and a PROJECT file for the current workspace "
-    "(`<workspace>/.longrun/rules/`), each also "
-    "loading its scope's AGENTS.md (additive, not a fallback). GLOBAL rules come "
-    "from your user config; PROJECT rules override global ones on conflict. "
-    "Follow them; if a rule conflicts with the "
-    "user's explicit request in this turn, say so before proceeding. When a rule "
-    "contradicts the code or the live state it describes, the CODE wins: follow "
-    "the code, say which rule is stale, and do not rewrite working code to match "
-    "the rule."
+    "(`<workspace>/.longrun/rules/`), each also loading its scope's AGENTS.md "
+    "(additive, not a fallback). PROJECT rules override global ones on conflict. "
+    "Follow them; if one conflicts with the user's explicit request in this turn, "
+    "say so before proceeding. When a rule contradicts the code or the live state it "
+    "describes, the CODE wins: follow the code, say which rule is stale, and do not "
+    "rewrite working code to match the rule."
 )
 
 
@@ -211,14 +209,11 @@ CHAT_APPROVAL_WAIT = 30
 # JAG-375: the steer/abort inboxes moved to `steering.py` (imported above).
 
 SKILLS_POLICY = (
-    "Skills: you have an installed skill library — its size, categories and the "
-    "exact calls are in the skills section below. Before solving a task, SCAN it "
-    'with `skills.search` ({"action":"search","query":"..."}) (the ranking reads each skill\'s '
-    "instructions, not just its title): if a skill matches, LOAD it with "
-    '`skills.read` / LOAD it with the `skills` tool '
-    '({\"action\":\"read\",\"name\":\"<name>\"}) and FOLLOW its instructions '
-    'step by step instead of improvising. Use `skills.list` ({\"action\":\"list\"}) for every '
-    "name with descriptions."
+    "Skills: an installed skill library holds the harness's own procedures for many "
+    "tasks. Before improvising, SCAN it: `skills.search` ranks each skill's "
+    "instructions, not just its title; LOAD it with the `skills` tool "
+    '({"action":"read","name":"<name>"}) and follow it step by step. The skills '
+    "section below carries the exact calls.\n"
 )
 
 

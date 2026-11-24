@@ -83,15 +83,15 @@ CAPABILITY_RULE = (
 
 
 def _manifest_text():
-    pretty = ", ".join("%s(%s)" % (s["id"], s["kind"]) for s in SECTIONS)
     return (
         "## How you are built (prompt map)\n"
-        "Your system prompt is an ordered list of sections; some are generated at "
-        "runtime, some are text you can EXTEND with files (adding, never replacing). "
-        "In case of CONTRADICTION the more specific level wins: PROJECT > GLOBAL > DEFAULT.\n"
+        "Your system prompt is an ordered list of sections generated at runtime; you may "
+        "EXTEND any of them with files (adding, never replacing). On a contradiction the "
+        "more specific level wins: PROJECT > GLOBAL > DEFAULT.\n"
         "- global section addenda: %s/<NN>-<id>.md\n"
         "- project section addenda: %s/<ws-slug>/prompt.d/<NN>-<id>.md\n"
-        "- sections: %s" % (GLOBAL_DDIR, paths.PROJECTS_DIR, pretty)
+        "`<id>` is the section id named in the heading that opens each block."
+        % (GLOBAL_DDIR, paths.PROJECTS_DIR)
     )
 
 
