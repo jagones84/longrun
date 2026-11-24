@@ -8742,19 +8742,19 @@ let SLASH_COMMANDS = [
     run: () => openSkillMenu() },
   { id: "compact", aliases: [], icon: "🗜", kind: "ui", insert: "",
     hint: "compact this session's context now",
-    run: () => compactNow() },
+    run: (sid) => compactNow(sid) },
   { id: "status", aliases: [], icon: "ⓘ", kind: "ui", insert: "",
     hint: "report everything about this session: identity, model, context saturation vs the max context, the plan and its open steps, approvals",
-    run: () => openSessionStatus() },
+    run: (sid) => openSessionStatus(sid) },
   { id: "reset", aliases: [], icon: "↺", kind: "ui", insert: "",
-    hint: "start a fresh chat (a new session in this workspace) — nothing is deleted",
-    run: () => resetChat() },
+    hint: "start a fresh chat (a new session in THIS session's workspace) — nothing is deleted",
+    run: (sid) => resetChat(sid) },
   { id: "unlock", aliases: [], icon: "⏏", kind: "ui", insert: "",
     hint: "leave /plan or /spec mode: release the gate and forget that document",
-    run: () => docUnlock() },
+    run: (sid) => docUnlock(sid) },
   { id: "context", aliases: ["ctx"], icon: "◔", kind: "ui", insert: "",
     hint: "this session's context: saturation, messages/tokens/budget and the full breakdown (the same card the inspector shows)",
-    run: () => openContextDetails() },
+    run: (sid) => openContextDetails(sid) },
   { id: "restart", aliases: [], icon: "⟳", kind: "ui", insert: "",
     hint: "restart the harness now — the same door the agent's harness tool uses",
     run: () => restartService() },
@@ -8824,11 +8824,11 @@ loadUserCommands();   // first paint can offer them; a failure leaves the built-
 const _SLASH_RUN = {
   skills: () => openSkillMenu(),
   plugins: () => openPluginMenu(),
-  compact: () => compactNow(),
-  status: () => openSessionStatus(),
-  reset: () => resetChat(),
-  unlock: () => docUnlock(),
-  context: () => openContextDetails(),   // 2026-11-22: `/context` runs the RH card
+  compact: (sid) => compactNow(sid),
+  status: (sid) => openSessionStatus(sid),
+  reset: (sid) => resetChat(sid),
+  unlock: (sid) => docUnlock(sid),
+  context: (sid) => openContextDetails(sid),   // 2026-11-22: `/context` runs the RH card
   restart: () => restartService(),       // 2026-11-22: `/restart` calls `harness.restart`
 };
 function _applySlashCatalog(r) {
@@ -8868,6 +8868,12 @@ async function send(text, display, atts) {
   const inp = $("inp");
   let raw = (text !== undefined ? text : inp.value).trim();
   if (!raw) return;
+  // 2026-11-24 (operator: *"se eseguo un comando in una chat … me lo fa in un'altra …
+  // viene redirezionato ad un altra sessione"*): a slash command belongs to the session
+  // that was on screen WHEN IT WAS TYPED. Capture it here — every action below receives
+  // it, so an async session switch (an SSE event, a rail click) can never retarget the
+  // command to another session. `_commandTarget` refuses instead of acting unseen.
+  const _cmdSid = sessionId;
   // 2026-11-21 (operator: *"queue message doesn't work, the message is sent; steer
   // interrupts the current run"*): `turnSSE` is THIS page's handle. After a reload, or
   // with a turn started by the CLI or another tab, it is missing while the server is
@@ -8918,7 +8924,7 @@ async function send(text, display, atts) {
       toast("/" + _docKind + " does not include the " + _attachments.length +
             " attachment(s) — they stay for your next message", "warn");
     }
-    _runDocCommand(_docKind, _docAsk);
+    _runDocCommand(_docKind, _docAsk, _cmdSid);
     return;
   }
   if (_attachmentPending(sessionId)) {
@@ -8935,7 +8941,9 @@ async function send(text, display, atts) {
   // behaviour (`/clear`, `/compact`) and the reason clicking SEND while the `/` menu
   // is open can never turn a UI command into a message. A real skill with that name
   // still wins, exactly as the server resolves it.
-  const _solo = raw.match(/^\/([A-Za-z0-9_.\-]+)$/);
+  // 2026-11-24: trailing whitespace is allowed — `/reset ` used to fall through and
+  // reach the MODEL as prose, which is how a command could end up acting elsewhere.
+  const _solo = raw.match(/^\/([A-Za-z0-9_.\-]+)\s*$/);
   if (_solo) {
     const _tok = _solo[1].toLowerCase();
     const _c = SLASH_BY_ID[_tok];
@@ -8943,7 +8951,7 @@ async function send(text, display, atts) {
     if (_c && _c.run && !_ownSkill) {
       inp.value = ""; if (inp.style) inp.style.height = ""; _renderCmdChips();
       _draftClear(sessionId);   // it left the box: never restore it
-      _c.run(); return;
+      _c.run(_cmdSid); return;
     }
   }
   // A user-defined command expands to its PROMPT here, before anything is sent;
@@ -10464,18 +10472,24 @@ async function createNewSession() {
 /* `/reset`: a fresh chat in the SAME workspace, without the dialog. The old
    session is NOT deleted — it stays in the rail with its transcript. Uses the
    one creation path above; a distinct function would be a second truth. */
-async function resetChat() {
+async function resetChat(sid) {
+  const S = _commandTarget(sid, "reset");
+  if (!S) return;
   let ws = "";
-  if (sessionId) {
-    try { const w = await api("GET", "/api/workspace?session=" + encodeURIComponent(sessionId)); ws = w.workspace || ""; }
-    catch (_) {}
-  }
+  try { const w = await api("GET", "/api/workspace?session=" + encodeURIComponent(S)); ws = w.workspace || ""; }
+  catch (_) {}
+  // The workspace read is async: re-check the target before creating anything.
+  if (S !== sessionId) { toast("/reset cancelled — the active session changed", "warn"); return; }
+  const _row = (_sessList || []).find(x => x && x.id === S) || {};
+  const _sys = _isSystemSess(_row) || S === "architect";
   const r = await createSession("", ws);
   if (r.error) { toast("reset: " + r.error, "err"); return; }
   // A fresh chat starts with an empty box: an attachment ingested into the OLD
   // session's knowledge must not ride into the new one.
   _attachments = []; _renderAttach(); _renderPendingCtxItems();
-  toast("new chat started — the previous session stays in the rail", "ok");
+  toast("new chat in " + (ws || "the default workspace") + " — " + S + " was not touched"
+        + (_sys ? " (the Architect session is stateless: /reset opens a NEW chat there)" : ""),
+        "ok");
 }
 /* JAG-121: folder picker (file-browser) for the session workspace.
    JAG-496: the picker serves whoever opened it. `_dirTarget` is the input id it
@@ -11991,17 +12005,18 @@ async function saveSettingsSection(card, sec) {
     _syncSectionDirty(card, sec);
   }
 }
-async function compactNow() {
-  if (!sessionId) { toast("no active session", "warn"); return; }
+async function compactNow(sid) {
+  const S = _commandTarget(sid, "compact");
+  if (!S) return;
   const btn = $("compactBtn");
   if (btn) { btn.textContent = "compacting…"; btn.classList.add("busy"); }
   // 2026-11-08: the chat row is shown for the WHOLE request — the POST returns only
   // when the server has finished compacting, so the row is the real run, not a timer.
-  compactBarShow(sessionId, "compacting context");
+  compactBarShow(S, "compacting context");
   let r = {};
-  try { r = await api("POST", "/api/context/compact", { session: sessionId }); }
+  try { r = await api("POST", "/api/context/compact", { session: S }); }
   finally {
-    compactBarClear(sessionId);
+    compactBarClear(S);
     if (btn) { btn.textContent = "compact"; btn.classList.remove("busy"); }
   }
   // JAG-461: Stop aborts a running compaction server-side -> the transcript is
@@ -12015,6 +12030,8 @@ async function compactNow() {
   toast("🗜 compacted " + r.compacted + " message(s) · " + kind,
         r.summary === "extractive" ? "warn" : "ok");
   // The visible proof is the persisted `compact` card replayed from the transcript.
+  // A switch during the request owns a DIFFERENT view: never wipe it.
+  if (S !== sessionId) return;
   $("log").innerHTML = ""; _resetChatTree(); loadHistory(); loadCtx();
 }
 
@@ -12234,14 +12251,15 @@ function _docFailCard(kind, why) {
   return d;
 }
 const DOC_WAIT_MS = 600000;      // /spec is 3 thinking model calls; 10 min is the ceiling
-async function _runDocCommand(kind, ask) {
-  const sid = sessionId;
+async function _runDocCommand(kind, ask, sid) {
+  const S = _commandTarget(sid, kind);
+  if (!S) return;
   who("user", "/" + kind + " " + ask);
   const pending = _docPendingCard(kind);
   let r = {};
   const ctl = (typeof AbortController !== "undefined") ? new AbortController() : null;
   const timer = ctl ? setTimeout(() => { try { ctl.abort(); } catch (_) {} }, DOC_WAIT_MS) : null;
-  try { r = await api("POST", "/api/docs/" + kind, { session: sid, prompt: ask },
+  try { r = await api("POST", "/api/docs/" + kind, { session: S, prompt: ask },
                       ctl ? { signal: ctl.signal } : undefined); }
   catch (e) {
     const _msg = String((e && e.message) || e);
@@ -12387,12 +12405,13 @@ async function docReject() {
   if (typeof loadApprovals === "function") loadApprovals();
   return r;
 }
-async function docUnlock() {
-  if (!sessionId) return null;
+async function docUnlock(sid) {
+  const S = _commandTarget(sid, "unlock");
+  if (!S) return null;
   // The session file is shared with the chat turn; unlocking mid-turn could make
   // the turn's save drop the cleared record (or the reverse). The bar's ⏏ is
   // disabled then too — the keyboard path must say the same thing.
-  if (turnSSE[sessionId]) {
+  if (turnSSE[S]) {
     toast("a turn is running — /unlock when it finishes", "warn"); return null;
   }
   if (_docState && !_docState.active && !_docState.plan_mode) {
@@ -12401,7 +12420,7 @@ async function docUnlock() {
   if (typeof uiConfirm === "function"
       && !(await uiConfirm("leave this document's mode?",
                            "The bar closes and /plan or /spec mode is forgotten; the file stays on disk."))) return null;
-  const r = await api("POST", "/api/docs/unlock", { session: sessionId });
+  const r = await api("POST", "/api/docs/unlock", { session: S });
   if (!r || r.error || r.ok === false) {
     toast("unlock: " + ((r && r.error) || "failed"), "err"); return null;
   }
@@ -13126,6 +13145,19 @@ async function replanGraph() {
   add.forEach(id => { const n = _nodeById(id); if (n) chatNodeAdd(n); });
   _updateNowBar(); scroll();
 }
+/* 2026-11-24 (operator): ONE guard for every `/` UI command. It resolves the session
+   the command was TYPED in (`send()` captures it) and refuses when the screen has moved
+   on: a command must never act on a session the operator is not looking at. Returns the
+   target id, or "" after saying why. */
+function _commandTarget(sid, label) {
+  const S = sid || sessionId;
+  if (!S) { toast("no session selected", "warn"); return ""; }
+  if (S !== sessionId) {
+    toast("/" + label + " cancelled — the active session changed", "warn");
+    return "";
+  }
+  return S;
+}
 /* JAG-125: the user can reset the persistent plan and the current run graph. */
 async function clearSession() {
   if (!sessionId) return;
@@ -13690,24 +13722,26 @@ async function openChangelog() {
 }
 /* `/status` and the composer's ctx-ring both read the SAME facts: the tool
    `harness.status` (one deterministic read) — the modal never re-derives them. */
-async function openSessionStatus() {
-  if (!sessionId) { toast("no session selected", "warn"); return; }
+async function openSessionStatus(sid) {
+  const S = _commandTarget(sid, "status");
+  if (!S) return;
   let res = null;
   try {
     const j = await api("POST", "/api/tools/call",
-      { tool: "harness", run_id: "ui-status:" + sessionId,
-        args: { action: "status", session: sessionId } });
+      { tool: "harness", run_id: "ui-status:" + S,
+        args: { action: "status", session: S } });
     res = (j && j.result) || j || {};
   } catch (e) { toast("status failed: " + e, "err"); return; }
   if (!res || res.ok === false) {
     toast("status failed: " + ((res && (res.error || res.reason)) || "unknown"), "err"); return;
   }
+  if (S !== sessionId) return;   // a switch during the read: do not show another session's card
   _infoModal("Session status", body => {
     const idn = res.identity || {}, ctx = res.context || {}, plan = res.plan || {};
     const ap = res.approvals || {}, ag = res.agent || {}, svc = res.service || {};
     const pct = (ctx.pct == null) ? "—" : (Math.round(ctx.pct * 10) / 10) + "%";
     body.append(_kvRows([
-      ["session", idn.id || sessionId],
+      ["session", idn.id || S],
       ["title", idn.title],
       ["agent", (ag.id || "—") + (ag.name ? (" · " + ag.name) : "")],
       ["teams", (ag.teams || []).join(", ")],
@@ -13740,10 +13774,12 @@ async function openSessionStatus() {
    the SAME breakdown the inspector renders (`renderCtxItems`), from the SAME readers
    (`loadCtx`, `loadCtxItems`) and the SAME two doors (`compactNow`, the compaction
    policy). One builder, one renderer, one endpoint per number — no second implementation. */
-async function openContextDetails() {
-  if (!sessionId) { toast("no session selected", "warn"); return; }
+async function openContextDetails(sid) {
+  const S = _commandTarget(sid, "context");
+  if (!S) return;
   await loadCtx();               // the ring's numbers (`_ctxDisplay`)
   await loadCtxItems();          // the category breakdown
+  if (S !== sessionId) return;   // a switch during the read: never show another session's card
   _infoModal("Context · this session", (body, close) => {
     const card = document.createElement("div");
     card.className = "ctxcard";

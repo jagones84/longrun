@@ -192,6 +192,21 @@ All notable changes to Longrun are documented here. The format follows
   Locked by `v1250` (32/32); battery 953/953.
 
 ### Fixed
+- **A slash command can no longer land in a different chat than the one it was typed in.** Operator:
+  *"se eseguo un comando in una chat session per esempio /reset … me lo fa in un altra … nella architect
+  chat me lo ha fatto nella chat che avevo selezionato PRIMA"*. Every session-scoped `/` action read the
+  mutable global `sessionId` AFTER an `await`, so an async session switch (an SSE event, a rail click,
+  the Architect automation) retargeted it: `/reset` fetched one session's workspace and created the chat
+  in whatever was current; `/compact`, `/status`, `/context`, `/unlock`, `/plan`, `/spec` posted or
+  painted the other id. `send()` now captures the target ONCE (`_cmdSid = sessionId`) before its first
+  `await` and passes it to every action; one guard (`_commandTarget`) refuses with a toast when the
+  active session changed, and each async body re-checks before touching the DOM. Both command tables
+  (first-paint fallback and `_SLASH_RUN`) pass `(sid)`. `/reset ` with a trailing space also escaped the
+  solo-command regex and reached the MODEL as prose — the token now allows trailing whitespace. `/reset`
+  on Architect stays allowed but the session is stateless: the toast says a NEW chat was opened and the
+  Architect one was not touched. Locked by `v1302` (29/29); `v1250` D3/D6/E1, `v774` F5, `v775` E1,
+  `v1053` A6/D4/H2/I8, `v1238` D1 and `v1244` 3c re-pointed to the new signatures (assertions
+  unchanged). Shell cache `longrun-shell-v14`.
 - **A question ABOUT a file is no longer mistaken for a request to produce one.** Found by a LIVE
   session (`20c7543386dd`): "Quante righe ha il file src/longrun/memory/skills.py?" matched
   `plan/artifacts._TARGET_PATH`, so the harness opened the deliverable/READ-BACK check and the model

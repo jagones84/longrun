@@ -113,7 +113,9 @@ check("D1 the first-paint catalogue offers /context and /restart",
 check("D2 the backend catalogue owns both (a boot with the API up keeps them)",
       '"id": "context"' in SLASH_PY and '"id": "restart"' in SLASH_PY)
 check("D3 the backend catalogue REPLACES the fallback, so the callbacks are re-attached",
-      "context: () => openContextDetails()" in HTML
+      # 2026-11-24: the action receives the session captured by `send()` (`_cmdSid`),
+      # so an async session switch can never retarget the command (v1302 D2).
+      "context: (sid) => openContextDetails(sid)" in HTML
       and "restart: () => restartService()" in HTML)
 _RESTART = block("async function restartService() {", "/* ---- approvals")
 check("D4 /restart calls the agent's OWN tool (`harness` → restart), not a second door",
@@ -121,7 +123,7 @@ check("D4 /restart calls the agent's OWN tool (`harness` → restart), not a sec
       and "/api/harness/restart" not in HTML)
 check("D5 /restart schedules no continuation turn (no session is passed)",
       "run_id: \"ui-restart\"" in _RESTART and "session:" not in _RESTART)
-_CTXM = block("async function openContextDetails() {", "/* 2026-11-22 (operator): `/restart`")
+_CTXM = block("async function openContextDetails(sid) {", "/* 2026-11-22 (operator): `/restart`")
 check("D6 /context reuses the panel's readers and renderer",
       "await loadCtx();" in _CTXM and "await loadCtxItems();" in _CTXM
       and "renderCtxItems(brk)" in _CTXM)
@@ -142,7 +144,7 @@ check("D10b every info window is a NAMED dialog (axe `aria-dialog-name`, 2026-11
 
 # ---- E: the composer still RUNS a solo `/verb` -----------------------------
 check("E1 a solo `/context` / `/restart` runs instead of shipping as prose",
-      "_c.run && !_ownSkill" in HTML and "_c.run(); return;" in HTML)
+      "_c.run && !_ownSkill" in HTML and "_c.run(_cmdSid); return;" in HTML)
 check("E2 the menu row runs the same callback",
       "if (c.run) c.run();" in HTML or "c.run()" in HTML)
 

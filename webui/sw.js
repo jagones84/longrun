@@ -41,8 +41,11 @@
  * across focus changes.
  * 2026-11-24 — bumped to v13: the Rules panel lists the GLOBAL files too (harness
  * `AGENTS.md` + optional `Global_rules.md`), so the shell changed shape.
+ * 2026-11-24 — bumped to v14: a `/` command is pinned to the session it was typed in
+ * (never the one selected afterwards), and a trailing space no longer turns it into
+ * prose for the model.
  */
-const CACHE = "longrun-shell-v13";
+const CACHE = "longrun-shell-v14";
 const SHELL = ["/", "/orbit", "/assets/dragsort.js", "/assets/icon-192.png",
                "/assets/icon-512.png", "/assets/apple-touch-icon.png",
                "/assets/icon-maskable-512.png"];

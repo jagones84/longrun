@@ -109,8 +109,9 @@ check("C2 the built-in token is reserved (a user command cannot shadow it)",
 # ---- D: the WebUI wires the same tool --------------------------------------
 UI = open(os.path.join(REPO, "webui", "index.html"), encoding="utf-8").read()
 check("D1 the composer runs /status through the tool, not a re-derivation",
-      "status: () => openSessionStatus()," in UI
-      and 'action: "status", session: sessionId' in UI
+      # 2026-11-24: the call targets the session captured at send time (`S`).
+      "status: (sid) => openSessionStatus(sid)," in UI
+      and 'action: "status", session: S' in UI
       and 'tool: "harness"' in UI)
 
 print("---")

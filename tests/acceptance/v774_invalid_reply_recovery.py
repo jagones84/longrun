@@ -185,7 +185,8 @@ check("F4 the composer carries no phase sentence; the CHAT carries a compaction 
       and "#compactBar .cb-dot" in HTML and "@keyframes cbPulse" in HTML)
 check("F5 the row is drawn only from real compaction facts (manual request in flight, "
       "or a turn starting over the server's own over_threshold)",
-      'compactBarShow(sessionId, "compacting context")' in HTML
+      # 2026-11-24: `/compact` now targets the session captured at send time (`S`).
+      'compactBarShow(S, "compacting context")' in HTML
       and "if (_ctxOver) compactBarShow(" in HTML
       and "_ctxOver = !!c.over_threshold;" in HTML
       and "compactBarClear(d.session)" in HTML)

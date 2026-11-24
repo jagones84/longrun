@@ -41,7 +41,9 @@ check("A6 the backend catalogue keeps the LOCAL actions for skills/plugins/compa
       "const _SLASH_RUN = {" in UI
       and "skills: () => openSkillMenu()," in UI
       and "plugins: () => openPluginMenu()," in UI
-      and "compact: () => compactNow()," in UI
+      # 2026-11-24: the session is passed through (`/compact` targets the chat it was
+      # typed in — v1302).
+      and "compact: (sid) => compactNow(sid)," in UI
       and "_SLASH_RUN[c.id] ? { run: _SLASH_RUN[c.id] } : {}" in UI)
 
 # --------------------------------------------------------------- B: menu UI
@@ -90,8 +92,10 @@ check("D3 an empty /plan keeps the text and says why",
 check("D4 the call goes to the document endpoint, never to the chat stream",
       # v1051b re-pin: the POST carries an abort signal so a dead planner cannot
       # leave the pending card spinning for ever.
-      'api("POST", "/api/docs/" + kind, { session: sid, prompt: ask }' in UI
-      and '/api/chat' not in UI.split("async function _runDocCommand")[1][:900])
+      # 2026-11-24: the body targets the validated session (`S` = the one captured
+      # at send time), so a switch during planning cannot move the document.
+      'api("POST", "/api/docs/" + kind, { session: S, prompt: ask }' in UI
+      and '/api/chat' not in UI.split("async function _runDocCommand")[1][:1400])
 check("D5 a failure restores the request in the composer",
       'inp.value = "/" + kind + " " + ask;' in UI)
 check("D6 a real skill with the same name still wins",
@@ -160,7 +164,8 @@ check("H1 the fallback and the backend both carry /reset and /unlock",
       'id: "reset"' in UI and 'id: "unlock"' in UI
       and '{"id": "reset"' in SLASH and '{"id": "unlock"' in SLASH)
 check("H2 both commands run LOCALLY through the one action map",
-      "reset: () => resetChat()," in UI and "unlock: () => docUnlock()," in UI)
+      # 2026-11-24: the session captured at send time is passed through (v1302).
+      "reset: (sid) => resetChat(sid)," in UI and "unlock: (sid) => docUnlock(sid)," in UI)
 check("H3 /reset reuses the ONE session-creation path (no second creator)",
       "async function createSession(title, ws) {" in UI
       and "async function createNewSession() {" in UI
@@ -201,7 +206,9 @@ check("I6 an empty /unlock says there is nothing to unlock",
 check("I7 a new/reset session shows ITS queue, never the one it left",
       "renderQueue();   // JAG-174: the NEW session's queue" in UI)
 check("I8 /reset starts with an empty composer (no attachment from the old chat)",
-      "_attachments = []; _renderAttach(); _renderPendingCtxItems();" in UI.split("async function resetChat")[1][:900])
+      # 2026-11-24: the body grew a target guard + the workspace read, so the window is
+      # wider; the assertion (the attachments are cleared) is unchanged.
+      "_attachments = []; _renderAttach(); _renderPendingCtxItems();" in UI.split("async function resetChat")[1][:1400])
 check("I9 a flushed /plan never wipes the box or the operator's draft",
       "if (text === undefined) {\n      inp.value = \"\"; if (inp.style) inp.style.height = \"\"; _draftClear(sessionId);\n    }" in UI)
 check("I10 /plan says it ignores composer attachments (the planner has no tools)",

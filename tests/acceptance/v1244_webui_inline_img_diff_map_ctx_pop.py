@@ -66,7 +66,7 @@ check("3b it shows the three values the panel shows (messages / tokens / budget)
       "esc(d.messages" in HTML and "esc(d.tokens" in HTML and "esc(d.budget" in HTML)
 check("3c it reuses the ONE compaction door (no second mechanism)",
       'pop.querySelector(".cp-compact").onclick = () => { _closeCtxPop(); compactNow(); }' in HTML
-      and "async function compactNow()" in HTML)
+      and "async function compactNow(sid)" in HTML)
 check("3d the ring is clickable and the numbers are kept",
       # 2026-11-22 (ROUND 172): the ring's click is a DELEGATED listener now (a re-rendered
       # composer can never leave `#cmpCtx` without a handler), so `_cc.onclick` is gone.

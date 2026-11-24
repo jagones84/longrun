@@ -103,8 +103,10 @@ check("D3 the skill rank is exact > prefix > contains",
 
 # ---- E: a whole-message UI command runs instead of being sent ---------------
 check("E1 send() intercepts a message that IS one UI command",
-      r'const _solo = raw.match(/^\/([A-Za-z0-9_.\-]+)$/);' in UI
-      and "if (_c && _c.run && !_ownSkill) {" in UI and "_c.run(); return;" in UI)
+      # 2026-11-24: trailing whitespace is allowed (`/reset ` used to reach the model
+      # as prose) and the action receives the session captured at send time.
+      r'const _solo = raw.match(/^\/([A-Za-z0-9_.\-]+)\s*$/);' in UI
+      and "if (_c && _c.run && !_ownSkill) {" in UI and "_c.run(_cmdSid); return;" in UI)
 check("E2 a REAL skill with the same name still wins (the server's rule)",
       "const _ownSkill = (_skillsCache || []).some(s => String(s.name || \"\").toLowerCase() === _tok);" in UI)
 
