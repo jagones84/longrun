@@ -562,6 +562,22 @@ All notable changes to Longrun are documented here. The format follows
   it); the pin now matches `toolCard(d.tool, d.args)`.
 
 ### Changed
+- **The Architect block lists its tools by NAME; the description is discovered.** Operator: *"perché nel
+  system prompt vedo ancora le descrizioni dei tool? … se le deve scoprire dinamicamente"*. The generic
+  registry dump was already gone (JAG-513), but `prompt._architect_tool_lines` had re-grown a catalogue
+  INSIDE the Architect section: one `- name — first sentence` line per exclusive subtool, **9 579 chars**
+  (~20% of that session's prompt). The list is now names only (875 chars for 51 tools, still read LIVE from
+  the registry, so a new subtool appears at once) and both intro branches point at
+  `self.tools {tool:"<name>"}` for a full contract; the hard rules (dual permission, reserved `action`,
+  refusals, stateless) are untouched. Measured on the same session: architect section **9 579 → 3 778
+  chars**, whole prompt **49 332 → 43 537 chars**, `/api/context/preview` **12 341 → 10 891
+  system-prompt tokens** after the restart at 10:28:11 CET (`1.2.0+144.g62aa2aa9`). The replacement path
+  was proved live with a real call: `self.tools {tool:"agent.create"}` returns name, origin, full
+  description, properties/required and example. `v534` F5–F7 pin the shape (names only, the discovery
+  pointer, a < 5 000-char budget). Measured and LEFT ALONE: the Matrix block is 1 966 chars and is ONE
+  workflow (Nucleous / scaffold / lifecycle), not a per-tool catalogue — the earlier estimate that it hid
+  ~1.2k chars of superfluous text was wrong. Gate: full battery **996/996 GREEN**, `scripts/check.sh`
+  PASS (lint 413/414, types 88/88).
 - **`AGENTS.md` is the GLOBAL harness default; `Global_rules.md` is the user's optional
   general rule; project rules are workspace-only.** Operator: *"AGENTS.md shall not be
   from workspace — it is a global rule default of the longrun harness … general rule is
