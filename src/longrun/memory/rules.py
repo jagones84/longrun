@@ -316,11 +316,16 @@ def _collect_scope(native, agents, extra_dirs=None, always_map=None,
     """
     amap = always_map or {}
     files, parts = [], []
+    texts = {}   # 2026-11-25: per-source text. A capped consumer (the per-turn
+                 # reference copy) must be able to keep the operator's file while it
+                 # shortens the harness default — the composed text cannot tell them apart.
     canonical = (lambda p: not reject_symlinks or _canonical_path(p))
     if (canonical(native) and os.path.isfile(native)
             and amap.get(os.path.abspath(native), True) is not False):
         files.append(native)
-        parts.append(_read(native))
+        _t = _read(native)
+        parts.append(_t)
+        texts[os.path.abspath(native)] = _t
     # Folder files load even when the native file is absent.
     for extra_dir in (extra_dirs or []):
         if (not extra_dir or not canonical(extra_dir)
@@ -334,7 +339,9 @@ def _collect_scope(native, agents, extra_dirs=None, always_map=None,
                     or amap.get(os.path.abspath(p), True) is False):
                 continue
             files.append(p)
-            parts.append(_read(p))
+            _t = _read(p)
+            parts.append(_t)
+            texts[os.path.abspath(p)] = _t
     if not agents:
         agents = ""
     if (canonical(agents) and os.path.isfile(agents) and agents not in files
@@ -343,8 +350,9 @@ def _collect_scope(native, agents, extra_dirs=None, always_map=None,
         if agents_text.strip():
             files.append(agents)
             parts.append(agents_text)
+            texts[os.path.abspath(agents)] = agents_text
     text = "\n\n".join(p.strip() for p in parts if p and p.strip())
-    return text, files
+    return text, files, texts
 
 
 def collect(ws=None):
@@ -355,15 +363,22 @@ def collect(ws=None):
     PROJECT = `<ws>/.longrun/rules/*.md`, the only project source, and it honours the
     per-file always-apply switches (ROUND 179). `ws` selects the project root.
     """
-    gtext, gfiles = _collect_scope(global_agents_path(), global_rules_path())
+    gtext, gfiles, gtexts = _collect_scope(global_agents_path(), global_rules_path())
     ws = ws or get_workspace()
-    ptext, pfiles = _collect_scope(project_rules_path(ws), None,
-                                   extra_dirs=project_rules_dirs(ws),
-                                   always_map=always_apply_map(ws),
-                                   reject_symlinks=True)
+    ptext, pfiles, _ = _collect_scope(project_rules_path(ws), None,
+                                      extra_dirs=project_rules_dirs(ws),
+                                      always_map=always_apply_map(ws),
+                                      reject_symlinks=True)
     return {
         "workspace": ws,
-        "global": {"text": gtext, "files": gfiles, "path": global_rules_path()},
+        # 2026-11-25: the two GLOBAL sources are ALSO exposed one by one
+        # (`agents_text` = the harness default, `user_text` = the operator's own
+        # file). `text` stays their composition, AGENTS.md first — but a capped
+        # consumer must be able to shorten the harness default without dropping the
+        # operator's file, which is what the per-turn reference copy does.
+        "global": {"text": gtext, "files": gfiles, "path": global_rules_path(),
+                   "agents_text": (gtexts.get(os.path.abspath(global_agents_path())) or "").strip(),
+                   "user_text": (gtexts.get(os.path.abspath(global_rules_path())) or "").strip()},
         "project": {"text": ptext, "files": pfiles, "path": project_rules_path(ws)},
         "total_chars": len(gtext) + len(ptext),
     }

@@ -164,7 +164,12 @@ _hooked = set(matrix.HOOK_SUBPACKAGES)
 check("the Matrix prompt names EVERY hook subpackage and claims no other",
       all("`%s`" % _s in matrix.MATRIX_SYSTEM_PROMPT for _s in _hooked)
       and ("%d hook subpackages" % len(_hooked)) in matrix.MATRIX_SYSTEM_PROMPT
-      and "never hooks" in matrix.MATRIX_SYSTEM_PROMPT,
+      # 2026-11-24: the sentence now reads "are artifact surfaces, not hooks" (the
+      # old phrasing "never hooks" was replaced; the CLAIM is the same and is what
+      # this pin protects — a Matrix agent must not be told to hook a seam that
+      # cannot fire).
+      and ("artifact surfaces, not hooks" in matrix.MATRIX_SYSTEM_PROMPT
+           or "never hooks" in matrix.MATRIX_SYSTEM_PROMPT),
       sorted(_hooked))
 _seams = matrix.SEAMS_SPEC
 check("the seams catalogue agrees: `hooks` keys ARE the hook subpackages",

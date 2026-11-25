@@ -13947,17 +13947,27 @@ async function restartService(sid) {
       if (_here) who("ai", "↻ the service did not come back within 60 s — reload this page, then check the restart ticket.");
       toast("the service did not come back — reload this page", "err"); return;
     }
-    let h = null;
-    try { h = await api("GET", "/api/build"); }
+    let h = null, _answered = false;
+    try { h = await api("GET", "/api/build"); _answered = true; }
     catch (_) { h = null; }
     const b = _bootOf(h);
-    if (b == null) { _down = true; }                 // refused / error body: the process is away
+    if (!_answered) { _down = true; }                // no answer: the process is away
+    else if (b == null) {
+      // The service ANSWERED, but not with its identity (an error body, e.g. 401 after a
+      // token rotation). Saying "did not come back" would be false, and claiming a
+      // restart we cannot see would be worse: stop and let the operator reload.
+      if (_here) who("ai", "↻ the service answered, but the page could not read the " +
+        "build identity (" + ((h && (h.error || h.status)) || "no started_at") +
+        ") — reload this page; the restart itself was accepted.");
+      toast("restart unverified — reload this page", "warn");
+      return;
+    }
     else if (_boot0 != null) {
       if (b > _boot0 + 1) { _reloadNow(); return; }  // a NEW process: the restart really happened
     } else if (_down) { _reloadNow(); return; }      // no baseline: the down/up edge is our proof
     if (_el > 20000) {
       if (_here) who("ai", "↻ the service answered with the SAME process (started " +
-        (b != null ? new Date(b * 1000).toLocaleTimeString() : "?") +
+        new Date(b * 1000).toLocaleTimeString() +
         ") — nothing restarted; see the restart ticket.");
       toast("the service is still the old process — see the restart ticket", "warn");
       try { connectFeed(); } catch (_) {}

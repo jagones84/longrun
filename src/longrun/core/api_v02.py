@@ -1253,11 +1253,15 @@ def tool_context():
         "subtree, gets permission_denied (exit 126, even on FULL). Never batch an "
         "approval-gated mutation with a read that depends on it.",
         "A SUBAGENT item may declare ORDER: the whole batch becomes one in-chat Session Job "
-        "(SJ<n>) — never dispatched, never a team job — inspectable with `self.sj`. `label` "
-        "names the item; `deps` lists the labels that must FINISH first, and the item then "
-        "receives their output under `## Input from dependencies` "
+        "(SJ<n>) — never dispatched, never a team job — inspectable with `self.sj`. "
+        "`label` names the item; `deps` lists the labels that must FINISH "
+        "first, and the item then receives their output under `## Input from dependencies` "
         '(`input_from:"<label>"` takes just one). Items with no `deps` start together, which '
         "is faster.",
+        # 2026-11-25: a call SHAPE, not only prose — the concrete example pins what
+        # `label`/`deps` look like in a batch (v529 F5; it had been dropped in a reflow).
+        # Kept to one line: the always-on block is capped at 4 200 chars (v510 A3d).
+        'Shape: {"label":"write","deps":["data"]} runs after {"label":"data"}.',
         # 2026-11-24 (operator): the per-namespace COUNT list is gone — a catalogue
         # of what exists is a list, and a list goes stale. Discovery stays a RECIPE.
         "A NAMESPACE IS NOT A TOOL — `grep` is only a PREFIX and is not callable; "

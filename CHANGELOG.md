@@ -250,6 +250,51 @@ All notable changes to Longrun are documented here. The format follows
   Locked by `v1250` (32/32); battery 953/953.
 
 ### Fixed
+- **Bug hunt, 2026-11-25: seven red pins and three real defects.** Operator: *"Verifica non ci siano altri
+  bug dato che se ne trovano a decine"*. The full battery (994 tests, the project's own oracle) ran
+  **987/994 with 7 red pins** that had been read as "pre-existing". Triage: 4 were stale PINS, 3 had a
+  cause in the code.
+  - **The per-turn safety copy silently dropped the operator's own `Global_rules.md`** (v656 B4, red): the
+    reference block caps at 4 000 chars and keeps the HEAD, while the global text is the harness
+    `AGENTS.md` (~4.7 KB) FOLLOWED BY the user's file — so the operator's rules were cut on every turn.
+    `memory/rules.collect()` now exposes the two global sources (`agents_text` / `user_text`), the
+    reference reserves the user's text first and truncates the harness default, with a visible
+    `[harness AGENTS.md truncated in the reference]` marker. New pin `v656` **B4b** proves the user's marker
+    survives the cap.
+  - **`import longrun.agent.agent` raised `ImportError`** (found while probing the rules collector): the
+    agent core imported `server` at its TOP while `server.py` imports the agent's names at its BOTTOM, so
+    the pair only worked in one order — a plugin, a test or a worker reaching the agent module directly died
+    on import. `agent.py` now binds `server` at its bottom too (call-time `server.<name>` reads and the
+    monkeypatches they honour are unchanged). New pin `v1307` **13/13** (11 modules imported in a fresh
+    interpreter, the mechanism, the one documented exception: `httpapi` is imported through `server`).
+  - **`/restart` called a 401 a missing service** (WebUI): an error body and a refused connection were both
+    `b == null`, so the row said "did not come back within 60 s" about a service that was up. The two cases
+    are now told apart ("answered, but the page could not read the build identity — reload"), pinned by
+    `v1302` **H12**.
+  - **Stale pins, re-pointed with the reason in place:** `v1020` A3 (`/new` was missing from the reserved
+    built-ins), `v520` (the `self.tools` schema now carries `scope`/`limit`/`semantic` — the pin asserted
+    the two-argument shape), `v522` (the claim is "artifact surfaces, not hooks"; the old wording "never
+    hooks" had been replaced), `v536` F2 (the per-namespace COUNT map was removed by design on 2026-11-24 —
+    the pin now holds the recipe that replaced it), `v854` B3 (the pin summed the parts and missed the
+    `\n\n` separator the meter counts: an off-by-one BPE token).
+  - **The prompt's concrete `deps` example had been lost in a reflow** (v529 F5): the batch ORDER paragraph
+    kept the prose but no call shape. Restored as one line —
+    `{"label":"write","deps":["data"]} runs after {"label":"data"}` — inside the 4 200-char cap `v510` A3d
+    enforces (block measured at 4 149).
+  - **Also:** `harness/__init__.py` carried an uncommitted typo in a module list
+    (`ciaoskill_os_contract`); restored to `skill_os_contract`.
+  - **Live probes (read-only, same session):** version agrees across `/api/status`, `/api/self` and the
+    `Server:` header; **140 sessions, rail `messages` == transcript length in all 140**; path-traversal ids
+    refused on 10 session routes (`stores._valid_sid` + `fswrite.safe_id`); the tool door returns structured
+    arg errors (missing / wrong type) instead of executing.
+  - **Parked, with the next probe:** `httpapi` ↔ `server` keeps its one-way order (every repo caller imports
+    it lazily; fixing it means moving httpapi's own big `server` import to its bottom after an audit of
+    module-level uses). Three read routes (`/api/threads`, `.../graph`, `/api/context`) answer 200 with
+    defaults for an invalid id instead of 400 — no filesystem reach (`safe_id` sanitises), cosmetic.
+    `/restart` still does not warn that a live turn will be interrupted (the harness resumes it through
+    `inflight.recover`).
+  - Gate: full battery **995/995 GREEN**, `scripts/check.sh` PASS (lint 413/414, types 88/88), README badge
+    994 → 995.
 - **The version every surface reports is now the CHECKOUT's, not a 2026-10-07 literal.** Operator: *"Poi non e
   la versione 1.0 di longrun ..perche mente l'agente?"*. `longrun.__version__` was a hand-typed `"1.0.0"`
   — the 1.0.0 release of 2026-10-07 — while the tree had passed `v1.1.0`, `v1.2.0` and 139 commits, so
@@ -4610,6 +4655,22 @@ All notable changes to Longrun are documented here. The format follows
   input). This closes a real coverage gap: `extract_json` previously had no runnable
   test — its only guard was `tests/properties/test_pure_logic.py`, which needs an
   uninstalled `hypothesis` and never ran. Battery: 104 → 105.
+
+## [1.2.0] — 2026-11-18
+
+The third tagged release — tag message: *"Longrun v1.2.0 — every surface says what it actually did"*.
+**This entry is a reconstruction (written 2026-11-25, operator: *"non e la versione 1.0 di longrun"*):**
+the tag was cut without curated notes, and the work of its period was never separated from the
+`[Unreleased]` block above. What follows is measured from the checkout, never restated from memory:
+
+| fact | value | how it was read |
+| --- | --- | --- |
+| commits since `v1.1.0` | **821** | `git rev-list --count v1.1.0..v1.2.0` |
+| acceptance tests at the tag | **843** (from 248 at `v1.1.0`) | `git ls-tree -r v1.2.0 --name-only tests/acceptance` |
+| commits by kind | 171 `fix`, 131 `feat`, 26 `docs`, 16 `ui`, 14 `test`, 13 `benchmarks`, 12 `webui`, 11 `self-evolve` | `git log --format=%s v1.1.0..v1.2.0` |
+
+The full list is `git log v1.1.0..v1.2.0`; a reader should treat the `[Unreleased]` entries dated
+2026-10-23 → 2026-11-18 as belonging to this release and everything later as post-1.2.0 work.
 
 ## [1.1.0] — 2026-10-23
 

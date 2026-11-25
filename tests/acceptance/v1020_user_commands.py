@@ -50,9 +50,11 @@ check("A3 the built-in tokens are declared as reserved",
       # v1238: `/status` (the read-only session report) joined the catalogue.
       # 2026-11-22: the operator's new builtin verbs joined the catalogue too —
       # `/context` (alias `/ctx`) and `/restart` — so all three tokens are reserved.
+      # 2026-11-24: `/new` is a built-in as well — `/reset` clears the chat it is typed
+      # in and `/new` starts the fresh one, so both words must be un-shadowable.
       set(commands.RESERVED) == {"goal", "skills", "skill", "compact",
                                  "plan", "spec", "plugins", "plugin",
-                                 "status", "reset", "unlock",
+                                 "status", "reset", "new", "unlock",
                                  "context", "ctx", "restart"}, commands.RESERVED)
 
 # ── B: round-trip ───────────────────────────────────────────────────────────

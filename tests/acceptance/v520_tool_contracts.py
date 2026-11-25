@@ -169,8 +169,12 @@ check("memory.recent excludes unrelated action arguments",
       sorted((schema("memory.recent").get("properties") or {})))
 
 tools = schema("self.tools")
-check("self.tools discovery keeps both supported lookup arguments",
-      set(tools.get("properties") or {}) == {"tool", "query"},
+check("self.tools discovery carries EVERY lookup argument the prompt teaches",
+      # 2026-11-24: `scope`/`limit` joined (the prompt teaches `scope:"all"`), and
+      # 2026-11-25 `semantic` (keyword / semantic / hybrid). The lesson of the earlier
+      # defect stands: an argument the prompt teaches MUST exist in the canonical
+      # schema, otherwise the dispatcher answers "unknown argument … ignored".
+      set(tools.get("properties") or {}) == {"tool", "query", "scope", "limit", "semantic"},
       sorted((tools.get("properties") or {})))
 
 streak = agent._advance_tool_failure_streak

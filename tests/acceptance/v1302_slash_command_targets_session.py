@@ -172,6 +172,13 @@ check("H11 the reload keeps a marker only for a NEW process, and boot turns it i
       and "10 * 60 * 1000" in _between("function _restartArrival() {",
                                        "\nfunction _offerReload() {")
       and "_restartArrival();" in HTML)
+check("H12 an ANSWERED-but-unreadable identity is not called a missing service",
+      # a 401 after a token rotation used to be counted as "the service is down"
+      # (`b == null` meant both), so the row said "did not come back" about a live
+      # service. The two cases are now told apart.
+      "if (!_answered)" in RESTART
+      and "could not read the " in RESTART and "build identity (" in RESTART
+      and "restart unverified" in RESTART)
 
 # ---- G: the offline shell follows (a cached old composer is a stale contract) --
 check("G1 the service-worker cache is DERIVED from the served build (no hand-bump)",

@@ -274,8 +274,15 @@ _tctx = api_v02.tool_context()
 check("F1 the prompt teaches the CANONICAL form, never the `action` alias",
       'self.tools {query:"<words>"}' in _tctx and 'self.tools {tool:"<name>"}' in _tctx
       and 'action:"tools"' not in _tctx and "with `self.sj`" in _tctx)
-check("F2 the namespace map notation is explained (counts, no member list)",
-      "how many tools each holds" in _tctx and "`ns{a,b}`" not in _tctx)
+check("F2 the namespace notation is explained as a RECIPE (no count map, no member list)",
+      # 2026-11-24 (operator): the per-namespace COUNT map was removed on purpose — a
+      # catalogue of what exists is a list, and a list goes stale (invariant §9:
+      # "the always-on prompt carries recipes, never catalogues"). The pin now holds
+      # the recipes that replaced it.
+      "A NAMESPACE IS NOT A TOOL" in _tctx
+      and "`ns{a,b}`" not in _tctx
+      and "how many tools each holds" not in _tctx
+      and "Resolve the member with `self.tools {query:...}`" in _tctx)
 check("F3 a legacy `self` + action reaches the card as the canonical name",
       A._card_tool_name("self", {"action": "sj"}) == "self.sj")
 check("F4 the card DROPS the echo `action` once the name carries it",

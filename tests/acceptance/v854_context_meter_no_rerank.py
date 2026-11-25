@@ -100,10 +100,13 @@ check("B2 the display block still describes it",
       isinstance(u.get("display"), dict) and u["display"].get("state") in
       ("normal", "near", "over"), str(u.get("display")))
 # The panel reads the meter with NO pending message (it describes a session, not a
-# draft), so its own expectation is the same sum without the message.
+# draft), so its own expectation is the same sum without the message — but WITH the
+# separator: the meter counts `"\n\n" + extra` as ONE string (`httpapi:1481`), and a
+# BPE merge across that boundary is worth a token, so summing the parts separately
+# drifted by one (measured 2026-11-25: panel 8454 vs pin 8453).
 want_ci = (CE.count_tokens(sysp)
            + sum(CE.count_tokens(m.get("content", "")) for m in sess.get("messages", []))
-           + CE.count_tokens(S.state_block(session_id=sid)))
+           + CE.count_tokens("\n\n" + S.state_block(session_id=sid)))
 check("B3 the panel still ties to the meter",
       ci.get("used_tokens") == want_ci,
       "got=%s want=%s" % (ci.get("used_tokens"), want_ci))

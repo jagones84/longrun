@@ -141,6 +141,13 @@ roles.write("v656-session", "ROLE MARKER: you are the v656 test agent.")
 ref = agent._reference_block(session_id="v656-session")
 check("B4 the re-injected reference carries the GLOBAL rules",
       "GLOBAL RULE MARKER 12345" in ref and "### Global rules" in ref, ref[:160])
+check("B4b the operator's OWN Global_rules.md survives the CAP",
+      # 2026-11-25: the cap keeps the HEAD and the harness `AGENTS.md` comes first in
+      # the global text (~4.7 KB against a 4 000-char cap), so the safety copy used to
+      # drop the operator's own rules on EVERY turn. The harness default is now the
+      # part that gets shortened.
+      "GLOBAL RULE MARKER 12345" in ref
+      and "[harness AGENTS.md truncated in the reference]" in ref, ref[-200:])
 check("B5 the re-injected reference carries the PROJECT rules",
       "PROJECT RULE MARKER 67890" in ref and "### Project rules" in ref)
 check("B6 the re-injected reference carries the session ROLE.md",

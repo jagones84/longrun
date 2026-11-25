@@ -30,7 +30,6 @@ from longrun.model import context_limits as ctx_limits
 from longrun.plan import taskgraph
 from longrun.plan import verify as plan_verify
 from longrun.harness import shellread
-from longrun.core import server
 from longrun.core.events import publish
 from longrun.util.paths import DATA_DIR, SESSIONS_DIR
 from longrun.util.paths import REPO_ROOT as REPO
@@ -703,7 +702,8 @@ def _reference_block(session_id=None, graph_key=None, max_chars=None):
                 ws = None
         c = rules_mod.collect(ws)
         proj = (c["project"]["text"] or "").strip()
-        glob = (c["global"]["text"] or "").strip()
+        g = c["global"]
+        glob = (g["text"] or "").strip()
         if proj or glob:
             head = ("Reference — standing rules (already loaded in the system "
                     "prompt; re-injected every turn so they survive compaction):")
@@ -711,7 +711,26 @@ def _reference_block(session_id=None, graph_key=None, max_chars=None):
             if proj:
                 body += "\n### Project rules\n" + proj
             if glob:
-                body += "\n### Global rules\n" + glob
+                # 2026-11-25 (v656 B4, found red): the CAP keeps the HEAD and the
+                # operator's `Global_rules.md` is the TAIL of the global text (the
+                # harness `AGENTS.md` comes first) — so with AGENTS.md at ~4.7 KB and
+                # a 4 000-char cap the safety copy silently dropped the operator's OWN
+                # rules every single turn. The user's file is reserved first and the
+                # harness default fills what is left.
+                user_t = (g.get("user_text") or "").strip()
+                agents_t = (g.get("agents_text") or "").strip()
+                _hd = "\n### Global rules\n"
+                _tail = ("\n\n" + user_t) if user_t else ""
+                _note = "\n… [harness AGENTS.md truncated in the reference]"
+                _room = max_chars - len(body) - len(_hd) - len(_tail)
+                if agents_t and _room > len(_note):
+                    if len(agents_t) > _room:
+                        agents_t = agents_t[:max(0, _room - len(_note))] + _note
+                    body += _hd + agents_t + _tail
+                elif user_t:
+                    body += _hd + user_t
+                else:
+                    body += _hd + glob
             if len(body) > max_chars:
                 body = body[:max_chars] + "\n… [rules reference truncated — full text in the system prompt]"
             parts.append(head + body)
@@ -8435,3 +8454,14 @@ def agent_run(goal, max_steps=6, model=None, on_event=None, trace=None, run_stat
     trace.finish("aborted" if aborted else "done")
     return {"goal": goal, "model": model, "trace": actions, "run_id": trace.id,
             "aborted": aborted}
+
+
+# JAG-380: imported at the BOTTOM on purpose. `server.py` imports the names THIS
+# module defines (also at its bottom), so a top-level import here made the pair
+# order-dependent: `import longrun.agent.agent` FIRST (a plugin, a test, `forge.py`)
+# raised `ImportError: cannot import name 'SYSTEM_PROMPT' from partially initialized
+# module` — measured 2026-11-25 while probing the rules collector. With both imports
+# at the bottom each module is complete before the other reads it, in either order.
+# The call-time `server.<name>` reads (and the monkeypatches they honour) are unchanged.
+from longrun.core import server  # noqa: E402 — deliberately last: the server cycle
+
