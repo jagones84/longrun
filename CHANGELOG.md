@@ -250,6 +250,19 @@ All notable changes to Longrun are documented here. The format follows
   Locked by `v1250` (32/32); battery 953/953.
 
 ### Fixed
+- **The version every surface reports is now the CHECKOUT's, not a 2026-10-07 literal.** Operator: *"Poi non e
+  la versione 1.0 di longrun ..perche mente l'agente?"*. `longrun.__version__` was a hand-typed `"1.0.0"`
+  — the 1.0.0 release of 2026-10-07 — while the tree had passed `v1.1.0`, `v1.2.0` and 139 commits, so
+  `/api/status`, `/api/self`, the `Server:` header and every agent's self-knowledge line (`self_summary`)
+  all stated a version the code no longer was. The agent was not lying: it was repeating a constant nobody
+  had moved. The package root now DERIVES it from the checkout —
+  `git describe --tags --always --dirty` → `1.2.0+139.ge963a3be` (a clean tag → `1.2.0`; a dirty tree →
+  `.dirty`; a bare sha → `<base>+g<sha>`; no git → the literal) — and the literal survives only as that
+  fallback, which `v1306` pins to the newest tag so it cannot rot again. One owner, unchanged: the whole
+  chain (`server.VERSION` → `/api/status`, `/api/self`, prompt) still reads `longrun.__version__`.
+  Pinned by `v1306` **14/14** (new: the pure transform for tag / tag+N / bare sha / dirty / non-semver /
+  unreadable, no second release literal in the package, the live value against the real `git describe`);
+  `v852` 7/7 unchanged; targeted battery 42/42 GREEN; `scripts/check.sh` PASS; README badge 993 → 994.
 - **The PWA shell cache can no longer go stale — the hand-bumped version is gone.** Operator: *"Again stale pwa
   ...fix forever please"*. The worker's cache NAME was a literal a human bumped after every shell change
   (`longrun-shell-v3` … `v16`), and its own comments show what that cost: each bump was made only AFTER an
