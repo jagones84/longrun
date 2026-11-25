@@ -150,7 +150,10 @@ check("G1 the server resolves plugin: tokens",
       r'_SKILL_SLASH_RE = re.compile(r"(^|\s)/([A-Za-z0-9_.\-:]+)")' in AGENT
       and 'low.startswith("plugin:")' in AGENT and "_slash.plugin_block(name)" in AGENT)
 check("G2 a UI command is never mistaken for a skill",
-      '"plan", "spec",\n                    "plugins", "plugin"}' in AGENT)
+      # 2026-11-25 (v1302 I2): the set is derived from `core/slash.RESERVED`; the old
+      # hand-typed literal had drifted (status/new/context/ctx/restart missing).
+      "from longrun.core.slash import RESERVED" in AGENT
+      and "_UI_SLASH_TOKENS = set(_SLASH_RESERVED)" in AGENT)
 check("G3 the backend catalogue owns plan/spec/plugins",
       '{"id": "plan"' in SLASH and '{"id": "spec"' in SLASH and '{"id": "plugins"' in SLASH)
 check("G4 the chips understand the plugin token",

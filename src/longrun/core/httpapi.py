@@ -300,6 +300,24 @@ def _as_int(x, default):
     return as_int(x, default)
 
 
+def _bad_session_id(sid):
+    """True when a client sent a session id that cannot NAME a session (JAG-230).
+
+    A well-formed but unknown id is not an error on the read routes that describe a
+    session (`/graph` answers an empty graph on purpose, `threads`/`context` answer
+    defaults — JAG-189: a fresh or just-deleted session must not log 404s on every
+    poll). A MALFORMED id is a different thing: a traversal or a type confusion, which
+    the stores refuse to touch anyway (`stores._valid_sid`). Answering "empty" to it
+    hides a client bug and pretends the request was understood — measured 2026-11-25:
+    `/api/threads?session=..%2F..%2Fetc%2Fpasswd` and `/api/context?session=…` both
+    returned 200 with the id echoed back.
+    """
+    if sid in (None, ""):
+        return False
+    from longrun.memory.stores import _valid_sid
+    return not _valid_sid(sid)
+
+
 def _int_arg(qs, key, default):
     """Parse an integer query parameter with a safe fallback (JAG-229).
 
@@ -2836,11 +2854,15 @@ class Handler(BaseHTTPRequestHandler):
             # JAG-258: measure against the SAME model the turn uses (explicit >
             # session model > default), never the arbitrarily-loaded router model.
             _sid = qs.get("session")
+            if _bad_session_id(_sid):
+                return self._send(400, {"error": "bad session id"})
             _mdl = resolve_ctx_model(load_session(_sid) if _sid else None,
                                      qs.get("model"))
             return self._send(200, context_status(_sid, _mdl))
         if path == "/api/context/items":
             # JAG-267: Context-panel breakdown for ONE session (never mixes sessions).
+            if _bad_session_id(qs.get("session")):
+                return self._send(400, {"error": "bad session id"})
             return self._send(200, context_items(qs.get("session")))
         if path == "/api/compaction/policy":
             # JAG-487: the live policy + where it is written (WebUI Context panel).
@@ -3069,6 +3091,8 @@ class Handler(BaseHTTPRequestHandler):
             sid = qs.get("session")
             if not sid:
                 return self._send(400, {"error": "session required"})
+            if _bad_session_id(sid):
+                return self._send(400, {"error": "bad session id"})
             from longrun.memory import threads as threads_mod
             return self._send(200, {"session": sid, "groups": threads_mod.outline(sid)})
         # JAG-426-fix: there is intentionally NO GET /api/checkpoints HERE — the
@@ -3140,6 +3164,8 @@ class Handler(BaseHTTPRequestHandler):
             # session), so the WebUI plan panel reads the session graph directly
             # instead of the orphaned global plan.json.
             sess_id = path[len("/api/sessions/"):-len("/graph")].strip("/")
+            if _bad_session_id(sess_id):
+                return self._send(400, {"error": "bad session id"})
             g = taskgraph.load(sess_id)
             # JAG-189: no graph yet (fresh session, or a deleted one) is not an
             # error — return an empty graph (200) so the UI poll doesn't log 404s.

@@ -165,7 +165,9 @@ leaked = ("root:" in body12) or ("/bin/" in body12)
 rep("C12 history traversal -> no leak", st12 == 404 and not leaked,
     "status=%s leaked=%s" % (st12, leaked))
 st12b, _ = call("GET", "/api/sessions/" + urllib.parse.quote("../../etc") + "/graph")
-rep("C12b graph traversal -> 200 empty (no crash)", st12b in (200, 404),
+# 2026-11-25 (v1308): a MALFORMED id is now refused with 400 instead of being
+# answered as an empty graph — any of 200/400/404 is a clean answer, never a crash.
+rep("C12b graph traversal -> clean answer (no crash)", st12b in (200, 400, 404),
     "status=%s" % st12b)
 rep("C12c server healthy after traversal attempts", health() == 200,
     "health=%s" % health())

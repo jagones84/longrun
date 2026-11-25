@@ -149,8 +149,10 @@ check("G4 the server resolves /<name> ANYWHERE in the message, not only at 0",
 check("G5 a UI command is never mistaken for a skill",
       # v1051c: `/reset` and `/unlock` are UI commands too — a message carrying
       # them must not be resolved as a skill named "reset"/"unlock".
-      '_UI_SLASH_TOKENS = {"goal", "skills", "skill", "compact", "reset", "unlock",' in AGENT
-      and '"plugins", "plugin"}' in AGENT)
+      # 2026-11-25 (v1302 I2): the hand-typed copy had drifted (status/new/context/
+      # ctx/restart were missing); the resolver now reads `core/slash.RESERVED`.
+      "from longrun.core.slash import RESERVED" in AGENT
+      and "_UI_SLASH_TOKENS = set(_SLASH_RESERVED)" in AGENT)
 check("G6 the skill lookup is case-insensitive",
       'wanted = str(name or "").strip().lower()' in SKILLS
       and 'if str(s["name"]).lower() == wanted:' in SKILLS)

@@ -295,6 +295,31 @@ All notable changes to Longrun are documented here. The format follows
     `inflight.recover`).
   - Gate: full battery **995/995 GREEN**, `scripts/check.sh` PASS (lint 413/414, types 88/88), README badge
     994 → 995.
+- **The three parked read routes are closed, and `/restart` names the turns it interrupts.** The two
+  leftovers of the 2026-11-25 hunt, decided in the same session instead of being carried:
+  - **A MALFORMED session id is now `400 {"error": "bad session id"}`** on `/api/threads`, `/api/context`,
+    `/api/context/items` and `/api/sessions/<sid>/graph` (`httpapi._bad_session_id`, one helper over
+    `stores._valid_sid`). Nothing leaked before — the stores refused the id anyway — but a traversal was
+    answered as if it had been understood, and a client bug looked like an empty session. A well-formed
+    but UNKNOWN id still answers 200 with defaults, so the JAG-189 quiet-poll contract is intact. New pin
+    `v1308` **19/19** (a real `httpapi.Handler` on an ephemeral loopback port: the four 400s, the four
+    JAG-189 200s, a real session's graph, the unchanged `session required`, the empty-graph shape); the
+    live chaos probe `tests/live/v208` C12b now accepts 400 as a clean answer.
+  - **`/restart` warns before it kills live work** (`webui/index.html` `restartService`): the command is
+    global, so it now reads `GET /api/chat/live` first and writes a transcript row naming the running
+    sessions and stating that the harness resumes the interrupted work (`inflight.recover`) — the old
+    command restarted a chat silently mid-answer. Pinned by `v1302` **H13**.
+  - **Parked item resolved, not fixed:** `httpapi` ↔ `server` keeps its one-way order (httpapi imports ~120
+    `server` names at module level; binding at the bottom would duplicate the anchor with no caller that
+    needs it). The contract is the one `v1307` C1 pins, and the new test imports in that order.
+  - **A second command list had drifted from the first.** `agent._UI_SLASH_TOKENS` — the tokens
+    `_apply_skill_slash` must never resolve as a skill — was a hand-typed copy of the composer's table and
+    was missing `status`, `new`, `context`/`ctx` and `restart`, so those built-ins could be resolved as
+    skill activations when typed with arguments (`/context now`) while the composer showed them as
+    commands. It now reads `core/slash.RESERVED` (the same set user commands cannot shadow; 294 installed
+    skills, zero name collisions measured). Pinned by `v1302` I1–I4 (a fake skill named `context` is NOT
+    activated, a non-reserved token still is) and `v775` G5 re-pointed.
+  - Gate: targeted 45/45 GREEN (incl. the UI guard), README badge 995 → 996.
 - **The version every surface reports is now the CHECKOUT's, not a 2026-10-07 literal.** Operator: *"Poi non e
   la versione 1.0 di longrun ..perche mente l'agente?"*. `longrun.__version__` was a hand-typed `"1.0.0"`
   — the 1.0.0 release of 2026-10-07 — while the tree had passed `v1.1.0`, `v1.2.0` and 139 commits, so

@@ -3619,9 +3619,14 @@ def _improvement_pass(sess, message, answer, used_tools, work_steps, model, meta
 #: reached the model as plain prose). A UI command is not a skill and stays as
 #: written; an unknown token is prose and is never touched.
 _SKILL_SLASH_RE = re.compile(r"(^|\s)/([A-Za-z0-9_.\-:]+)")
-_UI_SLASH_TOKENS = {"goal", "skills", "skill", "compact", "reset", "unlock",
-                    "plan", "spec",
-                    "plugins", "plugin"}
+# The tokens the composer OWNS. This used to be a hand-typed copy of the command
+# table and had drifted: `status`, `new`, `context`/`ctx` and `restart` were missing,
+# so those built-ins were resolved as skill activations when typed with arguments
+# (`/context now`) while the composer showed them as commands. `core/slash.RESERVED`
+# is the ONE catalogue (the same set user commands may not shadow) — read it, never
+# a second list.
+from longrun.core.slash import RESERVED as _SLASH_RESERVED  # noqa: E402
+_UI_SLASH_TOKENS = set(_SLASH_RESERVED)
 
 
 def _apply_skill_slash(message):

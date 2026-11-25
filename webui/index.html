@@ -13898,6 +13898,21 @@ async function restartService(sid) {
   // counts `uptime_secs` from) — so a value that moved forward IS the restart, and no
   // timer can miss it.
   const _bootOf = (b) => (b && typeof b.started_at === "number") ? b.started_at : null;
+  // 2026-11-25: a restart is GLOBAL — it kills every running turn, not only this
+  // page's. `inflight.recover` resumes the interrupted work after boot, but the
+  // operator must SEE that the command interrupts live work instead of finding
+  // out from a transcript that stops mid-answer.
+  let _liveNow = [];
+  try { const _l = await api("GET", "/api/chat/live"); _liveNow = (_l && _l.active) || []; }
+  catch (_) {}
+  if (_here && _liveNow.length) {
+    const _n = _liveNow.length;
+    who("ai", "↻ heads-up: " + _n + " live turn" + (_n === 1 ? "" : "s") +
+      " (" + _liveNow.slice(0, 3).join(", ") + (_n > 3 ? ", …" : "") + ") " +
+      (_n === 1 ? "is" : "are") + " running — this restart interrupts " +
+      (_n === 1 ? "it" : "them") + "; the harness resumes the interrupted work " +
+      "after the service comes back.");
+  }
   let _boot0 = null;
   try { _boot0 = _bootOf(await api("GET", "/api/build")); } catch (_) {}
   let r = {};

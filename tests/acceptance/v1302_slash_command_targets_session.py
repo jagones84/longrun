@@ -16,7 +16,9 @@ Contract locked here (static, because a `/` command is a composer action):
   E  `/reset` RESETS the chat it is typed in (same session id: `POST
      /api/sessions/<sid>/clear`), and never creates another session; the old
      "fresh chat" verb is `/new`, which names the source session as untouched;
-  F  `/plan` and `/spec` post the captured id too.
+  F  `/plan` and `/spec` post the captured id too;
+  G  the reserved-token set the skill resolver skips is the ONE catalogue
+     (`core/slash.RESERVED`), never a hand-typed copy that can drift.
 
 No model, no network, no server.
 
@@ -179,11 +181,46 @@ check("H12 an ANSWERED-but-unreadable identity is not called a missing service",
       "if (!_answered)" in RESTART
       and "could not read the " in RESTART and "build identity (" in RESTART
       and "restart unverified" in RESTART)
+check("H13 a restart says it will interrupt live turns, before it requests it",
+      # the restart is GLOBAL: the old code restarted silently while other sessions
+      # were mid-answer, and `inflight.recover` resumed them with no row naming it.
+      '"GET", "/api/chat/live"' in RESTART
+      and "live turn" in RESTART and "resumes the interrupted work" in RESTART
+      and RESTART.find('"GET", "/api/chat/live"') < RESTART.find('action: "restart"'))
 
 # ---- G: the offline shell follows (a cached old composer is a stale contract) --
 check("G1 the service-worker cache is DERIVED from the served build (no hand-bump)",
       'const SHELL_VERSION = "__SHELL_VERSION__";' in SW
       and 'const CACHE = "longrun-shell-" +' in SW)
+
+# ---- I: the composer's reserved tokens come from the ONE catalogue -----------
+# 2026-11-25: `agent._UI_SLASH_TOKENS` was a hand-typed copy of the command table
+# and had drifted (status/new/context/ctx/restart missing), so a built-in typed with
+# ARGUMENTS could be resolved as a skill activation while the composer showed it as a
+# command. `core/slash.RESERVED` is the one catalogue; the resolver must read it.
+sys.path.insert(0, os.path.join(REPO, "src"))
+from longrun.core import slash as _slash  # noqa: E402
+from longrun.agent import agent as _agent  # noqa: E402
+check("I1 every built-in id and alias is a reserved token",
+      all(c["id"] in set(_slash.RESERVED)
+          and all(a in set(_slash.RESERVED) for a in c.get("aliases") or [])
+          for c in _slash.BUILTINS), sorted(_slash.RESERVED))
+check("I2 the skill resolver reads the reserved set, not a second list",
+      set(_agent._UI_SLASH_TOKENS) == set(_slash.RESERVED),
+      sorted(set(_slash.RESERVED) ^ set(_agent._UI_SLASH_TOKENS)))
+from longrun.memory import skills as _skills  # noqa: E402
+_saved_get = _skills.get_skill
+_skills.get_skill = lambda name: ({"name": name, "content": "SKILL BODY",
+                                   "path": "x/SKILL.md"}
+                                  if str(name).lower() in ("context", "notacommand")
+                                  else None)
+try:
+    _same = _agent._apply_skill_slash("/context now") == "/context now"
+    _moved = _agent._apply_skill_slash("/notacommand now") != "/notacommand now"
+finally:
+    _skills.get_skill = _saved_get
+check("I3 a built-in token stays prose even when a skill has the same name", _same)
+check("I4 a non-reserved token still resolves as a skill", _moved)
 
 print("---")
 ok = sum(results)
