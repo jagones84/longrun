@@ -319,7 +319,12 @@ All notable changes to Longrun are documented here. The format follows
     commands. It now reads `core/slash.RESERVED` (the same set user commands cannot shadow; 294 installed
     skills, zero name collisions measured). Pinned by `v1302` I1–I4 (a fake skill named `context` is NOT
     activated, a non-reserved token still is) and `v775` G5 re-pointed.
-  - Gate: targeted 45/45 GREEN (incl. the UI guard), README badge 995 → 996.
+  - Gate: full battery **996/996 GREEN** (the three re-pointed pins were the dependency oracle: `v775` G5
+    and `v1053` G2 also carried the old hand-typed list), `scripts/check.sh` PASS (lint 413/414, types 88/88),
+    `node --check` OK on both inline script blocks, README badge 995 → 996. Live at `d6748eee`
+    (`1.2.0+142.gd6748eee`, restart 05:34:03 CET > newest source 05:29:02): the four malformed ids answer
+    **400** on the running service, the four well-formed-unknown ids still answer 200, `/api/threads` with
+    no session still 400, `/api/health` and `/` 200.
 - **The version every surface reports is now the CHECKOUT's, not a 2026-10-07 literal.** Operator: *"Poi non e
   la versione 1.0 di longrun ..perche mente l'agente?"*. `longrun.__version__` was a hand-typed `"1.0.0"`
   — the 1.0.0 release of 2026-10-07 — while the tree had passed `v1.1.0`, `v1.2.0` and 139 commits, so
