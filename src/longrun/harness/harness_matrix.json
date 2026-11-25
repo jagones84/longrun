@@ -1,0 +1,1922 @@
+{
+ "schema": "longrun-harness-matrix/1",
+ "source": "Agent Harness for Large Language Model Agents: A Survey (Awesome-Agent-Harness)",
+ "citation": "Meng, Qianyu et al. (2026), Agent Harness for Large Language Model Agents: A Survey",
+ "doi": "10.20944/preprints202604.0428.v3",
+ "url": "https://github.com/Gloriaameng/Awesome-Agent-Harness",
+ "upstream_commit": "cd1a5c6",
+ "license": "CC-BY-4.0",
+ "cutoff": "2026-10-12",
+ "componentOrder": [
+  "E",
+  "T",
+  "C",
+  "S",
+  "L",
+  "V"
+ ],
+ "componentDefinitions": {
+  "E": {
+   "name": "Execution loop",
+   "what": "turn and step control, termination, retry, recovery, delegation"
+  },
+  "T": {
+   "name": "Tool registry",
+   "what": "typed tools, routing, validation, authorization, result handling"
+  },
+  "C": {
+   "name": "Context manager",
+   "what": "prompt assembly, retrieval, compaction, salience, provenance"
+  },
+  "S": {
+   "name": "State store",
+   "what": "cross-turn and cross-session persistence, checkpoints, recovery"
+  },
+  "L": {
+   "name": "Lifecycle hooks",
+   "what": "authentication, approval, policy, instrumentation, interception"
+  },
+  "V": {
+   "name": "Evaluation iface",
+   "what": "trajectories, intermediate state, outcomes, experiments, audit"
+  }
+ },
+ "vocabulary": [
+  "Full",
+  "Partial",
+  "Absent",
+  "Unverified"
+ ],
+ "systems": [
+  {
+   "name": "Amazon Quick",
+   "category": "workplace",
+   "accessDate": "2026-10-13",
+   "components": [
+    {
+     "id": "E",
+     "rating": "Full",
+     "source": "https://docs.aws.amazon.com/quick/latest/userguide/automate-custom-agents.html",
+     "version": "Amazon Quick documentation, accessed 2026-10-13",
+     "evidenceType": "first-party product documentation",
+     "confidence": "medium"
+    },
+    {
+     "id": "T",
+     "rating": "Full",
+     "source": "https://docs.aws.amazon.com/quick/latest/userguide/automate-custom-agents.html",
+     "version": "Amazon Quick documentation, accessed 2026-10-13",
+     "evidenceType": "first-party product documentation",
+     "confidence": "medium"
+    },
+    {
+     "id": "C",
+     "rating": "Full",
+     "source": "https://docs.aws.amazon.com/quick/latest/userguide/automate-custom-agents.html",
+     "version": "Amazon Quick documentation, accessed 2026-10-13",
+     "evidenceType": "first-party product documentation",
+     "confidence": "medium"
+    },
+    {
+     "id": "S",
+     "rating": "Full",
+     "source": "https://docs.aws.amazon.com/quick/latest/userguide/automate-custom-agents.html",
+     "version": "Amazon Quick documentation, accessed 2026-10-13",
+     "evidenceType": "first-party product documentation",
+     "confidence": "medium"
+    },
+    {
+     "id": "L",
+     "rating": "Full",
+     "source": "https://docs.aws.amazon.com/quick/latest/userguide/automate-custom-agents.html",
+     "version": "Amazon Quick documentation, accessed 2026-10-13",
+     "evidenceType": "first-party product documentation",
+     "confidence": "medium"
+    },
+    {
+     "id": "V",
+     "rating": "Full",
+     "source": "https://docs.aws.amazon.com/quick/latest/userguide/automate-custom-agents.html",
+     "version": "Amazon Quick documentation, accessed 2026-10-13",
+     "evidenceType": "first-party product documentation",
+     "confidence": "medium"
+    }
+   ]
+  },
+  {
+   "name": "Antigravity CLI",
+   "category": "coding",
+   "accessDate": "2026-10-13",
+   "components": [
+    {
+     "id": "E",
+     "rating": "Full",
+     "source": "https://antigravity.google/blog/introducing-google-antigravity-2?hl=en",
+     "version": "Antigravity 2 public architecture, 2026",
+     "evidenceType": "first-party product documentation",
+     "confidence": "medium"
+    },
+    {
+     "id": "T",
+     "rating": "Full",
+     "source": "https://antigravity.google/blog/introducing-google-antigravity-2?hl=en",
+     "version": "Antigravity 2 public architecture, 2026",
+     "evidenceType": "first-party product documentation",
+     "confidence": "medium"
+    },
+    {
+     "id": "C",
+     "rating": "Full",
+     "source": "https://antigravity.google/blog/introducing-google-antigravity-2?hl=en",
+     "version": "Antigravity 2 public architecture, 2026",
+     "evidenceType": "first-party product documentation",
+     "confidence": "medium"
+    },
+    {
+     "id": "S",
+     "rating": "Full",
+     "source": "https://antigravity.google/blog/introducing-google-antigravity-2?hl=en",
+     "version": "Antigravity 2 public architecture, 2026",
+     "evidenceType": "first-party product documentation",
+     "confidence": "medium"
+    },
+    {
+     "id": "L",
+     "rating": "Full",
+     "source": "https://antigravity.google/blog/introducing-google-antigravity-2?hl=en",
+     "version": "Antigravity 2 public architecture, 2026",
+     "evidenceType": "first-party product documentation",
+     "confidence": "medium"
+    },
+    {
+     "id": "V",
+     "rating": "Partial",
+     "source": "https://antigravity.google/blog/introducing-google-antigravity-2?hl=en",
+     "version": "Antigravity 2 public architecture, 2026",
+     "evidenceType": "first-party product documentation",
+     "confidence": "medium"
+    }
+   ]
+  },
+  {
+   "name": "AOHP",
+   "category": "persistent",
+   "accessDate": "2026-10-13",
+   "components": [
+    {
+     "id": "E",
+     "rating": "Full",
+     "source": "https://github.com/aohp-os/aohp/blob/b8ab9e98a2bd51f7fbd01a95d3b45dca078c5884/README.md",
+     "version": "b8ab9e98a2bd51f7fbd01a95d3b45dca078c5884",
+     "evidenceType": "first-party source/docs",
+     "confidence": "medium"
+    },
+    {
+     "id": "T",
+     "rating": "Full",
+     "source": "https://github.com/aohp-os/aohp/blob/b8ab9e98a2bd51f7fbd01a95d3b45dca078c5884/README.md",
+     "version": "b8ab9e98a2bd51f7fbd01a95d3b45dca078c5884",
+     "evidenceType": "first-party source/docs",
+     "confidence": "medium"
+    },
+    {
+     "id": "C",
+     "rating": "Full",
+     "source": "https://github.com/aohp-os/aohp/blob/b8ab9e98a2bd51f7fbd01a95d3b45dca078c5884/README.md",
+     "version": "b8ab9e98a2bd51f7fbd01a95d3b45dca078c5884",
+     "evidenceType": "first-party source/docs",
+     "confidence": "medium"
+    },
+    {
+     "id": "S",
+     "rating": "Full",
+     "source": "https://github.com/aohp-os/aohp/blob/b8ab9e98a2bd51f7fbd01a95d3b45dca078c5884/README.md",
+     "version": "b8ab9e98a2bd51f7fbd01a95d3b45dca078c5884",
+     "evidenceType": "first-party source/docs",
+     "confidence": "medium"
+    },
+    {
+     "id": "L",
+     "rating": "Full",
+     "source": "https://github.com/aohp-os/aohp/blob/b8ab9e98a2bd51f7fbd01a95d3b45dca078c5884/README.md",
+     "version": "b8ab9e98a2bd51f7fbd01a95d3b45dca078c5884",
+     "evidenceType": "first-party source/docs",
+     "confidence": "medium"
+    },
+    {
+     "id": "V",
+     "rating": "Partial",
+     "source": "https://github.com/aohp-os/aohp/blob/b8ab9e98a2bd51f7fbd01a95d3b45dca078c5884/README.md",
+     "version": "b8ab9e98a2bd51f7fbd01a95d3b45dca078c5884",
+     "evidenceType": "first-party source/docs",
+     "confidence": "medium"
+    }
+   ]
+  },
+  {
+   "name": "Claude Code",
+   "category": "anchor",
+   "accessDate": "2026-10-13",
+   "components": [
+    {
+     "id": "E",
+     "rating": "Full",
+     "source": "https://github.com/anthropics/claude-code/blob/3deb873687379f0c199a69fdaccc65f0865f7a29/README.md",
+     "version": "3deb873687379f0c199a69fdaccc65f0865f7a29",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "T",
+     "rating": "Full",
+     "source": "https://github.com/anthropics/claude-code/blob/3deb873687379f0c199a69fdaccc65f0865f7a29/README.md",
+     "version": "3deb873687379f0c199a69fdaccc65f0865f7a29",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "C",
+     "rating": "Full",
+     "source": "https://github.com/anthropics/claude-code/blob/3deb873687379f0c199a69fdaccc65f0865f7a29/README.md",
+     "version": "3deb873687379f0c199a69fdaccc65f0865f7a29",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "S",
+     "rating": "Partial",
+     "source": "https://github.com/anthropics/claude-code/blob/3deb873687379f0c199a69fdaccc65f0865f7a29/README.md",
+     "version": "3deb873687379f0c199a69fdaccc65f0865f7a29",
+     "evidenceType": "first-party source/docs",
+     "confidence": "medium"
+    },
+    {
+     "id": "L",
+     "rating": "Full",
+     "source": "https://github.com/anthropics/claude-code/blob/3deb873687379f0c199a69fdaccc65f0865f7a29/README.md",
+     "version": "3deb873687379f0c199a69fdaccc65f0865f7a29",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "V",
+     "rating": "Partial",
+     "source": "https://github.com/anthropics/claude-code/blob/3deb873687379f0c199a69fdaccc65f0865f7a29/README.md",
+     "version": "3deb873687379f0c199a69fdaccc65f0865f7a29",
+     "evidenceType": "first-party source/docs",
+     "confidence": "medium"
+    }
+   ]
+  },
+  {
+   "name": "Cline",
+   "category": "coding",
+   "accessDate": "2026-10-13",
+   "components": [
+    {
+     "id": "E",
+     "rating": "Full",
+     "source": "https://github.com/cline/cline/blob/d2cbeea6ff5c627115a8bb3303770e9e538cf607/README.md",
+     "version": "d2cbeea6ff5c627115a8bb3303770e9e538cf607",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "T",
+     "rating": "Full",
+     "source": "https://github.com/cline/cline/blob/d2cbeea6ff5c627115a8bb3303770e9e538cf607/README.md",
+     "version": "d2cbeea6ff5c627115a8bb3303770e9e538cf607",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "C",
+     "rating": "Partial",
+     "source": "https://github.com/cline/cline/blob/d2cbeea6ff5c627115a8bb3303770e9e538cf607/README.md",
+     "version": "d2cbeea6ff5c627115a8bb3303770e9e538cf607",
+     "evidenceType": "first-party source/docs",
+     "confidence": "medium"
+    },
+    {
+     "id": "S",
+     "rating": "Full",
+     "source": "https://github.com/cline/cline/blob/d2cbeea6ff5c627115a8bb3303770e9e538cf607/README.md",
+     "version": "d2cbeea6ff5c627115a8bb3303770e9e538cf607",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "L",
+     "rating": "Full",
+     "source": "https://github.com/cline/cline/blob/d2cbeea6ff5c627115a8bb3303770e9e538cf607/README.md",
+     "version": "d2cbeea6ff5c627115a8bb3303770e9e538cf607",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "V",
+     "rating": "Partial",
+     "source": "https://github.com/cline/cline/blob/d2cbeea6ff5c627115a8bb3303770e9e538cf607/README.md",
+     "version": "d2cbeea6ff5c627115a8bb3303770e9e538cf607",
+     "evidenceType": "first-party source/docs",
+     "confidence": "medium"
+    }
+   ]
+  },
+  {
+   "name": "Codex",
+   "category": "anchor",
+   "accessDate": "2026-10-13",
+   "components": [
+    {
+     "id": "E",
+     "rating": "Full",
+     "source": "https://github.com/openai/codex/blob/12cca49c81c8aa6a37a5cc4e39964ee3b70f9458/codex-rs/core/src/codex.rs",
+     "version": "12cca49c81c8aa6a37a5cc4e39964ee3b70f9458",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "T",
+     "rating": "Full",
+     "source": "https://github.com/openai/codex/blob/12cca49c81c8aa6a37a5cc4e39964ee3b70f9458/codex-rs/core/src/tools/registry.rs",
+     "version": "12cca49c81c8aa6a37a5cc4e39964ee3b70f9458",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "C",
+     "rating": "Full",
+     "source": "https://github.com/openai/codex/blob/12cca49c81c8aa6a37a5cc4e39964ee3b70f9458/codex-rs/core/src/compact.rs",
+     "version": "12cca49c81c8aa6a37a5cc4e39964ee3b70f9458",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "S",
+     "rating": "Full",
+     "source": "https://github.com/openai/codex/blob/12cca49c81c8aa6a37a5cc4e39964ee3b70f9458/codex-rs/core/src/rollout.rs",
+     "version": "12cca49c81c8aa6a37a5cc4e39964ee3b70f9458",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "L",
+     "rating": "Full",
+     "source": "https://github.com/openai/codex/blob/12cca49c81c8aa6a37a5cc4e39964ee3b70f9458/codex-rs/core/src/tools/orchestrator.rs",
+     "version": "12cca49c81c8aa6a37a5cc4e39964ee3b70f9458",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "V",
+     "rating": "Partial",
+     "source": "https://github.com/openai/codex/blob/12cca49c81c8aa6a37a5cc4e39964ee3b70f9458/codex-rs/app-server/src/request_processors/feedback_rollout_history.rs",
+     "version": "12cca49c81c8aa6a37a5cc4e39964ee3b70f9458",
+     "evidenceType": "first-party source/docs",
+     "confidence": "medium"
+    }
+   ]
+  },
+  {
+   "name": "Deep Agents",
+   "category": "coding",
+   "accessDate": "2026-10-13",
+   "components": [
+    {
+     "id": "E",
+     "rating": "Full",
+     "source": "https://github.com/langchain-ai/deepagents/blob/32bed909cc3c340ee2f4351f7cdc639d48c481a3/README.md",
+     "version": "32bed909cc3c340ee2f4351f7cdc639d48c481a3",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "T",
+     "rating": "Full",
+     "source": "https://github.com/langchain-ai/deepagents/blob/32bed909cc3c340ee2f4351f7cdc639d48c481a3/README.md",
+     "version": "32bed909cc3c340ee2f4351f7cdc639d48c481a3",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "C",
+     "rating": "Full",
+     "source": "https://github.com/langchain-ai/deepagents/blob/32bed909cc3c340ee2f4351f7cdc639d48c481a3/README.md",
+     "version": "32bed909cc3c340ee2f4351f7cdc639d48c481a3",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "S",
+     "rating": "Full",
+     "source": "https://github.com/langchain-ai/deepagents/blob/32bed909cc3c340ee2f4351f7cdc639d48c481a3/README.md",
+     "version": "32bed909cc3c340ee2f4351f7cdc639d48c481a3",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "L",
+     "rating": "Full",
+     "source": "https://github.com/langchain-ai/deepagents/blob/32bed909cc3c340ee2f4351f7cdc639d48c481a3/README.md",
+     "version": "32bed909cc3c340ee2f4351f7cdc639d48c481a3",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "V",
+     "rating": "Full",
+     "source": "https://github.com/langchain-ai/deepagents/blob/32bed909cc3c340ee2f4351f7cdc639d48c481a3/README.md",
+     "version": "32bed909cc3c340ee2f4351f7cdc639d48c481a3",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    }
+   ]
+  },
+  {
+   "name": "DeepSeek Harness",
+   "category": "anchor",
+   "accessDate": "2026-10-13",
+   "components": [
+    {
+     "id": "E",
+     "rating": "Full",
+     "source": "https://github.com/deepseek-ai/deepseek-harness/blob/d743267388641bc76f17c45ce8b4c231aed1d32c/docs/architecture.md",
+     "version": "d743267388641bc76f17c45ce8b4c231aed1d32c",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "T",
+     "rating": "Full",
+     "source": "https://github.com/deepseek-ai/deepseek-harness/blob/d743267388641bc76f17c45ce8b4c231aed1d32c/packages/core/tools/README.md",
+     "version": "d743267388641bc76f17c45ce8b4c231aed1d32c",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "C",
+     "rating": "Full",
+     "source": "https://github.com/deepseek-ai/deepseek-harness/blob/d743267388641bc76f17c45ce8b4c231aed1d32c/docs/subsystems/compaction.md",
+     "version": "d743267388641bc76f17c45ce8b4c231aed1d32c",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "S",
+     "rating": "Full",
+     "source": "https://github.com/deepseek-ai/deepseek-harness/blob/d743267388641bc76f17c45ce8b4c231aed1d32c/docs/architecture.md",
+     "version": "d743267388641bc76f17c45ce8b4c231aed1d32c",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "L",
+     "rating": "Full",
+     "source": "https://github.com/deepseek-ai/deepseek-harness/blob/d743267388641bc76f17c45ce8b4c231aed1d32c/docs/architecture.md",
+     "version": "d743267388641bc76f17c45ce8b4c231aed1d32c",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "V",
+     "rating": "Partial",
+     "source": "https://github.com/deepseek-ai/deepseek-harness/blob/d743267388641bc76f17c45ce8b4c231aed1d32c/docs/subsystems/session-telemetry.md",
+     "version": "d743267388641bc76f17c45ce8b4c231aed1d32c",
+     "evidenceType": "first-party source/docs",
+     "confidence": "medium"
+    }
+   ]
+  },
+  {
+   "name": "DeerFlow",
+   "category": "persistent",
+   "accessDate": "2026-10-13",
+   "components": [
+    {
+     "id": "E",
+     "rating": "Full",
+     "source": "https://github.com/bytedance/deer-flow/blob/c53621d7692e5fd9dac0699b09425f3f6ba2d1c6/README.md",
+     "version": "c53621d7692e5fd9dac0699b09425f3f6ba2d1c6",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "T",
+     "rating": "Full",
+     "source": "https://github.com/bytedance/deer-flow/blob/c53621d7692e5fd9dac0699b09425f3f6ba2d1c6/README.md",
+     "version": "c53621d7692e5fd9dac0699b09425f3f6ba2d1c6",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "C",
+     "rating": "Full",
+     "source": "https://github.com/bytedance/deer-flow/blob/c53621d7692e5fd9dac0699b09425f3f6ba2d1c6/README.md",
+     "version": "c53621d7692e5fd9dac0699b09425f3f6ba2d1c6",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "S",
+     "rating": "Full",
+     "source": "https://github.com/bytedance/deer-flow/blob/c53621d7692e5fd9dac0699b09425f3f6ba2d1c6/README.md",
+     "version": "c53621d7692e5fd9dac0699b09425f3f6ba2d1c6",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "L",
+     "rating": "Full",
+     "source": "https://github.com/bytedance/deer-flow/blob/c53621d7692e5fd9dac0699b09425f3f6ba2d1c6/README.md",
+     "version": "c53621d7692e5fd9dac0699b09425f3f6ba2d1c6",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "V",
+     "rating": "Partial",
+     "source": "https://github.com/bytedance/deer-flow/blob/c53621d7692e5fd9dac0699b09425f3f6ba2d1c6/README.md",
+     "version": "c53621d7692e5fd9dac0699b09425f3f6ba2d1c6",
+     "evidenceType": "first-party source/docs",
+     "confidence": "medium"
+    }
+   ]
+  },
+  {
+   "name": "GitHub Copilot in VS Code",
+   "category": "coding",
+   "accessDate": "2026-10-13",
+   "components": [
+    {
+     "id": "E",
+     "rating": "Full",
+     "source": "https://code.visualstudio.com/blogs/2026/05/15/agent-harnesses-github-copilot-vscode/",
+     "version": "VS Code agent-harness architecture, 2026-05-15",
+     "evidenceType": "first-party architecture documentation",
+     "confidence": "high"
+    },
+    {
+     "id": "T",
+     "rating": "Full",
+     "source": "https://code.visualstudio.com/blogs/2026/05/15/agent-harnesses-github-copilot-vscode/",
+     "version": "VS Code agent-harness architecture, 2026-05-15",
+     "evidenceType": "first-party architecture documentation",
+     "confidence": "high"
+    },
+    {
+     "id": "C",
+     "rating": "Full",
+     "source": "https://code.visualstudio.com/blogs/2026/05/15/agent-harnesses-github-copilot-vscode/",
+     "version": "VS Code agent-harness architecture, 2026-05-15",
+     "evidenceType": "first-party architecture documentation",
+     "confidence": "high"
+    },
+    {
+     "id": "S",
+     "rating": "Full",
+     "source": "https://code.visualstudio.com/blogs/2026/05/15/agent-harnesses-github-copilot-vscode/",
+     "version": "VS Code agent-harness architecture, 2026-05-15",
+     "evidenceType": "first-party architecture documentation",
+     "confidence": "high"
+    },
+    {
+     "id": "L",
+     "rating": "Full",
+     "source": "https://code.visualstudio.com/blogs/2026/05/15/agent-harnesses-github-copilot-vscode/",
+     "version": "VS Code agent-harness architecture, 2026-05-15",
+     "evidenceType": "first-party architecture documentation",
+     "confidence": "high"
+    },
+    {
+     "id": "V",
+     "rating": "Full",
+     "source": "https://code.visualstudio.com/blogs/2026/05/15/agent-harnesses-github-copilot-vscode/",
+     "version": "VS Code agent-harness architecture, 2026-05-15",
+     "evidenceType": "first-party architecture documentation",
+     "confidence": "high"
+    }
+   ]
+  },
+  {
+   "name": "Google ADK",
+   "category": "runtime",
+   "accessDate": "2026-10-13",
+   "components": [
+    {
+     "id": "E",
+     "rating": "Full",
+     "source": "https://github.com/google/adk-python/blob/10c694f5c3f186cc5d335291743352c7869c8f3a/README.md",
+     "version": "10c694f5c3f186cc5d335291743352c7869c8f3a",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "T",
+     "rating": "Full",
+     "source": "https://github.com/google/adk-python/blob/10c694f5c3f186cc5d335291743352c7869c8f3a/README.md",
+     "version": "10c694f5c3f186cc5d335291743352c7869c8f3a",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "C",
+     "rating": "Full",
+     "source": "https://github.com/google/adk-python/blob/10c694f5c3f186cc5d335291743352c7869c8f3a/README.md",
+     "version": "10c694f5c3f186cc5d335291743352c7869c8f3a",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "S",
+     "rating": "Full",
+     "source": "https://github.com/google/adk-python/blob/10c694f5c3f186cc5d335291743352c7869c8f3a/README.md",
+     "version": "10c694f5c3f186cc5d335291743352c7869c8f3a",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "L",
+     "rating": "Full",
+     "source": "https://github.com/google/adk-python/blob/10c694f5c3f186cc5d335291743352c7869c8f3a/README.md",
+     "version": "10c694f5c3f186cc5d335291743352c7869c8f3a",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "V",
+     "rating": "Full",
+     "source": "https://github.com/google/adk-python/blob/10c694f5c3f186cc5d335291743352c7869c8f3a/README.md",
+     "version": "10c694f5c3f186cc5d335291743352c7869c8f3a",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    }
+   ]
+  },
+  {
+   "name": "Goose",
+   "category": "coding",
+   "accessDate": "2026-10-13",
+   "components": [
+    {
+     "id": "E",
+     "rating": "Full",
+     "source": "https://github.com/aaif-goose/goose/blob/69de89c50cc01d4e0187d6645bf3618729873f74/README.md",
+     "version": "69de89c50cc01d4e0187d6645bf3618729873f74",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "T",
+     "rating": "Full",
+     "source": "https://github.com/aaif-goose/goose/blob/69de89c50cc01d4e0187d6645bf3618729873f74/README.md",
+     "version": "69de89c50cc01d4e0187d6645bf3618729873f74",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "C",
+     "rating": "Partial",
+     "source": "https://github.com/aaif-goose/goose/blob/69de89c50cc01d4e0187d6645bf3618729873f74/README.md",
+     "version": "69de89c50cc01d4e0187d6645bf3618729873f74",
+     "evidenceType": "first-party source/docs",
+     "confidence": "medium"
+    },
+    {
+     "id": "S",
+     "rating": "Partial",
+     "source": "https://github.com/aaif-goose/goose/blob/69de89c50cc01d4e0187d6645bf3618729873f74/README.md",
+     "version": "69de89c50cc01d4e0187d6645bf3618729873f74",
+     "evidenceType": "first-party source/docs",
+     "confidence": "medium"
+    },
+    {
+     "id": "L",
+     "rating": "Full",
+     "source": "https://github.com/aaif-goose/goose/blob/69de89c50cc01d4e0187d6645bf3618729873f74/README.md",
+     "version": "69de89c50cc01d4e0187d6645bf3618729873f74",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "V",
+     "rating": "Partial",
+     "source": "https://github.com/aaif-goose/goose/blob/69de89c50cc01d4e0187d6645bf3618729873f74/README.md",
+     "version": "69de89c50cc01d4e0187d6645bf3618729873f74",
+     "evidenceType": "first-party source/docs",
+     "confidence": "medium"
+    }
+   ]
+  },
+  {
+   "name": "Grok Bot",
+   "category": "workplace",
+   "accessDate": "2026-10-13",
+   "components": [
+    {
+     "id": "E",
+     "rating": "Full",
+     "source": "https://x.ai/news/introducing-grok-bot",
+     "version": "Grok Bot announcement, 2026",
+     "evidenceType": "first-party product documentation",
+     "confidence": "medium"
+    },
+    {
+     "id": "T",
+     "rating": "Full",
+     "source": "https://x.ai/news/introducing-grok-bot",
+     "version": "Grok Bot announcement, 2026",
+     "evidenceType": "first-party product documentation",
+     "confidence": "medium"
+    },
+    {
+     "id": "C",
+     "rating": "Full",
+     "source": "https://x.ai/news/introducing-grok-bot",
+     "version": "Grok Bot announcement, 2026",
+     "evidenceType": "first-party product documentation",
+     "confidence": "medium"
+    },
+    {
+     "id": "S",
+     "rating": "Full",
+     "source": "https://x.ai/news/introducing-grok-bot",
+     "version": "Grok Bot announcement, 2026",
+     "evidenceType": "first-party product documentation",
+     "confidence": "medium"
+    },
+    {
+     "id": "L",
+     "rating": "Full",
+     "source": "https://x.ai/news/introducing-grok-bot",
+     "version": "Grok Bot announcement, 2026",
+     "evidenceType": "first-party product documentation",
+     "confidence": "medium"
+    },
+    {
+     "id": "V",
+     "rating": "Unverified",
+     "source": "https://x.ai/news/introducing-grok-bot",
+     "version": "Grok Bot announcement, 2026",
+     "evidenceType": "first-party product documentation",
+     "confidence": "low"
+    }
+   ]
+  },
+  {
+   "name": "Grok Build",
+   "category": "coding",
+   "accessDate": "2026-10-13",
+   "components": [
+    {
+     "id": "E",
+     "rating": "Full",
+     "source": "https://github.com/xai-org/grok-build/blob/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8/README.md",
+     "version": "2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "T",
+     "rating": "Full",
+     "source": "https://github.com/xai-org/grok-build/blob/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8/README.md",
+     "version": "2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "C",
+     "rating": "Full",
+     "source": "https://github.com/xai-org/grok-build/blob/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8/README.md",
+     "version": "2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "S",
+     "rating": "Full",
+     "source": "https://github.com/xai-org/grok-build/blob/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8/README.md",
+     "version": "2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "L",
+     "rating": "Full",
+     "source": "https://github.com/xai-org/grok-build/blob/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8/README.md",
+     "version": "2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "V",
+     "rating": "Partial",
+     "source": "https://github.com/xai-org/grok-build/blob/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8/README.md",
+     "version": "2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8",
+     "evidenceType": "first-party source/docs",
+     "confidence": "medium"
+    }
+   ]
+  },
+  {
+   "name": "Hermes Agent",
+   "category": "persistent",
+   "accessDate": "2026-10-13",
+   "components": [
+    {
+     "id": "E",
+     "rating": "Full",
+     "source": "https://github.com/nousresearch/hermes-agent/blob/3b63f7b0a4c7beb9eadbce2f15b9da75d01f5065/README.md",
+     "version": "3b63f7b0a4c7beb9eadbce2f15b9da75d01f5065",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "T",
+     "rating": "Full",
+     "source": "https://github.com/nousresearch/hermes-agent/blob/3b63f7b0a4c7beb9eadbce2f15b9da75d01f5065/README.md",
+     "version": "3b63f7b0a4c7beb9eadbce2f15b9da75d01f5065",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "C",
+     "rating": "Full",
+     "source": "https://github.com/nousresearch/hermes-agent/blob/3b63f7b0a4c7beb9eadbce2f15b9da75d01f5065/README.md",
+     "version": "3b63f7b0a4c7beb9eadbce2f15b9da75d01f5065",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "S",
+     "rating": "Full",
+     "source": "https://github.com/nousresearch/hermes-agent/blob/3b63f7b0a4c7beb9eadbce2f15b9da75d01f5065/README.md",
+     "version": "3b63f7b0a4c7beb9eadbce2f15b9da75d01f5065",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "L",
+     "rating": "Full",
+     "source": "https://github.com/nousresearch/hermes-agent/blob/3b63f7b0a4c7beb9eadbce2f15b9da75d01f5065/README.md",
+     "version": "3b63f7b0a4c7beb9eadbce2f15b9da75d01f5065",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "V",
+     "rating": "Full",
+     "source": "https://github.com/nousresearch/hermes-agent/blob/3b63f7b0a4c7beb9eadbce2f15b9da75d01f5065/README.md",
+     "version": "3b63f7b0a4c7beb9eadbce2f15b9da75d01f5065",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    }
+   ]
+  },
+  {
+   "name": "LangGraph",
+   "category": "runtime",
+   "accessDate": "2026-10-13",
+   "components": [
+    {
+     "id": "E",
+     "rating": "Full",
+     "source": "https://github.com/langchain-ai/langgraph/blob/afbe7e48b17f62e139b5c6337ab934549e6dc73b/README.md",
+     "version": "afbe7e48b17f62e139b5c6337ab934549e6dc73b",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "T",
+     "rating": "Partial",
+     "source": "https://github.com/langchain-ai/langgraph/blob/afbe7e48b17f62e139b5c6337ab934549e6dc73b/README.md",
+     "version": "afbe7e48b17f62e139b5c6337ab934549e6dc73b",
+     "evidenceType": "first-party source/docs",
+     "confidence": "medium"
+    },
+    {
+     "id": "C",
+     "rating": "Partial",
+     "source": "https://github.com/langchain-ai/langgraph/blob/afbe7e48b17f62e139b5c6337ab934549e6dc73b/README.md",
+     "version": "afbe7e48b17f62e139b5c6337ab934549e6dc73b",
+     "evidenceType": "first-party source/docs",
+     "confidence": "medium"
+    },
+    {
+     "id": "S",
+     "rating": "Full",
+     "source": "https://github.com/langchain-ai/langgraph/blob/afbe7e48b17f62e139b5c6337ab934549e6dc73b/README.md",
+     "version": "afbe7e48b17f62e139b5c6337ab934549e6dc73b",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "L",
+     "rating": "Partial",
+     "source": "https://github.com/langchain-ai/langgraph/blob/afbe7e48b17f62e139b5c6337ab934549e6dc73b/README.md",
+     "version": "afbe7e48b17f62e139b5c6337ab934549e6dc73b",
+     "evidenceType": "first-party source/docs",
+     "confidence": "medium"
+    },
+    {
+     "id": "V",
+     "rating": "Partial",
+     "source": "https://github.com/langchain-ai/langgraph/blob/afbe7e48b17f62e139b5c6337ab934549e6dc73b/README.md",
+     "version": "afbe7e48b17f62e139b5c6337ab934549e6dc73b",
+     "evidenceType": "first-party source/docs",
+     "confidence": "medium"
+    }
+   ]
+  },
+  {
+   "name": "LongHorizon-Harness",
+   "category": "persistent",
+   "accessDate": "2026-10-13",
+   "components": [
+    {
+     "id": "E",
+     "rating": "Full",
+     "source": "https://github.com/AMAP-ML/LongHorizon-Harness/blob/a1dd930614972b92361c1b9cd6aac441a6db5a65/README.md",
+     "version": "a1dd930614972b92361c1b9cd6aac441a6db5a65",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "T",
+     "rating": "Partial",
+     "source": "https://github.com/AMAP-ML/LongHorizon-Harness/blob/a1dd930614972b92361c1b9cd6aac441a6db5a65/README.md",
+     "version": "a1dd930614972b92361c1b9cd6aac441a6db5a65",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "C",
+     "rating": "Full",
+     "source": "https://github.com/AMAP-ML/LongHorizon-Harness/blob/a1dd930614972b92361c1b9cd6aac441a6db5a65/README.md",
+     "version": "a1dd930614972b92361c1b9cd6aac441a6db5a65",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "S",
+     "rating": "Full",
+     "source": "https://github.com/AMAP-ML/LongHorizon-Harness/blob/a1dd930614972b92361c1b9cd6aac441a6db5a65/README.md",
+     "version": "a1dd930614972b92361c1b9cd6aac441a6db5a65",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "L",
+     "rating": "Full",
+     "source": "https://github.com/AMAP-ML/LongHorizon-Harness/blob/a1dd930614972b92361c1b9cd6aac441a6db5a65/README.md",
+     "version": "a1dd930614972b92361c1b9cd6aac441a6db5a65",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "V",
+     "rating": "Full",
+     "source": "https://github.com/AMAP-ML/LongHorizon-Harness/blob/a1dd930614972b92361c1b9cd6aac441a6db5a65/README.md",
+     "version": "a1dd930614972b92361c1b9cd6aac441a6db5a65",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    }
+   ]
+  },
+  {
+   "name": "Mastra",
+   "category": "runtime",
+   "accessDate": "2026-10-13",
+   "components": [
+    {
+     "id": "E",
+     "rating": "Full",
+     "source": "https://github.com/mastra-ai/mastra/blob/aea91e7f3a4fb066bfda96dca670d7d2a766d770/README.md",
+     "version": "aea91e7f3a4fb066bfda96dca670d7d2a766d770",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "T",
+     "rating": "Full",
+     "source": "https://github.com/mastra-ai/mastra/blob/aea91e7f3a4fb066bfda96dca670d7d2a766d770/README.md",
+     "version": "aea91e7f3a4fb066bfda96dca670d7d2a766d770",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "C",
+     "rating": "Full",
+     "source": "https://github.com/mastra-ai/mastra/blob/aea91e7f3a4fb066bfda96dca670d7d2a766d770/README.md",
+     "version": "aea91e7f3a4fb066bfda96dca670d7d2a766d770",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "S",
+     "rating": "Full",
+     "source": "https://github.com/mastra-ai/mastra/blob/aea91e7f3a4fb066bfda96dca670d7d2a766d770/README.md",
+     "version": "aea91e7f3a4fb066bfda96dca670d7d2a766d770",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "L",
+     "rating": "Full",
+     "source": "https://github.com/mastra-ai/mastra/blob/aea91e7f3a4fb066bfda96dca670d7d2a766d770/README.md",
+     "version": "aea91e7f3a4fb066bfda96dca670d7d2a766d770",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "V",
+     "rating": "Full",
+     "source": "https://github.com/mastra-ai/mastra/blob/aea91e7f3a4fb066bfda96dca670d7d2a766d770/README.md",
+     "version": "aea91e7f3a4fb066bfda96dca670d7d2a766d770",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    }
+   ]
+  },
+  {
+   "name": "Microsoft Agent Framework",
+   "category": "runtime",
+   "accessDate": "2026-10-13",
+   "components": [
+    {
+     "id": "E",
+     "rating": "Full",
+     "source": "https://github.com/microsoft/agent-framework/blob/b53d25ed1cd2f54ee5e5e5ed548bb2c5515022f3/README.md",
+     "version": "b53d25ed1cd2f54ee5e5e5ed548bb2c5515022f3",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "T",
+     "rating": "Full",
+     "source": "https://github.com/microsoft/agent-framework/blob/b53d25ed1cd2f54ee5e5e5ed548bb2c5515022f3/README.md",
+     "version": "b53d25ed1cd2f54ee5e5e5ed548bb2c5515022f3",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "C",
+     "rating": "Full",
+     "source": "https://github.com/microsoft/agent-framework/blob/b53d25ed1cd2f54ee5e5e5ed548bb2c5515022f3/README.md",
+     "version": "b53d25ed1cd2f54ee5e5e5ed548bb2c5515022f3",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "S",
+     "rating": "Full",
+     "source": "https://github.com/microsoft/agent-framework/blob/b53d25ed1cd2f54ee5e5e5ed548bb2c5515022f3/README.md",
+     "version": "b53d25ed1cd2f54ee5e5e5ed548bb2c5515022f3",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "L",
+     "rating": "Full",
+     "source": "https://github.com/microsoft/agent-framework/blob/b53d25ed1cd2f54ee5e5e5ed548bb2c5515022f3/README.md",
+     "version": "b53d25ed1cd2f54ee5e5e5ed548bb2c5515022f3",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "V",
+     "rating": "Full",
+     "source": "https://github.com/microsoft/agent-framework/blob/b53d25ed1cd2f54ee5e5e5ed548bb2c5515022f3/README.md",
+     "version": "b53d25ed1cd2f54ee5e5e5ed548bb2c5515022f3",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    }
+   ]
+  },
+  {
+   "name": "MiMo-Code",
+   "category": "coding",
+   "accessDate": "2026-10-13",
+   "components": [
+    {
+     "id": "E",
+     "rating": "Full",
+     "source": "https://github.com/XiaomiMiMo/MiMo-Code/blob/eab323a9e5e59ca756eb6451c093df31c57202be/README.md",
+     "version": "eab323a9e5e59ca756eb6451c093df31c57202be",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "T",
+     "rating": "Full",
+     "source": "https://github.com/XiaomiMiMo/MiMo-Code/blob/eab323a9e5e59ca756eb6451c093df31c57202be/README.md",
+     "version": "eab323a9e5e59ca756eb6451c093df31c57202be",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "C",
+     "rating": "Full",
+     "source": "https://github.com/XiaomiMiMo/MiMo-Code/blob/eab323a9e5e59ca756eb6451c093df31c57202be/README.md",
+     "version": "eab323a9e5e59ca756eb6451c093df31c57202be",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "S",
+     "rating": "Full",
+     "source": "https://github.com/XiaomiMiMo/MiMo-Code/blob/eab323a9e5e59ca756eb6451c093df31c57202be/README.md",
+     "version": "eab323a9e5e59ca756eb6451c093df31c57202be",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "L",
+     "rating": "Full",
+     "source": "https://github.com/XiaomiMiMo/MiMo-Code/blob/eab323a9e5e59ca756eb6451c093df31c57202be/README.md",
+     "version": "eab323a9e5e59ca756eb6451c093df31c57202be",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "V",
+     "rating": "Full",
+     "source": "https://github.com/XiaomiMiMo/MiMo-Code/blob/eab323a9e5e59ca756eb6451c093df31c57202be/README.md",
+     "version": "eab323a9e5e59ca756eb6451c093df31c57202be",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    }
+   ]
+  },
+  {
+   "name": "Muse",
+   "category": "workplace",
+   "accessDate": "2026-10-13",
+   "components": [
+    {
+     "id": "E",
+     "rating": "Full",
+     "source": "https://introducing.muse.ai/",
+     "version": "Muse launch architecture, 2026-09",
+     "evidenceType": "first-party product documentation",
+     "confidence": "medium"
+    },
+    {
+     "id": "T",
+     "rating": "Full",
+     "source": "https://introducing.muse.ai/",
+     "version": "Muse launch architecture, 2026-09",
+     "evidenceType": "first-party product documentation",
+     "confidence": "medium"
+    },
+    {
+     "id": "C",
+     "rating": "Full",
+     "source": "https://introducing.muse.ai/",
+     "version": "Muse launch architecture, 2026-09",
+     "evidenceType": "first-party product documentation",
+     "confidence": "medium"
+    },
+    {
+     "id": "S",
+     "rating": "Full",
+     "source": "https://introducing.muse.ai/",
+     "version": "Muse launch architecture, 2026-09",
+     "evidenceType": "first-party product documentation",
+     "confidence": "medium"
+    },
+    {
+     "id": "L",
+     "rating": "Full",
+     "source": "https://introducing.muse.ai/",
+     "version": "Muse launch architecture, 2026-09",
+     "evidenceType": "first-party product documentation",
+     "confidence": "medium"
+    },
+    {
+     "id": "V",
+     "rating": "Partial",
+     "source": "https://introducing.muse.ai/",
+     "version": "Muse launch architecture, 2026-09",
+     "evidenceType": "first-party product documentation",
+     "confidence": "medium"
+    }
+   ]
+  },
+  {
+   "name": "Omnigent",
+   "category": "persistent",
+   "accessDate": "2026-10-13",
+   "components": [
+    {
+     "id": "E",
+     "rating": "Full",
+     "source": "https://github.com/omnigent-ai/omnigent/blob/c60f29baeb4effe75671949a57826cdd60a7ac51/README.md",
+     "version": "c60f29baeb4effe75671949a57826cdd60a7ac51",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "T",
+     "rating": "Full",
+     "source": "https://github.com/omnigent-ai/omnigent/blob/c60f29baeb4effe75671949a57826cdd60a7ac51/README.md",
+     "version": "c60f29baeb4effe75671949a57826cdd60a7ac51",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "C",
+     "rating": "Partial",
+     "source": "https://github.com/omnigent-ai/omnigent/blob/c60f29baeb4effe75671949a57826cdd60a7ac51/README.md",
+     "version": "c60f29baeb4effe75671949a57826cdd60a7ac51",
+     "evidenceType": "first-party source/docs",
+     "confidence": "medium"
+    },
+    {
+     "id": "S",
+     "rating": "Full",
+     "source": "https://github.com/omnigent-ai/omnigent/blob/c60f29baeb4effe75671949a57826cdd60a7ac51/README.md",
+     "version": "c60f29baeb4effe75671949a57826cdd60a7ac51",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "L",
+     "rating": "Full",
+     "source": "https://github.com/omnigent-ai/omnigent/blob/c60f29baeb4effe75671949a57826cdd60a7ac51/README.md",
+     "version": "c60f29baeb4effe75671949a57826cdd60a7ac51",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "V",
+     "rating": "Partial",
+     "source": "https://github.com/omnigent-ai/omnigent/blob/c60f29baeb4effe75671949a57826cdd60a7ac51/README.md",
+     "version": "c60f29baeb4effe75671949a57826cdd60a7ac51",
+     "evidenceType": "first-party source/docs",
+     "confidence": "medium"
+    }
+   ]
+  },
+  {
+   "name": "OpenAI Agents SDK",
+   "category": "runtime",
+   "accessDate": "2026-10-13",
+   "components": [
+    {
+     "id": "E",
+     "rating": "Full",
+     "source": "https://github.com/openai/openai-agents-python/blob/125efa029b4bfd84238bd2c4fd69c3406f802663/README.md",
+     "version": "125efa029b4bfd84238bd2c4fd69c3406f802663",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "T",
+     "rating": "Full",
+     "source": "https://github.com/openai/openai-agents-python/blob/125efa029b4bfd84238bd2c4fd69c3406f802663/README.md",
+     "version": "125efa029b4bfd84238bd2c4fd69c3406f802663",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "C",
+     "rating": "Full",
+     "source": "https://github.com/openai/openai-agents-python/blob/125efa029b4bfd84238bd2c4fd69c3406f802663/README.md",
+     "version": "125efa029b4bfd84238bd2c4fd69c3406f802663",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "S",
+     "rating": "Full",
+     "source": "https://github.com/openai/openai-agents-python/blob/125efa029b4bfd84238bd2c4fd69c3406f802663/README.md",
+     "version": "125efa029b4bfd84238bd2c4fd69c3406f802663",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "L",
+     "rating": "Full",
+     "source": "https://github.com/openai/openai-agents-python/blob/125efa029b4bfd84238bd2c4fd69c3406f802663/README.md",
+     "version": "125efa029b4bfd84238bd2c4fd69c3406f802663",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "V",
+     "rating": "Full",
+     "source": "https://github.com/openai/openai-agents-python/blob/125efa029b4bfd84238bd2c4fd69c3406f802663/README.md",
+     "version": "125efa029b4bfd84238bd2c4fd69c3406f802663",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    }
+   ]
+  },
+  {
+   "name": "OpenAI dots",
+   "category": "workplace",
+   "accessDate": "2026-10-13",
+   "components": [
+    {
+     "id": "E",
+     "rating": "Full",
+     "source": "https://openai.com/index/introducing-dots/",
+     "version": "OpenAI dots announcement, 2026",
+     "evidenceType": "first-party product documentation",
+     "confidence": "medium"
+    },
+    {
+     "id": "T",
+     "rating": "Full",
+     "source": "https://openai.com/index/introducing-dots/",
+     "version": "OpenAI dots announcement, 2026",
+     "evidenceType": "first-party product documentation",
+     "confidence": "medium"
+    },
+    {
+     "id": "C",
+     "rating": "Full",
+     "source": "https://openai.com/index/introducing-dots/",
+     "version": "OpenAI dots announcement, 2026",
+     "evidenceType": "first-party product documentation",
+     "confidence": "medium"
+    },
+    {
+     "id": "S",
+     "rating": "Full",
+     "source": "https://openai.com/index/introducing-dots/",
+     "version": "OpenAI dots announcement, 2026",
+     "evidenceType": "first-party product documentation",
+     "confidence": "medium"
+    },
+    {
+     "id": "L",
+     "rating": "Full",
+     "source": "https://openai.com/index/introducing-dots/",
+     "version": "OpenAI dots announcement, 2026",
+     "evidenceType": "first-party product documentation",
+     "confidence": "medium"
+    },
+    {
+     "id": "V",
+     "rating": "Partial",
+     "source": "https://openai.com/index/introducing-dots/",
+     "version": "OpenAI dots announcement, 2026",
+     "evidenceType": "first-party product documentation",
+     "confidence": "medium"
+    }
+   ]
+  },
+  {
+   "name": "OpenAI Workspace Agents",
+   "category": "workplace",
+   "accessDate": "2026-10-13",
+   "components": [
+    {
+     "id": "E",
+     "rating": "Full",
+     "source": "https://openai.com/index/introducing-workspace-agents-in-chatgpt/",
+     "version": "Workspace Agents announcement, 2026",
+     "evidenceType": "first-party product documentation",
+     "confidence": "medium"
+    },
+    {
+     "id": "T",
+     "rating": "Full",
+     "source": "https://openai.com/index/introducing-workspace-agents-in-chatgpt/",
+     "version": "Workspace Agents announcement, 2026",
+     "evidenceType": "first-party product documentation",
+     "confidence": "medium"
+    },
+    {
+     "id": "C",
+     "rating": "Full",
+     "source": "https://openai.com/index/introducing-workspace-agents-in-chatgpt/",
+     "version": "Workspace Agents announcement, 2026",
+     "evidenceType": "first-party product documentation",
+     "confidence": "medium"
+    },
+    {
+     "id": "S",
+     "rating": "Full",
+     "source": "https://openai.com/index/introducing-workspace-agents-in-chatgpt/",
+     "version": "Workspace Agents announcement, 2026",
+     "evidenceType": "first-party product documentation",
+     "confidence": "medium"
+    },
+    {
+     "id": "L",
+     "rating": "Full",
+     "source": "https://openai.com/index/introducing-workspace-agents-in-chatgpt/",
+     "version": "Workspace Agents announcement, 2026",
+     "evidenceType": "first-party product documentation",
+     "confidence": "medium"
+    },
+    {
+     "id": "V",
+     "rating": "Partial",
+     "source": "https://openai.com/index/introducing-workspace-agents-in-chatgpt/",
+     "version": "Workspace Agents announcement, 2026",
+     "evidenceType": "first-party product documentation",
+     "confidence": "medium"
+    }
+   ]
+  },
+  {
+   "name": "OpenClaw",
+   "category": "anchor",
+   "accessDate": "2026-10-13",
+   "components": [
+    {
+     "id": "E",
+     "rating": "Full",
+     "source": "https://github.com/openclaw/openclaw/blob/e26de4eeae75da05879deea4f307d4852b2f9439/README.md",
+     "version": "e26de4eeae75da05879deea4f307d4852b2f9439",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "T",
+     "rating": "Full",
+     "source": "https://github.com/openclaw/openclaw/blob/e26de4eeae75da05879deea4f307d4852b2f9439/README.md",
+     "version": "e26de4eeae75da05879deea4f307d4852b2f9439",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "C",
+     "rating": "Full",
+     "source": "https://github.com/openclaw/openclaw/blob/e26de4eeae75da05879deea4f307d4852b2f9439/README.md",
+     "version": "e26de4eeae75da05879deea4f307d4852b2f9439",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "S",
+     "rating": "Full",
+     "source": "https://github.com/openclaw/openclaw/blob/e26de4eeae75da05879deea4f307d4852b2f9439/README.md",
+     "version": "e26de4eeae75da05879deea4f307d4852b2f9439",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "L",
+     "rating": "Full",
+     "source": "https://github.com/openclaw/openclaw/blob/e26de4eeae75da05879deea4f307d4852b2f9439/README.md",
+     "version": "e26de4eeae75da05879deea4f307d4852b2f9439",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "V",
+     "rating": "Partial",
+     "source": "https://github.com/openclaw/openclaw/blob/e26de4eeae75da05879deea4f307d4852b2f9439/README.md",
+     "version": "e26de4eeae75da05879deea4f307d4852b2f9439",
+     "evidenceType": "first-party source/docs",
+     "confidence": "medium"
+    }
+   ]
+  },
+  {
+   "name": "OpenCode",
+   "category": "coding",
+   "accessDate": "2026-10-13",
+   "components": [
+    {
+     "id": "E",
+     "rating": "Full",
+     "source": "https://github.com/anomalyco/opencode/blob/df63a72da4b84c9983b6ddca46cd19f10caf4575/README.md",
+     "version": "df63a72da4b84c9983b6ddca46cd19f10caf4575",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "T",
+     "rating": "Full",
+     "source": "https://github.com/anomalyco/opencode/blob/df63a72da4b84c9983b6ddca46cd19f10caf4575/README.md",
+     "version": "df63a72da4b84c9983b6ddca46cd19f10caf4575",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "C",
+     "rating": "Full",
+     "source": "https://github.com/anomalyco/opencode/blob/df63a72da4b84c9983b6ddca46cd19f10caf4575/README.md",
+     "version": "df63a72da4b84c9983b6ddca46cd19f10caf4575",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "S",
+     "rating": "Full",
+     "source": "https://github.com/anomalyco/opencode/blob/df63a72da4b84c9983b6ddca46cd19f10caf4575/README.md",
+     "version": "df63a72da4b84c9983b6ddca46cd19f10caf4575",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "L",
+     "rating": "Full",
+     "source": "https://github.com/anomalyco/opencode/blob/df63a72da4b84c9983b6ddca46cd19f10caf4575/README.md",
+     "version": "df63a72da4b84c9983b6ddca46cd19f10caf4575",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "V",
+     "rating": "Partial",
+     "source": "https://github.com/anomalyco/opencode/blob/df63a72da4b84c9983b6ddca46cd19f10caf4575/README.md",
+     "version": "df63a72da4b84c9983b6ddca46cd19f10caf4575",
+     "evidenceType": "first-party source/docs",
+     "confidence": "medium"
+    }
+   ]
+  },
+  {
+   "name": "OpenHands",
+   "category": "coding",
+   "accessDate": "2026-10-13",
+   "components": [
+    {
+     "id": "E",
+     "rating": "Full",
+     "source": "https://github.com/OpenHands/OpenHands/blob/d7e14e25bcf14238e566139ec9490e1f05efcd69/README.md",
+     "version": "d7e14e25bcf14238e566139ec9490e1f05efcd69",
+     "evidenceType": "first-party source/docs",
+     "confidence": "medium"
+    },
+    {
+     "id": "T",
+     "rating": "Full",
+     "source": "https://github.com/OpenHands/OpenHands/blob/d7e14e25bcf14238e566139ec9490e1f05efcd69/README.md",
+     "version": "d7e14e25bcf14238e566139ec9490e1f05efcd69",
+     "evidenceType": "first-party source/docs",
+     "confidence": "medium"
+    },
+    {
+     "id": "C",
+     "rating": "Full",
+     "source": "https://github.com/OpenHands/OpenHands/blob/d7e14e25bcf14238e566139ec9490e1f05efcd69/README.md",
+     "version": "d7e14e25bcf14238e566139ec9490e1f05efcd69",
+     "evidenceType": "first-party source/docs",
+     "confidence": "medium"
+    },
+    {
+     "id": "S",
+     "rating": "Full",
+     "source": "https://github.com/OpenHands/OpenHands/blob/d7e14e25bcf14238e566139ec9490e1f05efcd69/README.md",
+     "version": "d7e14e25bcf14238e566139ec9490e1f05efcd69",
+     "evidenceType": "first-party source/docs",
+     "confidence": "medium"
+    },
+    {
+     "id": "L",
+     "rating": "Full",
+     "source": "https://github.com/OpenHands/OpenHands/blob/d7e14e25bcf14238e566139ec9490e1f05efcd69/README.md",
+     "version": "d7e14e25bcf14238e566139ec9490e1f05efcd69",
+     "evidenceType": "first-party source/docs",
+     "confidence": "medium"
+    },
+    {
+     "id": "V",
+     "rating": "Partial",
+     "source": "https://github.com/OpenHands/OpenHands/blob/d7e14e25bcf14238e566139ec9490e1f05efcd69/README.md",
+     "version": "d7e14e25bcf14238e566139ec9490e1f05efcd69",
+     "evidenceType": "first-party source/docs",
+     "confidence": "medium"
+    }
+   ]
+  },
+  {
+   "name": "OpenJarvis",
+   "category": "workplace",
+   "accessDate": "2026-10-13",
+   "components": [
+    {
+     "id": "E",
+     "rating": "Full",
+     "source": "https://github.com/open-jarvis/OpenJarvis/blob/ccf02ec7bdda2e2b344eeb8dd986d742ff458acc/README.md",
+     "version": "ccf02ec7bdda2e2b344eeb8dd986d742ff458acc",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "T",
+     "rating": "Full",
+     "source": "https://github.com/open-jarvis/OpenJarvis/blob/ccf02ec7bdda2e2b344eeb8dd986d742ff458acc/README.md",
+     "version": "ccf02ec7bdda2e2b344eeb8dd986d742ff458acc",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "C",
+     "rating": "Full",
+     "source": "https://github.com/open-jarvis/OpenJarvis/blob/ccf02ec7bdda2e2b344eeb8dd986d742ff458acc/README.md",
+     "version": "ccf02ec7bdda2e2b344eeb8dd986d742ff458acc",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "S",
+     "rating": "Full",
+     "source": "https://github.com/open-jarvis/OpenJarvis/blob/ccf02ec7bdda2e2b344eeb8dd986d742ff458acc/README.md",
+     "version": "ccf02ec7bdda2e2b344eeb8dd986d742ff458acc",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "L",
+     "rating": "Full",
+     "source": "https://github.com/open-jarvis/OpenJarvis/blob/ccf02ec7bdda2e2b344eeb8dd986d742ff458acc/README.md",
+     "version": "ccf02ec7bdda2e2b344eeb8dd986d742ff458acc",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "V",
+     "rating": "Full",
+     "source": "https://github.com/open-jarvis/OpenJarvis/blob/ccf02ec7bdda2e2b344eeb8dd986d742ff458acc/README.md",
+     "version": "ccf02ec7bdda2e2b344eeb8dd986d742ff458acc",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    }
+   ]
+  },
+  {
+   "name": "Prime Agent",
+   "category": "coding",
+   "accessDate": "2026-10-13",
+   "components": [
+    {
+     "id": "E",
+     "rating": "Full",
+     "source": "https://github.com/PrimeIntellect-ai/prime-agent/blob/d592d5e7746408fe9097541af96d3239e263f7a1/README.md",
+     "version": "d592d5e7746408fe9097541af96d3239e263f7a1",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "T",
+     "rating": "Full",
+     "source": "https://github.com/PrimeIntellect-ai/prime-agent/blob/d592d5e7746408fe9097541af96d3239e263f7a1/README.md",
+     "version": "d592d5e7746408fe9097541af96d3239e263f7a1",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "C",
+     "rating": "Full",
+     "source": "https://github.com/PrimeIntellect-ai/prime-agent/blob/d592d5e7746408fe9097541af96d3239e263f7a1/README.md",
+     "version": "d592d5e7746408fe9097541af96d3239e263f7a1",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "S",
+     "rating": "Full",
+     "source": "https://github.com/PrimeIntellect-ai/prime-agent/blob/d592d5e7746408fe9097541af96d3239e263f7a1/README.md",
+     "version": "d592d5e7746408fe9097541af96d3239e263f7a1",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "L",
+     "rating": "Partial",
+     "source": "https://github.com/PrimeIntellect-ai/prime-agent/blob/d592d5e7746408fe9097541af96d3239e263f7a1/README.md",
+     "version": "d592d5e7746408fe9097541af96d3239e263f7a1",
+     "evidenceType": "first-party source/docs",
+     "confidence": "medium"
+    },
+    {
+     "id": "V",
+     "rating": "Partial",
+     "source": "https://github.com/PrimeIntellect-ai/prime-agent/blob/d592d5e7746408fe9097541af96d3239e263f7a1/README.md",
+     "version": "d592d5e7746408fe9097541af96d3239e263f7a1",
+     "evidenceType": "first-party source/docs",
+     "confidence": "medium"
+    }
+   ]
+  },
+  {
+   "name": "QwenWork",
+   "category": "workplace",
+   "accessDate": "2026-10-13",
+   "components": [
+    {
+     "id": "E",
+     "rating": "Full",
+     "source": "https://www.alibabacloud.com/help/en/qwenwork/qwenwork-intro",
+     "version": "QwenWork documentation, accessed 2026-10-13",
+     "evidenceType": "first-party product documentation",
+     "confidence": "medium"
+    },
+    {
+     "id": "T",
+     "rating": "Full",
+     "source": "https://www.alibabacloud.com/help/en/qwenwork/qwenwork-intro",
+     "version": "QwenWork documentation, accessed 2026-10-13",
+     "evidenceType": "first-party product documentation",
+     "confidence": "medium"
+    },
+    {
+     "id": "C",
+     "rating": "Full",
+     "source": "https://www.alibabacloud.com/help/en/qwenwork/qwenwork-intro",
+     "version": "QwenWork documentation, accessed 2026-10-13",
+     "evidenceType": "first-party product documentation",
+     "confidence": "medium"
+    },
+    {
+     "id": "S",
+     "rating": "Full",
+     "source": "https://www.alibabacloud.com/help/en/qwenwork/qwenwork-intro",
+     "version": "QwenWork documentation, accessed 2026-10-13",
+     "evidenceType": "first-party product documentation",
+     "confidence": "medium"
+    },
+    {
+     "id": "L",
+     "rating": "Full",
+     "source": "https://www.alibabacloud.com/help/en/qwenwork/qwenwork-intro",
+     "version": "QwenWork documentation, accessed 2026-10-13",
+     "evidenceType": "first-party product documentation",
+     "confidence": "medium"
+    },
+    {
+     "id": "V",
+     "rating": "Unverified",
+     "source": "https://www.alibabacloud.com/help/en/qwenwork/qwenwork-intro",
+     "version": "QwenWork documentation, accessed 2026-10-13",
+     "evidenceType": "first-party product documentation",
+     "confidence": "low"
+    }
+   ]
+  },
+  {
+   "name": "SandBase",
+   "category": "persistent",
+   "accessDate": "2026-10-13",
+   "components": [
+    {
+     "id": "E",
+     "rating": "Full",
+     "source": "https://github.com/sandbaseai/sandbase-harness/blob/427b52a96a5309ca23268407f85c237468ab6a4e/README.md",
+     "version": "427b52a96a5309ca23268407f85c237468ab6a4e",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "T",
+     "rating": "Full",
+     "source": "https://github.com/sandbaseai/sandbase-harness/blob/427b52a96a5309ca23268407f85c237468ab6a4e/README.md",
+     "version": "427b52a96a5309ca23268407f85c237468ab6a4e",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "C",
+     "rating": "Partial",
+     "source": "https://github.com/sandbaseai/sandbase-harness/blob/427b52a96a5309ca23268407f85c237468ab6a4e/README.md",
+     "version": "427b52a96a5309ca23268407f85c237468ab6a4e",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "S",
+     "rating": "Full",
+     "source": "https://github.com/sandbaseai/sandbase-harness/blob/427b52a96a5309ca23268407f85c237468ab6a4e/README.md",
+     "version": "427b52a96a5309ca23268407f85c237468ab6a4e",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "L",
+     "rating": "Full",
+     "source": "https://github.com/sandbaseai/sandbase-harness/blob/427b52a96a5309ca23268407f85c237468ab6a4e/README.md",
+     "version": "427b52a96a5309ca23268407f85c237468ab6a4e",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "V",
+     "rating": "Full",
+     "source": "https://github.com/sandbaseai/sandbase-harness/blob/427b52a96a5309ca23268407f85c237468ab6a4e/README.md",
+     "version": "427b52a96a5309ca23268407f85c237468ab6a4e",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    }
+   ]
+  },
+  {
+   "name": "TrueForge",
+   "category": "persistent",
+   "accessDate": "2026-10-13",
+   "components": [
+    {
+     "id": "E",
+     "rating": "Full",
+     "source": "https://github.com/truefoundry/trueforge/blob/8cc845358d9a84df0a1965aaebf308320379993c/README.md",
+     "version": "8cc845358d9a84df0a1965aaebf308320379993c",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "T",
+     "rating": "Full",
+     "source": "https://github.com/truefoundry/trueforge/blob/8cc845358d9a84df0a1965aaebf308320379993c/README.md",
+     "version": "8cc845358d9a84df0a1965aaebf308320379993c",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "C",
+     "rating": "Full",
+     "source": "https://github.com/truefoundry/trueforge/blob/8cc845358d9a84df0a1965aaebf308320379993c/README.md",
+     "version": "8cc845358d9a84df0a1965aaebf308320379993c",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "S",
+     "rating": "Full",
+     "source": "https://github.com/truefoundry/trueforge/blob/8cc845358d9a84df0a1965aaebf308320379993c/README.md",
+     "version": "8cc845358d9a84df0a1965aaebf308320379993c",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "L",
+     "rating": "Full",
+     "source": "https://github.com/truefoundry/trueforge/blob/8cc845358d9a84df0a1965aaebf308320379993c/README.md",
+     "version": "8cc845358d9a84df0a1965aaebf308320379993c",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    },
+    {
+     "id": "V",
+     "rating": "Full",
+     "source": "https://github.com/truefoundry/trueforge/blob/8cc845358d9a84df0a1965aaebf308320379993c/README.md",
+     "version": "8cc845358d9a84df0a1965aaebf308320379993c",
+     "evidenceType": "first-party source/docs",
+     "confidence": "high"
+    }
+   ]
+  },
+  {
+   "name": "WorkBuddy",
+   "category": "workplace",
+   "accessDate": "2026-10-13",
+   "components": [
+    {
+     "id": "E",
+     "rating": "Full",
+     "source": "https://open.workbuddy.cn/en/docs/buddy-app",
+     "version": "Buddy App and managed-agent documentation, accessed 2026-10-13",
+     "evidenceType": "first-party product documentation",
+     "confidence": "medium"
+    },
+    {
+     "id": "T",
+     "rating": "Full",
+     "source": "https://open.workbuddy.cn/en/docs/buddy-app",
+     "version": "Buddy App and managed-agent documentation, accessed 2026-10-13",
+     "evidenceType": "first-party product documentation",
+     "confidence": "medium"
+    },
+    {
+     "id": "C",
+     "rating": "Full",
+     "source": "https://open.workbuddy.cn/en/docs/buddy-app",
+     "version": "Buddy App and managed-agent documentation, accessed 2026-10-13",
+     "evidenceType": "first-party product documentation",
+     "confidence": "medium"
+    },
+    {
+     "id": "S",
+     "rating": "Full",
+     "source": "https://open.workbuddy.cn/en/docs/buddy-app",
+     "version": "Buddy App and managed-agent documentation, accessed 2026-10-13",
+     "evidenceType": "first-party product documentation",
+     "confidence": "medium"
+    },
+    {
+     "id": "L",
+     "rating": "Full",
+     "source": "https://open.workbuddy.cn/en/docs/buddy-app",
+     "version": "Buddy App and managed-agent documentation, accessed 2026-10-13",
+     "evidenceType": "first-party product documentation",
+     "confidence": "medium"
+    },
+    {
+     "id": "V",
+     "rating": "Full",
+     "source": "https://open.workbuddy.cn/en/docs/buddy-app",
+     "version": "Buddy App and managed-agent documentation, accessed 2026-10-13",
+     "evidenceType": "first-party product documentation",
+     "confidence": "medium"
+    }
+   ]
+  }
+ ]
+}

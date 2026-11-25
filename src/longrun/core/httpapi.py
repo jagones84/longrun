@@ -3290,6 +3290,12 @@ class Handler(BaseHTTPRequestHandler):
             # for self-inspection before a self-evolution delta. Read-only.
             from longrun.harness import manifest as _manifest
             return self._send(200, _manifest.build())
+        if path == "/api/harness/coverage":
+            # Round 171 (the survey *Agent Harness for LLM Agents*, ETCSLV): what
+            # this harness exposes per component, derived live from the tree so a
+            # hand-written coverage grid cannot drift. Read-only.
+            from longrun.harness import harness_coverage as _cov
+            return self._send(200, _cov.census())
         if path.startswith("/api/sessions/") and path.endswith("/export"):
             # Round 106 (arXiv:2611.20389): the evidence bundle someone else can
             # read. `profile=share` pseudonymises identifiers and buckets every

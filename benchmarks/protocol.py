@@ -22,6 +22,35 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Protocol, runtime_checkable
 
 
+# ETCSLV tags (Round 171). Source: the survey *Agent Harness for LLM Agents*
+# (Awesome-Agent-Harness, v4) — its framework H=(E,T,C,S,L,V) and §4 evaluation
+# landscape. Each suite is tagged with the harness FUNCTIONS it stresses, so a
+# score can say which half of the harness it measured. This is attribution from a
+# published catalogue, never a claim that the suite was re-run here.
+#
+#   E execution loop · T tool registry · C context manager ·
+#   S state store     · L lifecycle hooks · V evaluation interface
+COMPONENTS = {
+    # suites this repo ships
+    "humaneval":       ("E", "T"),
+    "swebench":        ("E", "T", "S"),
+    "gaia":            ("E", "C", "T"),
+    "jobbench":        ("E", "C", "V"),
+    "polyglot":        ("E", "T"),
+    "lhb":             ("E", "C", "L", "V"),
+    "terminal_bench":  ("E", "T", "S"),
+    # suites the survey catalogues (not shipped here): tagged for cross-reference
+    "harnessbench":    ("E", "T", "C", "S", "L", "V"),
+    "longhorizon":     ("E", "S", "V"),
+    "harnessaudit":    ("L", "V"),
+    "sclate":          ("S", "C"),
+    "clawswebench":    ("E", "T"),
+}
+COMPONENT_ORDER = ("E", "T", "C", "S", "L", "V")
+COMPONENT_NAMES = {"E": "Execution loop", "T": "Tool registry", "C": "Context manager",
+                   "S": "State store", "L": "Lifecycle hooks", "V": "Evaluation iface"}
+
+
 @dataclass
 class AgentRef:
     """A live agent/session on the harness side."""

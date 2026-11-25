@@ -803,6 +803,34 @@ def cmd_graph(args):
     sys.exit(0)
 
 
+def cmd_harnesscov(args):
+    """Round 171 (the survey *Agent Harness for LLM Agents*, ETCSLV): the coverage self-rating.
+
+    `report` reads the LIVE tree and prints the ETCSLV self-rating card + payload;
+    `audit` reads a survey matrix (the bundled one by default) and names every cell
+    that breaks an evidence rule — a `Full` with no source, a rating outside the
+    vocabulary, a duplicate system; `compare` joins the live rating to the 34
+    systems the survey rates.
+    """
+    from longrun.harness import harness_coverage as _hc
+    from longrun.harness.checks import harness_coverage as _chk
+    action = getattr(args, "action", None) or "report"
+    if action == "audit":
+        payload = _load_doc(args, "harnesscov audit FILE.json") if getattr(args, "file", None) \
+            else _hc.load_matrix()
+        _emit(_chk, _chk.audit(payload), lambda o: o["verdict"] == "clean")
+    if action == "compare":
+        print(json.dumps(_hc.compare(), indent=2, ensure_ascii=False))
+        sys.exit(0)
+    payload = _load_doc(args, "harnesscov report FILE.json") if getattr(args, "file", None) \
+        else _hc.census()
+    card = _hc.card(payload)
+    if card:
+        print(card)
+    print(json.dumps(payload, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
 def cmd_episodes(args):
     """Round 115 (arXiv:2611.13254): validate a fault episode record and name controls."""
     from longrun.harness.checks import fault_episode
@@ -6133,6 +6161,10 @@ def _build_parser():
         p.add_argument("action", choices=["report", "audit"]); \
         p.add_argument("file", nargs="?", help="JSON: {census} (audit/report); omit to read LIVE"); \
         p.set_defaults(fn=cmd_graph)
+    p = sub.add_parser("harnesscov"); \
+        p.add_argument("action", nargs="?", default="report", choices=["report", "audit", "compare"]); \
+        p.add_argument("file", nargs="?", help="JSON: a survey matrix (audit); omit for the bundled one"); \
+        p.set_defaults(fn=cmd_harnesscov)
     p = sub.add_parser("harness",
                        help="list the per-paper groups, their actions and their input")
     p.add_argument("group", nargs="?", help="one group: print its own -h")

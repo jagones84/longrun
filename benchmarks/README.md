@@ -22,6 +22,34 @@ popularised by Claw-SWE-Bench, arXiv 2606.12344):
 `longrun_adapter.py` is the Longrun implementation. It imports nothing from
 `longrun.*` on purpose.
 
+## ETCSLV — which harness function a suite stresses (Round 171)
+
+Source: the survey *Agent Harness for Large Language Model Agents*
+(`Awesome-Agent-Harness`, v4) models a harness as **H = (E, T, C, S, L, V)**.
+`protocol.py:COMPONENTS` tags each suite with the functions it exercises, so a
+score can say *which half of the harness it measured* — attribution from a
+published catalogue, never a claim that the suite was re-run here. The live
+self-rating and the 34-system comparison are `forge.py harnesscov` and
+`GET /api/harness/coverage`.
+
+| suite | E | T | C | S | L | V |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|
+| `humaneval` | ● | ● | | | | |
+| `swebench` | ● | ● | | ● | | |
+| `gaia` | ● | ● | ● | | | |
+| `jobbench` | ● | | ● | | | ● |
+| `polyglot` | ● | ● | | | | |
+| `lhb` | ● | | ● | | ● | ● |
+| `terminal_bench` | ● | ● | | ● | | |
+| `harnessbench` *(catalogue)* | ● | ● | ● | ● | ● | ● |
+| `longhorizon` *(catalogue)* | ● | | | ● | | ● |
+| `harnessaudit` *(catalogue)* | | | | | ● | ● |
+| `sclate` *(catalogue)* | | | ● | ● | | |
+| `clawswebench` *(catalogue)* | ● | ● | | | | |
+
+`E` execution loop · `T` tool registry · `C` context manager ·
+`S` state store · `L` lifecycle hooks · `V` evaluation interface.
+
 ## Harness comparison — "how much is the harness worth?" (JAG-454)
 
 Three arms implement the SAME protocol, so a run is apples-to-apples by

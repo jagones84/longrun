@@ -7,6 +7,18 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **`harnesscov` — the harness rated as a coverage matrix (round 171).** The survey *Agent Harness for
+  Large Language Model Agents* (`Awesome-Agent-Harness` v4, CC-BY-4.0) models a harness as
+  `H=(E,T,C,S,L,V)` and rates 34 systems on one evidence-coded matrix. Longrun used it once, by hand,
+  as a reading grid; this makes the relationship live. `harness/harness_coverage.py` (the app-imported
+  seam) derives Longrun's own per-component rating from a declarative owner map probed read-only,
+  fail-open to `Unverified`, and serves it at `GET /api/harness/coverage`
+  (`forge.py harnesscov report|compare`); the panel's harness card shows the line.
+  `harness/checks/harness_coverage.py` (report-only) turns the survey's evidence rules into a
+  deterministic verdict (`forge.py harnesscov audit FILE.json`). The 34-system matrix is vendored,
+  trimmed, with its citation and licence, as `harness/harness_matrix.json`. `benchmarks/protocol.py`
+  tags each suite with the components it stresses (attribution only). Coverage is not quality — a
+  `Full` says the owners exist, never that they are good. Pinned by `v1309` (40/40).
 - **`harness.graph` — the agent-facing read of that census (round 170).** The tools that *write* the
   topology (`agent.*` / `team.*` / `job.*`) are architect-exclusive; nothing let an agent *read* it.
   One action joins the existing `harness` tool group (the one `harness.status` lives in, `v1238`):

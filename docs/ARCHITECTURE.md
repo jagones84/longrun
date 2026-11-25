@@ -37,6 +37,7 @@ the process rather than of a component:
 - Newest online papers (round 165, 2026-11-22)
 - Newest online papers (round 166, 2026-11-22)
 - Newest online papers (round 167, 2026-11-22)
+- Newest online papers (round 171, 2026-11-26)
 - Data stores (the data home — `~/.longrun/data`, never the checkout)
 - Safety model
 - Interfaces
@@ -379,16 +380,17 @@ Harness² upstream (arXiv:2610.14224): that is only a comparison arm in
 
 Layout (2026-11-20), by runtime role:
 
-* `harness/checks/` — the 136 report-only per-paper checkers. Pure data in,
+* `harness/checks/` — the 137 report-only per-paper checkers. Pure data in,
   verdict out; only `core/forge.py` imports them.
 * `harness/execution/` — the 9 gated executors (`probe`, `runner`, `editors`,
   `compose`, `contrast`, `whole`, `snapshot`, `gateway`, `unixshim`). Only
   `cycle` (with `dry_run=False`) reaches them, and only after
   `whole.readiness()` passes; tests inject a fake runner.
-* `harness/` root — the 31 modules the running app imports (live turn seams,
+* `harness/` root — the 32 modules the running app imports (live turn seams,
   read-only HTTP surfaces and their support, including `hazard_notice`,
   `work_report`, `effect_state`, `compaction_brief`, `model_cascade`,
-  `completion_signal`, `env_card`, `edit_loop`, `time_budget` and
+  `completion_signal`, `env_card`, `edit_loop`, `time_budget`,
+  `harness_coverage` (round 171 — the ETCSLV self-rating) and
   `graph_topology` — the ONE topology census read by `orbit/api` and
   `forge.py graph` (round 169), whose audit lives in `checks/` — below).
 * `harness/domain_adapter.py` — the GEPA genotype of arXiv:2611.25380: a
@@ -921,6 +923,30 @@ boundaries.
   EverydayBench (arXiv:2611.25146: 7.6 fixed criteria per request, 32.30% strict pass over 1,771
   runs), harness adapters (arXiv:2611.25380) and IDEA's intent-dominance rule (arXiv:2611.24102)
   bound the claim: the check, not the task, is what the record establishes.
+
+## Newest online papers (round 171, 2026-11-26)
+
+- **The harness rated as a coverage matrix** (the survey *Agent Harness for Large
+  Language Model Agents*, `Awesome-Agent-Harness` v4, CC-BY-4.0,
+  DOI 10.20944/preprints202604.0428.v3). The survey models a harness as
+  `H=(E,T,C,S,L,V)` — execution loop, tool registry, context manager, state store,
+  lifecycle hooks, evaluation interface — and rates 34 systems on one evidence-coded
+  matrix, leaving the rules as prose (`Full` needs first-party material; `Absent`
+  needs explicit first-party evidence; the vocabulary is closed). Longrun used it
+  once, by hand, as a reading grid (`longrun-vs-harness-codebases.md` §3); this round
+  makes the relationship live. `harness/harness_coverage.py` is the live half: a
+  declarative owner map (component → the modules that hold it) probed read-only,
+  fail-open to `Unverified`, printed as a card and served at `GET
+  /api/harness/coverage` (`forge.py harnesscov report|compare`).
+  `harness/checks/harness_coverage.py` is the report-only half: the survey's evidence
+  rules as a deterministic verdict (`forge.py harnesscov audit FILE.json` — a `Full`
+  with no source, a rating outside the vocabulary, a duplicated system). The
+  survey's 34-system matrix is vendored (trimmed, with its citation and licence) as
+  `harness/harness_matrix.json`, so `harnesscov compare` joins Longrun's own rating
+  to the field's. **Coverage is not quality**: a `Full` says the owners exist, never
+  that they are good, and `benchmarks/protocol.py` tags each suite with the
+  components it stresses as attribution only — no suite is re-run. Pinned by `v1309`
+  (40/40); it also de-stales the manual grid in `longrun-vs-harness-codebases.md` §3.
 
 ## Data stores (the data home — `~/.longrun/data`, never the checkout)
 

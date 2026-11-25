@@ -14491,6 +14491,16 @@ async function loadHarnessCycle() {
     " · max candidates " + esc(String(cfg.max_candidates)) +
     opt("repeats ", cfg.repeats) +
     " · workspace copy ≤ " + esc(String(cfg.copy_max_mb)) + " MB";
+  // Round 171: the ETCSLV self-rating (the survey *Agent Harness for LLM Agents*),
+  // read from the backend so a hand-written coverage grid cannot drift. One line;
+  // a failure here never breaks the cycle card above.
+  try {
+    const cov = await api("GET", "/api/harness/coverage");
+    if (sum && cov && cov.components) {
+      sum.innerHTML += " · ETCSLV " +
+        cov.components.map(c => esc(c.id) + " " + esc(c.rating)).join(" · ");
+    }
+  } catch (e) { /* optional line: the cycle state above already rendered */ }
   const lib = $("hcLib");
   if (lib) {
     const dom = ((d.library || {}).domains) || {};
