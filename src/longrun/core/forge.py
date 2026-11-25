@@ -831,6 +831,29 @@ def cmd_harnesscov(args):
     sys.exit(0)
 
 
+def cmd_modelbudget(args):
+    """Round 173 (Delegent / ARoute / Route Anything): delegation and budgeted routing.
+
+    `audit` names every claim the three papers would refuse — a routing gain past
+    the oracle gap, a delegation on a task under ~25 calls, a spend with no margin;
+    `report` prints the advice for a harness profile (a built-in example when no FILE).
+    """
+    from longrun.harness.checks import model_budget as _mb
+    action = getattr(args, "action", None) or "report"
+    if action == "audit":
+        payload = _load_doc(args, "modelbudget audit FILE.json")
+        _emit(_mb, _mb.audit(payload), lambda o: o["verdict"] == "clean")
+    if getattr(args, "file", None):
+        payload = _load_doc(args, "modelbudget report FILE.json")
+    else:
+        payload = {"routing_claim": True, "oracle_gap": 5.4, "capture": 0.06,
+                   "seeds": 1, "delegation": True, "delegation_calls": 120,
+                   "delegated_tasks": ["corpus_search"], "budget": 0.5, "margin": 0.0}
+    out = _mb.advise(payload)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
 def cmd_episodes(args):
     """Round 115 (arXiv:2611.13254): validate a fault episode record and name controls."""
     from longrun.harness.checks import fault_episode
@@ -6165,6 +6188,10 @@ def _build_parser():
         p.add_argument("action", nargs="?", default="report", choices=["report", "audit", "compare"]); \
         p.add_argument("file", nargs="?", help="JSON: a survey matrix (audit); omit for the bundled one"); \
         p.set_defaults(fn=cmd_harnesscov)
+    p = sub.add_parser("modelbudget"); \
+        p.add_argument("action", nargs="?", default="report", choices=["report", "audit"]); \
+        p.add_argument("file", nargs="?", help="JSON: a claim record (audit) or a profile (report)"); \
+        p.set_defaults(fn=cmd_modelbudget)
     p = sub.add_parser("harness",
                        help="list the per-paper groups, their actions and their input")
     p.add_argument("group", nargs="?", help="one group: print its own -h")

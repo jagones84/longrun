@@ -7,6 +7,23 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **`modelbudget` — delegation and budgeted routing, priced honestly (round 173).** Three papers on
+  one subject, *cost-efficient model choice inside a harness*, read in full: **Delegent**
+  (arXiv:2611.33098 — the lead keeps the main coding task and delegates legwork to a small model,
+  −67% frontier cost with no task loss), **ARoute** (arXiv:2611.13209 — task-aligned routing under a
+  cost budget, with a finite-sample guarantee on expected normalized spending) and **Route Anything**
+  (arXiv:2611.05275 — a routing claim is bounded by the per-input oracle gap it captures; 5.4 points,
+  8.82× efficiency). `harness/checks/model_budget.py` (report-only) turns them into a verdict:
+  `classify`/`delegation_gain`/`worthwhile` (which class goes to which model, and Delegent's
+  under-~25-calls caveat), `osc`/`plan`/`certified` (benefit-first batch routing, and the point
+  estimate that cannot certify a spend), `oracle_gap`/`capture`/`efficiency` (the ceiling, the share
+  taken, the cost multiple at a ≥−0.5-point quality floor), `audit` (routing-beyond-oracle,
+  capture-not-reported, single-seed, delegation-on-short-task, main-delegated, budget-overspend,
+  uncertified-spend, unit-mismatch) and `advise`. `forge.py modelbudget audit FILE.json` exits 1 on a
+  finding; `report` prints the advice for a profile. Not wired to the live router: this prices a claim,
+  it does not route. Related but different: `model_handoff` escalates per STEP. Pinned by `v1311`
+  (35/35). Honest negatives: no paper number is reproduced here; ARoute's guarantee is quoted, not
+  re-derived; `osc`/`plan` consume recorded outcomes, never a model call.
 - **`harnesscov` — the harness rated as a coverage matrix (round 171).** The survey *Agent Harness for
   Large Language Model Agents* (`Awesome-Agent-Harness` v4, CC-BY-4.0) models a harness as
   `H=(E,T,C,S,L,V)` and rates 34 systems on one evidence-coded matrix. Longrun used it once, by hand,

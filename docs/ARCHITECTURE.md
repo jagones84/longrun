@@ -380,7 +380,7 @@ Harness² upstream (arXiv:2610.14224): that is only a comparison arm in
 
 Layout (2026-11-20), by runtime role:
 
-* `harness/checks/` — the 137 report-only per-paper checkers. Pure data in,
+* `harness/checks/` — the 138 report-only per-paper checkers. Pure data in,
   verdict out; only `core/forge.py` imports them.
 * `harness/execution/` — the 9 gated executors (`probe`, `runner`, `editors`,
   `compose`, `contrast`, `whole`, `snapshot`, `gateway`, `unixshim`). Only
