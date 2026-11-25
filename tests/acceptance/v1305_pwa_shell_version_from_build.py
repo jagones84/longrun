@@ -52,7 +52,10 @@ check("A3 /sw.js injects a digest of the SERVED build before replying",
       and "hashlib.sha1(shell_build(" in API, "")
 check("A4 ONE truth: /api/build and /sw.js share `shell_build`",
       "def shell_build(index_path=None):" in API
-      and '{"build": shell_build(_active_idx)}' in API, "")
+      # 2026-11-25: the payload also carries `pid` + `started_at` (the answering
+      # process's identity, which the composer's `/restart` polls — v1302 H9); the
+      # fingerprint itself is still the single `shell_build` value.
+      and '"build": shell_build(_active_idx)' in API, "")
 check("A5 the fingerprint covers orbit.html AND webui/assets (a script fix counts)",
       "orbit.html" in API.split("def shell_build", 1)[-1].split("def ", 1)[0]
       and "assets" in API.split("def shell_build", 1)[-1].split("def ", 1)[0]

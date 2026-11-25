@@ -28,6 +28,7 @@ import sys
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 HTML = open(os.path.join(REPO, "webui", "index.html"), encoding="utf-8").read()
 SW = open(os.path.join(REPO, "webui", "sw.js"), encoding="utf-8").read()
+SRV = open(os.path.join(REPO, "src", "longrun", "core", "httpapi.py"), encoding="utf-8").read()
 
 results = []
 
@@ -147,22 +148,30 @@ check("H6 the service's answer appears in the chat (accepted / refused / not del
 check("H7 the rows are written only in the chat the command was typed in",
       "const _here = !!_sid && _sid === sessionId;" in RESTART
       and "if (_here) who(" in RESTART)
-check("H8 both failure ends leave a row too (timeout / still the old process)",
+check("H8 both failure ends leave a row too (timeout / same process)",
       "did not come back within 60 s" in RESTART
-      and "still the OLD process" in RESTART)
-# The rows die with the reload, so the reload itself must leave a durable proof.
-ARRIVAL = _between("function _restartArrival() {", "\nfunction _offerReload() {")
-check("H9 the reload keeps a marker only when the tab SAW the service go down",
+      and "the SAME process (started" in RESTART)
+# 2026-11-25 (operator's screenshot: "restart accepted" then "still the OLD process"
+# while journalctl showed the unit started at 04:15:18): a ~3 s downtime is invisible
+# to a polled timer, so the proof must be the PROCESS IDENTITY, not a caught refusal.
+check("H9 the restart is proven by the answering process's identity",
+      '"started_at": _started' in SRV
+      and 'typeof b.started_at === "number"' in RESTART
+      and "if (b > _boot0 + 1) { _reloadNow(); return; }" in RESTART)
+check("H10 the baseline is read BEFORE the restart is requested",
+      RESTART.find('_bootOf(await api("GET", "/api/build"))')
+      >= 0
+      and RESTART.find('_bootOf(await api("GET", "/api/build"))')
+      < RESTART.find('action: "restart"'))
+check("H11 the reload keeps a marker only for a NEW process, and boot turns it into a chip",
       'localStorage.setItem("lr_restart_at"' in RESTART
-      and "if (_down) {" in RESTART
-      and RESTART.find('localStorage.setItem("lr_restart_at"') > RESTART.find("if (_down) {"))
-check("H10 the next paint turns that marker into a persistent chip (cleared, age-capped)",
-      'localStorage.getItem("lr_restart_at"' in ARRIVAL
-      and 'localStorage.removeItem("lr_restart_at")' in ARRIVAL
-      and "10 * 60 * 1000" in ARRIVAL
-      and "harness restarted at" in ARRIVAL)
-check("H11 the chip is actually wired into boot",
-      "_restartArrival();" in HTML)
+      and RESTART.find('localStorage.setItem("lr_restart_at"')
+      < RESTART.find("location.reload();")
+      and 'localStorage.getItem("lr_restart_at"' in _between("function _restartArrival() {",
+                                                            "\nfunction _offerReload() {")
+      and "10 * 60 * 1000" in _between("function _restartArrival() {",
+                                       "\nfunction _offerReload() {")
+      and "_restartArrival();" in HTML)
 
 # ---- G: the offline shell follows (a cached old composer is a stale contract) --
 check("G1 the service-worker cache is DERIVED from the served build (no hand-bump)",

@@ -275,13 +275,22 @@ All notable changes to Longrun are documented here. The format follows
   with `run:"ui-restart"`, then `service.start`). Now `restartService(sid)` writes the command (**`/restart`**)
   and the service's answer (**accepted / refused / not delivered**, with the ticket time) as two rows in
   the transcript of the chat it was typed in — the session id comes from `send()`'s capture, the same pin
-  every other command uses — plus a row for each failure end (no return within 60 s, or the service never
-  went down). The reload itself keeps a one-shot `lr_restart_at` marker, written ONLY when the tab saw the
-  service die, and the next paint turns it into a persistent chip ("↻ harness restarted at HH:MM — the
-  service is back") that stays until dismissed; an aborted restart can never claim one. Pinned by `v1302`
-  H4–H11 (`v1250` D3/D4 re-pointed to the new signature); battery targeted 40/40 GREEN. Live probe with the
-  exact request the row sends: `harness.restart` answered `ok` with ticket `ts`, `GET /api/build` DOWN at
-  t+1 s and UP at t+13 s (the point where the page reloads), `ActiveEnterTimestamp` 22:28:00 CET.
+  every other command uses — plus a row for each failure end. The reload leaves a one-shot `lr_restart_at`
+  marker, and the next paint turns it into a persistent chip ("↻ harness restarted at HH:MM — the service
+  is back") that stays until dismissed (10 min cap).
+- **`/restart` then claimed "it is still the OLD process" for a restart that had happened.** Operator's
+  screenshot: "restart **accepted** (ticket at 04:15:14)" followed by "the service answered, but it is
+  still the OLD process (no downtime seen)" while `journalctl` showed `Started longrun.service` at
+  04:15:18 and `ActiveEnterTimestamp` had moved. The proof was "a poll must catch a refused connection",
+  and a ~3 s downtime (0.6 s exit + `RestartSec`) is invisible to a timer a phone throttles. The proof is
+  now the **process identity**: `/api/build` carries `pid` + `started_at` (the same epoch `/api/health`
+  counts `uptime_secs` from — one truth, not a second one), the page reads it BEFORE the request and
+  reloads when it moves forward; the down/up edge stays as the fallback when no baseline can be read.
+  The verdict for a restart that never happened is now truthful — and it names the process's own start
+  time. Pinned by `v1302` H4–H11 (`v1250` D3/D4, `v362` B3 and `v1305` A4 re-pointed to the wider
+  payload); targeted battery 45/45 GREEN; `scripts/check.sh` PASS; live replay of the page's own decision:
+  baseline `started_at 1795576795.134` (pid 2359369) → 12 s of "no answer" → **new** `started_at
+  1795576819.798` (pid 2360109), i.e. the point where the page reloads, `ActiveEnterTimestamp` 04:20:10.
 - **`/restart` scheduled the exit and then left the page on a dead socket.** Operator: *"/restart command in
   webui doesn't work"*. The composer called `feedReconnect()` — a function that does not exist in
   `webui/index.html` — instead of `connectFeed()`, so the only reconnect was the feed's own 5 s retry,

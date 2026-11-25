@@ -2799,7 +2799,20 @@ class Handler(BaseHTTPRequestHandler):
                 _active_idx = _mtx_b.webui_index_path()
             except Exception:  # noqa: BLE001
                 _active_idx = os.path.join(WEBUI_DIR, "index.html")
-            return self._send(200, {"build": shell_build(_active_idx)})
+            # 2026-11-25: this is also the ONE cheap identity of the answering PROCESS
+            # (`pid` + `started_at`, the same epoch `/api/health` counts `uptime_secs`
+            # from). The composer's `/restart` needs it: a ~3 s downtime (0.6 s exit +
+            # RestartSec) is invisible to a polled timer, so the page could not tell a
+            # finished restart from one that never happened ("restart accepted" followed
+            # by "it is still the OLD process" while systemd had already started the new
+            # unit). A changed `started_at` IS the restart, and no timer can miss it.
+            try:
+                from longrun.core import health as _hl_b
+                _started = round(float(_hl_b.BOARD.started), 3)
+            except Exception:  # noqa: BLE001
+                _started = None
+            return self._send(200, {"build": shell_build(_active_idx),
+                                    "pid": os.getpid(), "started_at": _started})
         if path == "/api/changelog":
             # 2026-11-21: the changelog button's ONE read — release notes from the
             # repo's CHANGELOG.md plus the recent git commits. Read-only.
