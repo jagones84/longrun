@@ -397,10 +397,17 @@ def _provider_tools(sess, ws, ctx):
 
 
 def _architect_tool_lines():
-    """One `- name — first sentence` line per EXCLUSIVE subtool, from LIVE state.
+    """One `- name` line per EXCLUSIVE subtool, from LIVE state — names ONLY.
 
     Read from the registry, never hardcoded: a new subtool shows up in the prompt
     the moment it is registered, so the agent can never be unaware of its own tools.
+
+    2026-11-25 (operator: *"perché nel system prompt vedo ancora le descrizioni dei
+    tool?"*): each line used to paste the tool's first description sentence — the
+    same catalogue JAG-513 removed from the generic prompt, re-grown here at ~9.6k
+    chars (~20% of the whole prompt). The NAMES are the vocabulary the agent must not
+    invent; a DESCRIPTION is discoverable on demand with `self.tools {tool:"<name>"}`.
+    The list therefore stays complete and the text stays lean.
     """
     try:
         from longrun.tools import registry
@@ -410,15 +417,8 @@ def _architect_tool_lines():
                 if str(t.get("origin") or "") in ("exclusive", "delegation")]
     except Exception:  # noqa: BLE001 — the prompt must never break the chat
         return []
-    out = []
-    for t in sorted(rows, key=lambda r: str(r.get("name"))):
-        desc = " ".join(str(t.get("description") or "").split())
-        # One sentence, and never the boilerplate action-hint tail.
-        head = desc.split(" This tool performs only")[0]
-        if "." in head[:200]:
-            head = head.split(". ")[0] + "."
-        out.append("- `%s` — %s" % (t.get("name"), head[:240]))
-    return out
+    return ["- `%s`" % t.get("name")
+            for t in sorted(rows, key=lambda r: str(r.get("name")))]
 
 
 def _provider_architect(sess, ws, ctx):
@@ -463,7 +463,8 @@ def _provider_architect(sess, ws, ctx):
             "calls emit, so never try to \u201cclick\u201d or scrape the UI.\n"
             "Your exclusive tools use two-segment names `namespace.tool` "
             "(`agent.prompt_set`, `team.member_add`, `kb.notebook_rename`) and these "
-            "are ALL of them right now:\n"
+            "are ALL of them right now (plain names: the full contract of each — "
+            "arguments, defaults, example — is `self.tools {tool:\"<name>\"}`):\n"
         )
     else:
         intro = (
@@ -471,7 +472,8 @@ def _provider_architect(sess, ws, ctx):
             "You were granted access to the VEO's exclusive tools (`namespace.tool`, "
             "e.g. `agent.create`, `team.list`, `webui.configure`). Use them to "
             "manage the harness substrate; the WebUI re-paints "
-            "itself from the events your calls emit. Available subtools:\n"
+            "itself from the events your calls emit. Available subtools (plain names; "
+            "`self.tools {\"tool\":\"<name>\"}` gives a full contract):\n"
         )
 
     body = intro + "\n".join(lines) + "\n"

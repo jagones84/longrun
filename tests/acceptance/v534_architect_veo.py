@@ -492,6 +492,21 @@ check("F4 the section states the hard rules: reserved `action`, dual permission,
       and "allow_nucleous_write" in sys_text and "allow_matrix_promote" in sys_text
       and "reset before and after every automation turn" in sys_text)
 
+# 2026-11-25 (operator: *"perché nel system prompt vedo ancora le descrizioni dei
+# tool? … se le deve scoprire dinamicamente"*): this section had re-grown the catalogue
+# JAG-513 removed — one line per tool carrying its first description sentence, 9 579
+# chars (~20% of the whole architect prompt). The NAMES are the vocabulary the agent
+# must not invent and stay; the DESCRIPTION is discoverable on demand.
+_tool_lines = [ln for ln in sys_text.splitlines() if ln.startswith("- `")]
+check("F5 the list carries NAMES only — descriptions are discovered, not pasted",
+      len(_tool_lines) >= 40 and all(" — " not in ln for ln in _tool_lines),
+      _tool_lines[:3])
+check("F6 the prompt says where a full contract comes from",
+      'self.tools {tool:"<name>"}' in sys_text
+      and 'self.tools {"tool":"<name>"}' in granted_text)
+check("F7 the block stays a list (budget: names + rules, never descriptions)",
+      len(sys_text) < 5000, len(sys_text))
+
 # --- G: the permanent session is ALWAYS pinned, above everything -------------
 check("G1 the permanent system session derives its pin from the SERVER flag, not localStorage",
       "function _isSystemSess(" in HTML
