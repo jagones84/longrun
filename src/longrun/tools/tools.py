@@ -1315,12 +1315,27 @@ def _secret(name):
     return _keys.read_secret(name) or None
 
 
+# Attributes that make an element INVISIBLE to a reader but still parsed into the
+# text a model sees. `\shidden` cannot match `aria-hidden` (the char before
+# "hidden" is `-`, not whitespace) and `class="hidden"` (a quote) is untouched.
+_HIDDEN_ATTR = (r"\shidden(?=[\s=/>])"
+                r"|aria-hidden\s*=\s*[\"']?true\b"
+                r"|style\s*=\s*[\"'][^\"']*display\s*:\s*none\b")
+# Zero-width + bidi embeddings/overrides + word joiners + BOM: invisible glue a
+# page can use to smuggle a token past a reader (prompt-injection vector).
+_ZERO_WIDTH = "[\u200b-\u200f\u202a-\u202e\u2060-\u2064\ufeff]"
+
+
 def _strip_html(s):
     s = re.sub(r"(?is)<(script|style|noscript|nav|header|footer|aside|form)[^>]*>.*?</\1>", " ", s or "")
+    s = re.sub(r"(?s)<!--.*?-->", " ", s)
+    s = re.sub(r"(?is)<template[^>]*>.*?</template>", " ", s)
+    s = re.sub(r"(?is)<([a-z][\w:-]*)\b[^>]*(?:%s)[^>]*>.*?</\1\s*>" % _HIDDEN_ATTR, " ", s)
     s = re.sub(r"(?s)<[^>]+>", " ", s)
     for a, b in (("&nbsp;", " "), ("&amp;", "&"), ("&quot;", '"'),
                  ("&#x27;", "'"), ("&#39;", "'"), ("&lt;", "<"), ("&gt;", ">")):
         s = s.replace(a, b)
+    s = re.sub(_ZERO_WIDTH, "", s)
     return re.sub(r"\s+", " ", s).strip()
 
 

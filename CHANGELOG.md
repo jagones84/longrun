@@ -262,6 +262,16 @@ All notable changes to Longrun are documented here. The format follows
   Locked by `v1250` (32/32); battery 953/953.
 
 ### Fixed
+- **Hidden page text no longer reaches the model (round 172).** `tools/tools.py:_strip_html` — the
+  extractor behind the `browser` tool, the `web.fetch` DIRECT fallback and every search-snippet
+  provider (Tavily/Brave/DuckDuckGo/Bing, 9 call sites) — removed script/style/nav chrome but kept HTML
+  comments, `<template>` content, elements marked hidden (`hidden`, `aria-hidden="true"`,
+  `style="display:none"`) and zero-width / bidi / BOM characters. A page could therefore plant an
+  instruction the model reads and the operator cannot see (a prompt-injection vector, per Scrapling's
+  RAG guidance). The extractor now drops those classes before returning, keeps visible prose intact and
+  does not over-strip `aria-hidden="false"`. Known limit: the keyless `r.jina.ai` reader path of
+  `web.fetch` returns markdown and does not pass through this extractor. Pinned by `v1310` (15/15) and
+  exercised live through `web.search` after a service restart.
 - **Bug hunt, 2026-11-25: seven red pins and three real defects.** Operator: *"Verifica non ci siano altri
   bug dato che se ne trovano a decine"*. The full battery (994 tests, the project's own oracle) ran
   **987/994 with 7 red pins** that had been read as "pre-existing". Triage: 4 were stale PINS, 3 had a
