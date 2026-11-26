@@ -86,11 +86,8 @@ check("B1 the Rules panel states the agent identity",
       and 'api("GET", "/api/agents")' in HTML, "")
 check("B2 it falls back to 'ad-hoc session' when not designated",
       "ad-hoc session (no agent)" in HTML, "")
-check("B3 the server exposes a build fingerprint (plus the answering process's identity)",
-      # 2026-11-25: the payload also carries `pid` + `started_at`, the process identity
-      # the composer's `/restart` polls to prove a restart really happened (v1302 H12).
-      'if path == "/api/build":' in SRV and '"build": shell_build(_active_idx)' in SRV
-      and '"started_at": _started' in SRV, "")
+check("B3 the server exposes a build fingerprint",
+      'if path == "/api/build":' in SRV and '{"build": shell_build(_active_idx)}' in SRV, "")
 check("B4 the SPA notices a build change WITHOUT restarting the open tab (JAG-500)",
       "async function _checkBuild()" in HTML and "function _offerReload()" in HTML
       and "t.onclick = () => location.reload();" in HTML

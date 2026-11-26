@@ -68,8 +68,13 @@ check("C1 compact reuses `compactNow()` (the single compaction call)",
       'pop.querySelector(".cp-compact").onclick = () => { _closeCtxPop(); compactNow(); }' in HTML)
 check("C2 settings opens the SHARED compaction policy",
       'openSettings("compaction")' in _POP)
-check("C3 the panel's compact link still calls the same door",
-      '$("compactBtn").onclick = compactNow;' in HTML)
+check("C3 the panel's compact link routes to the same door (`compactNow`)",
+      # 2026-11-27: the panel link used `$("compactBtn").onclick = compactNow;`, a bespoke
+      # wiring that handed the CLICK EVENT to `compactNow(sid)` — `_commandTarget` then saw a
+      # MouseEvent where it wanted a session id and refused ("the active session changed").
+      # It now rides the ONE delegated dispatcher (`data-call`) every other control uses.
+      'data-call="compactNow"' in HTML.split('id="compactBtn"')[1][:40]
+      and '$("compactBtn").onclick' not in HTML)
 
 # --- D/E: one data source, no new endpoint -----------------------------------
 check("D1 the popover reads `_ctxDisplay` (the /api/context display, same as the panel)",

@@ -4618,7 +4618,7 @@
           </div>
           <div class="ctxrow"><span id="ctxMsgs">–</span><span id="ctxTok">–</span><span id="ctxBudget">–</span></div>
           <div class="ctxacts">
-            <button type="button" id="compactBtn" class="lnk"
+            <button type="button" id="compactBtn" class="lnk" data-call="compactNow"
                     title="summarize this session's transcript now to free up context">compact</button>
             <button type="button" class="lnk" data-call="openSettings" data-args='["compaction"]'
                     title="open the shared automatic and manual compaction policy">settings</button>
@@ -25214,7 +25214,6 @@ function _sessTeamOptions() {
   });
   cb.checked = !!FilterSort.get("sessions").hideEmpty;
 })();
-$("compactBtn").onclick = compactNow;
 
 ensureToken().then(() => {
   setupPWA();   // JAG-390: inject the manifest (with the token) + register the SW
