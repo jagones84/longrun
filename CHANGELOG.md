@@ -7,6 +7,11 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Fixed
+- **Two acceptance pins pointed at an obsolete `/api/build` literal.** `v1305` A4 and `v362` B3 asserted
+  the exact string `'{"build": shell_build(_active_idx)}'`, but the payload gained `pid` and `started_at`,
+  so the closing brace no longer matched — a stale pin, not a defect. Both now assert the contract
+  (the `shell_build` helper exists and the response carries `"build": shell_build(`), independent of the
+  extra fields; the battery is 999/999 green.
 - **The cost lock: only the two authorized models can be spent on (v1316).** The operator
   authorized exactly `deepseek:deepseek-flash` and `openrouter:z-ai/glm-5.3-flash` because the
   rest costs too much. `config/routing.yaml` now declares `allowed_models`, and it is enforced at

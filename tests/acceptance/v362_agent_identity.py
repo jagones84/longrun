@@ -87,7 +87,7 @@ check("B1 the Rules panel states the agent identity",
 check("B2 it falls back to 'ad-hoc session' when not designated",
       "ad-hoc session (no agent)" in HTML, "")
 check("B3 the server exposes a build fingerprint",
-      'if path == "/api/build":' in SRV and '{"build": shell_build(_active_idx)}' in SRV, "")
+      'if path == "/api/build":' in SRV and '"build": shell_build(' in SRV, "")
 check("B4 the SPA notices a build change WITHOUT restarting the open tab (JAG-500)",
       "async function _checkBuild()" in HTML and "function _offerReload()" in HTML
       and "t.onclick = () => location.reload();" in HTML
