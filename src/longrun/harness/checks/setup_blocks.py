@@ -177,7 +177,18 @@ class _Store:
                 except OSError:
                     pass
         with tarfile.open(tar_path, "r:gz") as tar:
-            tar.extractall(self.workdir)  # noqa: S202 — the archive is our own
+            # JAG-1313: the archive is our own snapshot, but extract members
+            # explicitly — an absolute or `..` member would otherwise write outside
+            # the workspace (codeql py/tarslip). Same guard shape as the zip paths.
+            root = os.path.realpath(self.workdir)
+            for member in tar.getmembers():
+                name = (member.name or "").replace("\\", "/")
+                if os.path.isabs(name) or ".." in name.split("/"):
+                    continue
+                target = os.path.realpath(os.path.join(root, name))
+                if target != root and not target.startswith(root + os.sep):
+                    continue
+                tar.extract(member, self.workdir)
         return man
 
     def latest(self):

@@ -6,6 +6,21 @@ All notable changes to Longrun are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- **Three hardening fixes from the 2026-11-27 security audit (v1313).** A full pass with the
+  Trail of Bits audit skills (audit-context DOSSIER → trailmark graph → semgrep + CodeQL → fp-check)
+  found the write/exec perimeter already guarded, so the exploitable-looking `py/path-injection`,
+  `py/command-line-injection` and timing findings were false positives. Three items were fixed and
+  pinned. **(1)** The context-panel path regex `_RX_PATH` had `/` inside its segment class and an
+  unbounded repetition, so a `/`-heavy transcript hung the derivation on the request thread
+  (`py/redos`); the class is now `/`-free and the repetition bounded — a 60k-segment adversarial
+  input went from 41.7s to 0.043s. **(2)** The voice HTTPS server states its TLS floor explicitly
+  via a new `_tls_context()` (`minimum_version = TLSv1_2`) instead of relying on the interpreter
+  default (`py/insecure-protocol`). **(3)** `setup_blocks._Store.restore` extracts the checkpoint tar
+  member by member, refusing absolute / `..` / escaping members, the same guard shape the zip paths
+  use (`py/tarslip`, semgrep `tarfile-extractall-traversal`). Pinned by
+  `tests/acceptance/v1313_audit_hardening.py`.
+
 ### Changed
 - **The cascade is ON, on the operator's own cheap tier (2026-11-26).** Operator: *"Put deepseek flash from
   deepseek provider, test the features"*. `config/routing.yaml` ▸ `roles.subagent.model` is now

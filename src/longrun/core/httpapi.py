@@ -1175,8 +1175,14 @@ def context_display(tokens_used=0, budget_tokens=0, messages=0,
 
 _RX_URL = re.compile(r'https?://[^\s"\'<>)\]},]+')
 _RX_TOOL = re.compile(r'"tool"\s*:\s*"([A-Za-z0-9_.]+)"')
+# The path-segment class excludes `/` AND the repetition is bounded. With `/`
+# inside the class, `(?:[^...]+/)*` could split a run of slashes in exponentially
+# many ways; even after excluding `/`, an unbounded `*` still backtracked once per
+# segment, so a long `/`-heavy transcript hung the derivation (codeql py/redos,
+# JAG-1313). The panel runs on the request thread, so that was a request-triggered
+# stall. Depth/length caps are far above any real path a transcript carries.
 _RX_PATH = re.compile(
-    r'/(?:[^\s"\'<>|:*?]+/)*[^\s"\'<>|:*?]+\.'
+    r'/(?:[^\s"\'<>|:*?/]{1,128}/){0,32}[^\s"\'<>|:*?/]{1,128}\.'
     r'(?:py|md|json|ya?ml|sh|txt|html?|jsx?|tsx?|css|toml|cfg|ini|csv|log|lock|env)')
 
 
@@ -4065,6 +4071,19 @@ def _lan_ipv4s():
     return ips
 
 
+def _tls_context():
+    """A server TLS context with the version floor stated explicitly (JAG-1313).
+
+    `ssl.PROTOCOL_TLS_SERVER` already defaults to TLS 1.2 on modern CPython, but the
+    floor is set here so it cannot silently reopen on an older build (codeql
+    py/insecure-protocol). Split out from `_start_tls` so the pin can assert it
+    without a certificate on disk.
+    """
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+    return ctx
+
+
 def _start_tls(args):
     """JAG-416: serve the SAME handler over HTTPS on a second port.
 
@@ -4088,7 +4107,7 @@ def _start_tls(args):
                  "-addext", "subjectAltName=" + sans],
                 check=True, capture_output=True)
         srv = ThreadingHTTPServer((args.host, port), Handler)
-        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx = _tls_context()
         ctx.load_cert_chain(cert, key)
         srv.socket = ctx.wrap_socket(srv.socket, server_side=True)
         srv.host, srv.port = args.host, port
