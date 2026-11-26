@@ -52,7 +52,7 @@ def _dead_llm(prompt, model):
 
 def _stub_search(query, n):
     return [{"title": "T", "url": "https://t.example",
-             "snippet": "snip"}], "tavily"
+             "snippet": "snip"}], "tavily", []
 
 
 def _stub_fetch(url):
