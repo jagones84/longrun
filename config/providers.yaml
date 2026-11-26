@@ -21,11 +21,13 @@ env_files:
   - .env
 
 # The model a bare/absent request falls back to. A GENERAL cloud model, never a
-# local one. Pinned to glm-5.3-flash (deterministic cost): the OpenRouter
-# auto-router was removed because it silently routed to expensive frontier models.
-# The user's own choice (Settings ▸ Models ▸ ★) persists in providers.local.yaml
-# and always wins over this shipped default.
-default: openrouter:z-ai/glm-5.3-flash
+# local one. v1316: pinned to the cheapest AUTHORIZED model (DeepSeek direct) —
+# `allowed_models` in routing.yaml is the one place the paid set is declared, and
+# this default is a member of it. (The OpenRouter auto-router was removed because
+# it silently routed to expensive frontier models.) The user's own choice
+# (Settings ▸ Models ▸ ★) persists in providers.local.yaml and always wins over
+# this shipped default — and is itself subject to `allowed_models`.
+default: deepseek:deepseek-flash
 
 providers:
   # ---- local: llama.cpp router on the DGX Spark -----------------------------

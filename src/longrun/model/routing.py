@@ -57,6 +57,80 @@ CHAT_MODEL_REF = "@chat"
 _DYNAMIC_REFS = (CHAT_MODEL_REF,)
 
 
+# ------------------------------------------------------------ cost allow-list --
+# v1316: the operator authorized exactly two models because everything else costs
+# too much. `allowed_models` in config/routing.yaml is enforced at the ONE point a
+# model is chosen (role_model / pick / model_chain / turn_model) and at the ONE
+# point a call is dispatched (server.stream_with_fallback). A LOCAL provider and an
+# UNRESOLVED ref (a llama.cpp alias, or a synthetic id in a test) are never blocked:
+# neither can spend money at a cloud provider.
+ALLOWED_KEY = "allowed_models"
+_WARNED: set[str] = set()
+
+
+def allowed_models():
+    """The operator's cost allow-list of `provider:model` refs ([] = no restriction)."""
+    try:
+        raw = load_config().get(ALLOWED_KEY) or []
+    except Exception:  # noqa: BLE001 — a config probe must never break routing
+        return []
+    return [str(r).strip() for r in raw if str(r or "").strip()]
+
+
+def _is_paid(ref):
+    """True when `ref` resolves to a NON-local provider, i.e. a call that costs money.
+
+    An unresolved ref is NOT paid: a llama.cpp roster alias or a test's synthetic
+    model never reaches a cloud provider through `providers.resolve`.
+    """
+    try:
+        from longrun.model import providers
+        hit = providers.resolve(ref)
+    except Exception:  # noqa: BLE001
+        return False
+    if not hit:
+        return False
+    p, _mid = hit
+    return not bool(p.get("local"))
+
+
+def model_allowed(ref):
+    """Whether this machine may spend on `ref` (v1316).
+
+    No allow-list configured → everything is allowed. A local provider or an
+    unresolved ref → allowed (it cannot cost anything). A paid ref → allowed only
+    when it matches an entry, either full (`provider:model`) or by its bare
+    `model` id (so `deepseek-flash` matches `deepseek:deepseek-flash`).
+    """
+    allowed = allowed_models()
+    if not allowed or not ref or is_dynamic_ref(ref):
+        return True
+    if not _is_paid(ref):
+        return True
+    want = str(ref).strip().lower()
+    for a in allowed:
+        na = str(a).strip().lower()
+        if want == na:
+            return True
+        if ":" in na and want == na.split(":", 1)[1]:
+            return True
+    return False
+
+
+def enforce(ref):
+    """`ref` when this machine may use it, else None (callers fall to the default)."""
+    if not ref:
+        return ref
+    if model_allowed(ref):
+        return ref
+    if ref not in _WARNED:
+        _WARNED.add(ref)
+        import sys
+        print("Longrun: model %r is outside allowed_models — using an authorized one instead."
+              % (ref,), file=sys.stderr, flush=True)
+    return None
+
+
 def is_dynamic_ref(ref):
     """True when `ref` is a call-time sentinel, not a `provider:model` ref."""
     return str(ref or "").strip().lower() in _DYNAMIC_REFS
@@ -206,7 +280,7 @@ def pick(role, preferred=None):
     roster = _roster()
     base = None
     if roster:
-        if preferred:
+        if preferred and model_allowed(preferred):
             # JAG-462: match the pin CASE-INSENSITIVELY and never return a model the
             # router marked FAILED — `==` missed a pin whose casing differed from the
             # roster alias (silently falling through to the role pattern, i.e. the
@@ -222,12 +296,13 @@ def pick(role, preferred=None):
             entry = (cfg.get("roles") or {}).get(role) or {}
             chain = [entry.get("pattern")] + list(entry.get("fallbacks") or []) + \
                     list(cfg.get("default_fallbacks") or [])
-            chain = [c for c in chain if c]
+            # v1316: a paid model outside `allowed_models` is not a candidate.
+            chain = [c for c in chain if c and model_allowed(c)]
             base = _match(chain, roster)
     try:
         from longrun.core import matrix as _mtx
         override = _mtx.call_hook("model", "pick_model", role, base, default=base)
-        if isinstance(override, str) and override.strip():
+        if isinstance(override, str) and override.strip() and model_allowed(override.strip()):
             return override.strip()
     except Exception:  # noqa: BLE001
         pass
@@ -242,7 +317,10 @@ def role_model(role):
     unset, so callers keep the pattern/fallback behaviour of ``pick()``.
     """
     entry = (load_config().get("roles") or {}).get(role) or {}
-    return entry.get("model") or None
+    m = entry.get("model") or None
+    # v1316: a paid pin outside `allowed_models` resolves to None, so the caller
+    # falls through to the authorized default instead of spending on it.
+    return m if (m and model_allowed(m)) else None
 
 
 def turn_model(sess=None, model=None):
@@ -260,7 +338,11 @@ def turn_model(sess=None, model=None):
     only if the default itself cannot be resolved.
     """
     if model:
-        return model
+        m = enforce(model)
+        if m:
+            return m
+        # v1316: an unauthorized explicit/session pin is not a hard error — the turn
+        # runs on the authorized default, and `enforce` has already warned once.
     pin = None
     if isinstance(sess, dict):
         pin = sess.get("model")
@@ -270,11 +352,18 @@ def turn_model(sess=None, model=None):
         except Exception:  # noqa: BLE001 — a missing store must not break a turn
             pin = None
     if pin:
-        return pin
+        p = enforce(pin)
+        if p:
+            return p
     try:
-        return _srv().default_model()
+        d = _srv().default_model()
     except Exception:  # noqa: BLE001
         return None
+    if d and not model_allowed(d):
+        allowed = allowed_models()
+        if allowed:
+            return allowed[0]
+    return d
 
 
 def runtime_facts(sess=None, model=None):
@@ -342,7 +431,8 @@ def model_chain(role):
     out, seen = [], set()
     for ref in chain:
         ref = str(ref or "").strip()
-        if ref and ref not in seen and not is_dynamic_ref(ref):
+        # v1316: never offer a paid model outside `allowed_models` as a candidate.
+        if ref and ref not in seen and not is_dynamic_ref(ref) and model_allowed(ref):
             out.append(ref)
             seen.add(ref)
     return order_candidates(out)

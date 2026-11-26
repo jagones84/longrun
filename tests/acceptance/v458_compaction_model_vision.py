@@ -71,25 +71,28 @@ def _fake_stream(messages, model, on_delta, timeout=300, usage=None, guard=None,
     no longer see which models were tried (found 2026-11-05).
     """
     _attempts.append(model)
-    if model == "openrouter:cloud-sum":
+    # v1316: the cost lock means only AUTHORIZED refs reach the transport; the
+    # primary here is the authorized OpenRouter tier and the failover is the
+    # authorized DeepSeek tier — never the LOCAL roster alias.
+    if model == "openrouter:z-ai/glm-5.3-flash":
         raise RuntimeError("cloud summarizer unavailable")
     return "LOCAL-ANSWER", ""
 
 
-routing.model_chain = lambda role: ["openrouter:cloud-sum", "openrouter:cloud-backup"]
+routing.model_chain = lambda role: ["deepseek:deepseek-flash"]
 routing.fallback_chain = lambda role: ["glm-5.3-flash-iq2"]   # the LOCAL roster alias
 S._router_stream = _fake_stream
 try:
     try:
         S.stream_with_fallback([{"role": "user", "content": "hi"}],
-                               "openrouter:cloud-sum", "summarizer", lambda c, t: None)
+                               "openrouter:z-ai/glm-5.3-flash", "summarizer", lambda c, t: None)
     except Exception:  # noqa: BLE001 — the failover itself is what we assert on
         pass
 finally:
     routing.model_chain, routing.fallback_chain = _orig_mc, _orig_fc
     S._router_stream = _orig_rs
 check("A3 a failing cloud model never falls over to a LOCAL roster alias",
-      "glm-5.3-flash-iq2" not in _attempts and "openrouter:cloud-backup" in _attempts,
+      "glm-5.3-flash-iq2" not in _attempts and "deepseek:deepseek-flash" in _attempts,
       str(_attempts))
 
 _rr = yaml.safe_load(_read("config/routing.yaml")) or {}

@@ -192,6 +192,19 @@ def stream_with_fallback(messages, model, role, on_delta, timeout=300, usage=Non
     # `glm-5.3-flash-iq2`, and the router autoloaded 100+GB of weights). A model
     # the user chose must never silently become a different one.
     chain = [primary] + [a for a in routing.model_chain(role) if a and a != primary]
+    # v1316: the operator's cost allow-list is enforced at dispatch, not only at
+    # selection — an explicit model= or a session pin outside `allowed_models` must
+    # not reach a paid provider. Local aliases and synthetic refs pass untouched.
+    chain = [a for a in chain if routing.model_allowed(a)]
+    if not chain:
+        fallback_default = default_model()
+        if fallback_default and routing.model_allowed(fallback_default):
+            chain = [fallback_default]
+        elif routing.allowed_models():
+            chain = [routing.allowed_models()[0]]
+        else:
+            raise RuntimeError("no authorized model to call: %r is outside allowed_models"
+                               % (primary,))
     # 2026-11-16: the agent loop asks for a FAILOVER after a REASONING-ONLY reply
     # (the model reasoned and emitted no content/tool call). `advance_from` drops
     # the model that just proved it stops at the reasoning, so the next attempt is

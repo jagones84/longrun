@@ -7,6 +7,24 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Fixed
+- **The cost lock: only the two authorized models can be spent on (v1316).** The operator
+  authorized exactly `deepseek:deepseek-flash` and `openrouter:z-ai/glm-5.3-flash` because the
+  rest costs too much. `config/routing.yaml` now declares `allowed_models`, and it is enforced at
+  every point a model is chosen (`role_model` / `pick` / `model_chain` / `turn_model`) and at the
+  one dispatch point (`server.stream_with_fallback`): a PAID ref outside the list never reaches a
+  provider — the turn runs on the authorized default instead. A local provider and an unresolved
+  llama.cpp alias are never blocked (they cannot cost anything). Every role and fallback was
+  rewritten onto the two tiers; `optimizer` moved off the retired `deepseek-chat`, `reviewer` sits
+  on the opposite tier from the producing roles (v796 kept), and the providers default is the
+  DeepSeek tier. Pinned by `tests/acceptance/v1316_model_cost_lock.py`.
+- **Two quality defects found by the audit's CodeQL triage (v1317).** **(1)** `docio`'s PyMuPDF-less
+  PDF fallback parsed `pdfinfo` for the page count and then returned an empty list — the count was
+  computed and thrown away, so PDF diagnostics reported "0 pages / 0 text-bearing pages" on exactly
+  the machines the fallback exists for. It now splits one `pdftotext` run on the form feed that
+  separates pages and reports real per-page char counts. **(2)** `architect._webui_providers(op="test")`
+  built `ref` only when a model was named and then formatted it in a ternary — safe today only by
+  the ternary's order; `ref` is initialised so a reorder cannot raise `NameError`. Pinned by
+  `tests/acceptance/v1317_pdf_fallback_ref.py`.
 - **Two frontend fixes from the audit's JavaScript pass (v1315).** CodeQL over `webui/` (9 files,
   224 queries) flagged an incomplete HTML-attribute sanitiser and four wildcard `postMessage`s.
   **(1)** `editor.js`'s `esc()` escaped `&`, `<`, `>` but not the quotes, yet it fills HTML attributes

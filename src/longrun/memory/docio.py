@@ -453,19 +453,26 @@ def _pdf_pages_diag(path, probe_pages=12):
         return _pdf_pages_diag_fallback(path)
 
 
-def _pdf_pages_diag_fallback(path):
-    """pdftotext probe when PyMuPDF is not available (rough, slow)."""
+def _pdf_pages_diag_fallback(path, probe_pages=12):
+    """pdftotext probe when PyMuPDF is not available (rough, slow).
+
+    v1317: pdftotext separates pages with a form feed (`\\f`), so ONE call yields
+    the real per-page char counts. Before this, the function parsed `pdfinfo` for
+    the page count and then returned an EMPTY list — the count was computed and
+    thrown away, so the PDF diagnostics reported 0 pages / 0 text-bearing pages
+    whenever PyMuPDF was absent (the exact case this fallback exists for).
+    """
     if not shutil.which("pdftotext"):
         return []
-    out = []
-    rc, out_bytes, _ = _run(["pdfinfo", path])
-    total = 0
-    if rc == 0:
-        for line in out_bytes.decode("utf-8", "replace").splitlines():
-            if line.lower().startswith("pages:"):
-                try:
-                    total = int(line.split(":", 1)[1].strip())
-                except (TypeError, ValueError):
-                    total = 0
-                break
-    return out
+    rc, out_bytes, _ = _run(["pdftotext", "-layout", path, "-"], timeout=30)
+    if rc != 0 or not out_bytes:
+        return []
+    pages = out_bytes.decode("utf-8", "replace").split("\f")
+    if pages and not pages[-1].strip():
+        pages = pages[:-1]              # a trailing form feed is not a page
+    total = len(pages)
+    if not total:
+        return []
+    step = max(1, total // max(1, int(probe_pages)))
+    return [{"page": i + 1, "chars": len(pages[i].strip()), "images": 0}
+            for i in range(0, total, step)][:probe_pages]

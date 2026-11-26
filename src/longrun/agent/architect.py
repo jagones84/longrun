@@ -3494,6 +3494,10 @@ def _webui_providers(args, op):
     if op == "test":
         from longrun.model import providers as prov
         model = str(args.get("model") or "").strip()
+        # v1317: `ref` is only built when a model is named, but the stdout line
+        # below formats it inside a ternary. Initialise it so a future reorder of
+        # that ternary cannot raise NameError (codeql py/uninitialized-local-variable).
+        ref = ""
         try:
             default_timeout = 25.0 if model else 10.0
             timeout = float(args.get("timeout") or default_timeout)

@@ -284,6 +284,14 @@ def default_model():
         from longrun.model import providers
         ref = providers.default_ref()
         if ref:
+            # v1316: the default is itself subject to the operator's cost allow-list.
+            try:
+                from longrun.model import routing as _routing
+                if not _routing.model_allowed(ref):
+                    _al = _routing.allowed_models()
+                    return _al[0] if _al else ref
+            except Exception:  # noqa: BLE001 — routing must never break the default
+                pass
             return ref
     except Exception:  # noqa: BLE001 — the catalogue must never break the default
         pass

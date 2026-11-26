@@ -68,13 +68,15 @@ try:
     routing._srv = lambda: _FakeSrv()
 
     # ---- A: the planner model IS the turn's model ----------------------------
-    got = httpapi._planner_model({"model": "deepseek:deepseek-reasoner"},
-                                 "deepseek:deepseek-reasoner")
-    check("A1 an explicit request model wins", got == "deepseek:deepseek-reasoner", got)
-    got = httpapi._planner_model({"model": "deepseek:deepseek-reasoner"}, None)
+    # v1316: `deepseek-reasoner` is retired AND outside the cost allow-list; the
+    # pin carries forward to the authorized `deepseek:deepseek-flash`.
+    got = httpapi._planner_model({"model": "deepseek:deepseek-flash"},
+                                 "deepseek:deepseek-flash")
+    check("A1 an explicit request model wins", got == "deepseek:deepseek-flash", got)
+    got = httpapi._planner_model({"model": "deepseek:deepseek-flash"}, None)
     check("A2 the session pin is used when the request has no model",
-          got == "deepseek:deepseek-reasoner", got)
-    got = httpapi._planner_model({"model": "deepseek:deepseek-reasoner"}, "explicit:model")
+          got == "deepseek:deepseek-flash", got)
+    got = httpapi._planner_model({"model": "deepseek:deepseek-flash"}, "explicit:model")
     check("A3 the explicit request model beats the session pin", got == "explicit:model", got)
     got = httpapi._planner_model("known", None)
     check("A4 a session ID (str) resolves to that session's pin",
