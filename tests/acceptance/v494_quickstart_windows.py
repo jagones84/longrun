@@ -111,14 +111,15 @@ check("C1 README names a model the shipped OpenRouter LIST offers, no default cl
       and "model: openrouter:" in ROUTING
       and "pattern: qwen" not in README)
 check("C2 README omits machine-specific role and compaction defaults",
-      "openrouter:meta/muse-spark-1.3-contributor" in ROUTING
+      # v1316: the shipped routing names the two AUTHORIZED refs (the cost lock) and
+      # no machine-specific alias; the README must not advertise a default either.
+      "deepseek:deepseek-flash" in ROUTING
       and "openrouter:z-ai/glm-5.3-flash" in ROUTING
-      and "openrouter:deepseek/deepseek-v4-flash-0731" in ROUTING
+      and "allowed_models" in ROUTING
       and "trigger_pct: 70" in COMPACTION
       and all(ref not in README for ref in (
-          "openrouter:meta/muse-spark-1.3-contributor",
+          "deepseek:deepseek-flash",
           "openrouter:z-ai/glm-5.3-flash",
-          "openrouter:deepseek/deepseek-v4-flash-0731",
           "70% context, target 30%")))
 
 check("D1 MCP is optional and has a UI catalog setup path",

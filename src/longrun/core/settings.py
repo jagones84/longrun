@@ -310,6 +310,10 @@ DEDICATED = {
     "routing.yaml": {
         "roles.subagent.model": "Settings ▸ Subagents",
         "roles.subagent.fallbacks": "Settings ▸ Subagents",
+        # v1316: the cost lock. A list of authorized `provider:model` refs, enforced
+        # in model/routing.py + server.stream_with_fallback — not a per-role knob, so
+        # it has no form field; it is edited in config/routing.yaml.
+        "allowed_models": "config/routing.yaml (cost lock)",
     },
     "tools.yaml": {
         "sandbox": "Settings ▸ Tools & approvals",
