@@ -72,7 +72,7 @@ check("C3 an unscoped search spans every notebook", bool(allhit["results"]))
 
 # ---- discover (web -> candidate URLs -> import) -----------------------------
 kb.SEARCH = lambda q, n: ([{"title": "Widget guide", "url": "https://ex.com/w"},
-                           {"title": "Gadget ref", "url": "https://ex.com/g"}], "stub")
+                           {"title": "Gadget ref", "url": "https://ex.com/g"}], "stub", [])
 disc = kb.discover("widgets")
 check("D1 discover returns candidate URLs (no import yet)",
       disc.get("ok") and len(disc.get("candidates", [])) == 2 and disc["candidates"][0]["url"] == "https://ex.com/w", disc)

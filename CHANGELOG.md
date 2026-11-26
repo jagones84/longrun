@@ -7,6 +7,13 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Fixed
+- **Two research/KB call sites unpacked a 3-tuple as 2 (v1314).** `_web_search` returns
+  `(results, engine, notes)` since 2026-11-16, but `knowledge.discover` and the research executor
+  unpacked two values — so every `knowledge discover` (tool, `forge.py knowledge discover`,
+  `POST /api/knowledge/discover`) and every research round failed with "too many values to unpack",
+  masked because the acceptance stubs returned a 2-tuple. Both call sites now unpack three; the three
+  stubs (`v400`, `v402`, `v608`) are carried forward to the real arity, and `v1314` ties the caller to
+  the real searcher so the arity cannot drift again.
 - **Three hardening fixes from the 2026-11-27 security audit (v1313).** A full pass with the
   Trail of Bits audit skills (audit-context DOSSIER → trailmark graph → semgrep + CodeQL → fp-check)
   found the write/exec perimeter already guarded, so the exploitable-looking `py/path-injection`,

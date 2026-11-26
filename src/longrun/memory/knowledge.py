@@ -1101,7 +1101,11 @@ def discover(query, n=5):
     if not query:
         return {"ok": False, "error": "query required"}
     try:
-        results, engine = SEARCH(query, max(1, min(int(n or 5), 10)))
+        # v1314: `_web_search` returns `(results, engine, notes)` since 2026-11-16
+        # (v605 follow-up); unpacking only two values made every discover() fail with
+        # "too many values to unpack" — masked because the acceptance stubs returned
+        # a 2-tuple. `notes` (engines that produced nothing and why) is not surfaced here.
+        results, engine, _notes = SEARCH(query, max(1, min(int(n or 5), 10)))
     except Exception as e:  # noqa: BLE001
         return {"ok": False, "error": "search failed: %s" % e}
     if not results:

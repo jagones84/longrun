@@ -40,7 +40,7 @@ from longrun.research import executor as E  # noqa: E402
 
 _real_search, _real_fetch, _real_llm = E.SEARCH, E.fetch_text, E.LLM
 E.SEARCH = lambda q, n: ([{"title": "T", "url": "https://t.example",
-                           "snippet": "s"}], "tavily")
+                           "snippet": "s"}], "tavily", [])
 E.fetch_text = lambda url: (_ for _ in ()).throw(Exception("boom"))
 E.LLM = lambda prompt, model: None
 try:

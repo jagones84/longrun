@@ -93,8 +93,8 @@ _FAKE_URLS_2 = ["https://example.com/k8s-operator-d", "https://example.com/k8s-o
 
 def _stub_search(query, n):
     if "expanded" in query or "deep-dive" in query:
-        return [{"title": "second " + u, "url": u, "snippet": "ok"} for u in _FAKE_URLS_2], "stub"
-    return [{"title": "first " + u, "url": u, "snippet": "ok"} for u in _FAKE_URLS], "stub"
+        return [{"title": "second " + u, "url": u, "snippet": "ok"} for u in _FAKE_URLS_2], "stub", []
+    return [{"title": "first " + u, "url": u, "snippet": "ok"} for u in _FAKE_URLS], "stub", []
 
 
 # stub: fetcher returns canned text per URL

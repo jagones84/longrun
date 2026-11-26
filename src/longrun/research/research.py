@@ -160,7 +160,10 @@ def run(query, notebook="default", depth="shallow", n=5, max_rounds=4,
     for i, q in enumerate(plan["queries"], start=1):
         _emit({"type": "round", "i": i, "query": q})
         try:
-            results, engine = search_fn(q, plan["n_per_round"])
+            # v1314: the searcher returns `(results, engine, notes)`; unpacking two
+            # values made every research round fail on the real searcher (masked by
+            # the 2-tuple acceptance stubs, same bug as knowledge.discover).
+            results, engine, _notes = search_fn(q, plan["n_per_round"])
         except Exception as e:  # noqa: BLE001
             _emit({"type": "search", "error": str(e)})
             results, engine = [], "error"
