@@ -6,6 +6,19 @@ All notable changes to Longrun are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- **The cascade is ON, on the operator's own cheap tier (2026-11-26).** Operator: *"Put deepseek flash from
+  deepseek provider, test the features"*. `config/routing.yaml` ▸ `roles.subagent.model` is now
+  `deepseek:deepseek-flash` (the model already trusted as `architect`) and `config/cascade.yaml` has
+  `enabled: true`; the tiers resolve from the role routing (`source: roles`) as
+  `deepseek:deepseek-flash` → `openrouter:z-ai/glm-5.3-flash`. Verified live: a real turn on session
+  `5e27e522adc0` ran every phase on `deepseek:deepseek-flash` (`chat.phase`, `cost.usage`, `run.metrics`,
+  `chat.done`) and answered without escalating. Two pins that had encoded the old TOGGLE state now assert
+  the contract instead (`v1267` A6: the file parses and is complete; `v1312` A9/C3: the aliases are empty
+  and the CLI names its source) — the toggle is operator state, not a pinned value. Known limit: the live
+  loop calls `plan(..., interactive=True)` unconditionally, so `interactive: false` would disable the
+  cascade for chat too; a real "async only" split needs the turn kind passed through.
+
 ### Added
 - **The model economy is wired, not just measured (round 173 follow-up).** Two wires close the gap between
   the research and the running loop. **(1)** `harness/model_cascade.plan()` now resolves its `small`/`large`

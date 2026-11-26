@@ -74,9 +74,8 @@ check("A8 a healthy state stays on the resolved small tier",
       mc.decide({"current": "local:q", "failure_streak": 0}, _on)["model"] == "local:q")
 
 _shipped = mc.load()
-check("A9 the shipped config is still off and unaliased (nothing changed at runtime)",
-      _shipped.get("enabled") is False and not _shipped.get("small")
-      and not _shipped.get("large"), {k: _shipped.get(k) for k in ("enabled", "small", "large")})
+check("A9 the shipped yaml leaves the aliases empty, so the ROLE routing is the source",
+      not _shipped.get("small") and not _shipped.get("large"), {k: _shipped.get(k) for k in ("enabled", "small", "large")})
 _agent = open(os.path.join(SRC, "longrun", "agent", "agent.py"), encoding="utf-8").read()
 check("A10 the running loop still calls this exact seam",
       "_mc.plan(_mc.load(), interactive=True)" in _agent)
@@ -135,9 +134,9 @@ _cfg_file = os.path.join(_tmp, "cascade.json")
 json.dump({}, open(_cfg_file, "w", encoding="utf-8"))
 _run3 = subprocess.run([sys.executable, os.path.join(REPO, "forge.py"), "cascade", "plan",
                         _cfg_file], capture_output=True, text=True, timeout=60)
-check("C3 `cascade plan` reports the source and stays disabled by default",
-      _run3.returncode == 0 and '"enabled": false' in _run3.stdout
-      and '"source"' in _run3.stdout, (_run3.stdout + _run3.stderr)[:300])
+check("C3 `cascade plan` prints a plan and names the source (the toggle is operator state)",
+      _run3.returncode == 0 and '"source"' in _run3.stdout
+      and '"format"' in _run3.stdout, (_run3.stdout + _run3.stderr)[:300])
 
 print()
 if FAILED:

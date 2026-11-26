@@ -67,8 +67,12 @@ plan = mc.plan(cfg(), interactive=True)
 check("A5 a complete config starts on the small model",
       plan["enabled"] and plan["model"] == "small-a" and plan["large"] == "large-a")
 cfgfile = os.path.join(REPO, "config", "cascade.yaml")
-check("A6 the shipped config parses and is disabled", os.path.isfile(cfgfile)
-      and mc.load(cfgfile)["enabled"] is False)
+# The TOGGLE is operator state (it moved to `enabled: true` on 2026-11-26 when
+# `roles.subagent` became deepseek-flash); what this pins is that the shipped file
+# parses and is COMPLETE, not which way the operator last flipped it.
+check("A6 the shipped config parses and carries its keys", os.path.isfile(cfgfile)
+      and isinstance(mc.load(cfgfile).get("enabled"), bool)
+      and "escalate" in mc.load(cfgfile))
 
 # ── B · the decision ───────────────────────────────────────────────────────
 p = mc.plan(cfg())

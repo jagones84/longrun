@@ -4,7 +4,7 @@
 # set `enabled: true` and name two aliases the router can serve. `interactive:
 # false` keeps the cascade for asynchronous/headless turns only — the paper
 # measures a wall-clock penalty on tasks that fall back.
-enabled: false
+enabled: true
 small: ""
 large: ""
 interactive: true
