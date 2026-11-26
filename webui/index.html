@@ -12960,7 +12960,7 @@ function _showInConstellation(n) {
     try {
       if (f.contentWindow && f.contentDocument && f.contentDocument.readyState === "complete") {
         if (!rang) { rang = true; _planRing(f, n2); }
-        f.contentWindow.postMessage({ type: "longrun-focus-node", id: id, session: sid }, "*");
+        f.contentWindow.postMessage({ type: "longrun-focus-node", id: id, session: sid }, location.origin);
       }
     } catch (e) {}
     if (++n2 >= 10) clearInterval(iv);
@@ -12978,7 +12978,7 @@ function _showAgentInOrganigram(sid) {
     try {
       if (f && f.contentWindow && f.contentDocument
           && f.contentDocument.readyState === "complete") {
-        f.contentWindow.postMessage({ type: "longrun-focus-agent", session: sid }, "*");
+        f.contentWindow.postMessage({ type: "longrun-focus-agent", session: sid }, location.origin);
       }
     } catch (e) {}
     if (++n >= 10) clearInterval(iv);
@@ -13145,7 +13145,7 @@ async function _showJobInControl(jid) {
     try {
       if (f && f.contentWindow && f.contentDocument
           && f.contentDocument.readyState === "complete") {
-        f.contentWindow.postMessage({ type: "longrun-focus-job", id: full }, "*");
+        f.contentWindow.postMessage({ type: "longrun-focus-job", id: full }, location.origin);
       }
     } catch (e) {}
     if (++n2 >= 10) clearInterval(iv);
@@ -24116,7 +24116,7 @@ function _dpPostReady(msgs) {
     try {
       if (f.contentWindow && f.contentWindow.__orbitApp && f.contentWindow.__orbitApp._ready
           && f.contentDocument && f.contentDocument.readyState === "complete") {
-        (msgs || []).forEach(m => { try { f.contentWindow.postMessage(m, "*"); } catch (_) {} });
+        (msgs || []).forEach(m => { try { f.contentWindow.postMessage(m, location.origin); } catch (_) {} });
         clearInterval(iv);
         return;
       }

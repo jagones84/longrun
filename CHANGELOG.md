@@ -7,6 +7,13 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Fixed
+- **Two frontend fixes from the audit's JavaScript pass (v1315).** CodeQL over `webui/` (9 files,
+  224 queries) flagged an incomplete HTML-attribute sanitiser and four wildcard `postMessage`s.
+  **(1)** `editor.js`'s `esc()` escaped `&`, `<`, `>` but not the quotes, yet it fills HTML attributes
+  (`data-sheet="…"`) — a sheet name carrying a quote could break out of the attribute; `esc()` now
+  escapes `"` and `'`. **(2)** four `postMessage(…, "*")` calls now target `location.origin`, matching
+  the two call sites that already did; every one of them reads `contentDocument` first, so the target is
+  provably same-origin. Pinned by `tests/acceptance/v1315_frontend_postmessage_esc.py`.
 - **Two research/KB call sites unpacked a 3-tuple as 2 (v1314).** `_web_search` returns
   `(results, engine, notes)` since 2026-11-16, but `knowledge.discover` and the research executor
   unpacked two values — so every `knowledge discover` (tool, `forge.py knowledge discover`,

@@ -56,7 +56,8 @@ function sessId() { return localStorage.getItem("sf_session") || ""; }
 function tabsKey() { const s = sessId(); return s ? (LS_TABS_S + s) : LS_TABS; }
 function esc(s) {
   return String(s == null ? "" : s)
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
 class EditorHost {
