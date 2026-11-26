@@ -7,6 +7,19 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **The model economy is wired, not just measured (round 173 follow-up).** Two wires close the gap between
+  the research and the running loop. **(1)** `harness/model_cascade.plan()` now resolves its `small`/`large`
+  tiers from the operator's own ROLE routing (`roles.subagent` / `roles.agent`) when `config/cascade.yaml`
+  leaves the aliases empty — before this the cascade could never enable without hand-editing the file. It
+  reports which `source` answered, refuses a dynamic `@role` ref (a cascade needs a concrete model), and
+  stays **disabled unless both tiers resolve**, so the shipped config changes nothing at runtime.
+  `decide()` now reads the resolved tiers from the plan object, so an escalation reaches the real large
+  model. **(2)** `harness/checks/model_budget.record_from_arms()` + `forge.py modelbudget claim FILE.json`
+  turn a benchmark run's arms (`weak` / `strong` / `router`, one element per task) into the claim record
+  `audit()` prices: the only-strong-correct rate, the oracle gap in points, the captured share, the
+  normalized spend. A real run is priced instead of hand-written JSON. Pinned by `v1312` (22/22).
+  Honest limit: every role in `config/routing.yaml` currently points at the same model, so enabling the
+  cascade today saves nothing until `roles.subagent` names a cheaper or local model.
 - **`modelbudget` — delegation and budgeted routing, priced honestly (round 173).** Three papers on
   one subject, *cost-efficient model choice inside a harness*, read in full: **Delegent**
   (arXiv:2611.33098 — the lead keeps the main coding task and delegates legwork to a small model,

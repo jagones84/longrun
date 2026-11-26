@@ -112,31 +112,82 @@ def save(values):
     return load()
 
 
-def plan(config=None, interactive=True):
-    """Whether this turn runs small-first, and with which model."""
+def _role_refs():
+    """(small, large) from the operator's ROLE routing, fail-open to ("", "").
+
+    `config/cascade.yaml` ships with two empty aliases, so before this resolver the
+    cascade could never enable without hand-editing the file. The operator already
+    names a model per role (`config/models.yaml` -> `roles.subagent` / `roles.agent`);
+    those are the two tiers a cascade needs. A DYNAMIC ref (`@chat`) is refused: the
+    cascade needs a concrete model, and silently passing `@chat` would escalate into
+    a second resolution the caller never priced.
+    """
+    try:
+        from longrun.model import routing as _routing
+        small = str(_routing.role_model("subagent") or "").strip()
+        large = str(_routing.role_model("agent") or "").strip()
+    except Exception:  # noqa: BLE001 — a caller without the app gets no refs
+        return "", ""
+    if small.startswith("@") or large.startswith("@"):
+        return "", ""
+    return small, large
+
+
+def plan(config=None, interactive=True, role_refs=None):
+    """Whether this turn runs small-first, and with which model.
+
+    Resolution order per tier: the yaml alias, then the role routing
+    (`roles.subagent` for small, `roles.agent` for large). `source` says which one
+    answered, so a live surface can show why the cascade is on or off.
+    """
     cfg = config if isinstance(config, dict) else load()
     small = str(cfg.get("small") or "").strip()
     large = str(cfg.get("large") or "").strip()
+    if small or large:
+        # One explicit alias is a HALF config: filling the other from a role would
+        # mix two sources the operator never priced together.
+        source = "config"
+        if not (small and large):
+            return {"format": FORMAT, "enabled": False, "source": "config",
+                    "reason": "partial: only one yaml alias is set (aliases are not "
+                              "mixed with role routing)", "small": small, "large": large}
+    else:
+        r_small, r_large = (role_refs or _role_refs)()
+        small, large = r_small, r_large
+        source = "roles" if (small and large) else "none"
+    if small.startswith("@") or large.startswith("@"):
+        return {"format": FORMAT, "enabled": False, "source": "dynamic",
+                "reason": "a dynamic @role ref is not a concrete model", "small": "", "large": ""}
+    if small and large and small == large:
+        return {"format": FORMAT, "enabled": False, "source": source,
+                "reason": "tiers identical: small and large resolve to the same model "
+                          "(no saving)", "small": small, "large": large}
     if not cfg.get("enabled"):
-        return {"format": FORMAT, "enabled": False, "reason": "disabled"}
-    if not small or not large:
-        return {"format": FORMAT, "enabled": False, "reason": "small/large not configured"}
+        return {"format": FORMAT, "enabled": False, "reason": "disabled",
+                "small": small, "large": large, "source": source}
+    if not (small and large):
+        return {"format": FORMAT, "enabled": False, "source": "none",
+                "reason": "small/large not configured (neither the yaml aliases nor "
+                          "roles.subagent/roles.agent resolve)"}
     if interactive and not cfg.get("interactive", True):
-        return {"format": FORMAT, "enabled": False, "reason": "interactive turn"}
+        return {"format": FORMAT, "enabled": False, "reason": "interactive turn",
+                "small": small, "large": large, "source": source}
     return {"format": FORMAT, "enabled": True, "model": small,
-            "small": small, "large": large, "config": cfg,
+            "small": small, "large": large, "config": cfg, "source": source,
             "reason": "small-first"}
 
 
 def decide(state, config):
     """The model for the NEXT call: stay cheap, or escalate once on evidence."""
-    cfg = (config or {}).get("config") if isinstance((config or {}).get("config"), dict) \
-        else config
+    top = config if isinstance(config, dict) else {}
+    cfg = top.get("config") if isinstance(top.get("config"), dict) else top
     cfg = _merge(DEFAULTS, cfg or {})
-    small = str(cfg.get("small") or "").strip()
-    large = str(cfg.get("large") or "").strip()
+    # `plan()` resolves the tiers; the live caller hands that object back, so the
+    # resolved refs live at its TOP level and must win over the raw yaml.
+    small = str(top.get("small") or cfg.get("small") or "").strip()
+    large = str(top.get("large") or cfg.get("large") or "").strip()
     current = str((state or {}).get("current") or small or "")
-    enabled = bool(config.get("enabled")) if isinstance(config, dict) else False
+    enabled = bool(top.get("enabled")) if isinstance(config, dict) else False
     if not enabled:
         return {"format": FORMAT, "model": current, "escalate": False,
                 "reason": "cascade disabled"}

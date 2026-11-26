@@ -209,6 +209,48 @@ def efficiency(saving, quality_delta, floor=QUALITY_FLOOR):
                    "admissible": quality_delta >= -floor, "reason": "ok"})
 
 
+def record_from_arms(arms, costs=None, seeds=None, units="fraction"):
+    """Turn a benchmark run's arms into the claim record `audit()` prices.
+
+    `arms` is plain data: `{"weak": [bool,...], "strong": [bool,...], "router":
+    [bool,...]}` — one element per task, the same tasks in the same order. `weak`
+    is the baseline arm, `strong` is the all-strong arm (the oracle's per-task
+    input), `router` is the arm whose claim is being priced (optional).
+    `costs` mirrors those keys with per-task costs, in one unit; `seeds` is the
+    number of independent seeds behind the vectors.
+
+    The output feeds `audit()` directly, so a real run is priced instead of a
+    hand-written record. Pure: booleans and numbers in, a record out.
+    """
+    a = arms or {}
+    seeds = seeds if seeds is not None else a.get("seeds")
+    costs = costs or a.get("costs")
+    weak = [bool(x) for x in (a.get("weak") or [])]
+    strong = [bool(x) for x in (a.get("strong") or [])]
+    router = [bool(x) for x in a["router"]] if a.get("router") else None
+    if not weak or len(weak) != len(strong):
+        return _stamp({"reason": "mismatched-arms"})
+    n = len(weak)
+    fixed = [1.0 if x else 0.0 for x in weak]
+    oracle = [1.0 if (w or s) else 0.0 for w, s in zip(weak, strong)]
+    rec = {"units": units, "seeds": seeds,
+           "delegation_calls": a.get("delegation_calls"),
+           "delegated_tasks": a.get("delegated_tasks"),
+           "osc": osc(list(zip(weak, strong)))["osc"],
+           "oracle_gap": round(oracle_gap(fixed, oracle).get("gap", 0.0) * 100.0, 4)}
+    if router is not None and len(router) == n:
+        rs = [1.0 if x else 0.0 for x in router]
+        rec["claimed_gain"] = round((sum(rs) - sum(fixed)) / n * 100.0, 4)
+        rec["capture"] = capture(rs, fixed, oracle).get("capture")
+        c = costs or {}
+        strong_cost, router_cost = c.get("strong"), c.get("router")
+        if strong_cost and router_cost and sum(strong_cost) > 0:
+            rec["spend"] = round(sum(router_cost) / sum(strong_cost), 6)
+    rec["quota"] = a.get("quota")
+    rec["margin"] = a.get("margin")
+    return _stamp(rec)
+
+
 def audit(record):
     """The misreadings the three papers name, as findings over one claim record.
 

@@ -843,6 +843,9 @@ def cmd_modelbudget(args):
     if action == "audit":
         payload = _load_doc(args, "modelbudget audit FILE.json")
         _emit(_mb, _mb.audit(payload), lambda o: o["verdict"] == "clean")
+    if action == "claim":
+        arms = _load_doc(args, "modelbudget claim FILE.json")
+        _emit(_mb, _mb.audit(_mb.record_from_arms(arms)), lambda o: o["verdict"] == "clean")
     if getattr(args, "file", None):
         payload = _load_doc(args, "modelbudget report FILE.json")
     else:
@@ -6189,8 +6192,8 @@ def _build_parser():
         p.add_argument("file", nargs="?", help="JSON: a survey matrix (audit); omit for the bundled one"); \
         p.set_defaults(fn=cmd_harnesscov)
     p = sub.add_parser("modelbudget"); \
-        p.add_argument("action", nargs="?", default="report", choices=["report", "audit"]); \
-        p.add_argument("file", nargs="?", help="JSON: a claim record (audit) or a profile (report)"); \
+        p.add_argument("action", nargs="?", default="report", choices=["report", "audit", "claim"]); \
+        p.add_argument("file", nargs="?", help="JSON: a claim record (audit), arms (claim) or a profile (report)"); \
         p.set_defaults(fn=cmd_modelbudget)
     p = sub.add_parser("harness",
                        help="list the per-paper groups, their actions and their input")
