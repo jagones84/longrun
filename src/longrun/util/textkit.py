@@ -281,8 +281,17 @@ def _iter_json_spans(text):
 
 
 #: What may follow a JSON value that still counts as the message's CONCLUSION:
-#: whitespace, a closing ``` fence, or closing punctuation. Anything else is prose.
-_TAIL_ONLY = re.compile(r"^\s*(?:```[ \t]*)?[.,;:!?]*\s*$")
+#: whitespace, a closing ``` fence, a closing `<json>` tag, or closing punctuation.
+#: Anything else is prose.
+#:
+#: 2026-11-27 (session architect): the model wrapped its action as
+#: `<json>\n{"action":"tool",…}\n</json>`. The `</json>` footer is not in
+#: `_TAIL_ONLY`, so `tail_json_spans` saw no call, `extract_action_json` returned
+#: None and the harness persisted/streamed the raw envelope as the turn's final
+#: answer (three todo.update calls were swallowed the same way, so the harness
+#: kept rejecting an answer it thought had never closed its steps).
+_TAIL_ONLY = re.compile(
+    r"^\s*(?:</\s*json\s*>\s*)?(?:```[ \t]*)?[.,;:!?]*\s*$", re.I)
 
 
 def tail_json_spans(text):

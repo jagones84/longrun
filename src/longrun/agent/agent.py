@@ -4105,7 +4105,8 @@ def _is_explicit_finish(act):
 
 
 def _request_thread(sess, current="", older=3, chars=600):
-    """The operator's request THREAD: the original ask plus later user messages.
+    """The operator's request THREAD for THIS turn: its own ask plus any later
+    user message that arrived before the turn answered.
 
     v859: the closure verdict used to quote the CURRENT turn's message only, so a
     session where the operator refined the task over several turns was graded on
@@ -4113,15 +4114,31 @@ def _request_thread(sess, current="", older=3, chars=600):
     from the stored transcript (role `user`), skipping harness injections (they
     carry the `[harness] ` mark), so what the check quotes is what the operator
     actually asked, in order.
+
+    2026-11-27 (session architect): the thread used to span the WHOLE session —
+    every user message ever written — so a later question about reasoning effort
+    was graded against the FIRST ask ("Shutoff windows pc and put dgx monitor
+    stby"). The independent verifier bounced the correct answer with "never
+    addresses the user's original request: shutting off the Windows PC…" and the
+    agent went back to redo that old task. A persisted FINAL answer ends the task:
+    user messages BEFORE it belong to earlier, already-answered turns and are not
+    this turn's request. Consecutive user messages with no final answer between
+    them are still ONE refinement thread (the v859 case).
     """
     asks = []
-    for m in list((sess or {}).get("messages") or []):
-        if not isinstance(m, dict) or m.get("role") != "user":
+    for m in reversed(list((sess or {}).get("messages") or [])):
+        if not isinstance(m, dict):
+            continue
+        role = m.get("role")
+        if role == "assistant" and not m.get("internal") and m.get("ts"):
+            break                      # a completed turn: this thread starts after it
+        if role != "user":
             continue
         t = str(m.get("content") or "").strip()
         if not t or t.startswith(HARNESS_MARK):
             continue
         asks.append(t)
+    asks.reverse()
     cur = str(current or "").strip()
     if cur and (not asks or asks[-1] != cur):
         asks.append(cur)
