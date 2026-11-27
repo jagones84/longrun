@@ -1,19 +1,20 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# COST LOCK (v1316, 2026-11-27)
+# COST LOCK (v1316) — SHIPPED OFF (2026-11-27)
 #
-# This machine has exactly two authorized models. `allowed_models` is enforced in
-# `model/routing.py` (selection: role_model / pick / model_chain / turn_model) and
-# in `server.stream_with_fallback` (dispatch): a PAID ref outside this list is
-# never called — the turn runs on the authorized default instead. A LOCAL provider
-# and an unresolved llama.cpp alias are never blocked (they cannot cost anything).
+# The operator chooses the models in `roles` below; there is NO restriction by
+# default. This key is the optional safety valve: leave it empty (`[]`) to allow
+# everything, or list `provider:model` refs to refuse spending on anything else.
+# When non-empty it is enforced in `model/routing.py` (selection: role_model /
+# pick / model_chain / turn_model) and in `server.stream_with_fallback`
+# (dispatch): a PAID ref outside the list is never called — the turn runs on the
+# default instead. A LOCAL provider and an unresolved llama.cpp alias are never
+# blocked (they cannot cost anything).
 #
 #   deepseek:deepseek-flash            — DeepSeek direct, the cheap workhorse
 #   openrouter:z-ai/glm-5.3-flash      — OpenRouter GLM flash, the other tier
 #
-# Add a third entry here ONLY when you intend to pay for it.
-allowed_models:
-  - deepseek:deepseek-flash
-  - openrouter:z-ai/glm-5.3-flash
+# Empty = the router roles are the only decision (the pre-v1316 behaviour).
+allowed_models: []
 
 roles:
   chat:

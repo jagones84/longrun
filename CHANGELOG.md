@@ -7,6 +7,13 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Fixed
+- **The cost lock now ships OFF — the router roles are the only decision.** The operator wants to
+  choose any model in `config/routing.yaml` / Settings without being confined to the two refs; the
+  earlier allow-list was added on a cost scare and blocked deliberate choices too. `allowed_models`
+  stays as an optional safety valve (list refs to restrict, `[]` = unrestricted, the pre-v1316
+  behaviour) and its enforcement is unchanged when filled; `v1316` now pins the shipped lock as OFF
+  and tests the mechanism against a synthetic locked config, so it no longer constrains which models
+  the operator may pick.
 - **Two acceptance pins pointed at an obsolete `/api/build` literal.** `v1305` A4 and `v362` B3 asserted
   the exact string `'{"build": shell_build(_active_idx)}'`, but the payload gained `pid` and `started_at`,
   so the closing brace no longer matched — a stale pin, not a defect. Both now assert the contract

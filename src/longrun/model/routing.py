@@ -58,12 +58,13 @@ _DYNAMIC_REFS = (CHAT_MODEL_REF,)
 
 
 # ------------------------------------------------------------ cost allow-list --
-# v1316: the operator authorized exactly two models because everything else costs
-# too much. `allowed_models` in config/routing.yaml is enforced at the ONE point a
-# model is chosen (role_model / pick / model_chain / turn_model) and at the ONE
-# point a call is dispatched (server.stream_with_fallback). A LOCAL provider and an
-# UNRESOLVED ref (a llama.cpp alias, or a synthetic id in a test) are never blocked:
-# neither can spend money at a cloud provider.
+# v1316: an OPTIONAL cost valve, shipped OFF (`allowed_models: []`). The operator
+# chooses models in `roles`; filling this list refuses to PAY for anything outside
+# it. When non-empty it is enforced at the ONE point a model is chosen
+# (role_model / pick / model_chain / turn_model) and at the ONE point a call is
+# dispatched (server.stream_with_fallback). A LOCAL provider and an UNRESOLVED ref
+# (a llama.cpp alias, or a synthetic id in a test) are never blocked: neither can
+# spend money at a cloud provider.
 ALLOWED_KEY = "allowed_models"
 _WARNED: set[str] = set()
 
