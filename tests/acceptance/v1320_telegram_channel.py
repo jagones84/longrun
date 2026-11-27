@@ -458,6 +458,44 @@ check("K15 the native menu carries the Telegram-only verbs",
 check("K16 the native menu carries /models", "models" in _menu, sorted(_menu))
 channel._client = None
 
+# ---- L: a turn the channel did NOT start is still shown on Telegram ---------
+# 2026-11-28 (operator: "dopo /restart ... nella session telegram non più, non è
+# sync ... devono essere sync sempre"). After a restart the continuation runs on
+# the bound session with NO reply object; the channel must create one for the last
+# authorised chat, or its deltas are dropped and Telegram desyncs. Same for a job
+# or a teammate dispatch on the bound session.
+channel._client = FakeClient()
+channel._attach_listener()
+try:
+    channel._live["obj"] = None
+    _doc = binding.load()
+    binding.upsert_paired(_doc, 9, title="owner")
+    binding.set_active_chat(_doc, 9)
+    binding.save(_doc)
+    _events.publish("chat.run", session="telegram", run_id="guest1")
+    _events.publish("chat.delta", session="telegram", channel="answer",
+                    text="resumed answer")
+    _events.publish("chat.done", session="telegram")
+    _gtexts = [str(p.get("text")) for m, p in channel._client.calls
+               if m in ("sendMessage", "editMessageText")]
+    check("L1 a turn the channel did not start reaches Telegram",
+          any("resumed answer" in t for t in _gtexts), _gtexts[-2:])
+    _gsent = [p.get("chat_id") for m, p in channel._client.calls if m == "sendMessage"]
+    check("L2 the guest reply goes to the last authorised chat",
+          _gsent and all(c == 9 for c in _gsent), _gsent)
+    check("L3 binding remembers the active chat", binding.active_chat(binding.load()) == 9)
+finally:
+    channel._detach_listener()
+    channel._client = None
+
+# the channel must be armed BEFORE the resume sweep, or the resumed turn emits
+# while no listener is attached (the reported desync).
+_api_src = open(os.path.join(REPO, "src", "longrun", "core", "httpapi.py"),
+                encoding="utf-8").read()
+check("L4 the channel is armed before the restart-resume sweep",
+      _api_src.index("from longrun.core import telegram as _telegram_boot")
+      < _api_src.index("_restart_boot.resume_after_restart()"))
+
 shutil.rmtree(_tmp, ignore_errors=True)
 print("---")
 ok = sum(results)

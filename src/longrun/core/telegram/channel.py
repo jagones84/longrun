@@ -424,6 +424,11 @@ def _handle_update(update):
     doc = binding.load()
     if not binding.is_paired(doc, chat_id):
         return _pairing_prompt(doc, msg, chat_id)
+    # Remember the last chat that talked: it is where a turn the channel did NOT
+    # start (restart continuation, job, dispatch) will be shown, so Telegram stays
+    # in sync with the bound session.
+    binding.set_active_chat(doc, chat_id)
+    binding.save(doc)
     text = msg.get("text") or msg.get("caption") or ""
     if not text.strip():
         return
@@ -470,6 +475,8 @@ def _handle_callback(cq):
     if not binding.is_paired(doc, chat_id):
         _answer_callback(cq_id, "Not authorised.")
         return
+    binding.set_active_chat(doc, chat_id)
+    binding.save(doc)
     if data.startswith("mdl:"):
         mid = (cq.get("message") or {}).get("message_id")
         _answer_callback(cq_id, "")
@@ -922,32 +929,57 @@ def _detach_listener():
         pass
 
 
+def _ensure_live():
+    """The in-flight reply, creating one for a turn the channel did NOT start.
+
+    A restart continuation, a job or a teammate dispatch runs on the bound session
+    with no originating chat and NO reply object of its own; without this its deltas
+    are dropped and Telegram silently desyncs from the Longrun session (the reported
+    bug: after `/restart` the turn continues in the session but not on Telegram). The
+    reply is shown to the last authorised chat (`binding.active_chat`).
+    """
+    live = _live.get("obj")
+    if live is not None:
+        return live
+    chat_id = binding.active_chat(binding.load())
+    if chat_id is None:
+        return None
+    live = _Live(chat_id)
+    _live["obj"] = live
+    with _LOCK:
+        _state["turns"] += 1
+    return live
+
+
 def _on_event(event):
     """Forward the bound session's turn events to Telegram (runs off every lock)."""
     if not isinstance(event, dict):
         return
     kind = event.get("kind")
     sid = event.get("session")
-    live = _live.get("obj")
     if sid == binding.SESSION_ID:
+        if kind == "chat.run":
+            live = _ensure_live()
+            if live is not None and event.get("run_id"):
+                live.run_id = str(event.get("run_id"))
+            return
         if kind == "chat.delta":
-            channel = event.get("channel")
+            live = _ensure_live()
             if live is None:
                 return
+            channel = event.get("channel")
             if channel == "answer":
                 live.append(event.get("text") or "")
             elif channel == "think":
                 live.append_think(event.get("text") or "")
             return
-        if kind == "chat.run":
-            if live is not None and event.get("run_id"):
-                live.run_id = str(event.get("run_id"))
-            return
         if kind == "chat.done":
+            live = _live.get("obj")
             if live is not None:
                 live.finish()
             return
         if kind == "harness.inject":
+            live = _live.get("obj")
             if live is not None:
                 live.relay_harness(event)
             return
@@ -955,6 +987,7 @@ def _on_event(event):
             _forward_approval(event)
         return
     # tool.* events carry `run` (the turn's run id), never `session`.
+    live = _live.get("obj")
     if kind in ("tool.call", "tool.result"):
         if live is not None and live.run_id and str(event.get("run") or "") == live.run_id:
             live.relay_tool(event)

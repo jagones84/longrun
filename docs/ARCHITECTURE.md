@@ -1093,7 +1093,11 @@ operator-selected `none`). This is not whole-agent confinement. Hard-denied patt
   same choice the WebUI picker makes. Telegram-only display toggles (`/think`,
   `/reason`, `/verbose`, `/stop`) live on the binding (`prefs`, never on the
   session), a typing heartbeat pulses `sendChatAction` while a reply is live, and
-  the reply is HTML-formatted with a bot header and a model footer. Control:
+  the reply is HTML-formatted with a bot header and a model footer. The channel is
+  armed BEFORE the restart-resume sweep at boot, and it renders ANY turn on the
+  bound session — including one it did not start (a restart continuation, a job, a
+  teammate dispatch) — by creating the live reply for the last authorised chat
+  (`binding.active_chat`), so Telegram never desyncs from the session. Control:
   `GET /api/telegram/status` +
   `POST /api/telegram/{setup,pair,unpair,reconnect,logout}`, Settings ▸ Channels,
   `forge.py telegram …`; token in `.env` (`TELEGRAM_BOT_TOKEN`, a Settings ▸ Keys

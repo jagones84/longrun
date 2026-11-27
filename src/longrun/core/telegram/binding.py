@@ -51,6 +51,11 @@ def empty():
         "paired": [],               # [{chat_id, user_id, username, title, ts}]
         "pending": {},              # {code: {chat_id, user_id, username, ts}}
         "last_update_id": 0,
+        # The chat the channel last heard from. A turn the channel did NOT start
+        # (a job, a teammate dispatch, or the RESTART continuation) has no reply
+        # target of its own, so it is shown to THIS chat — that is what keeps the
+        # Telegram side in sync with the bound session after a restart.
+        "active_chat": None,
         # Telegram-ONLY display prefs (they change what the CHANNEL shows, never the
         # Longrun session): think = stream the model's thinking, reason = append the
         # final reasoning, verbose = relay every harness/tool event in real time.
@@ -92,6 +97,8 @@ def _coerce(doc):
     if isinstance(doc.get("pending"), dict):
         base["pending"] = {k: v for k, v in doc["pending"].items()
                            if isinstance(v, dict)}
+    if doc.get("active_chat") is not None:
+        base["active_chat"] = doc["active_chat"]
     if isinstance(doc.get("prefs"), dict):
         base["prefs"] = {k: bool(doc["prefs"].get(k)) for k in PREF_KEYS}
     base["session"] = SESSION_ID
@@ -133,6 +140,28 @@ def is_paired(doc, chat_id):
     """True when `chat_id` is allowed to drive the agent."""
     want = str(chat_id)
     return any(str(p.get("chat_id")) == want for p in (doc or {}).get("paired") or [])
+
+
+def set_active_chat(doc, chat_id):
+    """Remember the last chat the channel heard from (the guest-turn reply target)."""
+    if chat_id is not None:
+        doc["active_chat"] = chat_id
+    return doc
+
+
+def active_chat(doc):
+    """Where to show a turn the channel did not start: the last chat, else paired[0].
+
+    A restart continuation, a job or a teammate dispatch runs on the bound session
+    with no originating chat, so its output must go SOMEWHERE or Telegram silently
+    desyncs (the reported bug). The last authorised chat is that place; a fresh
+    binding with nobody yet talking falls back to the first paired chat.
+    """
+    got = (doc or {}).get("active_chat")
+    if got is not None:
+        return got
+    paired = (doc or {}).get("paired") or []
+    return paired[0].get("chat_id") if paired else None
 
 
 def upsert_paired(doc, chat_id, user_id=None, username="", title=""):

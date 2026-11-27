@@ -4322,6 +4322,17 @@ def main():
     except Exception:  # noqa: BLE001 — a boot sweep must never stop the boot
         pass
     try:
+        # 2026-11-28: arm the Telegram channel BEFORE the resume sweep. The channel
+        # is the listener that forwards `telegram`'s events back to the chat; if a
+        # resumed turn starts first, its output is emitted with nobody attached and
+        # the Telegram side silently desyncs from the session (reported bug: after
+        # `/restart` the turn continued in the session but not on Telegram). A no-op
+        # when no token/onboarding is present; idempotent.
+        from longrun.core import telegram as _telegram_boot
+        _telegram_boot.start()
+    except Exception:  # noqa: BLE001 — an optional channel must never block the boot
+        pass
+    try:
         # 2026-11-15: the harness restart owns its ticket; Matrix no longer does.
         from longrun.core import restart as _restart_boot
         _restart_boot.resume_after_restart()
@@ -4415,13 +4426,8 @@ def main():
         routines.start_scheduler()  # JAG-287 D: agents wake on a cadence
     except Exception:  # noqa: BLE001 — the heartbeat scheduler is optional
         pass
-    try:
-        # 2026-11-28: arm the Telegram channel if a token is configured and the
-        # operator onboarded it — its own daemon long-poll thread. A no-op otherwise.
-        from longrun.core import telegram as _telegram_boot
-        _telegram_boot.start()
-    except Exception:  # noqa: BLE001 — an optional channel must never block the boot
-        pass
+    # 2026-11-28: the Telegram channel is armed EARLIER, before the resume sweep
+    # (see above) so it is attached before a resumed turn emits.
     # JAG-2.9: automatic background codebase indexing for the default workspace, so
     # the first `index` search of a session finds a WARM index instead of paying the
     # walk. Same incremental builder, just off the request path.
