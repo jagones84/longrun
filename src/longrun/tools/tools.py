@@ -4776,12 +4776,9 @@ def _docs_tool(args, run_id):
                 "stdout": "unknown action %r (plan|spec|status)" % action}
     if target != caller:
         try:
-            from longrun.agent import agents as _agents
-            me = _agents.REGISTRY.get(caller) or {}
-            member = _agents.REGISTRY.resolve(target)
-            team = _agents.REGISTRY.team_of(me.get("id")) if me.get("id") else []
-            if not (member and me.get("id") and member.get("id") in team
-                    and member.get("id") != me.get("id")):
+            from longrun.agent import architect as _arch_gate
+            _ok, member = _arch_gate.can_delegate(caller, target)
+            if not _ok:
                 raise ValueError("not one of your direct reports")
             target = str(member.get("session") or "").strip()
             if not target:

@@ -2543,11 +2543,12 @@ def _apply_chat_dispatch(sess, act, on_event, node=None, after=None, state=None)
         me = agents_mod.REGISTRY.get(sess["id"]) or {}
         if not me.get("id"):
             return _fail("this session is not an org agent — designate it first")
-        member = agents_mod.REGISTRY.resolve(to)
-        team = agents_mod.REGISTRY.team_of(me["id"])
-        if not member or member.get("id") not in team or member.get("id") == me.get("id"):
-            return _fail("%r is not one of your direct reports (%s)"
-                         % (to, ", ".join(team[1:]) or "none"))
+        # ONE delegation rule (`architect.can_delegate`): the Architect and the
+        # Telegram twin reach the WHOLE org; everyone else only its direct reports.
+        from longrun.agent import architect as _arch_gate
+        _ok, member = _arch_gate.can_delegate(sess["id"], to)
+        if not _ok:
+            return _fail("%r is not one of your direct reports" % to)
         sid2 = member.get("session")
         if not sid2:
             return _fail("teammate %s has no session" % member.get("id"))
@@ -2787,11 +2788,10 @@ def _apply_chat_goal_action(sess, act, on_event, node=None, after=None, state=No
         me = agents_mod.REGISTRY.get(sess["id"]) or {}
         if not me.get("id"):
             return _fail("this session is not an org agent — designate it first")
-        member = agents_mod.REGISTRY.resolve(to)
-        team = agents_mod.REGISTRY.team_of(me["id"])
-        if not member or member.get("id") not in team or member.get("id") == me.get("id"):
-            return _fail("%r is not one of your direct reports (%s)"
-                         % (to, ", ".join(team[1:]) or "none"))
+        from longrun.agent import architect as _arch_gate
+        _ok, member = _arch_gate.can_delegate(sess["id"], to)
+        if not _ok:
+            return _fail("%r is not one of your direct reports" % to)
         sid2 = member.get("session")
         if not sid2:
             return _fail("teammate %s has no session" % member.get("id"))

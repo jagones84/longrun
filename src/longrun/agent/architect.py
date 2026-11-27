@@ -1724,6 +1724,39 @@ def _scope_denied(tool, detail):
             "error": "%s refused: %s" % (tool, detail)}
 
 
+def can_delegate(caller_sid, target_ref):
+    """May `caller_sid` delegate to `target_ref`? -> (ok, member_record).
+
+    ONE delegation rule for the three gates that ask it — the chat `dispatch`
+    action, its `goal` twin and the `docs` tool (plan/spec/status on another
+    agent's session). The rule mirrors `coordinator_scope`:
+
+      * the Architect and the Telegram twin (the operator's own hand,
+        `SYSTEM_SESSIONS`) reach the WHOLE org;
+      * everyone else reaches only its DIRECT reports (`team_of`, depth 1);
+      * never yourself, and an unknown target is never reachable.
+
+    Before this helper the three call sites each did `team_of` inline, so the
+    twin (which has no reports of its own) was refused a teammate the Architect
+    could reach — the reported "A54 is not one of your direct reports (none)".
+    The direct-report rule is unchanged for every normal agent.
+    """
+    try:
+        from longrun.agent import agents as _agents
+        member = _agents.REGISTRY.resolve(target_ref)
+    except Exception:  # noqa: BLE001 — a broken registry must deny, not widen
+        return False, None
+    if not member or not member.get("id"):
+        return False, None
+    me = _agents.REGISTRY.get(caller_sid) or {}
+    if not me.get("id") or member.get("id") == me.get("id"):
+        return False, member
+    if is_system_session(caller_sid) or str(caller_sid or "").startswith(
+            ARCHITECT_SESSION_ID + "_"):
+        return True, member
+    return member.get("id") in _agents.REGISTRY.team_of(me.get("id")), member
+
+
 def delegation_section(sess):
     """The `job.*` brief for a COORDINATOR session ("" for anyone else).
 

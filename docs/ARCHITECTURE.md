@@ -1097,7 +1097,10 @@ operator-selected `none`). This is not whole-agent confinement. Hard-denied patt
   armed BEFORE the restart-resume sweep at boot, and it renders ANY turn on the
   bound session — including one it did not start (a restart continuation, a job, a
   teammate dispatch) — by creating the live reply for the last authorised chat
-  (`binding.active_chat`), so Telegram never desyncs from the session. Control:
+  (`binding.active_chat`), so Telegram never desyncs from the session. Like the
+  Architect, the twin reaches the WHOLE org for delegation: the chat `dispatch`/
+  `goal` actions and the `docs` tool share ONE rule (`architect.can_delegate`),
+  instead of each asking for a direct report (which the twin has none of). Control:
   `GET /api/telegram/status` +
   `POST /api/telegram/{setup,pair,unpair,reconnect,logout}`, Settings ▸ Channels,
   `forge.py telegram …`; token in `.env` (`TELEGRAM_BOT_TOKEN`, a Settings ▸ Keys

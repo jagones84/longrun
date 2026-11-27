@@ -496,6 +496,30 @@ check("L4 the channel is armed before the restart-resume sweep",
       _api_src.index("from longrun.core import telegram as _telegram_boot")
       < _api_src.index("_restart_boot.resume_after_restart()"))
 
+# ---- M: the delegation gate — the twin reaches the whole org (like A1) -------
+# 2026-11-28 (operator: "telegram agent deve avere stesse caratteristiche, permessi
+# e tool use esclusive dell'architect ... mi dice A54 is not one of your direct
+# reports (none)"). The dispatch/goal/docs gate must share ONE rule
+# (`architect.can_delegate`): the Architect AND the Telegram twin reach the whole
+# org; everyone else keeps its direct reports only.
+arch.ensure_system_session()
+arch.ensure_telegram_session()
+agents_mod.REGISTRY.designate("t-probe-mgr", name="t-probe-mgr", reports_to="A1")
+_mgr_id = (agents_mod.REGISTRY.get("t-probe-mgr") or {}).get("id")
+agents_mod.REGISTRY.designate("t-probe-sub", name="t-probe-sub", reports_to=_mgr_id)
+_sub_id = (agents_mod.REGISTRY.get("t-probe-sub") or {}).get("id")
+_ok_twin, _ = arch.can_delegate("telegram", _mgr_id)
+check("M1 the Telegram twin may delegate to an org agent (like the Architect)",
+      _ok_twin is True, _mgr_id)
+_ok_arch, _ = arch.can_delegate("architect", _sub_id)
+check("M2 the Architect keeps whole-org reach", _ok_arch is True, _sub_id)
+_ok_own, _ = arch.can_delegate("t-probe-mgr", _sub_id)
+check("M3 a plain coordinator may delegate to its direct report", _ok_own is True)
+_ok_up, _ = arch.can_delegate("t-probe-sub", "A1")
+check("M4 a plain agent may NOT delegate outside its reports", _ok_up is False)
+_ok_self, _ = arch.can_delegate("telegram", "AX")
+check("M5 an agent may not delegate to itself", _ok_self is False)
+
 shutil.rmtree(_tmp, ignore_errors=True)
 print("---")
 ok = sum(results)
