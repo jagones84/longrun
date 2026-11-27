@@ -138,15 +138,44 @@ def config_view(session=""):
 
 # ------------------------------------------------------------------- documents --
 
+SLUG_MAX = 48
+
+
 def slug(text, fallback="untitled"):
     s = re.sub(r"[^a-z0-9]+", "-", str(text or "").lower()).strip("-")
-    s = re.sub(r"-{2,}", "-", s)[:48].strip("-")
-    return s or fallback
+    s = re.sub(r"-{2,}", "-", s)
+    if len(s) > SLUG_MAX:
+        # 2026-11-28 (operator): never split a word — back off to the last dash of
+        # the budget, so a name reads `adotta-le-capacita-...`, never `...-le-co`.
+        s = s[:SLUG_MAX]
+        cut = s.rfind("-")
+        if cut >= SLUG_MAX // 2:
+            s = s[:cut]
+    return s.strip("-") or fallback
 
 
 def _title(md, fallback):
     m = re.match(r"\s*#\s+(.+?)\s*$", str(md or ""), re.M)
     return (m.group(1).strip()[:160] if m else str(fallback or "document")[:160])
+
+
+# The section word the doc prompts put around the title (`# Plan — <title>` but
+# `# <title> — Spec`); it is not part of the subject, so the name drops it either way.
+_DOC_PREFIX = re.compile(r"^\s*(plan|spec|tasks|checklist)\s*[\u2014\u2013:-]\s*", re.I)
+_DOC_SUFFIX = re.compile(r"\s*[\u2014\u2013:-]\s*(plan|spec|tasks|checklist)\s*$", re.I)
+
+
+def _doc_name(title, fallback):
+    """A file/folder name from the document's OWN title (the LLM's heading).
+
+    2026-11-28 (operator): "il titolo piano lo da l LLM" — a plan/spec must name
+    itself from the title the model writes, NOT from a 48-char slug of the raw
+    request (which read as `...-le-co`). A missing heading falls back to the ask.
+    """
+    t = str(title or "").strip()
+    t = _DOC_PREFIX.sub("", t)
+    t = _DOC_SUFFIX.sub("", t)
+    return slug(t, fallback=slug(fallback))
 
 
 def _steps_from(md):
@@ -403,11 +432,13 @@ def create_plan(session, prompt, model=None, extra_context="", owner=False,
     with _Generating(sid), _LOCK:
         md, used_model = _generate_plan_doc(ask, model, _context(sid, "plan", extra_context))
         os.makedirs(folder, exist_ok=True)
-        base = "%s-%s" % (slug(ask), time.strftime("%Y-%m-%d"))
+        # 2026-11-28 (operator): the plan NAMES itself from the title the LLM writes
+        # (`# Plan — <title>`), never from a truncated slug of the request.
+        title = _title(md, ask)
+        base = "%s-%s" % (_doc_name(title, ask), time.strftime("%Y-%m-%d"))
         path = _unique_plan_path(folder, base)
         try:
             _bounded_write(path, md)
-            title = _title(md, ask[:80])
             steps = _steps_from(md) or ["review %s" % path]
             doc = {"kind": "plan", "title": title, "path": path,
                    "folder": os.path.dirname(path), "documents": [path],
@@ -453,7 +484,9 @@ def create_spec(session, prompt, model=None, extra_context="", owner=False,
             raise ValueError("the generator did not return %s" % ", ".join(missing))
         os.makedirs(folder, exist_ok=True)
         _sweep_tmp(folder)
-        final = _unique_folder(folder, slug(ask))
+        # 2026-11-28 (operator): the spec folder NAMES itself from the LLM's title.
+        title = _title(docs["spec.md"], ask)
+        final = _unique_folder(folder, _doc_name(title, ask))
         tmp = os.path.join(folder, ".tmp-%s" % uuid.uuid4().hex)
         try:
             os.makedirs(tmp, exist_ok=False)
@@ -464,7 +497,6 @@ def create_spec(session, prompt, model=None, extra_context="", owner=False,
             shutil.rmtree(tmp, ignore_errors=True)
             raise
         spec_md = os.path.join(final, "spec.md")
-        title = _title(docs["spec.md"], ask[:80])
         steps = _steps_from(docs["tasks.md"]) or ["review %s" % spec_md]
         doc = {"kind": "spec", "title": title, "path": spec_md, "folder": final,
                "documents": [os.path.join(final, n) for n in SPEC_FILES],

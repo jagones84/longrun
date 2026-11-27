@@ -143,6 +143,29 @@ check("A1 /plan writes a markdown file under the workspace",
 check("A2 the path is .longrun/documents/plans/<slug>-<date>.md",
       r["rel_path"].startswith(".longrun/documents/plans/")
       and r["rel_path"].endswith(".md"), r.get("rel_path"))
+# A2b/A2c (2026-11-28, operator: "il titolo piano lo da l LLM"): a plan/spec NAMES
+# ITSELF from the title the LLM writes (`# Plan — <title>` / `# <title> — Spec`),
+# never from a 48-char slug of the raw request (which read as `...-le-co`).
+_ws_name = os.path.join(TMP, "ws-name")
+os.makedirs(_ws_name, exist_ok=True)
+_name_sid = session(_ws_name)
+stub_plan("# Plan — a clean readable subject\n\n## Request\nwhatever\n")
+_rn = docs.create_plan(_name_sid,
+                       "some totally different prompt words that would slug badly and get cut")
+check("A2b the plan file is named from the LLM's title, not the prompt",
+      os.path.basename(_rn["rel_path"]).startswith("a-clean-readable-subject-"),
+      _rn.get("rel_path"))
+_ws_name2 = os.path.join(TMP, "ws-name-spec")
+os.makedirs(_ws_name2, exist_ok=True)
+_name_sid2 = session(_ws_name2)
+stub_spec({"spec.md": "# A clean spec subject — Spec\n\n## Why\nx\n",
+           "tasks.md": "# Tasks — x\n\n1. do it\n",
+           "checklist.md": "# Checklist — x\n\n- [ ] y\n"})
+_rs = docs.create_spec(_name_sid2, "another ugly prompt that would slug to le-co")
+check("A2c the spec folder is named from the LLM's title, not the prompt",
+      os.path.basename(_rs["folder"]) == "a-clean-spec-subject",
+      _rs.get("folder"))
+stub_plan(); stub_spec()
 check("A3 the session is LOCKED and the plan is proposed",
       sess.get("plan_mode") is True and plan.get("status") == "proposed", plan.get("status"))
 check("A4 the document metadata rides on the SAME plan object",
@@ -208,7 +231,9 @@ check("D1 /spec writes exactly spec.md + tasks.md + checklist.md in ONE folder",
       names == ["checklist.md", "spec.md", "tasks.md"]
       and all(os.path.isfile(x["path"]) for x in sp["documents"]), names)
 check("D2 the folder is under .longrun/documents/specs/<slug>",
-      os.path.basename(folder) == "add-a-health-endpoint"
+      # 2026-11-28: the folder is named from the LLM's title (`# Health endpoint — Spec`
+      # → `health-endpoint`), not from the prompt slug.
+      os.path.basename(folder) == "health-endpoint"
       and os.path.realpath(folder).startswith(os.path.realpath(ws2)), folder)
 check("D3 the spec locks the session and records all three documents",
       stores.load_session(sid2).get("plan_mode") is True
@@ -393,7 +418,7 @@ fswrite.write_text(os.path.join(_l_folder, ".tmp-deadbeef", "spec.md"), "# half\
 docs.create_spec(_sid_l, "add a health endpoint")
 _left = sorted(os.listdir(_l_folder))
 check("L1 the next spec sweeps a temp set left by a killed writer",
-      ".tmp-deadbeef" not in _left and _left == ["add-a-health-endpoint"], _left)
+      ".tmp-deadbeef" not in _left and _left == ["health-endpoint"], _left)
 
 # ------------------------------- M: the CLI twin (v1051c, operator request)
 # "usa la CLI per fare sessioni vere": the same document commands must exist on
