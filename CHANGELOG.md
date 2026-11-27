@@ -7,6 +7,13 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Fixed
+- **A file the agent wrote into the system temp dir now opens from the transcript (v1318).** Clicking
+  a link like `/tmp/live_sales.csv` failed with "cannot open … — path outside allowed roots": the
+  browse roots were HOME + the workspaces root only, so every artifact an agent exports to the temp
+  directory (pandas `to_excel`, a shell `>` redirect) was unreachable in the editor. The default
+  roots now include `tempfile.gettempdir()` and `/var/tmp` (HOME stays `[0]`, so the workspace picker
+  is unchanged); `/etc` and `../` traversal are still denied, and an explicit `LONGRUN_BROWSE_ROOTS`
+  is honoured exactly. Pinned by `tests/acceptance/v1318_fs_temp_root.py`.
 - **The cost lock now ships OFF — the router roles are the only decision.** The operator wants to
   choose any model in `config/routing.yaml` / Settings without being confined to the two refs; the
   earlier allow-list was added on a cost scare and blocked deliberate choices too. `allowed_models`

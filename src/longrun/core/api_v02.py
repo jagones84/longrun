@@ -4435,6 +4435,22 @@ def _browse_roots():
                 roots.append(base)
         except Exception:  # noqa: BLE001 — browsing must work without rules
             pass
+        # v1318: an agent writes scratch/derived artifacts to the SYSTEM TEMP dir
+        # (pandas `to_excel`, a shell `>` redirect) and the transcript links that
+        # file — but the editor refused it with "path outside allowed roots", so a
+        # file the agent just produced could not be opened. Add the temp
+        # directories as roots (HOME stays [0], so the workspace picker still opens
+        # there). System dirs such as /etc stay OUT: `../` traversal is still denied.
+        import tempfile as _tf
+        seen = {_os.path.realpath(_os.path.expanduser(r)) for r in roots}
+        for _t in (_tf.gettempdir(), "/var/tmp"):
+            try:
+                rp = _os.path.realpath(_t)
+                if _os.path.isdir(rp) and rp not in seen:
+                    roots.append(rp)
+                    seen.add(rp)
+            except OSError:
+                continue
     return [_os.path.realpath(_os.path.expanduser(r)) for r in roots]
 
 
