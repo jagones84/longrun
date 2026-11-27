@@ -112,6 +112,25 @@ WEBHOOKS_ENV = {
     "max_per_minute": "LONGRUN_WEBHOOK_MAX_PER_MINUTE",
 }
 
+#: `config/tools.yaml` -> `telegram:` (2026-11-28). Same chain, one reader:
+#: `core/telegram/*` holds no number of its own. The bot TOKEN is a secret and
+#: lives in `.env` (`TELEGRAM_BOT_TOKEN`), never in this block.
+TELEGRAM_DEFAULTS = {
+    "poll_timeout_secs": 30,
+    "edit_throttle_ms": 800,
+    "max_message_chars": 4000,
+    "pair_code_ttl_secs": 900,
+    "typing_heartbeat_secs": 4,
+    "think_preview_chars": 1200,
+    "verbose_preview_chars": 600,
+    "models_page_size": 8,
+    "allowed_updates": ["message", "callback_query"],
+}
+TELEGRAM_ENV = {
+    "poll_timeout_secs": "LONGRUN_TELEGRAM_POLL_TIMEOUT",
+    "edit_throttle_ms": "LONGRUN_TELEGRAM_EDIT_THROTTLE_MS",
+}
+
 #: `config/tools.yaml` -> `limits:`. Every value that used to be
 #: `int(os.environ.get("LONGRUN_…", <literal>))` somewhere in `src/`.
 #: Fallback only: `v827` fails if a key here has no config row.
@@ -262,6 +281,20 @@ def webhook(name, override=None):
     """One `webhooks:` value as an int (see `WEBHOOKS_DEFAULTS`)."""
     return _as_int(_raw("webhooks", WEBHOOKS_DEFAULTS, WEBHOOKS_ENV, name, override),
                    WEBHOOKS_DEFAULTS, name)
+
+
+def telegram(name, override=None):
+    """One `telegram:` value as an int (see `TELEGRAM_DEFAULTS`)."""
+    return _as_int(_raw("telegram", TELEGRAM_DEFAULTS, TELEGRAM_ENV, name, override),
+                   TELEGRAM_DEFAULTS, name)
+
+
+def telegram_list(name, override=None):
+    """One `telegram:` value as a list of trimmed strings (`allowed_updates`)."""
+    got = _section("telegram", TELEGRAM_DEFAULTS, override).get(name)
+    if isinstance(got, str):
+        return [p.strip() for p in got.split(",") if p.strip()]
+    return [str(p).strip() for p in (got or ()) if str(p).strip()]
 
 
 def limitf(name, override=None):

@@ -157,7 +157,8 @@ check("C1 chat_stream_gen accepts and persists the ORIGINATING session",
 check("C2 the attach replay carries the assignment message",
       '"chat.run", "chat.delta", "chat.done", "chat.user",' in HTTPAPI)
 check("C3 a dispatch card remembers the teammate's session",
-      '"goal": goal, "session": sid2' in AGENT)
+      # 2026-11-28: the delegation brief is `aim` now (the card's args key moved).
+      '"aim": goal, "session": sid2' in AGENT)
 check("C4 the receiver's chat renders the assignment live and attributed",
       'es.addEventListener("chat.user"' in HTML
       and "who(\"user\", clean || txt, null, d.sender, d.subjob, null, d.sender_session);" in HTML)

@@ -167,12 +167,12 @@ R._mark(rid, 1000.0)                      # pretend it fired once
 before = R.get(rid) or {}
 check("C2 the routine carries a run counter", before.get("runs") == 1)
 
-res = call("POST", "/api/routines/" + rid, {"goal": "report the deploy status",
+res = call("POST", "/api/routines/" + rid, {"aim": "report the deploy status",
                                             "every_seconds": 120})
 check("C3 POST /api/routines/<rid> updates in place",
       res["code"] == 200 and res["obj"].get("ok") is True, str(res))
 r = R.get(rid) or {}
-check("C4 the goal was rewritten", r.get("goal") == "report the deploy status")
+check("C4 the aim was rewritten", r.get("aim") == "report the deploy status")
 check("C5 the cadence was rewritten", r.get("every_seconds") == 120)
 check("C6 the id survives (no delete + recreate)", r.get("id") == rid)
 check("C7 the run history survives the edit", r.get("runs") == 1,
@@ -184,10 +184,10 @@ res = call("POST", "/api/routines/" + rid, {"every_seconds": 5})
 check("C9 a cadence below the floor is refused",
       res["obj"].get("ok") is False and ">=" in (res["obj"].get("error") or ""), str(res))
 check("C10 the refused edit changed nothing", (R.get(rid) or {}).get("every_seconds") == 120)
-res = call("POST", "/api/routines/" + rid, {"goal": "   "})
-check("C11 an empty goal is refused",
+res = call("POST", "/api/routines/" + rid, {"aim": "   "})
+check("C11 an empty aim is refused",
       res["obj"].get("ok") is False, str(res))
-res = call("POST", "/api/routines/R404", {"goal": "x"})
+res = call("POST", "/api/routines/R404", {"aim": "x"})
 check("C12 an unknown routine refuses the edit",
       res["obj"].get("ok") is False and "not found" in (res["obj"].get("error") or ""), str(res))
 res = call("POST", "/api/routines/" + rid, {"enabled": False})

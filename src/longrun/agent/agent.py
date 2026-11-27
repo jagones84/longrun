@@ -948,22 +948,33 @@ CHAT_TOOL_PROMPT = (
     "briefly re-plan with "
     '{"action":"todo.replan","note":"<why>"} and then IMMEDIATELY resume the plan. '
     "To delegate a self-contained subtask to ONE child agent — it gets a FRESH "
-    "ISOLATED context (it sees ONLY the goal you pass, NEVER your conversation) and "
+    "ISOLATED context (it sees ONLY the aim you pass, NEVER your conversation) and "
     "its own task list, then reports back its summary — emit ONLY "
-    '{"action":"subagent","goal":"<the subtask>","max_steps":4,"role":"<optional role name>"}. '
+    '{"action":"subagent","aim":"<the subtask>","max_steps":4,"role":"<optional role name>"}. '
     "Write a COMPLETE, self-contained instruction: the child cannot see your history, "
     "your files or ask you questions. Use it for a distinct subtask that can run on "
     "its own (e.g. reading and summarising a big file); do not delegate the whole "
     "task. One delegate per subtask. Give max_steps>=3 when the child must call "
     "tools (2 steps leave no turn for the answer). "
     'If your role prompt lists a TEAM (the org chart), DISTRIBUTE work to it: emit ONLY '
-    '{"action":"dispatch","agent":"<A-id>","goal":"<the subtask>"} to start a real '
+    '{"action":"dispatch","agent":"<A-id>","aim":"<the subtask>"} to start a real '
     "turn in that teammate's own session (their role and model). It is DETACHED: the "
     "call returns a job id at once (e.g. J7), the teammate works while YOUR turn goes "
     "on, and its reply is delivered back to you as a message when the job ends — "
     "queued if you are busy, readable any time with job.get. Prefer dispatching "
     "independent work to teammates over doing everything yourself; add "
     '"wait":true only when you must have the answer inside THIS turn. '
+    "To give a DIRECT report the REAL durable goal itself — the SAME object the "
+    "operator's `/goal` slash command creates: independently verified, with live step "
+    "tracking and pause/edit — emit ONLY "
+    '{"action":"goal","agent":"<A-id>","op":"set","objective":"<what to achieve>"}. '
+    'Read its live steps with op:"get"; rewrite the objective with op:"edit"; '
+    'op:"pause"|"resume"|"delete" manage it. Use `goal` when the report must PROVE '
+    "completion and you want to steer it mid-flight; use `dispatch` when you only need "
+    'the work done and its reply. NOTE the two meanings of "goal": the durable '
+    "objective (this action, the slash command, the plan's goal) versus the job/routine "
+    "`goal` field, which is only a delegation BRIEF — an AIM — handed as text with no "
+    "lifecycle. Do not confuse them. "
     "Several independent dispatches MAY go in one batch call (items with action "
     "dispatch in `calls`); different teammates run concurrently, same-teammate "
     "items sequentially. If you have teammates below you in the org chart, the "
@@ -2395,14 +2406,15 @@ def _apply_chat_subagent(sess, act, on_event, node=None, after=None, state=None)
         from longrun.agent import subagent as _sub
         _act = act if isinstance(act, dict) else {}
         _args = _act.get("args") if isinstance(_act.get("args"), dict) else {}
-        goal = str(_act.get("goal") or _args.get("goal")
-                   or _act.get("detail") or "").strip()
+        # 2026-11-28: the delegated brief is an AIM (`aim`); `goal` stays accepted.
+        goal = str(_act.get("aim") or _args.get("aim") or _act.get("goal")
+                   or _args.get("goal") or _act.get("detail") or "").strip()
         if not goal:
             on_event("tool.result", session=sess["id"], tool="subagent", ok=False,
-                     backend="harness", exit_code=1, summary="subagent: goal required")
-            persist_tool_card(sess, "subagent", False, error="goal required",
+                     backend="harness", exit_code=1, summary="subagent: aim required")
+            persist_tool_card(sess, "subagent", False, error="aim required",
                               backend="harness", node=node, after=after)
-            return "subagent error: goal required"
+            return "subagent error: aim required"
         try:
             max_steps = int(_act.get("max_steps", _args.get("max_steps",
                                                         _sub.default_steps())))
@@ -2412,7 +2424,7 @@ def _apply_chat_subagent(sess, act, on_event, node=None, after=None, state=None)
         # JAG-451: an optional named role brief (config/subagents.yaml).
         role = str(_act.get("role") or _args.get("role") or "").strip() or None
         on_event("tool.call", session=sess["id"], tool="subagent",
-                 args={"goal": goal, "max_steps": max_steps, "model": model,
+                 args={"aim": goal, "max_steps": max_steps, "model": model,
                        "role": role},
                  inline=True)
         spawned = _sub.spawn(goal, parent_run_id=sess["id"], max_steps=max_steps,
@@ -2447,12 +2459,12 @@ def _apply_chat_subagent(sess, act, on_event, node=None, after=None, state=None)
             _record_delegated(state, "subagent", goal, sid, out[:4000])
         on_event("tool.result", session=sess["id"], tool="subagent", ok=ok,
                  exit_code=0 if ok else 1, backend="subagent",
-                 args={"goal": goal, "max_steps": max_steps, "subagent_id": sid},
+                 args={"aim": goal, "max_steps": max_steps, "subagent_id": sid},
                  output=out[:4000],
                  summary="subagent %s: %s" % (sid, "done" if ok else "error"))
         # JAG-190: persist so the card survives a reload.
         persist_tool_card(sess, "subagent", ok,
-                          args={"goal": goal, "max_steps": max_steps,
+                          args={"aim": goal, "max_steps": max_steps,
                                 "subagent_id": sid},
                           result=out[:4000], exit_code=0 if ok else 1,
                           backend="subagent", node=node, after=after)
@@ -2506,8 +2518,9 @@ def _apply_chat_dispatch(sess, act, on_event, node=None, after=None, state=None)
         _args = _act.get("args") if isinstance(_act.get("args"), dict) else {}
         to = str(_act.get("agent") or _act.get("to") or _args.get("agent")
                  or _args.get("to") or "").strip()
-        goal = str(_act.get("goal") or _args.get("goal") or _act.get("detail")
-                    or "").strip()
+        # 2026-11-28: the delegated brief is an AIM (`aim`); `goal` stays accepted.
+        goal = str(_act.get("aim") or _args.get("aim") or _act.get("goal")
+                   or _args.get("goal") or _act.get("detail") or "").strip()
 
         def _fail(msg):
             on_event("tool.result", session=sess["id"], tool="dispatch", ok=False,
@@ -2517,13 +2530,13 @@ def _apply_chat_dispatch(sess, act, on_event, node=None, after=None, state=None)
             return "dispatch error: %s" % msg
 
         if not goal:
-            return _fail("goal required")
+            return _fail("aim required")
         # 2026-11-22 (session 4dc73d4ef973): a dispatch copied VERBATIM from the
         # instruction template — goal "..." — ran and burned two teammate turns on
         # an empty objective. A placeholder is not a goal: refuse it loudly so the
         # model substitutes the real subtask instead of paying for a no-op turn.
         if re.match(r"^(?:\.{2,}|…|<\s*[^>\n]{0,80}\s*>)$", goal):
-            return _fail("goal is a placeholder (%r), not a subtask — send the real "
+            return _fail("aim is a placeholder (%r), not a subtask — send the real "
                          "instruction text" % goal)
         if not to:
             return _fail('agent required (a teammate A-id, e.g. "A9")')
@@ -2562,7 +2575,7 @@ def _apply_chat_dispatch(sess, act, on_event, node=None, after=None, state=None)
         except Exception:
             pass
         on_event("tool.call", session=sess["id"], tool="dispatch",
-                 args={"agent": member.get("id"), "goal": goal, "session": sid2},
+                 args={"agent": member.get("id"), "aim": goal, "session": sid2},
                  inline=True)
         try:
             import threading
@@ -2639,11 +2652,11 @@ def _apply_chat_dispatch(sess, act, on_event, node=None, after=None, state=None)
             _record_delegated(state, "dispatch", member.get("id"), sid2, out)
         on_event("tool.result", session=sess["id"], tool="dispatch", ok=ok,
                  exit_code=0 if ok else 1, backend="harness",
-                 args={"agent": member.get("id"), "goal": goal, "session": sid2}, output=out,
+                 args={"agent": member.get("id"), "aim": goal, "session": sid2}, output=out,
                  summary="dispatch %s: %s" % (member.get("id"),
                                               "replied" if ok else "no reply"))
         persist_tool_card(sess, "dispatch", ok,
-                          args={"agent": member.get("id"), "goal": goal, "session": sid2},
+                          args={"agent": member.get("id"), "aim": goal, "session": sid2},
                           result=out, exit_code=0 if ok else 1, backend="harness",
                           node=node, after=after)
         if ok:
@@ -2667,7 +2680,7 @@ def _apply_chat_dispatch(sess, act, on_event, node=None, after=None, state=None)
         return "dispatch error: %s" % e
 
 
-def _dispatch_detached(sess, me, member, goal, on_event, node=None, after=None):
+def _dispatch_detached(sess, me, member, aim, on_event, node=None, after=None):
     """Start a dispatch as a JOB and hand back its handle (2026-11-08).
 
     Operator: *"dispatch can be done independently so it may be a direct call …
@@ -2689,7 +2702,7 @@ def _dispatch_detached(sess, me, member, goal, on_event, node=None, after=None):
         return "dispatch error: %s" % msg
 
     try:
-        res = jobs_mod.JOBS.create(goal, coordinator=member["id"],
+        res = jobs_mod.JOBS.create(aim, coordinator=member["id"],
                                    agents=[member["id"]], mode="run",
                                    assigned_by=me.get("id"))
     except Exception as e:  # noqa: BLE001 — delegation must never break chat
@@ -2706,21 +2719,187 @@ def _dispatch_detached(sess, me, member, goal, on_event, node=None, after=None):
            "independently of this one. Its reply will arrive here as a message "
            "when the job ends (queued if you are busy); read it any time with "
            'job.get {"job":"%s"}, or read the teammate\'s chat with sessions.read. '
-           "Continue your own work and do NOT re-dispatch the same goal."
+           "Continue your own work and do NOT re-dispatch the same aim."
            % (member.get("id"), member.get("name") or "", jid,
               member.get("session"), jid))
     on_event("tool.call", session=sess["id"], tool="dispatch",
-             args={"agent": member.get("id"), "goal": goal, "job": jid}, inline=True)
+             args={"agent": member.get("id"), "aim": aim, "job": jid}, inline=True)
     on_event("tool.result", session=sess["id"], tool="dispatch", ok=True,
              exit_code=0, backend="harness",
-             args={"agent": member.get("id"), "goal": goal, "job": jid},
+             args={"agent": member.get("id"), "aim": aim, "job": jid},
              output=out, summary="dispatch %s: job %s started"
                                  % (member.get("id"), jid))
     persist_tool_card(sess, "dispatch", True,
-                      args={"agent": member.get("id"), "goal": goal, "job": jid,
+                      args={"agent": member.get("id"), "aim": aim, "job": jid,
                             "session": member.get("session")},
                       result=out, exit_code=0, backend="harness", node=node, after=after)
     return out
+
+
+def _apply_chat_goal_action(sess, act, on_event, node=None, after=None, state=None):
+    """Harness action `goal` (operator 2026-11-28): a LEAD hands a DIRECT REPORT the
+    SAME durable goal the `/goal` slash command creates — ONE backend
+    (`plan/goal.py` + `httpapi.start_goal_turn`), never a second mechanism — and can
+    READ or EDIT the report's live steps.
+
+    Operator (Telegram session, 2026-11-27): *"un capo puo dare il comando slash goal
+    all'agente sotto e modificarglielo anche live ... leggendo il suo step intermedi
+    ... proprio con stesso backend corrente del goal"*.
+
+    The distinction this action exists for: the JOB/ROUTINE `goal` field is a plain
+    delegation BRIEF (an AIM) handed as text, with no lifecycle; THIS sets the durable,
+    independently-verified GOAL on the other session (statuses active/paused/completed,
+    steps read from the plan graph, a verdict the harness recomputes). Same word,
+    two names — `aim` for the brief, `goal` for the durable objective.
+
+    `op`: get | set | edit | pause | resume | delete. Scope mirrors `dispatch`:
+    only one of your DIRECT reports may be addressed.
+    """
+    try:
+        from longrun.agent import agents as agents_mod
+        from longrun.plan import goal as goal_mod
+
+        _act = act if isinstance(act, dict) else {}
+        _args = _act.get("args") if isinstance(_act.get("args"), dict) else {}
+
+        def _pick(*keys):
+            for k in keys:
+                v = _act.get(k)
+                if v in (None, "") and k in _args:
+                    v = _args.get(k)
+                if v not in (None, ""):
+                    return v
+            return None
+
+        to = str(_pick("agent", "to") or "").strip()
+        op = str(_pick("op", "verb", "cmd") or "get").strip().lower()
+        objective = str(_pick("objective", "goal", "detail") or "").strip()
+
+        def _fail(msg):
+            on_event("tool.result", session=sess["id"], tool="goal", ok=False,
+                     backend="harness", exit_code=1, summary="goal: " + msg)
+            persist_tool_card(sess, "goal", False, error=msg, backend="harness",
+                              node=node, after=after)
+            return "goal error: %s" % msg
+
+        if not to:
+            return _fail('agent required (a direct report A-id, e.g. "A9")')
+        me = agents_mod.REGISTRY.get(sess["id"]) or {}
+        if not me.get("id"):
+            return _fail("this session is not an org agent — designate it first")
+        member = agents_mod.REGISTRY.resolve(to)
+        team = agents_mod.REGISTRY.team_of(me["id"])
+        if not member or member.get("id") not in team or member.get("id") == me.get("id"):
+            return _fail("%r is not one of your direct reports (%s)"
+                         % (to, ", ".join(team[1:]) or "none"))
+        sid2 = member.get("session")
+        if not sid2:
+            return _fail("teammate %s has no session" % member.get("id"))
+
+        on_event("tool.call", session=sess["id"], tool="goal",
+                 args={"agent": member.get("id"), "op": op,
+                       "objective": objective[:200], "session": sid2}, inline=True)
+        model2 = _pick("model") or member.get("model") or None
+
+        def _pursue():
+            """Start the SAME detached pursuit turn `/goal resume` starts."""
+            try:
+                from longrun.core import httpapi as _httpapi
+                return _httpapi.start_goal_turn(sid2, model2)
+            except Exception:  # noqa: BLE001 — the goal is set even if no turn starts
+                return None
+
+        if op in ("get", "read", "status", "show"):
+            st = goal_mod.status(sid2) or {}
+            rec = st.get("goal") or {}
+            pr = st.get("progress") or {}
+            if not rec:
+                out = ('%s (%s) has NO durable goal on session %s. Set one with '
+                       'op:"set" and an `objective`.'
+                       % (member.get("id"), member.get("name") or "", sid2))
+            else:
+                _miss = (st.get("verification") or {}).get("missing") or []
+                out = ("%s (%s) goal [session %s]\n"
+                       "- objective: %s\n"
+                       "- status: %s\n"
+                       "- steps: %d/%d done, %d open, %d struck, %d unproven\n"
+                       "- verified: %s%s"
+                       % (member.get("id"), member.get("name") or "", sid2,
+                          rec.get("objective") or "(none)",
+                          st.get("effective_status") or "",
+                          int(pr.get("done") or 0), int(pr.get("steps") or 0),
+                          int(pr.get("open") or 0), int(pr.get("struck") or 0),
+                          int(pr.get("unproven") or 0),
+                          "yes" if pr.get("complete") else "no",
+                          (" — could NOT confirm: " + "; ".join(
+                              str(m) for m in _miss[:3])) if _miss else ""))
+        elif op in ("set", "assign", "start"):
+            if not objective:
+                return _fail('op "set" needs an `objective` (what to achieve)')
+            ok, reason = goal_mod.can_start(sid2)
+            if not ok:
+                return _fail(reason)
+            rec = goal_mod.start(sid2, objective)
+            publish("goal.updated", session=sid2, goal=rec)
+            turn = _pursue()
+            out = ("Set the durable goal on %s (%s) session %s and started the "
+                   "pursuing turn%s.\n- objective: %s\n- the report works until the "
+                   "goal is evidence-verified; read/edit/pause it live with this same "
+                   'action (op:"get"|"edit"|"pause"|"resume").'
+                   % (member.get("id"), member.get("name") or "", sid2,
+                      (" (turn %s)" % turn) if turn else " — none started (retry op:\"resume\")",
+                      objective[:400]))
+        elif op == "edit":
+            if not objective:
+                return _fail("op \"edit\" needs the new `objective`")
+            rec = goal_mod.edit(sid2, objective)
+            if rec is None:
+                return _fail("no goal exists on %s to edit — use op:\"set\""
+                             % member.get("id"))
+            publish("goal.updated", session=sid2, goal=rec)
+            out = ("Edited the goal on %s (%s): the objective is now %r."
+                   % (member.get("id"), member.get("name") or "", objective[:400]))
+        elif op in ("pause", "stop"):
+            rec = goal_mod.pause(sid2, "paused by %s" % me.get("id"))
+            if rec is None:
+                return _fail("%s has no ACTIVE goal to pause" % member.get("id"))
+            out = ("Paused the goal on %s (%s)."
+                   % (member.get("id"), member.get("name") or ""))
+        elif op in ("resume", "continue"):
+            rec = goal_mod.resume(sid2)
+            if rec is None:
+                return _fail("%s has no PAUSED goal to resume" % member.get("id"))
+            turn = _pursue()
+            out = ("Resumed the goal on %s (%s) and started the pursuing turn%s."
+                   % (member.get("id"), member.get("name") or "",
+                      (" (turn %s)" % turn) if turn else " — none started"))
+        elif op in ("delete", "remove", "clear"):
+            if not goal_mod.delete(sid2):
+                return _fail("%s has no goal to delete" % member.get("id"))
+            out = ("Deleted the goal on %s (%s) — no record left."
+                   % (member.get("id"), member.get("name") or ""))
+        else:
+            return _fail("unknown op %r (use get|set|edit|pause|resume|delete)" % op)
+
+        on_event("tool.result", session=sess["id"], tool="goal", ok=True,
+                 exit_code=0, backend="harness",
+                 args={"agent": member.get("id"), "op": op, "session": sid2},
+                 output=out, summary="goal %s %s" % (op, member.get("id")))
+        persist_tool_card(sess, "goal", True,
+                          args={"agent": member.get("id"), "op": op, "session": sid2},
+                          result=out, exit_code=0, backend="harness",
+                          node=node, after=after)
+        return out
+    except Exception as e:  # noqa: BLE001 — a goal operation must never break chat
+        try:
+            on_event("tool.result", session=sess["id"], tool="goal", ok=False,
+                     backend="harness", exit_code=1, stderr=str(e)[:200],
+                     summary="goal: error")
+            persist_tool_card(sess, "goal", False, error=str(e)[:200],
+                              backend="harness", node=node, after=after)
+        except Exception:  # noqa: BLE001
+            pass
+        return "goal error: %s" % e
 
 
 # ---------------------------------------------------------------- JAG-533 ----
@@ -2835,15 +3014,20 @@ def _is_dispatch_item(it):
         return False
     action = str(it.get("action") or "").strip().lower()
     tool = str(it.get("tool") or it.get("name") or "").strip().lower()
+    # `goal` is its OWN top-level harness action (2026-11-28) — it addresses an
+    # agent and may carry an objective under the `goal` key, so it MUST NOT be
+    # mistaken for a dispatch by the bare-shape rule below.
+    if action == "goal" or tool == "goal":
+        return False
     if action == "dispatch" or tool == "dispatch":
         return action != "subagent"
     args = it.get("args")
     args = args if isinstance(args, dict) else {}
     has_to = bool(str(it.get("agent") or it.get("to") or args.get("agent")
                         or args.get("to") or "").strip())
-    has_goal = bool(str(it.get("goal") or args.get("goal") or it.get("detail")
-                          or "").strip())
-    return bool(has_to and has_goal and action != "subagent")
+    has_goal = bool(str(it.get("aim") or args.get("aim") or it.get("goal")
+                         or args.get("goal") or it.get("detail") or "").strip())
+    return bool(has_to and has_goal and action not in ("subagent", "goal"))
 
 
 def _dispatch_key(it):
@@ -2901,7 +3085,9 @@ def _split_batch_items(items):
             continue
         if _is_dispatch_item(it):
             dispatches.append(it)
-        elif str(it.get("action") or "") == "subagent" or it.get("goal"):
+        elif str(it.get("action") or "") == "subagent" or (
+                (it.get("aim") or it.get("goal"))
+                and str(it.get("action") or "") != "goal"):
             subs.append(it)
         else:
             tools.append(it)
@@ -3190,7 +3376,8 @@ def _apply_chat_batch(sess, act, on_event, av02, node=None, after=None, hist=Non
         # now durable and introspectable.
         from longrun.agent import session_jobs as _sj
         created = _sj.create(sess["id"],
-                             str(act.get("goal") or act.get("thought") or "batch"),
+                             str(act.get("aim") or act.get("goal")
+                                 or act.get("thought") or "batch"),
                              sub_items)
         if not created.get("ok"):
             for it in sub_items:
@@ -4057,7 +4244,7 @@ _TODO_ACTION_ALIASES = {
 }
 
 _HARNESS_ACTION_NAMES = ("todo.write", "todo.update", "todo.replan", "subagent",
-                         "dispatch", "batch",
+                         "dispatch", "goal", "batch",
                          "plan_step", "complete_plan_step", "add_task",
                          "complete_task", "note", "finish") + tuple(_TODO_ACTION_ALIASES)
 
@@ -5017,7 +5204,7 @@ def _normalize_action(act):
         if name in _HARNESS_ACTION_NAMES:
             inner = dict(act.get("args") or {})
             inner["action"] = _TODO_ACTION_ALIASES.get(name, name)
-            for k in ("thought", "note", "todos", "steps", "goal", "detail",
+            for k in ("thought", "note", "todos", "steps", "aim", "goal", "detail",
                       "agent", "to",
                       "model", "max_steps", "calls", "tool_calls"):
                 if k in act and k not in inner:
@@ -5047,10 +5234,11 @@ def _normalize_action(act):
         _dargs = act.get("args") if isinstance(act.get("args"), dict) else {}
         if ((act.get("agent") or act.get("to") or _dargs.get("agent")
                 or _dargs.get("to"))
-                and (act.get("goal") or _dargs.get("goal"))):
+                and (act.get("aim") or _dargs.get("aim")
+                     or act.get("goal") or _dargs.get("goal"))):
             out = dict(_dargs) if _dargs else dict(act)
             out["action"] = "dispatch"
-            for k in ("agent", "to", "goal", "detail", "thought"):
+            for k in ("agent", "to", "aim", "goal", "detail", "thought"):
                 if k in act and k not in out:
                     out[k] = act[k]
             return out
@@ -5058,7 +5246,7 @@ def _normalize_action(act):
     # A weak model writes the right body under a wrong/labelled action ("update",
     # "set_todos", ...); the payload is the reliable signal, not the action name.
     if a not in ("tool", "todo.write", "todo.update", "todo.replan", "subagent",
-                   "dispatch"):
+                   "dispatch", "goal"):
         if isinstance(act.get("todos"), list):
             return dict(act, action="todo.write")
         if isinstance(act.get("steps"), list):
@@ -6666,6 +6854,41 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 on_delta("think", _th + "\n")
             obs = _apply_chat_dispatch(sess, act, on_event, node=_cur_node(),
                                        after=_after(), state=_deliv_state)
+            msgs.append({"role": "assistant", "content": answer})
+            _inject(obs + "\n\nContinue: call the next tool, or report the result.",
+                    "observation")
+            continue
+        if isinstance(act, dict) and act.get("action") == "goal":
+            # 2026-11-28 (operator): a LEAD hands a DIRECT REPORT the SAME durable
+            # goal the `/goal` slash command creates (one backend: `plan/goal.py`),
+            # and reads/edits its live steps — the job/routine `goal` field is a
+            # delegation BRIEF (an aim), a different object. This action is what
+            # makes the two distinguishable, and what `/goal` could never do from
+            # inside a turn.
+            if plan_only:
+                # The master's plan turn decomposes and stops: authoring work on a
+                # teammate is execution, not planning.
+                msgs.append({"role": "assistant", "content": answer})
+                _inject("SYSTEM (harness) — PLAN-ONLY turn: setting a goal on a "
+                        "teammate is not allowed here. Record the plan and stop.", "nudge")
+                work_steps += 1
+                _total_work_steps += 1
+                continue
+            # A `get` is a READ, not a work step (like any tool call); every
+            # mutating op (set/edit/pause/resume/delete) is real work.
+            _gop = str(act.get("op")
+                       or (act.get("args") if isinstance(act.get("args"), dict) else {})
+                       .get("op") or "get").strip().lower()
+            if _gop not in ("get", "read", "status", "show"):
+                work_steps += 1
+                _total_work_steps += 1
+            used_tools.append("goal")
+            _th = str(act.get("thought") or "").strip()
+            if _th:
+                _think_buf["t"] += _th + "\n"
+                on_delta("think", _th + "\n")
+            obs = _apply_chat_goal_action(sess, act, on_event, node=_cur_node(),
+                                          after=_after(), state=_deliv_state)
             msgs.append({"role": "assistant", "content": answer})
             _inject(obs + "\n\nContinue: call the next tool, or report the result.",
                     "observation")

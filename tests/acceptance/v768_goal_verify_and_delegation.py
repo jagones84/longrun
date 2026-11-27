@@ -486,5 +486,108 @@ check("I7b a verdict older than the plan reports stale (and says to re-verify)",
       and any("re-verify" in m for m in _st7["verification"]["missing"]),
       _st7["verification"].get("missing", [])[-1:])
 
+# ============================================================================
+# J — the `goal` HARNESS ACTION (operator 2026-11-28): a LEAD hands a DIRECT
+#     REPORT the SAME durable goal the `/goal` slash command creates — one
+#     backend (plan/goal.py + httpapi.start_goal_turn), never a second one — and
+#     reads/edits the report's live steps. The job/routine `goal` field stays a
+#     delegation BRIEF (an aim); THIS is the durable, verified objective.
+# ============================================================================
+_lead_id, _lead_sid = agent("Goal Lead")
+_rep_id, _rep_sid = agent("Goal Report", _lead_id)
+_other_id, _ = agent("Not My Report")   # no reports_to -> not a direct report
+
+
+def _call_goal(act):
+    seen = []
+    out = _ag._apply_chat_goal_action(
+        {"id": _lead_sid}, act, lambda kind, **d: seen.append((kind, d)))
+    return out, seen
+
+
+# Patch the SAME backend the action must reuse: `start_goal_turn` (the detached
+# turn `/goal resume` starts). A deterministic test must not spawn a real turn.
+_http_mod = __import__("longrun.core.httpapi", fromlist=["start_goal_turn"])
+_real_sgt = _http_mod.start_goal_turn
+_calls = {"n": 0}
+_http_mod.start_goal_turn = (lambda sid, model=None:
+                             _calls.__setitem__("n", _calls["n"] + 1) or "turn-" + sid[:4])
+
+# J1: op:set writes the durable goal on the REPORT's session and pursues it.
+_out, _ = _call_goal({"action": "goal", "agent": _rep_id, "op": "set",
+                      "objective": "ship the widget"})
+_rec = G.load(_rep_sid) or {}
+check("J1 op:set creates the durable goal on the report's session",
+      _rec.get("objective") == "ship the widget" and _rec.get("status") == "active",
+      _rec)
+check("J1b op:set starts the SAME pursuing turn the slash command starts",
+      _calls["n"] == 1 and "started the pursuing turn" in _out, _out[:90])
+check("J1c the goal lands on the REPORT's session, not the lead's",
+      G.load(_lead_sid) is None, G.load(_lead_sid))
+
+# J2: op:get reads the live objective + status + step counts back.
+_out2, _ = _call_goal({"action": "goal", "agent": _rep_id, "op": "get"})
+check("J2 op:get reports the objective, status and step counts",
+      "ship the widget" in _out2 and "status: active" in _out2 and "steps:" in _out2,
+      _out2[:120])
+
+# J3: op:edit rewrites the objective in place (live).
+_call_goal({"action": "goal", "agent": _rep_id, "op": "edit",
+            "objective": "ship it twice"})
+check("J3 op:edit replaces the objective in place",
+      (G.load(_rep_sid) or {}).get("objective") == "ship it twice"
+      and (G.load(_rep_sid) or {}).get("status") == "active", G.load(_rep_sid))
+
+# J4/J5: op:pause pauses; op:resume reactivates AND restarts the pursuing turn.
+_call_goal({"action": "goal", "agent": _rep_id, "op": "pause"})
+check("J4 op:pause pauses the report's active goal",
+      (G.load(_rep_sid) or {}).get("status") == "paused", G.load(_rep_sid))
+_before = _calls["n"]
+_call_goal({"action": "goal", "agent": _rep_id, "op": "resume"})
+check("J5 op:resume reactivates the goal AND restarts the pursuing turn",
+      (G.load(_rep_sid) or {}).get("status") == "active"
+      and _calls["n"] == _before + 1, (_calls, G.load(_rep_sid)))
+
+# J6: op:delete leaves no record; a later get says so plainly.
+_call_goal({"action": "goal", "agent": _rep_id, "op": "delete"})
+check("J6 op:delete removes the goal record entirely", G.load(_rep_sid) is None,
+      G.load(_rep_sid))
+_out6b, _ = _call_goal({"action": "goal", "agent": _rep_id, "op": "get"})
+check("J6b op:get on a session with no goal says so (never a blank)",
+      "NO durable goal" in _out6b, _out6b[:90])
+
+# J7: SCOPE — only a DIRECT report may be addressed (same rule as dispatch).
+_out7, _ = _call_goal({"action": "goal", "agent": _other_id, "op": "set",
+                       "objective": "nope"})
+check("J7 a non-direct-report is refused (scope mirrors dispatch)",
+      _out7.startswith("goal error") and "not one of your direct reports" in _out7,
+      _out7[:100])
+
+# J8: a `goal` action is never misrouted as a dispatch or a subagent job.
+check("J8a _is_dispatch_item() refuses a `goal` action",
+      _ag._is_dispatch_item({"action": "goal", "agent": _rep_id, "op": "set",
+                             "goal": "x"}) is False)
+_tools, _subs, _disp = _ag._split_batch_items(
+    [{"action": "goal", "agent": _rep_id, "op": "get", "goal": "x"}])
+check("J8b a `goal` action is not classified as a subagent job", not _subs and not _disp)
+check("J8c the tool envelope \"goal\" is coerced to the harness action",
+      _ag._normalize_action({"action": "tool", "tool": "goal",
+                             "args": {"agent": _rep_id, "op": "get"}}).get("action")
+      == "goal")
+check("J8d `goal` is a recognised harness action name",
+      "goal" in _ag._HARNESS_ACTION_NAMES)
+
+# J9: the loop routes it, and the delegation contract teaches the distinction.
+_src_ag = open(os.path.join(REPO, "src", "longrun", "agent", "agent.py"),
+               encoding="utf-8").read()
+check("J9a the chat loop routes the top-level `goal` action",
+      'act.get("action") == "goal"' in _src_ag
+      and "_apply_chat_goal_action(" in _src_ag)
+check("J9b the contract documents `goal` vs the delegation brief (aim)",
+      '"action":"goal"' in _src_ag and "delegation BRIEF" in _src_ag
+      and "an AIM" in _src_ag)
+
+_http_mod.start_goal_turn = _real_sgt
+
 print("\n%d/%d checks passed" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

@@ -192,6 +192,11 @@ _feed = deque(maxlen=MAX_FEED_EVENTS)
 _feed_seq = 0
 _sse_queues = set()  # each: queue.Queue of str chunks
 _sse_lock = threading.Lock()  # guards _sse_queues add/discard/snapshot (SSE fan-out)
+# 2026-11-28: non-SSE subscribers (the Telegram channel). A listener is a callable
+# `fn(event)` invoked AFTER the event is durable and fanned out to SSE, OUTSIDE every
+# lock — a listener may do I/O (editing a Telegram message) and must never stall the
+# feed or hold `_feed_lock`. Registered through `add_listener` / `remove_listener`.
+_listeners: "list" = []  # list of callables `fn(event: dict)`
 # JAG-181: per-session registry of chat turns that are STILL running. The worker
 # thread is independent of the HTTP request, so a page refresh/session switch does
 # NOT stop the turn — it only drops the browser's SSE channel. This lets the WebUI
@@ -276,6 +281,31 @@ def set_turn_event_context(session, turn_id):
     _turn_event_context.value = (session, turn_id) if turn_id else None
 
 
+def add_listener(fn):
+    """Register `fn(event)` for every published event (idempotent). Returns True.
+
+    One owner for non-SSE subscribers; the Telegram channel is the first user.
+    Listeners run OUTSIDE every lock and a broken one is swallowed, so a slow or
+    failing subscriber can never stall the durable log or the SSE fan-out.
+    """
+    if not callable(fn):
+        return False
+    with _sse_lock:
+        if fn not in _listeners:
+            _listeners.append(fn)
+    return True
+
+
+def remove_listener(fn):
+    """Unregister a listener added with `add_listener` (True when it was present)."""
+    with _sse_lock:
+        try:
+            _listeners.remove(fn)
+        except ValueError:
+            return False
+    return True
+
+
 def publish(kind, **data):
     """Record an event in the SQLite store + memory cache, fan out to SSE.
 
@@ -327,6 +357,16 @@ def publish(kind, **data):
         _mtx.call_hook("core", "on_event", event, default=None)
     except Exception:  # noqa: BLE001
         pass
+    # Non-SSE subscribers (the Telegram channel): snapshot under the lock, call
+    # OUTSIDE it, swallow a broken one — the durable log and SSE are already done.
+    if _listeners:
+        with _sse_lock:
+            _subs = list(_listeners)
+        for _fn in _subs:
+            try:
+                _fn(event)
+            except Exception:  # noqa: BLE001 — a subscriber must never break the feed
+                pass
     return event
 
 

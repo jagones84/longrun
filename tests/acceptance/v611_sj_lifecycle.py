@@ -40,8 +40,8 @@ check("T1 create ok with SJ ids + dep mapped to subjob ids",
       and r.get("subjobs") == ["SJ1.1", "SJ1.2"]
       and r.get("labels") == {"SJ1.1": "a", "SJ1.2": "b"}, r)
 doc_jobs = r.get("record", {})
-check("T2 record carries goal/mode/pending status",
-      doc_jobs.get("goal") == "probe goal"
+check("T2 record carries aim/mode/pending status",
+      doc_jobs.get("aim") == "probe goal"
       and doc_jobs.get("status") == "created", doc_jobs.get("status"))
 
 check("T3 empty subjobs refused",

@@ -162,9 +162,9 @@ try:
     check("E6 an empty patch is REFUSED, not a silent ok",
           silent.get("ok") is False and "nothing to update" in str(silent.get("error")), silent)
 
-    up = rr.REGISTRY.update(rid, goal="probe goal v2", disabled=False)
-    check("E7 update applies the new goal",
-          up.get("ok") is True and (rr.REGISTRY.get(rid) or {}).get("goal") == "probe goal v2", up)
+    up = rr.REGISTRY.update(rid, aim="probe goal v2", disabled=False)
+    check("E7 update applies the new aim",
+          up.get("ok") is True and (rr.REGISTRY.get(rid) or {}).get("aim") == "probe goal v2", up)
     check("E8 `disabled:false` re-enables it", (rr.REGISTRY.get(rid) or {}).get("enabled") is True)
 except Exception as e:  # noqa: BLE001
     check("E9 the routines registry imports and runs offline", False, repr(e))

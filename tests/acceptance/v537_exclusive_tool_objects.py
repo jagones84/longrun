@@ -221,9 +221,9 @@ worker_id = (worker.get("agent") or {}).get("id")
 j_new = call("job.create",
              {"goal": "ship the release notes", "coordinator": boss_id, "agents": [worker_id]})
 jid = (j_new.get("job") or {}).get("id")
-check("D1 jobs.create stores goal + coordinator + workers",
+check("D1 jobs.create stores aim + coordinator + workers",
       j_new.get("ok") is True and jid
-      and (j_new["job"].get("goal") == "ship the release notes")
+      and (j_new["job"].get("aim") == "ship the release notes")
       and worker_id in (j_new["job"].get("agents") or []), j_new.get("job"))
 check("D2 jobs.create requires at least one worker agent",
       call("job.create", {"goal": "x", "agents": []}).get("ok") is False)
@@ -256,7 +256,7 @@ rt_upd = call("routine.update",
 rt_rec = RT.REGISTRY.get(rid) or {}
 check("E2 routines.update edits only the fields passed (id and runs survive)",
       rt_upd.get("ok") is True
-      and rt_rec.get("goal") == "check the queue harder"
+      and rt_rec.get("aim") == "check the queue harder"
       and rt_rec.get("every_seconds") == 300 and rt_rec.get("enabled") is False
       and rt_rec.get("id") == rid, rt_rec)
 check("E3 routines.get/list read the real registry",

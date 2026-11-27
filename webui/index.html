@@ -4703,7 +4703,7 @@
         <h2 title="External events become one-agent jobs. Each inlet has its own secret; observe mode records what it would do without starting a job.">Webhooks · external events</h2>
         <div class="card" id="whLive"><div class="remaining">loading…</div></div>
         <div class="card">
-          <div class="hcard-hd" title="One inlet = one URL + one secret + one agent + one goal."><span class="dot"></span><b>New inlet</b><span class="hc-sub">id · agent · goal</span></div>
+          <div class="hcard-hd" title="One inlet = one URL + one secret + one agent + one aim."><span class="dot"></span><b>New inlet</b><span class="hc-sub">id · agent · aim</span></div>
           <div class="hrow">
             <label title="URL segment: /api/webhook/&lt;id&gt;. Lowercase letters, digits, - and _.">id <input id="whId" placeholder="github-issues" spellcheck="false" autocomplete="off"></label>
             <label title="Who receives the work: an org agent id (A12) or a session id.">agent <input id="whAgent" placeholder="A12 or session id" spellcheck="false" autocomplete="off"></label>
@@ -4711,7 +4711,7 @@
             <label title="Where the event name lives: a dotted path in the JSON body, or header:X-GitHub-Event.">event field <input id="whField" value="event" spellcheck="false" autocomplete="off"></label>
             <label title="Comma-separated substrings matched against the event name. Empty = every event.">only events containing <input id="whMatch" placeholder="issues, pull_request" autocomplete="off"></label>
           </div>
-          <label class="u-mt8 u-db" title="What the agent must do with an event of this inlet.">goal
+          <label class="u-mt8 u-db" title="What the agent must do with an event of this inlet (the delegation brief).">aim
             <textarea id="whGoal" rows="3" placeholder="What should the agent do with this event?"></textarea></label>
           <button class="ghost u-mt8" data-call="saveWebhook" title="create or update this inlet">save inlet</button>
           <div id="whSecret" class="u-mt8"></div>
@@ -5071,6 +5071,22 @@
           </div>
           <div id="connList" class="u-mt8"></div>
           <div id="connResult" class="remaining u-mt6"></div>
+        </div>
+      </div>
+      <!-- Channels (2026-11-28): an inbox that talks to a Longrun SESSION — today
+           Telegram. The bot drives the dedicated session `telegram` (a twin of the
+           Architect: same powers, own transcript, deletable); pairing decides who
+           may drive it. Token lives in Keys (`TELEGRAM_BOT_TOKEN`). -->
+      <div class="sw-cat" data-cat="channels" hidden>
+        <h2>Channels · messaging</h2>
+        <div class="card">
+          <div class="remaining">A channel lets you talk to Longrun from a chat app.
+            The Telegram bot drives the dedicated session <code>telegram</code> — a
+            twin of the Architect (same powers, own transcript, deletable). Put the
+            bot token in <b>Keys</b> (<code>TELEGRAM_BOT_TOKEN</code>) or paste it
+            below, then approve your chat with its pairing code.</div>
+          <div id="tgPanel" class="u-mt8"></div>
+          <div id="tgResult" class="remaining u-mt6"></div>
         </div>
       </div>
       <!-- Commands: the operator's own `/` commands. Picking one expands its PROMPT
@@ -5434,7 +5450,7 @@
              paragraph and a "depth writes config/…" footnote — three explanations
              of things a hover answers. They are tooltips on their own headings
              now (operator: "troppo scritte … servono già appare col mouse over"). -->
-        <h2 title="A subagent does NOT share the parent's context: fresh transcript, its own task list, same tools — it sees only the goal (plus an optional role brief). A delegation must therefore be a complete, self-contained instruction. This panel only CONFIGURES the engine: Settings ▸ Swarm & blackboard runs it.">Subagents · delegated workers
+        <h2 title="A subagent does NOT share the parent's context: fresh transcript, its own task list, same tools — it sees only the aim (plus an optional role brief). A delegation must therefore be a complete, self-contained instruction. This panel only CONFIGURES the engine: Settings ▸ Swarm & blackboard runs it.">Subagents · delegated workers
           <button class="lnk" data-call="gotoOrchestrate" title="run this engine: split a goal across N throwaway subagents (Settings ▸ Swarm & blackboard)">→ swarm</button></h2>
         <h2 title="Optional model tried when the primary fails (empty = no subagent-specific fallback). One source of truth: this writes config/routing.yaml ▸ roles.subagent.model and roles.subagent.fallbacks; Models does not duplicate these controls.">Model &amp; failover</h2>
         <div class="card">
@@ -5497,10 +5513,10 @@
           <div class="remaining u-mt4" id="bbMsg" role="status" aria-live="polite"></div>
           <div id="bbList" class="u-mt6"></div>
         </div>
-        <h2 title="One coordinator call plus one call per worker — it spends N+1 real model turns. Results land on the blackboard above; progress is visible in the Feed.">Swarm · decompose a goal</h2>
+        <h2 title="One coordinator call plus one call per worker — it spends N+1 real model turns. Results land on the blackboard above; progress is visible in the Feed.">Swarm · decompose an aim</h2>
         <div class="card">
           <div class="u-df u-g6 u-aic u-mt6 u-fww">
-            <input aria-label="goal to decompose" id="swGoal" class="inp u-f1 u-p610 u-fs12" placeholder="the goal to decompose…">
+            <input aria-label="aim to decompose" id="swGoal" class="inp u-f1 u-p610 u-fs12" placeholder="the aim to decompose…">
             <label class="remaining u-df u-g6 u-aic">workers<input id="swWorkers" type="number" min="1" max="8" value="3" class="inp u-p610 u-fs12" style="width:56px"></label>
             <label class="remaining u-df u-g6 u-aic" title="blank = the subagent step budget from config/subagents.yaml">max steps<input id="swSteps" type="number" min="1" max="12" placeholder="auto" class="inp u-p610 u-fs12" style="width:56px"></label>
             <button class="ghost" id="swRun" data-call="runSwarm" title="POST /api/swarm/run — spawns real subagents">▶ run</button>
@@ -7199,7 +7215,7 @@ function updateToolCard(data) {
     const _da = data.args;
     if (tool === "dispatch" && _da && typeof _da === "object" && _da.session &&
         !card.querySelector(".xlink")) {
-      const _g = String(_da.goal || "").slice(0, 40);
+      const _g = String(_da.aim || _da.goal || "").slice(0, 40);
       const _head = card.querySelector(".toolcard-head");
       if (_head) _head.appendChild(_xlinkBtn(
         "↗ open", "open this teammate's chat at the delegated message",
@@ -8879,6 +8895,7 @@ const _SLASH_RUN = {
   new: (sid) => newChat(sid),
   unlock: (sid) => docUnlock(sid),
   context: (sid) => openContextDetails(sid),   // 2026-11-22: `/context` runs the RH card
+  models: () => openModelMenu(),               // 2026-11-28: `/models` opens the model picker
   restart: (sid) => restartService(sid),  // 2026-11-22: `/restart` calls `harness.restart`
 };
 function _applySlashCatalog(r) {
@@ -13091,7 +13108,7 @@ async function _showJobDetail(jid, n) {
   box.innerHTML =
     `<div style="color:var(--txt)"><b>job ${esc(parent)}</b> · ${esc(j.status || "")}` +
     (j.coordinator ? ` · coordinator ${esc(j.coordinator)}` : "") + `</div>` +
-    `<div style="margin:4px 0">${esc(j.goal || "(no goal text)")}</div>` +
+    `<div style="margin:4px 0">${esc(j.aim || j.goal || "(no aim text)")}</div>` +
     subHtml +
     (team ? `<div class="remaining">team: ${esc(team)}</div>` : "") +
     `<div class="remaining">seen from todo ${esc(_todoid(n))} · ${esc(n.id || "")}</div>` +
@@ -13481,6 +13498,12 @@ function chooseModel(ref) {
   // JAG-258: re-measure the context bar against the newly selected model, so the
   // bar and the auto-compaction trigger stay on the same budget.
   loadCtx();
+}
+/* 2026-11-28: ONE opener for the model picker — the `model-btn` and the `/models`
+   slash command both call it, so the two entry points can never drift. */
+function openModelMenu() {
+  const m = $("modelMenu"); if (!m) return;
+  m.hidden = false; _mmMode = "chat"; renderModelMenu();
 }
 $("model-btn").onclick = (e) => { e.stopPropagation(); const m = $("modelMenu"); const open = m.hidden; m.hidden = !open; if (open) { _mmMode = "chat"; renderModelMenu(); } };
 document.addEventListener("click", e => {
@@ -18802,7 +18825,7 @@ const SETTINGS_CATS = [
   ["subagents", "Subagents"], ["orchestrate", "Swarm & blackboard"], ["tools", "Tools & approvals"],
   ["permissions", "Permissions"], ["sandbox", "Sandbox"],
   ["mcp", "MCP"],
-  ["connectors", "Connectors"], ["commands", "Commands"],
+  ["connectors", "Connectors"], ["channels", "Channels"], ["commands", "Commands"],
   ["skills", "Skills"], ["rules", "Rules"], ["knowledge", "Knowledge"],
   ["compaction", "Compaction"],
   ["improvement", "Improvements"],
@@ -19130,7 +19153,7 @@ function webhookEdit(id) {
   if (!h) return;
   if ($("whId")) $("whId").value = h.id || "";
   if ($("whAgent")) $("whAgent").value = h.agent || "";
-  if ($("whGoal")) $("whGoal").value = h.goal || "";
+  if ($("whGoal")) $("whGoal").value = h.aim || h.goal || "";
   if ($("whMode")) $("whMode").value = h.mode || "run";
   if ($("whField")) $("whField").value = h.event_field || "event";
   if ($("whMatch")) $("whMatch").value = (h.match_any || []).join(", ");
@@ -19143,13 +19166,13 @@ async function saveWebhook() {
   const body = {
     id: (($("whId") || {}).value || "").trim().toLowerCase(),
     agent: (($("whAgent") || {}).value || "").trim(),
-    goal: (($("whGoal") || {}).value || "").trim(),
+    aim: (($("whGoal") || {}).value || "").trim(),
     mode: (($("whMode") || {}).value || "run"),
     event_field: (($("whField") || {}).value || "event").trim(),
     match_any: (($("whMatch") || {}).value || "").split(",").map(s => s.trim()).filter(Boolean),
   };
-  if (!body.id || !body.agent || !body.goal) {
-    who("user", "id, agent and goal are required");
+  if (!body.id || !body.agent || !body.aim) {
+    who("user", "id, agent and aim are required");
     return;
   }
   const res = await api("POST", "/api/webhooks", body);
@@ -19189,7 +19212,7 @@ async function webhookToggle(id) {
   const h = _whCache[id];
   if (!h) return;
   const res = await api("POST", "/api/webhooks", {
-    id: h.id, agent: h.agent, goal: h.goal, mode: h.mode,
+    id: h.id, agent: h.agent, aim: (h.aim || h.goal), mode: h.mode,
     event_field: h.event_field, match_any: h.match_any, enabled: !h.enabled,
   });
   if (!res || res.ok !== true) who("user", "refused: " + String((res && res.error) || "?"));
@@ -19261,6 +19284,7 @@ function settingsCategory(name) {
   // owns its field (one control per field, never a second identical button).
   if (name === "mcp") { loadMcpClients(); if (typeof renderMcpCatalog === "function") renderMcpCatalog(); }
   else if (name === "connectors") { loadConnectorsPanel(); }
+  else if (name === "channels") { loadChannelsPanel(); }
   else if (name === "commands") { loadCommandsPanel(); }
   else if (name === "skills") { loadSkills(); }
   else if (name === "rules") { loadRules(); }
@@ -19471,6 +19495,79 @@ async function deleteCommand(name) {
 /* ── Settings ▸ Connectors — an MCP preset plus the key NAMES it needs ──────
    The panel never receives a key VALUE: /api/connectors reports NAME + set only.
    Install adds the client DISABLED, exactly like a pasted server. */
+/* ---- Channels (2026-11-28): one inbox talking to one Longrun session ---------
+   Today the Telegram channel. The panel reads the REAL backend state
+   (`/api/telegram/status`) and every button calls the same `/api/telegram/*` the
+   CLI does, so the panel is never a stub. */
+async function loadChannelsPanel() {
+  const box = $("tgPanel"); if (!box) return;
+  let r = {};
+  try { r = await api("GET", "/api/telegram/status"); } catch (_) { r = {}; }
+  box.innerHTML = "";
+  const bot = r.bot || {};
+  const state = r.running ? "running" : (r.enabled ? "stopped" : "off");
+  const line = document.createElement("div");
+  line.className = "remaining"; line.style.wordBreak = "break-word";
+  line.innerHTML = "status: <b>" + esc(state) + "</b>"
+    + " · token: " + (r.token_set ? "set ✓" : "missing ✗")
+    + " · bot: " + esc(bot.username ? ("@" + bot.username + (bot.first_name ? " (" + bot.first_name + ")" : "")) : "—")
+    + " · paired: " + (r.paired | 0) + " · pending codes: " + (r.pending | 0)
+    + (r.last_error ? (" · last error: " + esc(String(r.last_error).slice(0, 140))) : "");
+  box.appendChild(line);
+
+  const row = document.createElement("div");
+  row.style.cssText = "display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;align-items:center";
+  const inp = document.createElement("input");
+  inp.className = "inp"; inp.type = "password"; inp.placeholder = "bot token (from @BotFather)";
+  inp.setAttribute("aria-label", "Telegram bot token");
+  inp.style.cssText = "flex:1;min-width:220px";
+  const connect = document.createElement("button"); connect.className = "ghost"; connect.textContent = "＋ connect";
+  connect.title = "validate the token (getMe), save it to .env, create the telegram session and start the channel";
+  connect.onclick = () => tgSetup(inp.value);
+  const pin = document.createElement("input");
+  pin.className = "inp"; pin.placeholder = "pairing code";
+  pin.setAttribute("aria-label", "Pairing code");
+  pin.style.cssText = "width:150px";
+  const pairB = document.createElement("button"); pairB.className = "ghost"; pairB.textContent = "✔ approve";
+  pairB.title = "approve a chat that DM'd the bot (pairing gate)";
+  pairB.onclick = () => tgPair(pin.value);
+  const recon = document.createElement("button"); recon.className = "ghost"; recon.textContent = "↻ reconnect";
+  recon.title = "re-read the token and restart the poller";
+  recon.onclick = () => tgPost("reconnect", {});
+  const unpairB = document.createElement("button"); unpairB.className = "ghost"; unpairB.textContent = "✕ unpair all";
+  unpairB.title = "revoke every paired chat";
+  unpairB.onclick = () => tgPost("unpair", {});
+  const logoutB = document.createElement("button"); logoutB.className = "ghost"; logoutB.textContent = "⎋ logout";
+  logoutB.title = "forget the bot identity and pairing — the channel needs re-onboarding";
+  logoutB.onclick = () => tgPost("logout", {});
+  row.append(inp, connect, pin, pairB, recon, unpairB, logoutB);
+  box.appendChild(row);
+}
+async function tgSetup(token) {
+  const out = $("tgResult");
+  if (!token || !token.trim()) { if (out) out.textContent = "paste the bot token first"; return; }
+  let r = {}; try { r = await api("POST", "/api/telegram/setup", { token: token.trim() }); }
+  catch (e) { r = { ok: false, error: String(e) }; }
+  if (out) out.textContent = r.ok
+    ? ("connected @" + ((r.bot || {}).username || "") + " — running=" + !!r.running)
+    : ("error: " + (r.error || "setup failed"));
+  await loadChannelsPanel();
+}
+async function tgPair(code) {
+  const out = $("tgResult");
+  if (!code || !code.trim()) { if (out) out.textContent = "paste the pairing code first"; return; }
+  let r = {}; try { r = await api("POST", "/api/telegram/pair", { code: code.trim() }); }
+  catch (e) { r = { ok: false, error: String(e) }; }
+  if (out) out.textContent = r.ok ? ("paired chat " + r.chat_id) : ("error: " + (r.error || "pair failed"));
+  await loadChannelsPanel();
+}
+async function tgPost(op, body) {
+  const out = $("tgResult");
+  let r = {}; try { r = await api("POST", "/api/telegram/" + op, body || {}); }
+  catch (e) { r = { ok: false, error: String(e) }; }
+  if (out) out.textContent = r.ok ? (op + " ok") : ("error: " + (r.error || (op + " failed")));
+  await loadChannelsPanel();
+}
 async function loadConnectorsPanel() {
   const box = $("connList"); if (!box) return;
   let r = {};
@@ -20145,14 +20242,14 @@ async function bbClearAll() {
 async function runSwarm() {
   const msg = $("swMsg"), out = $("swReport"), btn = $("swRun");
   const goal = ((($("swGoal") || {}).value) || "").trim();
-  if (!goal) { if (msg) msg.textContent = "a goal is required"; return; }
-  if (msg) msg.textContent = "decomposing the goal, spawning the workers and collecting their results — real model calls…";
+  if (!goal) { if (msg) msg.textContent = "an aim is required"; return; }
+  if (msg) msg.textContent = "decomposing the aim, spawning the workers and collecting their results — real model calls…";
   if (out) out.textContent = "";
   if (btn) btn.disabled = true;
   let r = {};
   try {
     const body = {
-      goal: goal,
+      aim: goal,
       n_workers: parseInt(($("swWorkers") || {}).value, 10) || 3 };
     // Blank = the configured child budget (config/subagents.yaml max_steps);
     // the panel must not ship a second default of its own.
@@ -20163,7 +20260,7 @@ async function runSwarm() {
   finally { if (btn) btn.disabled = false; }
   if (r && r.error) { if (msg) msg.textContent = "✕ " + r.error; return; }
   if (msg) msg.textContent = "done — " + (r.worker_count || 0)
-    + " workers; the goal, the partial results and the synthesis are on the blackboard.";
+    + " workers; the aim, the partial results and the synthesis are on the blackboard.";
   if (out) {
     const c = document.createElement("div");
     c.className = "card u-mt6"; c.style.fontSize = "11px";

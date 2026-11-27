@@ -159,7 +159,14 @@ check("F5 search without a query fails gracefully",
 # carries the harness default `<repo>/AGENTS.md` (4,446 chars) — it is a general rule
 # applied to every project, not a workspace file — so the floor moved up by that file.
 # Bound raised to the measured value + margin; it still fails a runaway dump.
-check("G1 composed system prompt is bounded (<30k chars)", len(sp) < 30000, "chars=%d" % len(sp))
+# 2026-11-28: measured 30,775. The floor was already at ~30,002 (environment-side
+# growth: accumulated memory lessons + the installed-skill corpus, which the G2 cap
+# does not bound inside the composed prompt — the same runtime growth these entries
+# track); the new `goal` delegation-action contract adds 773 chars, disambiguating the
+# durable per-session goal (`plan/goal.py`, the `/goal` command) from the job/routine
+# `goal` brief — an AIM. Bound raised to the measured value + margin; it still fails a
+# runaway dump.
+check("G1 composed system prompt is bounded (<31.5k chars)", len(sp) < 31500, "chars=%d" % len(sp))
 _idx = skills.skills_context(max_chars=2600)
 check("G2 the always-on skills index is bounded", len(_idx) <= 2760, "len=%d" % len(_idx))
 _disabled_lines = [l for l in sp.splitlines() if "present but DISABLED" in l]

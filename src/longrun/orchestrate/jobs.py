@@ -1,12 +1,13 @@
-"""Jobs — higher-level goals (JN) that orchestrate one or many agents (AX).
+"""Jobs — higher-level aims (JN) that orchestrate one or many agents (AX).
 
-A job has a goal, a coordinator agent, a set of member agents, optional ``deps`` (a
+A job has an AIM (a delegation brief — NOT the durable `/goal` objective of
+`plan/goal.py`), a coordinator agent, a set of member agents, optional ``deps`` (a
 DAG: who runs before whom), optional ``blocked_by`` (inter-job dependencies) and a
 mode:
 
-  * ``coordinator`` (default): the coordinator decomposes the goal, every worker runs
+  * ``coordinator`` (default): the coordinator decomposes the aim, every worker runs
     its slice, then the coordinator aggregates the team's results.
-  * ``run``: every agent receives the goal directly, with no planning turn (a
+  * ``run``: every agent receives the aim directly, with no planning turn (a
     detached dispatch is one of these: one agent, `assigned_by` = the dispatcher).
 
 Execution reuses the normal per-session turn machinery (``server.chat_stream_gen``),
@@ -391,7 +392,7 @@ _AGENT_RE = re.compile(r"\bA\d+\b")
 def parse_plan_deps(plan):
     """JAG-330: the dependency DAG a coordinator DECLARED inside its plan.
 
-    Paperclip-style: the master not only decomposes the goal, it states WHAT MUST
+    Paperclip-style: the master not only decomposes the aim, it states WHAT MUST
     HAPPEN IN ORDER. A bullet may end with ``(after AX, AY)``; we read those into
     ``{agent: [deps]}`` so the runner can ENFORCE the order — a dependent subjob does
     not start until the ones it waits on are done — instead of running every worker
@@ -544,6 +545,19 @@ def readable_text(text):
     return markup_text(text) or "(a raw tool call was recorded here — no written text)"
 
 
+def aim_of(job):
+    """The delegation BRIEF (an AIM) of a job — the `aim` field, or the legacy `goal`.
+
+    2026-11-28 (operator): the job/routine brief is an AIM; the durable, verified
+    per-session objective is the GOAL (`plan/goal.py`). The stored field is `aim`;
+    records written before the rename carry `goal`, so every reader goes through
+    here — one place, so the two can never disagree.
+    """
+    if not isinstance(job, dict):
+        return ""
+    return str(job.get("aim") or job.get("goal") or "").strip()
+
+
 def readable_job(job):
     """A COPY of `job` whose briefs and results are readable — the store is untouched.
 
@@ -555,6 +569,11 @@ def readable_job(job):
     if not isinstance(job, dict):
         return job
     out = dict(job)
+    # 2026-11-28: the read model speaks `aim` (the delegation brief). A legacy
+    # `goal` key on an old record is projected ONTO `aim` and dropped, never
+    # exposed — one name for one fact in every response.
+    out["aim"] = aim_of(job)
+    out.pop("goal", None)
     # 2026-11-20: every read model says WHICH kind of work this is. Team jobs
     # (J<n>, data/jobs.json) and in-chat Session Jobs (SJ<n>, session_jobs.py)
     # are different objects; a consumer must never infer the kind from a
@@ -655,12 +674,13 @@ class JobRegistry:
                 _save(d)
             return changed
 
-    def create(self, goal, coordinator=None, agents=None, deps=None, mode="coordinator",
+    def create(self, aim, coordinator=None, agents=None, deps=None, mode="coordinator",
                blocked_by=None, assigned_by=None):
-        goal = (goal or "").strip()
+        # 2026-11-28 (operator): the job's brief is an AIM, not the durable GOAL.
+        aim = (aim or "").strip()
         agents = [a for a in (agents or []) if a]
-        if not goal:
-            return {"ok": False, "error": "goal required"}
+        if not aim:
+            return {"ok": False, "error": "aim required"}
         if not agents:
             return {"ok": False, "error": "at least one agent required"}
         with _LOCK:
@@ -674,7 +694,7 @@ class JobRegistry:
             blockers = self._clean_blockers(d, jid, blocked_by)
             unresolved = [b for b in blockers
                           if (d["jobs"].get(b) or {}).get("status") != "done"]
-            job = {"id": jid, "n": d["seq"], "goal": goal, "mode": mode,
+            job = {"id": jid, "n": d["seq"], "aim": aim, "mode": mode,
                    "coordinator": coordinator or agents[0], "agents": agents,
                    "deps": clean_deps, "blocked_by": blockers,
                    # 2026-11-08: WHO assigned the job. When it ends, this agent is
@@ -690,7 +710,7 @@ class JobRegistry:
         # kind it is (`J<n>`, team job), like list/detail. Additive field only.
         return {"ok": True, "job": readable_job(job)}
 
-    def update(self, jid, goal=None, coordinator=None, agents=None, deps=None,
+    def update(self, jid, aim=None, coordinator=None, agents=None, deps=None,
                mode=None, blocked_by=None):
         """v887: edit a job IN PLACE — the architect's `job.update` door.
 
@@ -707,11 +727,12 @@ class JobRegistry:
                 return {"ok": False, "error": "job not found: %s" % jid}
             if job.get("status") == "running":
                 return {"ok": False, "error": "job %s is running — abort it first" % jid}
-            if goal is not None:
-                g = str(goal).strip()
+            if aim is not None:
+                g = str(aim).strip()
                 if not g:
-                    return {"ok": False, "error": "goal cannot be empty"}
-                job["goal"] = g
+                    return {"ok": False, "error": "aim cannot be empty"}
+                job["aim"] = g
+                job.pop("goal", None)   # one name for one fact: migrate the old key
             if agents is not None:
                 al = [a for a in (agents or []) if a]
                 if not al:
@@ -1043,20 +1064,20 @@ class JobRegistry:
         return {a["id"]: a["session"] for a in agents_mod.REGISTRY.list()["agents"]}
 
     @staticmethod
-    def _scope_graph(sid, jid, goal):
+    def _scope_graph(sid, jid, aim):
         """JAG-299: bind the agent's task graph to THIS job (JN).
 
         Two effects: (a) a FRESH plan per job, so a previous job's still-open todos
         stop leaking into the current one — they were gating/confusing the model
         (J2's library todos showing up while the agent worked J3's HTTP-caching
-        goal, then a HUMAN-IN-THE-LOOP pivot demanding a choice); and (b) a `jid`
+        aim, then a HUMAN-IN-THE-LOOP pivot demanding a choice); and (b) a `jid`
         tag on every node this job creates, so the UI can attribute a todo to its
         job instead of showing one undifferentiated list.
         """
         try:
             from longrun.plan import taskgraph as tg
             with tg.GRAPH_LOCK:
-                g = tg.ensure(sid, session_id=sid, goal=goal)
+                g = tg.ensure(sid, session_id=sid, goal=aim)
                 if g.get("jid") != jid:
                     tg.begin_plan(g)
                     g["jid"] = jid
@@ -1083,7 +1104,7 @@ class JobRegistry:
         of a write the coordinator attempted instead of answering — is not an
         assignment: no worker can read it, and all three were handed the same
         2.8 KB envelope. Such a plan is refused (""), so the caller falls back to
-        the job's goal.
+        the job's aim.
         """
         from longrun.util.textkit import is_tool_markup
         text = str(plan or "").strip()
@@ -1108,7 +1129,7 @@ class JobRegistry:
 
         A turn can END with a short harness-prompted summary ("report the RESULT
         you already have") AFTER the real deliverable. Returning the LAST message
-        therefore lost the work — a job goal asking for content got back a one-line
+        therefore lost the work — a job aim asking for content got back a one-line
         description of it. The longest assistant message is the one carrying the
         deliverable. Shared with the `dispatch` path via `stores.turn_reply`.
         """
@@ -1345,7 +1366,7 @@ class JobRegistry:
                 from longrun.plan import taskgraph as _tg
                 for _sid in set(sessions.values()):
                     with _tg.GRAPH_LOCK:
-                        _g = _tg.ensure(_sid, session_id=_sid, goal=job.get("goal"))
+                        _g = _tg.ensure(_sid, session_id=_sid, goal=aim_of(job))
                         if _g.get("jid") == jid:
                             _tg.begin_plan(_g)
             except Exception:  # noqa: BLE001 — graph bookkeeping must never break a run
@@ -1356,8 +1377,8 @@ class JobRegistry:
                                               or roster.get(aid, {}).get("name") or "")
                                  for aid in job["agents"])
                 plan = self._run_agent(sessions[coord],
-                    "You are the COORDINATOR of a small team of agents.\nGoal: %s\nTeam: %s\n\n"
-                    "Plan the work and decompose the goal into a short, concrete assignment for "
+                    "You are the COORDINATOR of a small team of agents.\nAim: %s\nTeam: %s\n\n"
+                    "Plan the work and decompose the aim into a short, concrete assignment for "
                     "EACH teammate, one bullet per agent id.\n"
                     "You MAY use your tools and skills to inspect the workspace and inform the "
                     "plan, and you SHOULD record your plan in your own task list (todos).\n"
@@ -1371,7 +1392,7 @@ class JobRegistry:
                     "deliverable and do NOT execute the teammates' tasks yourself — the "
                     "workers do the work and you synthesise their results afterwards.\n"
                     "Rules: do NOT spawn subagents; do NOT do the teammates' work yourself."
-                    % (job["goal"], team),
+                    % (aim_of(job), team),
                     model=roster.get(coord, {}).get("model"), jid=jid, plan_only=True)
                 if _error_turn(plan):
                     # A provider/turn failure is not a plan: without this the job
@@ -1393,7 +1414,7 @@ class JobRegistry:
             # 2026-11-22 (operator, live J53): a coordinator LEADS — it is not also
             # a worker when the job has a team. `job.create` auto-adds the
             # coordinator's org subtree, so the coordinator IS in `agents`; in
-            # `mode=run` the old `_coord_mode` guard let it receive the goal as a
+            # `mode=run` the old `_coord_mode` guard let it receive the aim as a
             # worker too, and (now that cascades are allowed) re-delegate it to the
             # reports that already had it — two full turns per worker. Skip it
             # whenever there are OTHER agents; a single-agent run job (a detached
@@ -1448,12 +1469,12 @@ class JobRegistry:
                     sub = next((s for s in subs.values() if s["agent"] == aid), None)
                     mine = ((sub or {}).get("assignment")
                             or (self._assignment_for(plan, aid) if plan else "")
-                            # The GOAL is always a usable brief: a non-coordinator
+                            # The AIM is always a usable brief: a non-coordinator
                             # job (a detached dispatch) has no plan, and a plan that
                             # carried no readable line for this agent (2026-11-08)
                             # must not leave the worker with an empty assignment.
-                            or job["goal"])
-                    msg = self._delegation_msg(jid, sender_label, sub, job["goal"], mine)
+                            or aim_of(job))
+                    msg = self._delegation_msg(jid, sender_label, sub, aim_of(job), mine)
                     t = threading.Thread(
                         target=self._one,
                         args=(jid, aid, sid, msg, roster.get(aid, {}).get("model"),
@@ -1494,11 +1515,11 @@ class JobRegistry:
                             "say so in your deliverable, do NOT pretend they are done):\n"
                             + "\n".join("  - %s (%s): %s" % (a, b, (c or "-")[:200]) for a, b, c in failed))
                 final = self._run_agent(sessions[coord],
-                    "Team results:\n%s%s\n\nProduce the COMPLETE final deliverable for this goal, "
+                    "Team results:\n%s%s\n\nProduce the COMPLETE final deliverable for this aim, "
                     "in full, as your reply:\n%s\n\nOutput the ACTUAL content (the endpoints, the "
                     "schema, the error payload, the examples) — not a description of it and not "
                     "the word 'done'. Rules: do NOT call tools; do NOT spawn subagents."
-                    % (res, warn, job["goal"]), model=roster.get(coord, {}).get("model"), jid=jid)
+                    % (res, warn, aim_of(job)), model=roster.get(coord, {}).get("model"), jid=jid)
                 if not (final or "").strip():
                     # JAG-310: never mark a job `done` when its coordinator produced
                     # NO reply to the team report — that is "accepted without an
@@ -1583,7 +1604,7 @@ class JobRegistry:
         head = ("[tasks] job %s FINISHED — status: %s" % (jid, status)
                 if status in ("done", "partial")
                 else "[tasks] job %s ENDED — status: %s" % (jid, status))
-        lines = [head, "Goal: %s" % str(job.get("goal") or "")[:200]]
+        lines = [head, "Aim: %s" % aim_of(job)[:200]]
         failed = [str(a) for a in (job.get("failed_subjobs") or [])]
         if failed:
             lines.append("Workers that did NOT deliver: %s" % ", ".join(failed[:8]))
@@ -1620,7 +1641,7 @@ class JobRegistry:
 
 
     @staticmethod
-    def _delegation_msg(jid, by_label, sub, goal, mine):
+    def _delegation_msg(jid, by_label, sub, aim, mine):
         """The message a worker receives for a delegated subjob (JAG-322/330/331).
 
         JAG-331: a subjob is WORK TO DO, not a paragraph to write. The old text ended
@@ -1642,7 +1663,7 @@ class JobRegistry:
         dep_note = ""
         if (sub or {}).get("deps"):
             dep_note = "\nWaits for (already completed): %s." % ", ".join(sub["deps"])
-        return ("%s\nGoal: %s%s\n\nYour assignment (yours only):\n%s\n\n"
+        return ("%s\nAim: %s%s\n\nYour assignment (yours only):\n%s\n\n"
                 "DO this now, end to end. You HAVE tools: use them to inspect the "
                 "workspace, read/write files and run shell commands, and consult skills "
                 "with the `skills` tool when one helps (skills{action:'search'|'list'}). "
@@ -1652,7 +1673,7 @@ class JobRegistry:
                 "End your report with a line `STATUS: DONE` (or `STATUS: BLOCKED: <why>` "
                 "if you truly cannot finish).\n"
                 "Rules: do NOT spawn subagents; do NOT do the other agents' parts."
-                % (head, goal, dep_note, mine))
+                % (head, aim, dep_note, mine))
 
     @staticmethod
     def _announce_delegation(coord_sid, jid, roster, subs):

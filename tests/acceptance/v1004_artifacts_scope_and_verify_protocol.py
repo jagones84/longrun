@@ -155,9 +155,13 @@ check("D1 the rules carry the general verification protocol",
       "## Verification after coding — the general protocol (2026-11-14)" in rules
       and all(("%d. **" % n) in rules for n in range(1, 8)))
 check("D1b the Workflow line points at it instead of describing a second time",
-      "MEANS is §Verification after coding" in rules)
+      # 2026-11-28: the doc reads "what \"verified\" means is §Verification after
+      # coding" (lower-case verb after the reword).
+      "means is §Verification after coding" in rules)
 check("D1c the protocol names the states that broke these rounds",
-      "visual pixels inside a zoomed page" in rules and "emptied the whole page" in rules)
+      # 2026-11-28: the states are now worded "a rect is visual px" (the zoomed-layout
+      # trap) and "a change that can EMPTY a list is tested in the emptying state".
+      "a rect is visual px" in rules and "can EMPTY a list" in rules)
 check("D2 UserPrompts carries the app-wide rule",
       "## 5. Lists, filters and empty states" in ups
       and "a view never empties itself" in ups

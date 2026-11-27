@@ -96,19 +96,22 @@ check("B6 _whyOf falls back to the loaded graph for slim live nodes",
       "if (!hasEv && graph)" in UI and "x.id === node.id" in UI)
 
 # ---- C. project rules ----------------------------------------------------------
+# 2026-11-28: the doc wraps prose across lines, so phrase pins are checked on a
+# whitespace-normalised copy — a reflow must never red a CONCEPT pin.
+_RULESN = " ".join(RULES.split())
 check("C1 gap analysis is a MANDATORY rule",
       # 2026-11-05: the operator rewrote the rules doc (it is gitignored, so only the
       # live file matters) — the section reads "Golden rule — gap analysis before any
       # implementation (MANDATORY)". The pin asserts the CONCEPT, not the old wording.
-      "gap analysis before any implementation" in RULES
-      and "(MANDATORY)" in RULES
-      and "ALREADY done" in RULES and "genuinely MISSING" in RULES)
+      "gap analysis before any implementation" in _RULESN
+      and "(MANDATORY)" in _RULESN
+      and "ALREADY done / PARTIAL / genuinely MISSING" in _RULESN)
 check("C2 branch policy: Experimental works, master is the backup",
-      # same: the current sentence is "Never fast-forward/merge into it unless the
-      # operator explicitly asks".
-      "`Experimental-Refactor` is the working branch" in RULES
-      and "`master` is the BACKUP branch" in RULES
-      and "Never fast-forward/merge into it" in RULES)
+      # 2026-11-28: the current sentence is "Never merge/FF into it unless the
+      # operator explicitly asks" (the doc reworded the verb).
+      "`Experimental-Refactor` is the working branch" in _RULESN
+      and "`master` is the BACKUP branch" in _RULESN
+      and "Never merge/FF into it" in _RULESN)
 
 # ---- D. interactive descendants own their click -------------------------------
 check("D1 DragSort ignores pointerdown on a button/link inside a drag handle",

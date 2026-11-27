@@ -136,8 +136,11 @@ with open(os.path.join(REPO, "src", "longrun", "core", "httpapi.py"), encoding="
 # 2026-11-11 (`f2795a5`): the guard asks the identity's OWNER instead of comparing a
 # literal copy of the id — a further rename must not leave this guard pointing at a
 # session that no longer exists. Behaviour is unchanged (403), and the pin follows it.
+# 2026-11-28: the guard moved from `is_system_session` to `is_undeletable`, because the
+# Telegram channel is a SYSTEM session too and the operator MAY delete it. The Architect
+# is refused by `is_undeletable` (undeletable by identity); the pin follows the new owner.
 check("A4 DELETE /api/sessions/architect is blocked at the HTTP layer with 403",
-      "_arch_guard.is_system_session(sid)" in HTTPAPI and "403" in HTTPAPI)
+      "_arch_guard.is_undeletable(sid)" in HTTPAPI and "403" in HTTPAPI)
 
 # --- B: Exclusive built-in tools & Dual-Permission Gate ----------------------
 cat = {t["name"]: t for t in registry.catalog()}

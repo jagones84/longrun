@@ -1240,8 +1240,8 @@ def tool_context():
         '  {"action":"batch","calls":[{"tool":"fs.read","args":{"path":"a.py"}},'
         '{"tool":"fs.read","args":{"path":"b.py"}}]}',
         "Each item of `calls` is a FULL action — a tool call, "
-        '{"action":"subagent","goal":"..."}, or '
-        '{"action":"dispatch","agent":"<A-id>","goal":"..."}. At most '
+        '{"action":"subagent","aim":"..."}, or '
+        '{"action":"dispatch","agent":"<A-id>","aim":"..."}. At most '
         "`runtime.max_parallel_tools` tools run at once (config/tools.yaml); subagents are "
         "capped by `max_parallel` (config/subagents.yaml). A dispatch is DETACHED: it returns "
         "a job id at once and the teammate's reply arrives back as a message when the job ends "
@@ -3082,7 +3082,8 @@ def handle(handler, method, path, qs, body):
             if not hook:
                 return _r(handler, 404, {"ok": False, "error": "hook not found"})
             res = _wh.save_hook({"id": hid, "agent": hook.get("agent"),
-                                 "goal": hook.get("goal"), "mode": hook.get("mode"),
+                                 "aim": hook.get("aim") or hook.get("goal"),
+                                 "mode": hook.get("mode"),
                                  "enabled": hook.get("enabled"),
                                  "event_field": hook.get("event_field"),
                                  "match_any": hook.get("match_any"), "rotate": True})
@@ -3574,9 +3575,10 @@ def handle(handler, method, path, qs, body):
 
         if path == "/api/subagent/spawn":
             _lazy('subagent')
-            goal = body.get("goal", "")
+            # 2026-11-28: the delegated brief is an AIM (`aim`); `goal` stays accepted.
+            goal = body.get("aim") or body.get("goal", "")
             if not goal:
-                return _r(handler, 400, {"error": "goal required"})
+                return _r(handler, 400, {"error": "aim required"})
             max_steps = _int(body.get("max_steps", 0), 0) or _SUBAGENT.default_steps()
             result = _SUBAGENT.spawn(goal, parent_run_id=body.get("run_id"),
                                      max_steps=max_steps, model=body.get("model"))
@@ -3639,9 +3641,10 @@ def handle(handler, method, path, qs, body):
 
         if path == "/api/swarm/run":
             _lazy('swarm')
-            goal = body.get("goal", "")
+            # 2026-11-28: the swarm brief is an AIM (`aim`); `goal` stays accepted.
+            goal = body.get("aim") or body.get("goal", "")
             if not goal:
-                return _r(handler, 400, {"error": "goal required"})
+                return _r(handler, 400, {"error": "aim required"})
             n_workers = _int(body.get("n_workers", 3), 3)
             from longrun.agent import subagent as _sub
             max_steps = _int(body.get("max_steps", 0), 0) or _sub.default_steps()

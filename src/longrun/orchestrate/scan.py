@@ -21,7 +21,7 @@ SESSION_MAX = 40
 MSG_PER_SESSION = 3
 MSG_CHARS = 160
 CANDIDATES_MAX = 2
-GOAL_CHARS = 600
+AIM_CHARS = 600
 HARNESS_MARK = "[harness]"
 
 SCAN_SYSTEM = (
@@ -30,10 +30,10 @@ SCAN_SYSTEM = (
     "boring, repetitive workflows that could run UNATTENDED on a schedule. "
     "Rules: propose at most %d; each must be something that is BORING and "
     "repeatable (a check, a sweep, a report, a tidy-up) — never a decision that "
-    "needs taste, never a one-off; the goal is an instruction an agent can run "
+    "needs taste, never a one-off; the aim is an instruction an agent can run "
     "alone, in English, at most 400 characters; cadence in seconds and at least "
     "%d. Prefer skipping over inventing. Answer with JSON ONLY: "
-    '{"candidates":[{"goal":"...","every_seconds":86400,"why":"..."}]}'
+    '{"candidates":[{"aim":"...","every_seconds":86400,"why":"..."}]}'
     % (CANDIDATES_MAX, routines.MIN_EVERY)
 )
 
@@ -175,32 +175,34 @@ def scan_sessions(sessions=None, model=None, call=None, agent=None, limit=SESSIO
         except Exception:  # noqa: BLE001 — an unreadable roster is not a refusal
             pass
 
-    existing = {str((r or {}).get("goal") or "").strip().lower()
+    existing = {routines.aim_of(r).lower()
                 for r in (routines.REGISTRY.list().get("routines") or [])}
     # The cap applies to what the SCOUT offered, not to what survived dedupe: a
     # duplicate must not promote a lower-ranked candidate into a new routine.
     for cand in raw[:CANDIDATES_MAX]:
-        goal = " ".join(str(cand.get("goal") or "").split())[:GOAL_CHARS]
-        if len(goal) < 12:
-            out["skipped"].append({"reason": "goal too short", "goal": goal})
+        # 2026-11-28: the routine brief is an AIM; the scout prompt emits `aim`, and a
+        # legacy `goal` answer still parses so an in-flight model is never dropped.
+        aim = " ".join(str(cand.get("aim") or cand.get("goal") or "").split())[:AIM_CHARS]
+        if len(aim) < 12:
+            out["skipped"].append({"reason": "aim too short", "aim": aim})
             continue
-        if goal.lower() in existing:
-            out["skipped"].append({"reason": "already a routine", "goal": goal})
+        if aim.lower() in existing:
+            out["skipped"].append({"reason": "already a routine", "aim": aim})
             continue
-        rec = {"goal": goal,
+        rec = {"aim": aim,
                "every_seconds": _clamp_every(cand.get("every_seconds")),
                "why": " ".join(str(cand.get("why") or "").split())[:300]}
         out["candidates"].append(rec)
         if len(out["candidates"]) >= CANDIDATES_MAX:
             break
     for rec in out["candidates"]:
-        made = routines.REGISTRY.create(owner, rec["goal"], rec["every_seconds"],
+        made = routines.REGISTRY.create(owner, rec["aim"], rec["every_seconds"],
                                         enabled=False)
         if not made.get("ok"):
             out["skipped"].append({"reason": made.get("error") or "create failed",
-                                   "goal": rec["goal"]})
+                                   "aim": rec["aim"]})
             continue
-        existing.add(rec["goal"].lower())
+        existing.add(rec["aim"].lower())
         row = dict(made["routine"])
         row["why"] = rec["why"]
         out["created"].append(row)

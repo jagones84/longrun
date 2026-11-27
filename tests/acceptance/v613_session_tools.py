@@ -55,7 +55,7 @@ r9 = T._self({"action": "sj", "session": SID, "job": "SJ99"}, SID)
 check("T4 unknown SJ id falls back to latest open (never a traceback)",
       r9.get("ok") and len(r9["sj"]["jobs"]) == 1 and r9["sj"]["jobs"][0]["id"] == "SJ1", "")
 check("T5 SJ payload is self-describing and carries no team-job keys",
-      set(r["sj"]["jobs"][0].keys()) == {"kind", "id", "goal", "status", "created", "ended", "subjobs"}
+      set(r["sj"]["jobs"][0].keys()) == {"kind", "id", "aim", "status", "created", "ended", "subjobs"}
       and r["sj"]["jobs"][0]["kind"] == "session"
       and r["sj"].get("kind") == "session" and r["sj"].get("read_only") is True,
       sorted(r["sj"]["jobs"][0].keys()))

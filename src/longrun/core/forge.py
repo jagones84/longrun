@@ -39,23 +39,24 @@ Usage:
                           | self | selfcheck | sandbox | mcp [tools|ls|add|remove|reload|local-file] | hooks
   python3 forge.py agents ls | agents new NAME [--role R] [--model M] [--reports-to AX]
                           | agents set AX [...] | agents rm AX
-  python3 forge.py jobs ls | jobs new "goal" [--to AX] [--blocked-by JN,JN] [--mode m]
+  python3 forge.py jobs ls | jobs new "aim" [--to AX] [--blocked-by JN,JN] [--mode m]
                           | jobs run JN | jobs wake | jobs get JN
-  python3 forge.py routines ls | routines new "goal" --agent AX [--every N]
+  python3 forge.py routines ls | routines new "aim" --agent AX [--every N]
                           | routines enable|disable|rm RID
   python3 forge.py market [ls|sources|status|installed] | market sync [--source S] [--wait]
                           | market remote <query> [--source S] | market import <source> <slug>
                           | market install <id> [--overwrite] | market rm <id> [--files]
   python3 forge.py roles show|set|clear|reset --session SID_OR_AX
+  python3 forge.py telegram status|setup <token>|pair <code>|unpair [chat-id]|reconnect|logout
   python3 forge.py index [status|build|search] | knowledge [status|notebooks|create|add|search|discover|import|research]
                           | research [ls|set|active] | embedding [models|active|set|add|remove|costs|cost-test]
   python3 forge.py feed | events [--since N] [--limit N]
   python3 forge.py memory store <kind> <content> | search <query> [--kind K] [--semantic]
-  python3 forge.py subagent spawn <goal> [--max-steps N] | collect <id> | status [id]
+  python3 forge.py subagent spawn <aim> [--max-steps N] | collect <id> | status [id]
   python3 forge.py meta run [--n-candidates N] | status | best
   python3 forge.py blackboard post <topic> <content> [--tags T] | get [--id I] [--topic T] | search <q>
   python3 forge.py acp server <method> '[params]' | connect <name> <url> [--token T]
-  python3 forge.py swarm <goal> [--n-workers N] [--max-steps N]
+  python3 forge.py swarm <aim> [--n-workers N] [--max-steps N]
   python3 forge.py paperclip-bot   # Paperclip adapter child: envelope on stdin, NDJSON on stdout
 Environment:
   LONGRUN_URL (default http://127.0.0.1:8790)
@@ -511,6 +512,12 @@ ROUTES = {
     "self":                         ("GET", "/api/self"),
     "selfcheck":                    ("GET", "/api/selfcheck"),
     "status":                       ("GET", "/api/status"),
+    "telegram_status":              ("GET", "/api/telegram/status"),
+    "telegram_setup":               ("POST", "/api/telegram/setup"),
+    "telegram_pair":                ("POST", "/api/telegram/pair"),
+    "telegram_unpair":              ("POST", "/api/telegram/unpair"),
+    "telegram_reconnect":           ("POST", "/api/telegram/reconnect"),
+    "telegram_logout":              ("POST", "/api/telegram/logout"),
     "swarm":                        ("POST", "/api/swarm/run"),
 }
 
@@ -530,6 +537,34 @@ def _path(name):
 
 def cmd_status(_):
     print(json.dumps(req(*_route("status")), indent=2))
+
+
+def cmd_telegram(args):
+    """The Telegram channel: status / setup / pair / unpair / reconnect / logout."""
+    action = args.action
+    if action == "status":
+        print(json.dumps(req(*_route("telegram_status")), indent=2, ensure_ascii=False))
+        return
+    if action == "setup":
+        if not args.value:
+            print("usage: telegram setup <bot-token>", file=sys.stderr)
+            sys.exit(2)
+        out = req(*_route("telegram_setup"), {"token": args.value})
+    elif action == "pair":
+        if not args.value:
+            print("usage: telegram pair <code>", file=sys.stderr)
+            sys.exit(2)
+        out = req(*_route("telegram_pair"), {"code": args.value})
+    elif action == "unpair":
+        out = req(*_route("telegram_unpair"), {"chat_id": args.value})
+    elif action == "reconnect":
+        out = req(*_route("telegram_reconnect"), {})
+    elif action == "logout":
+        out = req(*_route("telegram_logout"), {})
+    else:
+        print("unknown telegram action: %s" % action, file=sys.stderr)
+        sys.exit(2)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
 
 
 def cmd_sandbox(_):
@@ -4048,7 +4083,8 @@ def cmd_acp(args):
 
 
 def cmd_swarm(args):
-    body = {"goal": args.goal, "n_workers": args.n_workers}
+    # 2026-11-28: the swarm brief is an AIM (`aim`); the endpoint accepts `goal` too.
+    body = {"aim": args.goal, "n_workers": args.n_workers}
     if args.max_steps:
         body["max_steps"] = args.max_steps   # omitted -> config/subagents.yaml
     out = req(*_route("swarm"), body)
@@ -5254,7 +5290,7 @@ def cmd_routines(args):
     if args.action == "ls":
         print(json.dumps(req(*_route("api_routines")), indent=2, ensure_ascii=False))
     elif args.action == "new":
-        print(json.dumps(req(*_route("api_routines_post"), {"agent": args.agent, "goal": args.value, "every_seconds": args.every}), indent=2, ensure_ascii=False))
+        print(json.dumps(req(*_route("api_routines_post"), {"agent": args.agent, "aim": args.value, "every_seconds": args.every}), indent=2, ensure_ascii=False))
     elif args.action == "rm":
         print(json.dumps(req("DELETE", "/api/routines/" + args.value), indent=2, ensure_ascii=False))
     elif args.action in ("enable", "disable"):
@@ -5267,9 +5303,9 @@ def cmd_jobs(args):
         for j in out.get("jobs", []):
             print(" %-4s %-8s %-6s %s" % (j.get("id"), j.get("status"),
                                           j.get("coordinator") or "",
-                                          (j.get("goal") or "")[:64]))
+                                          (j.get("aim") or j.get("goal") or "")[:64]))
     elif args.action == "new":
-        body = {"goal": args.value}
+        body = {"aim": args.value}
         if args.to:
             body["assignee"] = args.to
         if getattr(args, "blocked_by", None):
@@ -5397,6 +5433,10 @@ def _build_parser():
         p.add_argument("--wait", action="store_true"); p.add_argument("--overwrite", action="store_true"); \
         p.add_argument("--files", action="store_true"); p.set_defaults(fn=cmd_market)
     sub.add_parser("status").set_defaults(fn=cmd_status)
+    p = sub.add_parser("telegram"); p.add_argument("action", nargs="?", default="status", \
+        choices=["status", "setup", "pair", "unpair", "reconnect", "logout"]); \
+        p.add_argument("value", nargs="?", help="setup: bot token · pair: code · unpair: chat id"); \
+        p.set_defaults(fn=cmd_telegram)
     p = sub.add_parser("models"); p.add_argument("action", nargs="?", default="ls", choices=["ls", "ensure"]); \
         p.add_argument("value", nargs="?"); p.set_defaults(fn=cmd_models)
     p = sub.add_parser("index"); p.add_argument("action", nargs="?", default="status", choices=["status", "build", "search"]); \

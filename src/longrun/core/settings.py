@@ -340,6 +340,11 @@ DEDICATED = {
         "loop_detection": "Settings ▸ Harness",
         # JAG-1: independent GOAL verification (acceptance + judge) — Harness panel.
         "goal_verify": "Settings ▸ Harness",
+        # 2026-11-28: the Telegram channel knobs (poll cadence, preview caps, page
+        # size, allowed updates). Server-side, read only through
+        # `model/context_limits.py::telegram(...)` — no form field, edited in the
+        # raw config; the Channels panel drives the bot over `/api/telegram/*`.
+        "telegram": "config/tools.yaml (server-side Telegram knobs)",
         # 2026-11-20: the post-turn completeness verifier — its own card in Models.
         "turn_verify": "Settings ▸ Models",
         "reasoning": "Settings ▸ Models",

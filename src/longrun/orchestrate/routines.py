@@ -1,7 +1,8 @@
 """Routines — agents that wake on a schedule (Paperclip-style heartbeats).
 
-A routine binds an AGENT (AX) to a goal and a cadence: every N seconds the harness
-wakes the agent by running the goal as a normal turn on its session. This is what
+A routine binds an AGENT (AX) to an AIM (a delegation brief — NOT the durable
+`/goal` objective of `plan/goal.py`) and a cadence: every N seconds the harness
+wakes the agent by running the aim as a normal turn on its session. This is what
 lets a team keep producing while no human is watching a terminal.
 
 A single daemon scheduler thread (started by the server) checks for due routines and
@@ -25,6 +26,32 @@ MIN_EVERY = 30
 DEFAULT_TICK = 20
 
 
+def aim_of(rec):
+    """The routine's delegation BRIEF (an AIM) — the `aim` field, or the legacy `goal`.
+
+    2026-11-28 (operator): the routine brief is an AIM; the durable, verified
+    per-session objective is the GOAL (`plan/goal.py`). The stored field is `aim`;
+    routines written before the rename carry `goal`, so every reader goes through here.
+    """
+    if not isinstance(rec, dict):
+        return ""
+    return str(rec.get("aim") or rec.get("goal") or "").strip()
+
+
+def readable_routine(rec):
+    """A COPY of a routine that speaks ONE name: `aim` (the delegation brief).
+
+    2026-11-28: the read model exposes `aim`; a legacy `goal` key is projected onto
+    it and dropped, so every consumer sees one name for one fact.
+    """
+    if not isinstance(rec, dict):
+        return rec
+    out = dict(rec)
+    out["aim"] = aim_of(rec)
+    out.pop("goal", None)
+    return out
+
+
 def _load():
     return read_registry(ROUTINES_FILE, routines={}, seq=0)
 
@@ -40,10 +67,10 @@ def _save(d):
         pass
 
 
-def _run_agent(session_id, goal, model=None):
-    """Run the goal as one real turn on the agent's session (jobs shares this path)."""
+def _run_agent(session_id, aim, model=None):
+    """Run the aim as one real turn on the agent's session (jobs shares this path)."""
     from longrun.orchestrate import jobs as jobs_mod
-    return jobs_mod.JOBS._run_agent(session_id, goal, model=model)
+    return jobs_mod.JOBS._run_agent(session_id, aim, model=model)
 
 
 # v659: ONE reading of the two spellings of the switch. A caller that sent
@@ -83,20 +110,22 @@ class RoutineRegistry:
     def list(self):
         with _LOCK:
             d = _load()
-        rows = sorted(d["routines"].values(), key=lambda r: r.get("n", 0))
+        rows = [readable_routine(r) for r in
+                sorted(d["routines"].values(), key=lambda r: r.get("n", 0))]
         return {"routines": rows, "seq": d["seq"], "count": len(rows)}
 
     def get(self, rid):
         with _LOCK:
-            return _load()["routines"].get(str(rid))
+            rec = _load()["routines"].get(str(rid))
+        return readable_routine(rec) if rec else None
 
-    def create(self, agent, goal, every_seconds, enabled=None, model=None, disabled=None):
+    def create(self, agent, aim, every_seconds, enabled=None, model=None, disabled=None):
         ok, aid = _canonical_agent(agent)
         if not ok:
             return {"ok": False, "error": aid}
-        goal = (goal or "").strip()
-        if not goal:
-            return {"ok": False, "error": "goal required"}
+        aim = (aim or "").strip()
+        if not aim:
+            return {"ok": False, "error": "aim required"}
         try:
             every = int(every_seconds)
         except (TypeError, ValueError):
@@ -110,7 +139,7 @@ class RoutineRegistry:
             d = _load()
             d["seq"] += 1
             now = time.time()
-            rec = {"id": "R%d" % d["seq"], "n": d["seq"], "agent": aid, "goal": goal,
+            rec = {"id": "R%d" % d["seq"], "n": d["seq"], "agent": aid, "aim": aim,
                    "model": model, "every_seconds": every, "enabled": on,
                    "created": round(now, 3), "last_run": None,
                    "next_run": round(now + every, 3), "runs": 0}
@@ -118,19 +147,19 @@ class RoutineRegistry:
             _save(d)
         return {"ok": True, "routine": rec}
 
-    def update(self, rid, agent=None, goal=None, every_seconds=None, enabled=None,
+    def update(self, rid, agent=None, aim=None, every_seconds=None, enabled=None,
                model=None, disabled=None):
         """JAG-536: edit a routine in place. Only the fields passed are touched, so
-        the deck can re-target the agent, rewrite the goal, change the cadence or
+        the deck can re-target the agent, rewrite the aim, change the cadence or
         flip the switch without delete-then-recreate (which lost ``runs``/``last_run``
         and reset the id)."""
         rid = str(rid or "")
         # v659: an unknown key (or an empty patch) used to answer ok=True and change
         # NOTHING — a silent no-op (operator: "routines.update no-op silenzioso").
         # Say what is acceptable instead.
-        if all(v is None for v in (agent, goal, every_seconds, enabled, disabled, model)):
+        if all(v is None for v in (agent, aim, every_seconds, enabled, disabled, model)):
             return {"ok": False,
-                    "error": ("nothing to update — pass at least one of: agent, goal, "
+                    "error": ("nothing to update — pass at least one of: agent, aim, "
                               "every_seconds, enabled (or disabled), model")}
         with _LOCK:
             d = _load()
@@ -142,11 +171,12 @@ class RoutineRegistry:
                 if not ok:
                     return {"ok": False, "error": aid}
                 rec["agent"] = aid
-            if goal is not None:
-                g = str(goal).strip()
+            if aim is not None:
+                g = str(aim).strip()
                 if not g:
-                    return {"ok": False, "error": "goal required"}
-                rec["goal"] = g
+                    return {"ok": False, "error": "aim required"}
+                rec["aim"] = g
+                rec.pop("goal", None)   # one name for one fact: migrate the old key
             if every_seconds is not None:
                 try:
                     every = int(every_seconds)
@@ -242,7 +272,7 @@ class RoutineRegistry:
             a = agents_mod.REGISTRY.resolve(r["agent"]) or {}
             sid = a.get("session")
             if sid:
-                _run_agent(sid, r["goal"], model=r.get("model"))
+                _run_agent(sid, aim_of(r), model=r.get("model"))
             _report(True)
         except Exception as exc:  # noqa: BLE001 — a routine must not kill the tick
             _report(False, "routine %s: %s" % (r.get("id"), exc))

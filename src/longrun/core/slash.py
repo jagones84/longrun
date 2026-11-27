@@ -60,6 +60,14 @@ BUILTINS = [
      "kind": "ui", "insert": "",
      "hint": "this session's context: saturation, messages/tokens/budget and the "
              "full breakdown (the same card the inspector shows)"},
+    # 2026-11-28 (operator: "voglio poter cambiare il modello con /models come in
+    # openclaw, sia in WebUI sia su Telegram"): ONE catalogue entry, TWO surfaces.
+    # The WebUI opens its existing model picker; the Telegram channel opens a
+    # provider ▸ model keyboard. Both set the SAME per-session model
+    # (`stores._set_session_model`) — no second backend.
+    {"id": "models", "aliases": ["model"], "title": "Models", "icon": "\U0001f9e9",
+     "kind": "ui", "insert": "",
+     "hint": "choose the LLM for this chat — provider ▸ model"},
     {"id": "restart", "aliases": [], "title": "Restart", "icon": "\u27f3",
      "kind": "ui", "insert": "",
      "hint": "restart the harness now — the same door the agent's harness tool uses"},

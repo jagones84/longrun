@@ -74,9 +74,9 @@ _created = jobs_mod.JOBS.create("draft the api", coordinator="s1", agents=["s1",
 _jid = (_created.get("job") or {}).get("id")
 check("A2 a job is created (baseline)", bool(_jid), _created.get("error"))
 
-_res = jobs_mod.JOBS.update(_jid, goal="draft the API v2")
+_res = jobs_mod.JOBS.update(_jid, aim="draft the API v2")
 check("A3 only the passed field changes",
-      _res.get("ok") and _res["job"]["goal"] == "draft the API v2"
+      _res.get("ok") and _res["job"]["aim"] == "draft the API v2"
       and _res["job"]["agents"] == ["s1", "s2"], _res.get("error"))
 
 _res = jobs_mod.JOBS.update(_jid, agents=["s2"])
@@ -84,8 +84,8 @@ check("A4 re-assigning the workers drops an empty worker list",
       _res.get("ok") and _res["job"]["agents"] == ["s2"], _res.get("error"))
 check("A5 a coordinator that is no longer a worker is replaced by one that is",
       _res.get("ok") and _res["job"]["coordinator"] == "s2", _res["job"].get("coordinator"))
-check("A6 an empty goal is refused",
-      jobs_mod.JOBS.update(_jid, goal="  ").get("ok") is False)
+check("A6 an empty aim is refused",
+      jobs_mod.JOBS.update(_jid, aim="  ").get("ok") is False)
 
 _res = jobs_mod.JOBS.update(_jid, mode="swarm", blocked_by=["J999"])
 check("A7 a blocker that does not exist is dropped (no dead edge)",
@@ -94,8 +94,8 @@ check("A7 a blocker that does not exist is dropped (no dead edge)",
 
 jobs_mod.JOBS._update(_jid, lambda j: j.update({"status": "running"}))
 check("A8 a RUNNING job cannot be edited",
-      jobs_mod.JOBS.update(_jid, goal="nope").get("ok") is False
-      and "running" in jobs_mod.JOBS.update(_jid, goal="nope").get("error", ""))
+      jobs_mod.JOBS.update(_jid, aim="nope").get("ok") is False
+      and "running" in jobs_mod.JOBS.update(_jid, aim="nope").get("error", ""))
 jobs_mod.JOBS._update(_jid, lambda j: j.update({"status": "created"}))
 
 # ---- B: the tools exist and are wired -------------------------------------

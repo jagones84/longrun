@@ -1,6 +1,6 @@
 # Team-job policy — read by `src/longrun/orchestrate/jobs.py::config()`.
 #
-# A job is "goal + who you give it to": the assignee's ORG SUBTREE becomes the
+# A job is "aim + who you give it to": the assignee's ORG SUBTREE becomes the
 # team, and every member becomes a numbered subjob (J8.1, J8.2, ...). A member
 # who reports to ANOTHER member nests under that lead (J8.1.1), so the subjob
 # ids mirror the organigram at any depth — the tree in the Jobs panel shows the

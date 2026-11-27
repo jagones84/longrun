@@ -143,14 +143,14 @@ out = S._apply_chat_dispatch({"id": "sess_nobody", "messages": []},
                              {"action": "dispatch", "agent": W["id"], "goal": "x"}, on_event)
 check("D2 a non-agent session still cannot dispatch", "not an org agent" in out, out)
 out = S._apply_chat_dispatch(master, {"action": "dispatch", "agent": W["id"]}, on_event)
-check("D3 a goal is still required", "goal required" in out, out)
+check("D3 an aim is still required", "aim required" in out, out)
 
 # ---- E) the brief a run-mode worker receives is never empty ----------------
 JOBS_SRC = open(os.path.join(REPO, "src", "longrun", "orchestrate", "jobs.py"),
                 encoding="utf-8").read()
-check("E1 a run-mode job hands the GOAL as the worker's assignment (v904: so does "
+check("E1 a run-mode job hands the AIM as the worker's assignment (v904: so does "
       "a coordinator job whose plan gave this agent no readable line)",
-      'or job["goal"])' in JOBS_SRC)
+      'or aim_of(job))' in JOBS_SRC)
 check("E2 the assigner's name rides the delegation message in run mode",
       "sender_label = coord_label or (" in JOBS_SRC
       and "_delegation_msg(jid, sender_label" in JOBS_SRC)

@@ -201,11 +201,13 @@ try:
 finally:
     agent.taskgraph.load = _orig_load
 
-# 2026-11-07: one of the five sites builds the sentence across lines (the dispatch
-# branch), so the pin counts the SENTENCE — the invariant is "all five tool sites
-# still inject the observation verbatim", not one particular concatenation.
-check("D5 the tool payload is still injected VERBATIM at all 5 tool sites",
-      _src.count("Continue: call the next tool, or report the result.") == 5,
+# 2026-11-07: one of the sites builds the sentence across lines (the dispatch
+# branch), so the pin counts the SENTENCE — the invariant is "every action site
+# still injects the observation verbatim", not one particular concatenation.
+# 2026-11-28: the `goal` delegation action joined the loop as a 6th site, so the
+# count moves 5 → 6; the invariant (no site truncates the payload) is unchanged.
+check("D5 the tool payload is still injected VERBATIM at all 6 action sites",
+      _src.count("Continue: call the next tool, or report the result.") == 6,
       "count=%d" % _src.count(
           "Continue: call the next tool, or report the result."))
 check("D6 nothing was added that TRUNCATES an injection",

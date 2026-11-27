@@ -484,12 +484,12 @@ python3 forge.py embedding costs   # spend log: total, by model, last 30 days
 
 | Command | Endpoint |
 |---|---|
-| `subagent spawn "goal" [--max-steps N]` | `POST /api/subagent/spawn` |
+| `subagent spawn "aim" [--max-steps N]` | `POST /api/subagent/spawn` |
 | `subagent collect ID` | `POST /api/subagent/collect` |
 | `subagent status [ID]` | `GET /api/subagent` |
 | `meta run [--n-candidates N]` | `POST /api/meta` |
 | `meta status` / `meta best` | `GET /api/meta` |
-| `swarm "goal" [--n-workers N] [--max-steps N]` | `POST /api/swarm/run` |
+| `swarm "aim" [--n-workers N] [--max-steps N]` | `POST /api/swarm/run` |
 
 ```bash
 python3 forge.py subagent spawn "riassumi il file X" --max-steps 3
@@ -511,11 +511,11 @@ The orchestration layer: designate sessions as **agents**, organise them into an
 | `agents rm AX` | `DELETE /api/agents/<sid>` (blocked while it has reports) |
 | `jobs ls` | `GET /api/jobs` |
 | `jobs get JN` | `GET /api/jobs/<id>` |
-| `jobs new "goal" [--to AX] [--blocked-by JN,JN] [--agents AX,AX] [--coordinator AX] [--mode m]` | `POST /api/jobs` |
+| `jobs new "aim" [--to AX] [--blocked-by JN,JN] [--agents AX,AX] [--coordinator AX] [--mode m]` | `POST /api/jobs` |
 | `jobs run JN` | `POST /api/jobs/<id>/dispatch` (coordinator + workers, dependency waves) |
 | `jobs wake` | `POST /api/jobs/wake` (release blocked jobs whose blockers are done) |
 | `routines ls` | `GET /api/routines` |
-| `routines new "goal" --agent AX [--every N]` | `POST /api/routines` |
+| `routines new "aim" --agent AX [--every N]` | `POST /api/routines` |
 | `routines enable RID` / `routines disable RID` | `POST /api/routines/<id>/<action>` |
 | `routines rm RID` | `DELETE /api/routines/<id>` |
 | `roles show --session SID` | `GET /api/roles?session=` |
@@ -569,6 +569,25 @@ python3 forge.py voice tts "ciao dal DGX"
 python3 forge.py mcp ls           # configured MCP clients + live connection state
 python3 forge.py mcp tools        # tools the harness itself exposes over MCP
 python3 forge.py acp list         # ACP/MCP clients as the server sees them
+```
+
+### Telegram channel
+
+One bot, one dedicated session (`telegram`, a deletable twin of the Architect).
+
+| Command | Endpoint |
+|---|---|
+| `telegram status` | `GET /api/telegram/status` |
+| `telegram setup <bot-token>` | `POST /api/telegram/setup` (validate `getMe`, save the token, create the session) |
+| `telegram pair <code>` | `POST /api/telegram/pair` (approve a chat's pairing code) |
+| `telegram unpair [chat-id]` | `POST /api/telegram/unpair` (revoke one chat, or all) |
+| `telegram reconnect` | `POST /api/telegram/reconnect` (re-read the token, restart the poller) |
+| `telegram logout` | `POST /api/telegram/logout` (forget the bot + pairing ⇒ re-onboarding) |
+
+```bash
+python3 forge.py telegram status             # running? bot identity, paired chats
+python3 forge.py telegram setup 123456:ABC   # validate + save the token, arm the channel
+python3 forge.py telegram pair A1B2C3        # approve the chat that DM'd the bot
 ```
 
 ### Marketplace

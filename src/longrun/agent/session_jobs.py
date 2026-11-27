@@ -106,8 +106,11 @@ def _normalise(specs):
     return labels, out
 
 
-def create(sid, goal, subjobs, mode="parallel"):
+def create(sid, aim, subjobs, mode="parallel"):
     """Declare one Session Job. Returns ``{ok, job}`` or ``{ok: False, error}``.
+
+    2026-11-28 (operator): the Session-Job brief is an AIM (a delegation brief),
+    never the durable `/goal` objective of `plan/goal.py`.
 
     Validation (refusing is the point — a malformed plan must not run):
       * at least one subjob, at most ``MAX_SUBJOBS``;
@@ -148,7 +151,7 @@ def create(sid, goal, subjobs, mode="parallel"):
             sub_id = ids[s["label"]]
             doc["subjobs"][sub_id] = {
                 "id": sub_id, "job": jid, "label": s["label"],
-                "goal": str(s.get("goal") or s.get("detail") or "").strip(),
+                "aim": str(s.get("aim") or s.get("goal") or s.get("detail") or "").strip(),
                 "role": (str(s.get("role")).strip() or None) if s.get("role") else None,
                 "model": s.get("model") or None,
                 "max_steps": _steps(s.get("max_steps")),
@@ -159,7 +162,7 @@ def create(sid, goal, subjobs, mode="parallel"):
                 "error": None, "created": now, "started": None, "ended": None,
             }
         doc["jobs"][jid] = {
-            "id": jid, "n": n, "sid": sid, "goal": str(goal or "")[:500],
+            "id": jid, "n": n, "sid": sid, "aim": str(aim or "")[:500],
             "mode": str(mode or "parallel"), "status": "created",
             "order": order, "labels": ids, "created": now,
             "started": None, "ended": None,
@@ -300,15 +303,15 @@ def run(sid, job_id=None, hook=None, spawn_fn=None, collect_fn=None,
                 if len(running) >= max(1, int(cap or 1)):
                     break
                 spec = subs[sub_id]
-                goal = (spec.get("goal") or "").strip() or "(no goal)"
-                goal += _input_block(doc, spec)
+                aim = (spec.get("aim") or spec.get("goal") or "").strip() or "(no aim)"
+                aim += _input_block(doc, spec)
                 spec["status"] = "running"
                 spec["started"] = round(time.time(), 3)
                 _save(sid, doc)
                 if hook:
-                    hook("start", dict(spec, goal_prompt=goal))
+                    hook("start", dict(spec, aim_prompt=aim))
                 try:
-                    spawned = spawn_fn(goal, parent_run_id=sid,
+                    spawned = spawn_fn(aim, parent_run_id=sid,
                                        max_steps=spec.get("max_steps") or _steps(None),
                                        model=spec.get("model"),
                                        depth=_depth(sid) + 1,
@@ -366,11 +369,11 @@ def run(sid, job_id=None, hook=None, spawn_fn=None, collect_fn=None,
         # every dependent as if it were input (observed live, 2026-10-22: a child
         # of a spinning child spun too). Record it as a FAILURE instead, so golden
         # rule 3 blocks the dependents loudly. Cause of the spin is usually a long
-        # or ambiguous child goal: keep child goals short and literal.
+        # or ambiguous child aim: keep child aims short and literal.
         if ok and str((res.get("result") or {}).get("termination") or "") == "no_progress":
             ok = False
             res = dict(res, error="no progress: the subagent spun and produced no "
-                                  "usable output (keep child goals short and literal)")
+                                  "usable output (keep child aims short and literal)")
         # v924: ANY non-completed termination is the same defect family. A child
         # stopped at max_steps (or aborted) ends status "done" with a sentinel
         # summary, which used to be handed to every dependent as if it were input
@@ -478,7 +481,8 @@ def describe(sid, job_id=None, max_result=600):
                            if s.get("result") else None),
                 "error": s.get("error"),
             })
-        out.append({"kind": "session", "id": job.get("id"), "goal": job.get("goal"),
+        out.append({"kind": "session", "id": job.get("id"),
+                    "aim": job.get("aim") or job.get("goal"),
                     "status": job.get("status"), "created": job.get("created"),
                     "ended": job.get("ended"), "subjobs": subs})
     # 2026-11-20: self-describing payload. SJ is the in-chat subagent ledger —

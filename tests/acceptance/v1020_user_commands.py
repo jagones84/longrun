@@ -52,10 +52,13 @@ check("A3 the built-in tokens are declared as reserved",
       # `/context` (alias `/ctx`) and `/restart` — so all three tokens are reserved.
       # 2026-11-24: `/new` is a built-in as well — `/reset` clears the chat it is typed
       # in and `/new` starts the fresh one, so both words must be un-shadowable.
+      # 2026-11-28: `/models` (alias `/model`) joined the catalogue (the Telegram +
+      # WebUI model picker), so both tokens are reserved too.
       set(commands.RESERVED) == {"goal", "skills", "skill", "compact",
                                  "plan", "spec", "plugins", "plugin",
                                  "status", "reset", "new", "unlock",
-                                 "context", "ctx", "restart"}, commands.RESERVED)
+                                 "context", "ctx", "restart", "models", "model"},
+      commands.RESERVED)
 
 # ── B: round-trip ───────────────────────────────────────────────────────────
 res = save()

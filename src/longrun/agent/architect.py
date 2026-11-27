@@ -38,6 +38,19 @@ from longrun.util.fswrite import safe_id
 
 ARCHITECT_SESSION_ID = "architect"
 ARCHITECT_TITLE = "Architect"
+
+#: 2026-11-28: the Telegram channel's dedicated session — a TWIN of the Architect.
+#: It shares every SYSTEM-session behaviour (always `allow_architect`, the system
+#: prompt namespace, the whole-org job scope), so any future change to the
+#: Architect's systemic handling applies to it automatically. It keeps its OWN
+#: transcript and, unlike the Architect, it CAN be deleted (deleting clears the
+#: Telegram binding ⇒ re-onboarding).
+TELEGRAM_SESSION_ID = "telegram"
+TELEGRAM_TITLE = "Telegram"
+#: The ONE set of resident SYSTEM sessions. Every "is this a system session?"
+#: question (`is_system_session`, the access gates, `coordinator_scope`) reads
+#: THIS, never a bare literal, so the two residents cannot drift apart.
+SYSTEM_SESSIONS = (ARCHITECT_SESSION_ID, TELEGRAM_SESSION_ID)
 # 2026-11-11 (operator: "longrunagent deve sparire dalla faccia della terra"):
 # the identity is `architect` in every surface — session id and file name,
 # /api/architect/*, roles.architect, allow_architect, the prompt section and the
@@ -412,15 +425,16 @@ TOOL_SCHEMAS = {
     "job.create": {
         "description": (
             "job.create — Create a team job (J<n>; not an in-chat Session Job SJ<n>): "
-            "a goal assigned to a coordinator agent and "
-            "optional workers, with optional dependencies. It is created NOT dispatched; use "
-            "`job.dispatch` to run it. Scope: your own subtree; the one exception is "
-            "naming another team's LEAD as `coordinator` with every worker inside that "
-            "lead's subtree."
+            "an AIM (a delegation brief — NOT the durable `/goal` objective) assigned to "
+            "a coordinator agent and optional workers, with optional dependencies. It is "
+            "created NOT dispatched; use `job.dispatch` to run it. Scope: your own "
+            "subtree; the one exception is naming another team's LEAD as `coordinator` "
+            "with every worker inside that lead's subtree."
         ),
         "type": "object",
         "properties": {
-            "goal": {"type": "string", "description": "The job goal, in plain language."},
+            "aim": {"type": "string", "description": "The job's AIM (delegation brief), in plain language. `goal` is a legacy alias."},
+            "goal": {"type": "string", "description": "Legacy alias of `aim` (older clients/models)."},
             "coordinator": {"type": "string", "description": "Coordinator agent ID/name (optional)."},
             "agents": {"type": "array", "description": "Worker agent IDs/names (optional)."},
             "deps": {
@@ -431,18 +445,19 @@ TOOL_SCHEMAS = {
             },
             "mode": {"type": "string",
                      "description": "'coordinator' (default: the coordinator plans, then "
-                                    "aggregates) or 'run' (every worker gets the goal "
+                                    "aggregates) or 'run' (every worker gets the aim "
                                     "directly, no planning turn)."},
             "blocked_by": {"type": "array", "description": "Optional list of job IDs that must finish first."},
         },
-        "required": ["goal"],
+        "required": [],
+        "anyOf": [{"required": ["aim"]}, {"required": ["goal"]}],
         "_origin": "exclusive",
         "_namespace": "job",
         "_subtool": "create",
     },
     "job.update": {
         "description": (
-            "job.update — Edit an EXISTING job in place: goal, coordinator, workers, "
+            "job.update — Edit an EXISTING job in place: aim, coordinator, workers, "
             "mode, worker deps, blocked_by. Only the fields you pass are touched; a "
             "running job cannot be edited. Use it to re-assign a job to the right "
             "agents instead of deleting and recreating it."
@@ -450,7 +465,8 @@ TOOL_SCHEMAS = {
         "type": "object",
         "properties": {
             "job": {"type": "string", "description": "Job ID ('J2')."},
-            "goal": {"type": "string", "description": "New goal, in plain language."},
+            "aim": {"type": "string", "description": "New AIM (delegation brief), in plain language. `goal` is a legacy alias."},
+            "goal": {"type": "string", "description": "Legacy alias of `aim` (older clients/models)."},
             "coordinator": {"type": "string", "description": "New coordinator agent ID/name."},
             "agents": {"type": "array", "description": "New worker list (agent IDs/names)."},
             "deps": {
@@ -461,7 +477,7 @@ TOOL_SCHEMAS = {
             },
             "mode": {"type": "string",
                      "description": "'coordinator' (default: plan + aggregate) or 'run' "
-                                    "(workers get the goal directly)."},
+                                    "(workers get the aim directly)."},
             "blocked_by": {"type": "array", "description": "Job IDs that must finish first."},
         },
         "required": ["job"],
@@ -533,19 +549,22 @@ TOOL_SCHEMAS = {
     },
     "routine.create": {
         "description": (
-            "routine.create — Schedule a recurring goal for one agent (a heartbeat "
-            "routine). `every_seconds` is the cadence."
+            "routine.create — Schedule a recurring AIM (a delegation brief — NOT the "
+            "durable `/goal` objective) for one agent (a heartbeat routine). "
+            "`every_seconds` is the cadence."
         ),
         "type": "object",
         "properties": {
             "agent": {"type": "string", "description": "Agent ID ('A3'), session ID, or agent name the routine runs as."},
-            "goal": {"type": "string", "description": "The goal the agent re-runs on every tick."},
+            "aim": {"type": "string", "description": "The AIM the agent re-runs on every tick. `goal` is a legacy alias."},
+            "goal": {"type": "string", "description": "Legacy alias of `aim` (older clients/models)."},
             "every_seconds": {"type": "integer", "description": "Cadence in seconds (minimum 30)."},
             "enabled": {"type": "boolean", "description": "Start enabled (default true)."},
             "disabled": {"type": "boolean", "description": "Start disabled — the reverse spelling of `enabled`. Pass ONE of the two."},
             "model": {"type": "string", "description": "Optional model override for the tick."},
         },
-        "required": ["agent", "goal", "every_seconds"],
+        "required": ["agent", "every_seconds"],
+        "anyOf": [{"required": ["aim"]}, {"required": ["goal"]}],
         "_origin": "exclusive",
         "_namespace": "routine",
         "_subtool": "create",
@@ -553,13 +572,14 @@ TOOL_SCHEMAS = {
     "routine.update": {
         "description": (
             "routine.update — Edit a routine in place: re-target the agent, rewrite the "
-            "goal, change the cadence or flip the switch. Only the fields you pass are touched."
+            "aim, change the cadence or flip the switch. Only the fields you pass are touched."
         ),
         "type": "object",
         "properties": {
             "routine": {"type": "string", "description": "Routine ID ('R1')."},
             "agent": {"type": "string", "description": "New agent ID/name for the routine."},
-            "goal": {"type": "string", "description": "New goal text."},
+            "aim": {"type": "string", "description": "New AIM text (delegation brief). `goal` is a legacy alias."},
+            "goal": {"type": "string", "description": "Legacy alias of `aim` (older clients/models)."},
             "every_seconds": {"type": "integer", "description": "New cadence in seconds."},
             "enabled": {"type": "boolean", "description": "Enable or disable the routine."},
             "disabled": {"type": "boolean", "description": "Disable/enable — the reverse spelling of `enabled`. Pass ONE of the two."},
@@ -571,7 +591,7 @@ TOOL_SCHEMAS = {
         "_subtool": "update",
     },
     "routine.get": {
-        "description": "routine.get — Read ONE routine (agent, goal, cadence, runs, last_run).",
+        "description": "routine.get — Read ONE routine (agent, aim, cadence, runs, last_run).",
         "type": "object",
         "properties": {
             "routine": {"type": "string", "description": "Routine ID ('R1')."},
@@ -994,8 +1014,13 @@ def is_exclusive_name(name):
 # --------------------------------------------------- session & access gate ---
 
 def is_system_session(sid):
-    """True when `sid` is the permanent undeletable `architect` session."""
-    return str(sid or "").strip() == ARCHITECT_SESSION_ID
+    """True when `sid` is a resident SYSTEM session (`architect` or `telegram`).
+
+    ONE set (`SYSTEM_SESSIONS`) for every "is this systemic?" question. It is NOT
+    the delete guard any more: the Architect is undeletable, the Telegram twin is
+    not — use `is_undeletable` for that (core/httpapi.delete_session).
+    """
+    return str(sid or "").strip() in SYSTEM_SESSIONS
 
 
 def is_architect_session(sid):
@@ -1255,33 +1280,35 @@ def migrate_legacy_identity():
     return {"moved": moved_n, "rewritten": rewrote, "events": rows, "flags": flags}
 
 
-def ensure_system_session():
-    """Ensure the permanent `architect` session exists on disk and is never tombstoned."""
+def _ensure_resident_record(sid, title, stateless, undeletable):
+    """Create-or-repair ONE resident system session's FILE on disk.
+
+    Shared body of `ensure_system_session` (architect) and
+    `ensure_telegram_session` (telegram): the same flags, the same un-tombstone and
+    the same one-time title repair, so the two residents cannot drift. Returns the
+    (possibly updated) session dict.
+    """
     from longrun.memory import stores
-    try:
-        migrate_legacy_identity()
-    except Exception:  # noqa: BLE001 — a migration bug must never stop the boot
-        pass
     with stores._deleted_lock:
-        if ARCHITECT_SESSION_ID in stores._DELETED_SESSIONS:
-            stores._DELETED_SESSIONS.discard(ARCHITECT_SESSION_ID)
+        if sid in stores._DELETED_SESSIONS:
+            stores._DELETED_SESSIONS.discard(sid)
             stores._persist_tombstones()
-    sess = stores.load_session(ARCHITECT_SESSION_ID)
+    sess = stores.load_session(sid)
     changed = False
     if not isinstance(sess, dict):
-        ws = os.path.join(paths.WORKSPACES_DIR, ARCHITECT_SESSION_ID)
+        ws = os.path.join(paths.WORKSPACES_DIR, sid)
         try:
             os.makedirs(ws, exist_ok=True)
         except OSError:
             ws = paths.REPO_ROOT
         sess = {
-            "id": ARCHITECT_SESSION_ID,
-            "title": ARCHITECT_TITLE,
+            "id": sid,
+            "title": title,
             "created": round(time.time(), 3),
             "workspace": ws,
             "system": True,
-            "undeletable": True,
-            "stateless": True,
+            "undeletable": bool(undeletable),
+            "stateless": bool(stateless),
             "allow_architect": True,
             "messages": [],
             "tool_cards": [],
@@ -1290,16 +1317,46 @@ def ensure_system_session():
         stores.ensure_agent(sess)   # EV-30: the singleton session is an agent too
         changed = True
     else:
-        for k, v in (("system", True), ("undeletable", True),
-                     ("stateless", True), ("allow_architect", True)):
+        for k, v in (("system", True), ("undeletable", bool(undeletable)),
+                     ("stateless", bool(stateless)), ("allow_architect", True)):
             if sess.get(k) is not v:
                 sess[k] = v
                 changed = True
         # 2026-11-11: one-time rename for an existing store (old label only, never a
         # title the operator typed).
         if not sess.get("title") or sess.get("title") == _LEGACY_TITLE:
-            sess["title"] = ARCHITECT_TITLE
+            sess["title"] = title
             changed = True
+    if changed:
+        stores.save_session(sess)
+    return sess
+
+
+def _ensure_pinned_agent(sid):
+    """Make sure `sid`'s agent record carries its PINNED code (A1 / AX).
+
+    One body for both residents: the pin lives in `agents.PINNED_AGENT_IDS`, so a
+    registry written before the reservation (or a reset that emptied it) still
+    shows the right code for the session.
+    """
+    try:
+        from longrun.agent import agents as agents_mod
+        want = agents_mod._pin_code(agents_mod.PINNED_AGENT_IDS.get(sid))
+        rec = agents_mod.REGISTRY.get(sid)
+        if not rec or rec.get("id") != want:
+            agents_mod.REGISTRY.designate(sid, kind="session")
+    except Exception:  # noqa: BLE001 — the session must exist even if the registry is broken
+        pass
+
+
+def ensure_system_session():
+    """Ensure the permanent `architect` session exists on disk and is never tombstoned."""
+    try:
+        migrate_legacy_identity()
+    except Exception:  # noqa: BLE001 — a migration bug must never stop the boot
+        pass
+    sess = _ensure_resident_record(ARCHITECT_SESSION_ID, ARCHITECT_TITLE,
+                                   stateless=True, undeletable=True)
     # the agent record's display name follows the title, same one-time rule.
     try:
         from longrun.agent import agents as agents_mod
@@ -1308,19 +1365,49 @@ def ensure_system_session():
             agents_mod.REGISTRY.set_name(ARCHITECT_SESSION_ID, ARCHITECT_TITLE)
     except Exception:  # noqa: BLE001 — a rename must never stop the service booting
         pass
-    # EV-40: the supervisor owns the FIRST agent number. The pin lives in
-    # `agents.PINNED_AGENT_IDS`, so a registry written before the reservation
-    # (or a reset that emptied it) still shows `A1` for this session.
+    # EV-40: the supervisor owns the FIRST agent number.
+    _ensure_pinned_agent(ARCHITECT_SESSION_ID)
+    return sess
+
+
+def ensure_telegram_session():
+    """Ensure the `telegram` TWIN session exists: system, own transcript, deletable.
+
+    Same system behaviour as the Architect (`allow_architect`, the system prompt,
+    the whole-org job scope) via `SYSTEM_SESSIONS`, but `stateless=False` (it keeps
+    the conversation) and `undeletable=False` (the operator may remove it, which
+    clears the Telegram binding ⇒ re-onboarding). Its agent code is the reserved
+    `AX`, never a sequence number.
+    """
+    sess = _ensure_resident_record(TELEGRAM_SESSION_ID, TELEGRAM_TITLE,
+                                   stateless=False, undeletable=False)
     try:
         from longrun.agent import agents as agents_mod
-        rec = agents_mod.REGISTRY.get(ARCHITECT_SESSION_ID)
-        if not rec or rec.get("id") != "A1":
-            agents_mod.REGISTRY.designate(ARCHITECT_SESSION_ID, kind="session")
-    except Exception:  # noqa: BLE001 — the session must exist even if the registry is broken
+        _rec = agents_mod.REGISTRY.get(TELEGRAM_SESSION_ID) or {}
+        if _rec.get("name") in (TELEGRAM_SESSION_ID, "AX", _LEGACY_TITLE):
+            agents_mod.REGISTRY.set_name(TELEGRAM_SESSION_ID, TELEGRAM_TITLE)
+    except Exception:  # noqa: BLE001 — a rename must never stop the boot
         pass
-    if changed:
-        stores.save_session(sess)
+    _ensure_pinned_agent(TELEGRAM_SESSION_ID)
     return sess
+
+
+def is_undeletable(sid):
+    """True when `sid` is a session the operator must not delete (the Architect).
+
+    Decoupled from `is_system_session` (2026-11-28): the Telegram twin is a system
+    session too, but it IS deletable. The Architect is undeletable by identity; any
+    other session by its own `undeletable` flag. This is the delete guard's ONLY
+    question (`core/httpapi.delete_session`).
+    """
+    sid = str(sid or "").strip()
+    if not sid:
+        return False
+    if sid == ARCHITECT_SESSION_ID:
+        return True
+    from longrun.memory import stores
+    sess = stores.load_session(sid)
+    return bool(isinstance(sess, dict) and sess.get("undeletable"))
 
 
 def reset_stateless_session():
@@ -1384,7 +1471,7 @@ def access_from_record(sess):
     sid = str(sess.get("id") or "").strip()
     if not sid:
         return False
-    if sid == ARCHITECT_SESSION_ID or sid.startswith(ARCHITECT_SESSION_ID + "_"):
+    if sid in SYSTEM_SESSIONS or sid.startswith(ARCHITECT_SESSION_ID + "_"):
         return True
     explicit = sess.get("allow_architect")
     if isinstance(explicit, bool):
@@ -1420,7 +1507,7 @@ def effective_access_map(rows):
         sid = str((r or {}).get("id") or "")
         if not sid:
             continue
-        if sid == ARCHITECT_SESSION_ID or sid.startswith(ARCHITECT_SESSION_ID + "_"):
+        if sid in SYSTEM_SESSIONS or sid.startswith(ARCHITECT_SESSION_ID + "_"):
             out[sid] = True
             continue
         v = (r or {}).get("allow_architect")
@@ -1440,7 +1527,7 @@ def session_has_access(sid):
     sid = str(sid or "").strip()
     if not sid:
         return False
-    if sid == ARCHITECT_SESSION_ID or sid.startswith(ARCHITECT_SESSION_ID + "_"):
+    if sid in SYSTEM_SESSIONS or sid.startswith(ARCHITECT_SESSION_ID + "_"):
         return True
     from longrun.memory import stores
     return access_from_record(stores.load_session(sid))
@@ -1618,7 +1705,9 @@ def coordinator_scope(run_id):
     job for any agent (case J38, 2026-11-10) while its prompt said exit 126.
     """
     sid = str(run_id or "").strip()
-    if not sid or is_architect_session(sid):
+    # The Architect (and its stateless runs) and the Telegram twin are the
+    # operator's own hand: neither is scoped, they may organise jobs everywhere.
+    if not sid or is_system_session(sid) or sid.startswith(ARCHITECT_SESSION_ID + "_"):
         return None
     try:
         from longrun.agent import agents as agents_mod
@@ -1673,9 +1762,9 @@ def delegation_section(sess):
         "%d teammate(s) report to you, so dependent TEAM JOBS are yours — no "
         "operator grant is needed, and every manager below you has the same tools "
         "for its own subtree.\n"
-        "- `job.create {goal, agents?, coordinator?, deps?, blocked_by?}` — CREATE a "
-        "job (it does not run until you dispatch it). `agents` defaults to your "
-        "subtree and `coordinator` to you.\n"
+        "- `job.create {aim, agents?, coordinator?, deps?, blocked_by?}` — CREATE a "
+        "job (it does not run until you dispatch it). `aim` is the delegation brief; "
+        "`agents` defaults to your subtree and `coordinator` to you.\n"
         "- `job.dispatch {job}` — run it in dependency waves (this spends real model "
         "calls). `job.wake` releases YOUR blocked jobs whose blockers finished.\n"
         "- `job.get {job}` · `job.list` — read them. `job.update {job, …}` edits one "
@@ -2423,9 +2512,11 @@ def _team_models_set(args):
 def _job_create(args, caller=None):
     from longrun.orchestrate import jobs as jobs_mod
 
-    goal = str(args.get("goal") or "").strip()
-    if not goal:
-        return {"ok": False, "error": "goal required"}
+    # 2026-11-28: the brief is an AIM; the legacy `goal` key is still accepted.
+    aim = str(args.get("aim") if args.get("aim") is not None
+              else (args.get("goal") or "")).strip()
+    if not aim:
+        return {"ok": False, "error": "aim required"}
     # v901: a coordinator's job may only name agents BELOW it; the Architect (no
     # scope) keeps the whole org. The coordinator defaults to the caller, so a lead
     # cannot accidentally assign its job to an unrelated manager.
@@ -2497,7 +2588,7 @@ def _job_create(args, caller=None):
     except Exception:  # noqa: BLE001 — bookkeeping must never block a create
         assigned_by = ""
     res = jobs_mod.JOBS.create(
-        goal, coordinator=coordinator, agents=workers, deps=args.get("deps"),
+        aim, coordinator=coordinator, agents=workers, deps=args.get("deps"),
         mode=str(args.get("mode") or "coordinator"), blocked_by=args.get("blocked_by"),
         assigned_by=assigned_by)
     if res.get("ok"):
@@ -2542,7 +2633,9 @@ def _job_update(args, caller=None):
             return _scope_denied("job.update",
                                  "coordinator %s is outside your org subtree" % coordinator)
     res = jobs_mod.JOBS.update(
-        jid, goal=args.get("goal"), coordinator=coordinator, agents=workers,
+        jid,
+        aim=(args.get("aim") if args.get("aim") is not None else args.get("goal")),
+        coordinator=coordinator, agents=workers,
         deps=args.get("deps"), mode=args.get("mode"), blocked_by=args.get("blocked_by"))
     if res.get("ok"):
         job = res["job"]
@@ -2657,7 +2750,9 @@ def _routine_create(args):
     # and the routine came back ENABLED (the operator's retest: "routine.create
     # disabled:true ignorato"). Forward BOTH and let the ONE reader decide.
     res = routines_mod.REGISTRY.create(
-        sid, args.get("goal"), args.get("every_seconds"),
+        sid,
+        (args.get("aim") if args.get("aim") is not None else args.get("goal")),
+        args.get("every_seconds"),
         enabled=args.get("enabled"), model=args.get("model"),
         disabled=args.get("disabled"))
     if res.get("ok"):
@@ -2682,9 +2777,13 @@ def _routine_update(args):
         kw["agent"] = sid
     # v663: `disabled` is part of the same switch — it was dropped here, so a patch
     # that ONLY disables answered "nothing to update" (the operator's retest).
-    for key in ("goal", "every_seconds", "enabled", "disabled", "model"):
+    for key in ("every_seconds", "enabled", "disabled", "model"):
         if args.get(key) is not None:
             kw[key] = args.get(key)
+    # 2026-11-28: the brief is `aim`; `goal` is accepted for older callers.
+    _aim = args.get("aim") if args.get("aim") is not None else args.get("goal")
+    if _aim is not None:
+        kw["aim"] = _aim
     if not kw:
         return {"ok": False, "error": "nothing to update"}
     res = routines_mod.REGISTRY.update(rid, **kw)

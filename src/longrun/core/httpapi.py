@@ -829,6 +829,45 @@ def _start_chat_worker(sess, message, model, mark=None, autonomous=False, jid=No
     return t, q, finish_stream
 
 
+def start_session_turn(sid, message, mode="", model=None, max_steps=None,
+                       headless=False, sender=None, subjob=None, sender_session=None,
+                       turn_id=None, on_finish=None):
+    """Start ONE detached chat turn on `sid` — the ONE starter shared by callers.
+
+    This is the general entry point the Telegram channel uses to make a DM behave
+    exactly like a WebUI message: it opens the session, settles goal mode, then
+    hands the work to the SAME `_start_chat_worker(detached=True)` the HTTP route
+    uses — so the transcript, tool cards, events and approvals are identical, not
+    a parallel implementation. It carries NO idempotency of its own: the caller
+    owns its dedupe (`/api/chat/start` keys on `idempotency_key`; the Telegram
+    channel on Telegram's `update_id`).
+
+    Returns `{ok, session, turn_id, goal_mode}` or
+    `{ok: False, status, error}` (the status the HTTP route would have sent).
+    """
+    sess = _open_session(sid)
+    if sess is None:
+        return {"ok": False, "status": 404, "error": "session was deleted"}
+    requested = mode == "goal"
+    goal_mode = _goal_mode_of(sess, requested)
+    ok, payload = _goal_begin(sess, goal_mode, message, requested=requested)
+    if not ok:
+        out = {"ok": False, "status": 409, "error": "goal refused"}
+        if isinstance(payload, dict):
+            out.update(payload)
+            out.setdefault("error", payload.get("error") or "goal refused")
+        return out
+    turn_id = turn_id or uuid.uuid4().hex
+    _start_chat_worker(
+        sess, message, model, autonomous=requested, goal_mode=goal_mode,
+        goal_started=time.time() if goal_mode else None, max_steps=max_steps,
+        headless=bool(headless), sender=sender, subjob=subjob,
+        sender_session=sender_session, detached=True, turn_id=turn_id,
+        on_finish=on_finish)
+    return {"ok": True, "session": sess["id"], "turn_id": turn_id,
+            "goal_mode": goal_mode}
+
+
 def chat_stream_gen(sess, message, model, mark=None, autonomous=False, jid=None,
                     sender=None, subjob=None, plan_only=False, sender_session=None,
                     goal_mode=False, goal_started=None, max_steps=None,
@@ -2879,6 +2918,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, providers_catalog())
         if path == "/api/keys":
             return self._send(200, keys_status())
+        if path == "/api/telegram/status":
+            # 2026-11-28: the channel's live state (Settings ▸ Channels, diagnostics,
+            # CLI `forge.py telegram status`). Never raises.
+            from longrun.core import telegram as _tg
+            return self._send(200, _tg.status())
         if path == "/api/selfcheck":
             llm = qs.get("llm", "1").lower() not in ("0", "false", "no")
             return self._send(200, selfcheck_payload(
@@ -3930,6 +3974,29 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, voice_stt(body.get("text") or body.get("path")))
         if path == "/api/voice/tts":
             return self._send(200, voice_tts(body.get("text", "")))
+        if path.startswith("/api/telegram/"):
+            # 2026-11-28: operator-only channel control (the bearer proves the operator;
+            # a session/run body is refused nowhere special because these are not tool
+            # calls — an agent reaches the channel only through the `telegram` session).
+            from longrun.core import telegram as _tg
+            op = path[len("/api/telegram/"):].strip("/")
+            b = body or {}
+            if op == "setup":
+                token = str(b.get("token") or "").strip()
+                if not token:
+                    return self._send(400, {"error": "token required"})
+                res = _tg.setup(token)
+                return self._send(200 if res.get("ok") else 400, res)
+            if op == "pair":
+                res = _tg.pair(b.get("code"))
+                return self._send(200 if res.get("ok") else 400, res)
+            if op == "unpair":
+                return self._send(200, _tg.unpair(b.get("chat_id")))
+            if op == "reconnect":
+                return self._send(200, _tg.reconnect())
+            if op == "logout":
+                return self._send(200, _tg.logout())
+            return self._send(404, {"error": "unknown telegram op: %s" % op})
         return self._send(404, {"error": "not found"})
 
     # ---- PATCH ----
@@ -4024,7 +4091,9 @@ def delete_session(sid):
     from longrun.agent import architect as _arch_guard
     # One owner for the identity (`architect.ARCHITECT_SESSION_ID`), so a rename
     # cannot leave this guard pointing at a session that no longer exists.
-    if _arch_guard.is_system_session(sid):
+    # 2026-11-28: the guard is `is_undeletable`, NOT `is_system_session` — the
+    # Telegram twin is a system session too, but the operator MAY delete it.
+    if _arch_guard.is_undeletable(sid):
         return {"ok": False, "status": 403,
                 "error": "%s is a permanent system session and cannot be deleted" % sid}
     fpath = os.path.join(SESSIONS_DIR, sid + ".json")
@@ -4037,6 +4106,14 @@ def delete_session(sid):
         _persist_tombstones()
     removed = _purge_session_artifacts(sid)
     _forget_session_runtime(sid)
+    try:
+        # 2026-11-28: deleting the Telegram session clears the channel binding, so
+        # the bot goes idle and onboarding must be redone (the operator's contract).
+        from longrun.core import telegram as _tg
+        if _tg.on_session_deleted(sid):
+            removed.append("telegram:binding")
+    except Exception:  # noqa: BLE001 — a channel cleanup must not break the delete
+        pass
     try:
         from longrun.memory import knowledge as _kb
         _kb.purge_session(sid)
@@ -4337,6 +4414,13 @@ def main():
         from longrun.orchestrate import routines
         routines.start_scheduler()  # JAG-287 D: agents wake on a cadence
     except Exception:  # noqa: BLE001 — the heartbeat scheduler is optional
+        pass
+    try:
+        # 2026-11-28: arm the Telegram channel if a token is configured and the
+        # operator onboarded it — its own daemon long-poll thread. A no-op otherwise.
+        from longrun.core import telegram as _telegram_boot
+        _telegram_boot.start()
+    except Exception:  # noqa: BLE001 — an optional channel must never block the boot
         pass
     # JAG-2.9: automatic background codebase indexing for the default workspace, so
     # the first `index` search of a session finds a WARM index instead of paying the

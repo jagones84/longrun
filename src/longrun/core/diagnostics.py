@@ -128,7 +128,7 @@ def _issue(code: str, severity: str, title: str, message: str,
     if panel and panel in ("keys", "models", "subagents", "tools", "sandbox", "mcp",
                            "skills", "rules", "knowledge", "compaction", "hooks",
                            "harness", "config", "appearance", "diagnostics",
-                           "improvement", "info"):
+                           "improvement", "info", "channels"):
         out["panel"] = panel
     if occurred_at is not None:
         try:
@@ -822,10 +822,36 @@ def collect(session_id: str | None = None, model: str | None = None,
             providers.load(reload=True), dict(os.environ), _raw_routing(),
             selected, safe_session)
 
+    def _channels() -> list[dict]:
+        # Local state only: never a getMe call (diagnostics sends no network request).
+        try:
+            from longrun.core import telegram
+            st = telegram.status()
+        except Exception:  # noqa: BLE001 — a channel read must never break diagnostics
+            return []
+        issues = []
+        if st.get("token_set") and not st.get("enabled"):
+            issues.append(_issue(
+                "telegram.not_onboarded", "warning",
+                "Telegram token set but the channel is not onboarded",
+                "A TELEGRAM_BOT_TOKEN is present, but the channel has no binding. "
+                "Finish onboarding in Settings ▸ Channels, or clear the token.",
+                "telegram:channel", panel="channels"))
+        if st.get("enabled") and not st.get("running"):
+            issues.append(_issue(
+                "telegram.stopped", "warning",
+                "Telegram channel is enabled but not running",
+                "The channel is onboarded but its poller is stopped%s. Reconnect from "
+                "Settings ▸ Channels (or restart the service)."
+                % ((": " + str(st.get("last_error"))) if st.get("last_error") else ""),
+                "telegram:channel", panel="channels"))
+        return issues
+
     checks = [
         ("authentication", _authentication),
         ("configuration", _configuration),
         ("model providers", _models),
+        ("channels", _channels),
     ]
     issues = _dedupe(run_checks(checks))
     return {

@@ -34,6 +34,7 @@ KNOWN_ENV_KEYS = {
     "BRAVE_API_KEY": ("tool:brave", "Web search (privacy-focused)"),
     "PERPLEXITY_API_KEY": ("tool:perplexity", "Research provider with citations"),
     "LONGRUN_TOKEN": ("server:auth", "Protects Longrun API routes; browser token is managed above"),
+    "TELEGRAM_BOT_TOKEN": ("telegram:channel", "Telegram bot token (from @BotFather) — enables the Telegram channel"),
 }
 
 def _env_file_upsert(name, value):

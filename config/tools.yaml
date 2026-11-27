@@ -250,6 +250,23 @@ webhooks:
   max_per_minute: 6            # deliveries accepted per hook per rolling minute
   payload_chars: 6000          # how much of the payload reaches the agent
 
+# ---- Telegram channel -------------------------------------------------------
+# The Telegram bot drives the dedicated Longrun session `telegram` (a twin of the
+# Architect: same capabilities, own transcript, deletable). The bot token lives in
+# `.env` (`TELEGRAM_BOT_TOKEN`), never here. Everything below is a knob with NO
+# literal in the code: `core/telegram/*` reads them through `context_limits`.
+# Chain: env -> this block -> the DEFAULTS in `context_limits.py` (read at import).
+telegram:
+  poll_timeout_secs: 30        # getUpdates long-poll timeout (a restart waits this long)
+  edit_throttle_ms: 800        # min gap between two edits of the live reply (Telegram rate)
+  max_message_chars: 4000      # a reply longer than this is sent in chunks
+  pair_code_ttl_secs: 900      # a pairing code expires after this
+  typing_heartbeat_secs: 4     # resend the "typing…" action this often while a turn runs
+  think_preview_chars: 1200    # `/think`: how much of the live thinking the reply previews
+  verbose_preview_chars: 600   # `/verbose`: cap on one relayed tool/harness detail
+  models_page_size: 8          # `/models`: providers (and models per provider) on one keyboard
+  allowed_updates: ["message", "callback_query"]   # which Telegram update kinds we ask for
+
 # ---- thinking / reasoning budget (RH-15) ------------------------------------
 # EVERY thinking limit lives here: this block is the source of truth, the WebUI
 # writes only its diffs into the sparse overlay (Settings > Models > Thinking

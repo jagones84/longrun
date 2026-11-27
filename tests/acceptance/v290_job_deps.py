@@ -127,7 +127,7 @@ check("GET /api/agents/<sid>/chain answers the chain",
 with open(os.path.join(REPO, "src", "longrun", "orbit", "web", "orbit.html"), encoding="utf-8") as fh2:
     ui = fh2.read()
 check("the Orbit job form assigns by recipient (assignee)",
-      'id="jobTo"' in ui and "{goal, assignee}" in ui)
+      'id="jobTo"' in ui and "{aim, assignee}" in ui)
 check("the job list styles the blocked state", ".st.blocked" in ui)
 
 print("---")

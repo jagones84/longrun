@@ -292,14 +292,18 @@ def handle(handler, method, path, qs, body):
                 rid = path[len("/api/routines/"):].split("/")[0]
                 data = _body(body)
                 return _json(handler, 200, rr.update(
-                    rid, agent=data.get("agent"), goal=data.get("goal"),
+                    rid, agent=data.get("agent"),
+                    aim=(data.get("aim") if data.get("aim") is not None else data.get("goal")),
                     every_seconds=data.get("every_seconds"), enabled=data.get("enabled"),
                     model=data.get("model"), disabled=data.get("disabled")))
             data = _body(body)
             # v659: pass `enabled` through as-given (no `True` default here) — a
             # `True` default in the route overruled the `disabled:true` spelling.
+            # 2026-11-28: the brief is `aim`; `goal` is accepted for older clients.
             return _json(handler, 200, rr.create(
-                data.get("agent"), data.get("goal"), data.get("every_seconds"),
+                data.get("agent"),
+                (data.get("aim") if data.get("aim") is not None else data.get("goal")),
+                data.get("every_seconds"),
                 enabled=data.get("enabled"), model=data.get("model"),
                 disabled=data.get("disabled")))
         if method == "DELETE":
@@ -385,15 +389,17 @@ def handle(handler, method, path, qs, body):
             assignee, agents, coordinator = (data.get("assignee"), data.get("agents"),
                                              data.get("coordinator"))
             if assignee and not agents:
-                # JAG-293: a job is "goal + who you give it to"; the team is the
+                # JAG-293: a job is "aim + who you give it to"; the team is the
                 # assignee plus its reports in the org chart.
                 # v629/v629.1: the DEPTH of that subtree is a policy knob
                 # (config/jobs.yaml `subjob_depth`, default 3) and the derivation
                 # lives in ONE place (jobs.org_agents) shared with the tool.
                 agents = jobs_mod.org_agents(assignee)
                 coordinator = coordinator or assignee
+            # 2026-11-28: the job's brief is `aim`; `goal` is accepted for old clients.
             return _json(handler, 200, jobs_mod.JOBS.create(
-                data.get("goal"), coordinator=coordinator,
+                (data.get("aim") if data.get("aim") is not None else data.get("goal")),
+                coordinator=coordinator,
                 agents=agents, deps=data.get("deps"),
                 mode=data.get("mode") or "coordinator",
                 blocked_by=data.get("blocked_by")))

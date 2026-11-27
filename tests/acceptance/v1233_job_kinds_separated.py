@@ -209,8 +209,8 @@ check("H1c running a team-job id fails loudly and does not touch the SJ engine",
 # ------------------------------------------------ H2: write responses ---------
 check("H2 team create/update responses carry kind=team",
       made.get("job", {}).get("kind") == "team"
-      and J.JOBS.update(JID, goal="v1233 team job").get("job", {}).get("kind") == "team",
-      (made.get("job"), J.JOBS.update(JID, goal="v1233 team job").get("job")))
+      and J.JOBS.update(JID, aim="v1233 team job").get("job", {}).get("kind") == "team",
+      (made.get("job"), J.JOBS.update(JID, aim="v1233 team job").get("job")))
 check("H2b the SJ create response carries kind=session",
       sj_job.get("kind") == "session" and sj_job.get("job", "").startswith("SJ"),
       sj_job)

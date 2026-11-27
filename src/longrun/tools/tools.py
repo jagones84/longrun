@@ -3034,7 +3034,7 @@ def _improve(args, run_id=None):
             agent=str(args.get("agent") or "").strip() or None,
             limit=max(1, min(limit, 200)))
         rows = ["%-4s every %-7s %s" % (r.get("id"), r.get("every_seconds"),
-                                        str(r.get("goal") or "")[:110])
+                                        str(r.get("aim") or r.get("goal") or "")[:110])
                 for r in (got.get("created") or [])]
         return {"ok": bool(got.get("ok")), "scanned": got.get("scanned"),
                 "sessions": got.get("sessions"), "created": got.get("created") or [],
@@ -3344,7 +3344,9 @@ def _may_message(caller, target, verb="message"):
     try:
         from longrun.agent import architect as _arch
         from longrun.agent import agents as _agents
-        if _arch.is_architect_session(caller):
+        # The Architect (and its stateless runs) and the Telegram twin are the
+        # operator's own hand: unrestricted.
+        if _arch.is_architect_session(caller) or _arch.is_system_session(caller):
             return True, ""
         me = _agents.REGISTRY.resolve(caller)
         if not me:
@@ -3420,9 +3422,10 @@ def _may_manage(caller, target):
         return True, ""
     try:
         from longrun.agent import architect as _arch
-        if _arch.is_architect_session(caller):
-            # The Architect is above every team and is the operator's own hand
-            # (v954). A Teamorg grant is NOT this: it unlocks config tools only.
+        if _arch.is_architect_session(caller) or _arch.is_system_session(caller):
+            # The Architect (and the Telegram twin) is above every team and is the
+            # operator's own hand (v954). A Teamorg grant is NOT this: it unlocks
+            # config tools only.
             return True, ""
     except Exception:  # noqa: BLE001 — fall through to the org rule
         pass

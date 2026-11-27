@@ -436,7 +436,12 @@ def _provider_architect(sess, ws, ctx):
         return ""
     sid = (sess or {}).get("id") if isinstance(sess, dict) else sess
     sid = str(sid or "").strip()
-    is_system = sid == lra.ARCHITECT_SESSION_ID
+    is_architect = sid == lra.ARCHITECT_SESSION_ID
+    # 2026-11-28: the Telegram twin shares the SAME exclusive namespace, so it gets
+    # this section too — with its OWN intro (it is not the Architect, it is NOT
+    # stateless, it is deletable) and without the Architect's stateless tail.
+    is_telegram = sid == getattr(lra, "TELEGRAM_SESSION_ID", "telegram")
+    is_system = is_architect or is_telegram
     # 2026-11-16: the SAME tri-state the tool gate applies (explicit grant/revoke, and
     # else a top org leader is granted) — the prompt must never promise less than the
     # gate allows, nor more.
@@ -447,7 +452,7 @@ def _provider_architect(sess, ws, ctx):
     if not lines:
         return ""
 
-    if is_system:
+    if is_architect:
         intro = (
             # 2026-11-11 (operator: "la sessione Architect va chiamata con Architect dai
             # tool send message etcetera", then "longrunagent deve sparire dalla faccia
@@ -465,6 +470,18 @@ def _provider_architect(sess, ws, ctx):
             "(`agent.prompt_set`, `team.member_add`, `kb.notebook_rename`) and these "
             "are ALL of them right now (plain names: the full contract of each — "
             "arguments, defaults, example — is `self.tools {tool:\"<name>\"}`):\n"
+        )
+    elif is_telegram:
+        intro = (
+            "## The Architect's namespace (this session is reached over Telegram)\n"
+            "You are the operator's own hand, talking to them through the Telegram "
+            "channel: this session is a TWIN of the Architect with the SAME exclusive "
+            "tools (`namespace.tool`, e.g. `agent.create`, `team.list`, "
+            "`webui.configure`) and the same capabilities. Unlike the Architect you "
+            "are NOT stateless \u2014 your transcript IS the conversation with the "
+            "operator and is kept. You act on the backend state, never on the "
+            "graphical objects. Available subtools (plain names; "
+            "`self.tools {\"tool\":\"<name>\"}` gives a full contract):\n"
         )
     else:
         intro = (
@@ -499,10 +516,13 @@ def _provider_architect(sess, ws, ctx):
         "- REFUSED, always: `allow_nucleous_write` / `allow_matrix_promote` (the human "
         "operator alone owns those checkboxes), any change to your own exclusive "
         "tool policy, and any edit of `src/longrun` or the self-improvement policy.\n"
-        "- Nothing is remembered between runs: your transcript is reset before and "
-        "after every automation turn, so plan from the live substrate you inspect, "
-        "never from earlier context.\n"
     )
+    if is_architect:
+        body += (
+            "- Nothing is remembered between runs: your transcript is reset before and "
+            "after every automation turn, so plan from the live substrate you inspect, "
+            "never from earlier context.\n"
+        )
     try:
         cheap = ", ".join("`%s`" % m for m in lra.PREFERRED_CHEAP_MODELS[:4])
         body += ("- Cost: whenever you pick a model, prefer a cheap remote one (%s) and "

@@ -304,7 +304,7 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   .btn.ghost.mini.dots:hover{color:var(--txt);background:transparent}
   tr.grp-head .btn.tmadd{border:0;background:none;padding:0 3px;color:var(--dim);font-size:14px}
   tr.grp-head .btn.tmadd:hover{color:var(--txt);background:none}
-  /* v892: the job left cell stacks status over id, so the goal keeps the width. */
+  /* v892: the job left cell stacks status over id, so the aim keeps the width. */
   .job .jstack{display:flex;flex-direction:column;align-items:flex-start;gap:2px;
     flex:0 0 auto;line-height:1.1}
   .job .jstack .st{font-size:9px}
@@ -579,7 +579,7 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
      when there is not); the buttons and the sparkle keep their size. */
   #jobTo{flex:1 1 0;min-width:0}
   /* 2026-11-08 (operator: "the same for job panel too, waste of space"): the create
-     form is two COMPACT rows like the Agents bar — a one-line goal field and one
+     form is two COMPACT rows like the Agents bar — a one-line aim field and one
      control row — and the "team = …" hint lives in the picker's tooltip instead of
      its own text line (it is an explanation, not a value to act on). */
   #jobGoal{min-height:30px;height:30px;max-height:110px;resize:vertical;
@@ -1109,19 +1109,19 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
     <section class="panel" data-panel="routines">
       <h2>Routines <span class="n" id="routineCount">—</span></h2>
       <div class="pad" style="border-bottom:1px solid var(--line)">
-        <textarea class="inp" id="rtGoal" aria-label="routine goal" placeholder="routine goal — the agent re-runs it on a cadence…" style="min-height:46px;max-height:110px;resize:vertical"></textarea>
+        <textarea class="inp" id="rtGoal" aria-label="routine aim" placeholder="routine aim — the agent re-runs it on a cadence…" style="min-height:46px;max-height:110px;resize:vertical"></textarea>
         <div class="row" style="gap:6px;margin-top:6px">
           <select class="inp" id="rtAgent" aria-label="routine agent"><option value="">agent…</option></select>
           <input class="inp" id="rtEvery" aria-label="routine interval in seconds" type="number" min="30" value="300" title="every N seconds" style="max-width:100px">
           <button class="btn" id="rtCreate">＋ add</button>
-          <button type="button" class="btn ghost" data-genfield="routine.goal" data-gen-target="#rtGoal" data-genstatus="routine.goal" title="draft this routine goal with AI — the harness knows the pool of agents a cadence goal can be given to">✨</button>
+          <button type="button" class="btn ghost" data-genfield="routine.goal" data-gen-target="#rtGoal" data-genstatus="routine.goal" title="draft this routine aim with AI — the harness knows the pool of agents a cadence aim can be given to">✨</button>
           <span class="small muted" data-genstatus="routine.goal"></span>
         </div>
       </div>
       <div class="scroll" id="routines" style="max-height:22vh"></div>
     </section>
 
-    <!-- Job: goal + who you give it to (its reports are the team) -->
+    <!-- Job: aim + who you give it to (its reports are the team) -->
     <section class="panel" data-panel="jobs">
       <h2>Jobs <span class="n" id="jobsCount">—</span>
         <span class="ctools" id="jobScopeTools" hidden>
@@ -1132,13 +1132,13 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
           </select>
         </span></h2>
       <div class="pad" style="border-bottom:1px solid var(--line)">
-        <textarea class="inp" id="jobGoal" aria-label="job goal" placeholder="job goal — the coordinator decomposes it and its team executes…"></textarea>
+        <textarea class="inp" id="jobGoal" aria-label="job aim" placeholder="job aim — the coordinator decomposes it and its team executes…"></textarea>
         <div class="row" style="gap:6px;margin-top:6px">
           <select class="inp" id="jobTo" aria-label="job assignee"
                   title="team = assignee + org reports · double-click opens the coordinator"><option value="">assign to…</option></select>
           <button class="btn primary" id="jobCreate" aria-label="create job"
-                  title="create the job — its coordinator decomposes the goal and its team executes">＋ job</button>
-          <button type="button" class="btn ghost" data-genfield="job.goal" data-gen-target="#jobGoal" data-genstatus="job.goal" title="draft this job goal with AI — the harness knows who the coordinator is and which team would execute it">✨</button>
+                  title="create the job — its coordinator decomposes the aim and its team executes">＋ job</button>
+          <button type="button" class="btn ghost" data-genfield="job.goal" data-gen-target="#jobGoal" data-genstatus="job.goal" title="draft this job aim with AI — the harness knows who the coordinator is and which team would execute it">✨</button>
           <span class="small muted" data-genstatus="job.goal"></span>
         </div>
       </div>
@@ -3282,7 +3282,7 @@ class Constellation {
     svg.querySelectorAll(".cjobg").forEach(gEl => {
       const j = this.jobOf(gEl.dataset.job);
       gEl.addEventListener("mouseenter", () => { $("constDetail").textContent =
-        j.id + " \u00b7 " + (j.status || "\u2014") + " \u00b7 " + short(j.goal || "", 90); });
+        j.id + " \u00b7 " + (j.status || "\u2014") + " \u00b7 " + short(j.aim || j.goal || "", 90); });
       gEl.addEventListener("click", ev => { ev.stopPropagation(); if (this._t) clearTimeout(this._t);
         const b = gEl.getBoundingClientRect(), bb = $("constBody").getBoundingClientRect();
         this._t = setTimeout(() => this.extractJob(j, b.left - bb.left + 14, b.top - bb.top + 14), 210); });
@@ -3365,7 +3365,7 @@ class Constellation {
     const subs = (((this.data || {}).subjobs) || []).filter(s => s.parent === j.id);
     const p = document.createElement("div"); p.className = "cpop";
     p.innerHTML = "<b>" + esc(j.id) + "</b> \u00b7 " + esc(j.status || "\u2014") +
-      "<br>" + esc(short(j.goal || "(no goal)", 220)) +
+      "<br>" + esc(short(j.aim || j.goal || "(no aim)", 220)) +
       "<div class='m'><span class='muted'>coordinator</span> " + esc(j.coordinator || "\u2014") +
       "<br><span class='muted'>team</span> " + esc((j.agents || []).join(", ") || "\u2014") +
       ((j.blocked_by && j.blocked_by.length) ? "<br><span class='muted'>blocked by</span> " + esc(j.blocked_by.join(", ")) : "") +
@@ -3494,7 +3494,7 @@ class JobsView {
       return '<div class="job-item sj-item"><div class="job" data-sj="' + esc(j.id) + '" data-kind="session">' +
         '<span class="jstack"><span class="st ' + esc(j.status || "") + '">' + esc(j.status || "—") + '</span>' +
         '<span class="aid">' + esc(j.id) + '</span></span>' +
-        '<span class="muted job-goal" title="' + esc(j.goal || "") + '">' + esc(j.goal || "(no goal)") + '</span>' +
+        '<span class="muted job-goal" title="' + esc(j.aim || j.goal || "") + '">' + esc(j.aim || j.goal || "(no aim)") + '</span>' +
         '<span class="rl">' + subs.length + ' in-chat subjob' + (subs.length === 1 ? "" : "s") + '</span></div>' +
         subHtml + '</div>';
     }).join("");
@@ -3583,8 +3583,8 @@ class JobsView {
       return '<div class="job-item"><div class="job" data-id="' + esc(j.id) + '" data-kind="team">' +
         '<span class="jstack"><span class="st ' + esc(j.status) + '">' + esc(j.status) + '</span>' +
         '<span class="aid">' + esc(j.id) + '</span></span>' +
-        '<span class="muted job-goal" title="' + esc(j.goal) + '">' + esc(j.goal) + '</span>' +
-        /* v891: run/delete are ONE vertical menu, so the goal keeps the row's width. */
+        '<span class="muted job-goal" title="' + esc(j.aim || j.goal || "") + '">' + esc(j.aim || j.goal || "") + '</span>' +
+        /* v891: run/delete are ONE vertical menu, so the aim keeps the row's width. */
         '<button class="btn ghost mini icon-action dots" data-jmore="' + esc(j.id) + '" data-canrun="' + (canRun ? "1" : "0") + '"' +
         ' aria-haspopup="menu" aria-label="job actions for ' + esc(j.id) + '" title="job actions for ' + esc(j.id) + '">⋮</button></div>' +
         relationHtml + runHtml + '</div>'; }).join("");
@@ -3596,7 +3596,7 @@ class JobsView {
         ? (this.scopeAgent
             ? "no team job names this agent yet — switch to all jobs to see every job."
             : "this session has no agent id yet — no team jobs.")
-        : "no team jobs yet — write a goal and pick who to give it to.") + '</div>') +
+        : "no team jobs yet — write an aim and pick who to give it to.") + '</div>') +
       this._sjHtml();
     $("jobs").querySelectorAll("[data-jmore]").forEach(b => { b.onclick = (e) => {
       e.stopPropagation();
@@ -3697,10 +3697,10 @@ class RoutinesView {
     $("routines").innerHTML = this.rows.map(r => {
       const nxt = r.next_run ? Math.max(0, Math.round(r.next_run - now)) : 0;
       return '<div class="orgrow" data-rid="' + esc(r.id) + '"><span class="aid">' + esc(r.id) + '</span>' +
-        '<span class="nm" title="' + esc(r.goal) + '">' + esc(short(r.goal, 34)) + '</span>' +
+        '<span class="nm" title="' + esc(r.aim || r.goal || "") + '">' + esc(short(r.aim || r.goal || "", 34)) + '</span>' +
         '<span class="rl">' + esc(r.agent) + '</span>' +
         '<span class="rl" title="every ' + esc(r.every_seconds) + 's · next in ' + nxt + 's">' + esc(r.every_seconds) + 's</span>' +
-        '<button class="btn ghost" data-edit="' + esc(r.id) + '" style="padding:2px 8px" title="edit goal / cadence">\u270E</button>' +
+        '<button class="btn ghost" data-edit="' + esc(r.id) + '" style="padding:2px 8px" title="edit aim / cadence">\u270E</button>' +
         '<button class="btn ghost" data-tog="' + esc(r.id) + '" data-on="' + (r.enabled ? "1" : "0") + '" style="padding:2px 8px">' + (r.enabled ? "pause" : "start") + '</button>' +
         '<button class="btn ghost" data-del="' + esc(r.id) + '" style="padding:2px 8px">✕</button></div>';
     }).join("") || '<div class="empty">no routines — an agent can wake on a cadence.</div>';
@@ -3716,7 +3716,7 @@ class RoutinesView {
         const rid = el.dataset.rid;
         const r = this.rows.find(x => x.id === rid); if (!r) return;
         const m = openPopover(ev,
-          '<div data-rx="edit">\u270E edit goal / cadence</div>' +
+          '<div data-rx="edit">\u270E edit aim / cadence</div>' +
           '<div data-rx="tog">' + (r.enabled ? "\u23F8 pause" : "\u25B6 start") + '</div>' +
           '<div data-rx="del">\u2715 delete routine</div>', {w: 210, h: 120});
         m.querySelector('[data-rx="edit"]').onclick = () => { closePopover(); this.edit(ev, rid); };
@@ -3725,7 +3725,7 @@ class RoutinesView {
       };
     });
   }
-  /* JAG-536: a routine was create-and-forget — the goal and the cadence were frozen
+  /* JAG-536: a routine was create-and-forget — the aim and the cadence were frozen
      at birth. The server now accepts POST /api/routines/<rid>; this form is its door. */
   edit(ev, rid){
     const r = this.rows.find(x => x.id === rid); if (!r) return;
@@ -3735,7 +3735,7 @@ class RoutinesView {
     const form =
       '<form onsubmit="return false" style="display:flex;flex-direction:column;gap:5px;' +
       'padding:4px 2px;white-space:normal;min-width:250px">' +
-      fld("goal", "goal", r.goal) +
+      fld("aim", "aim", r.aim || r.goal) +
       fld("every_seconds", "every (seconds)", r.every_seconds, 'type="number" min="30"') +
       '<button class="btn primary" data-a="save" type="button" style="margin-top:4px">save</button>' +
       '</form>';
@@ -3743,7 +3743,7 @@ class RoutinesView {
     m.querySelector('[data-a="save"]').onclick = async () => {
       const g = k => (m.querySelector('[data-f="' + k + '"]').value || "").trim();
       const res = await this.api.post("/api/routines/" + encodeURIComponent(rid), {
-        goal: g("goal"), every_seconds: parseInt(g("every_seconds"), 10) });
+        aim: g("aim"), every_seconds: parseInt(g("every_seconds"), 10) });
       if (!res || res.ok === false){ toast((res && res.error) || "save failed", "err"); return; }
       closePopover();
       if (this.onChanged) this.onChanged();
@@ -3753,7 +3753,7 @@ class RoutinesView {
   async toggle(rid, on){ await this.api.post("/api/routines/" + encodeURIComponent(rid) + (on ? "/disable" : "/enable"), {}); if (this.onChanged) this.onChanged(); }
   async del(rid){ await this.api.del("/api/routines/" + encodeURIComponent(rid)); if (this.onChanged) this.onChanged(); }
   async create(){
-    const r = await this.api.post("/api/routines", {agent: $("rtAgent").value, goal: $("rtGoal").value.trim(), every_seconds: parseInt($("rtEvery").value, 10)});
+    const r = await this.api.post("/api/routines", {agent: $("rtAgent").value, aim: $("rtGoal").value.trim(), every_seconds: parseInt($("rtEvery").value, 10)});
     if (!r || !r.ok){ toast((r && r.error) || "create failed", "err"); return; }
     $("rtGoal").value = ""; if (this.onChanged) this.onChanged();
   }
@@ -3940,7 +3940,7 @@ class OrbitApp {
     $("agAddCancel").onclick = () => addBar("agAddBar", "agNewBtn");
     $("tmAddCancel").onclick = () => addBar("tmAddBar", "tmNewBtn");
     // K-5 (2026-11-02): ONE delegated ✨ handler for the deck's static editable fields
-    // (team description, routine goal, job goal). The button carries its surface id;
+    // (team description, routine aim, job aim). The button carries its surface id;
     // the SERVER owns the prompt and the model, and the DRAFT is never saved here —
     // the operator still presses create. `genExtra` sends the live object identity so
     // the draft is written for THIS team/agent, not for a generic one.
@@ -4808,9 +4808,9 @@ class OrbitApp {
     else _markReady();
   }
   async createJob(){
-    const goal = $("jobGoal").value.trim(), assignee = $("jobTo").value;
-    if (!goal || !assignee){ toast("a job needs a goal and someone to give it to", "err"); return; }
-    const r = await this.api.post("/api/jobs", {goal, assignee});
+    const aim = $("jobGoal").value.trim(), assignee = $("jobTo").value;
+    if (!aim || !assignee){ toast("a job needs an aim and someone to give it to", "err"); return; }
+    const r = await this.api.post("/api/jobs", {aim, assignee});
     if (!r || !r.ok){ toast((r && r.error) || "create failed", "err"); return; }
     $("jobGoal").value = ""; this.refresh();
   }

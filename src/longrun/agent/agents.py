@@ -30,12 +30,23 @@ _LOCK = threading.RLock()
 AGENTS_FILE = os.environ.get("LONGRUN_AGENTS_FILE") or os.path.join(
     paths.DATA_DIR, "agents.json")
 
-#: Agent numbers that are RESERVED, not drawn from the sequence. The permanent
+#: Agent codes that are RESERVED, not drawn from the sequence. The permanent
 #: system session (`architect`) is the harness's own supervisor: it exists
 #: before any operator session and cannot be deleted, so giving it the first
 #: number makes the label stable across resets instead of depending on which
 #: session happened to be born first. `seq` never goes below a pinned number.
-PINNED_AGENT_IDS = {"architect": 1}
+#:
+#: `telegram` (2026-11-28) is the second resident of the same idea — the
+#: operator's messaging twin of the Architect — but its code is the fixed string
+#: `AX`, NOT a sequence number: it must never consume an `A<n>` the org chart
+#: would have handed to a real agent (operator: "codice riservato fisso, nessun
+#: numero di sequenza"). A string pin yields the literal id and no `n`.
+PINNED_AGENT_IDS = {"architect": 1, "telegram": "AX"}
+
+
+def _pin_code(pin):
+    """The id a pinned agent gets: `A<n>` for an int pin, the literal for a str."""
+    return ("A%d" % pin) if isinstance(pin, int) else str(pin)
 
 
 def _load():
@@ -359,11 +370,18 @@ class AgentRegistry:
                     # `seq + 1` — deleting a session must give its number back
                     # (the operator rule "IDs reset after resets/deletes").
                     d["seq"] = _free_number(d)
-                a = {"id": "A%d" % (pin or d["seq"]), "n": pin or d["seq"],
+                # A string pin (e.g. "AX") yields the literal id and NO `n`: it is
+                # a reserved CODE, not a sequence number, so it never collides with
+                # the `A<n>` free-list (`_free_number` starts at 2 and skips it).
+                a = {"id": _pin_code(pin) if pin is not None else "A%d" % d["seq"],
+                     "n": pin if isinstance(pin, int)
+                          else (None if pin is not None else d["seq"]),
                      "session": sid, "created": round(time.time(), 3)}
+                if a["n"] is None:
+                    a.pop("n")
                 d["agents"][sid] = a
             if pin is not None:
-                pid = "A%d" % pin
+                pid = _pin_code(pin)
                 # A registry written BEFORE the reservation existed (or a second
                 # holder) must never keep this label: move those records to the
                 # next free numbers, then take the slot.
@@ -373,10 +391,14 @@ class AgentRegistry:
                         # `seq + 1` collided once the counter stopped being monotonic.
                         d["seq"] = _free_number(d)
                         other["id"], other["n"] = "A%d" % d["seq"], d["seq"]
-                a["id"], a["n"] = pid, pin
-                # The pinned number is a FLOOR for the counter, so a retract after
-                # deleting everything can never re-issue `A1` to a new session.
-                d["seq"] = max(int(d.get("seq") or 0), pin)
+                a["id"] = pid
+                if isinstance(pin, int):
+                    a["n"] = pin
+                    # The pinned number is a FLOOR for the counter, so a retract after
+                    # deleting everything can never re-issue `A1` to a new session.
+                    d["seq"] = max(int(d.get("seq") or 0), pin)
+                else:
+                    a.pop("n", None)
             # v858: `seq` is the HIGHEST number in use (what `retract_seq` keeps),
             # never "one past the last allocation" — the free-list does the picking.
             retract_seq(d, "agents")

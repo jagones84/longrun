@@ -46,11 +46,11 @@ the process rather than of a component:
 
 ## The object model (five levels)
 
-The whole product is one hierarchy, from a business goal to a checklist item:
+The whole product is one hierarchy, from a business aim to a checklist item:
 
 ```
 Team  TN      a symbol + a roster (owns its members)
- └ Job     JN      a goal given to a coordinator
+ └ Job     JN      an aim given to a coordinator
     └ Subjob JN.k   one assignment, bound to ONE agent, with dependencies
        └ Agent  AX   IS a session — its own harness, tools, skills, memory, chat
           └ SJ SJ<n>[.k]  in-session subagents, dependency-ordered (die with the session)
@@ -94,10 +94,10 @@ state from its nodes (`n done` / `n open`): it is never stored twice.
 
 ## A team job, end to end
 
-1. `POST /api/jobs {goal, assignee}` — the assignee is the coordinator; its team is the
+1. `POST /api/jobs {aim, assignee}` — the assignee is the coordinator; its team is the
    assignee plus its direct reports.
 2. `POST /api/jobs/<id>/dispatch` runs the job in the background:
-   - **PLAN turn** — the coordinator decomposes the goal. This turn is **plan-only and
+   - **PLAN turn** — the coordinator decomposes the aim. This turn is **plan-only and
      read-only**: a tight tool budget, no completion loop, and only `fs.read` / `skills`
      / `memory` / `self` may run. It records the plan and stops; it cannot do the work.
    - `parse_plan_deps` reads the declared `(after AX)` edges; `plan_subjobs` turns the
@@ -356,7 +356,7 @@ and guessing. `util/runtree.py` is the read model over those stores, and
 
 | Subpackage | Modules |
 |---|---|
-| `core/` | `server.py`, `api_v02.py`, `httpapi.py`, `sse.py`, `events.py`, `forge.py`, `settings.py`, `diagnostics.py`, `configfiles.py`, `sidebar_order.py`, `matrix.py`, `homemove.py`, `market.py` (catalogue: skills · MCP · plugins · connectors, digest-gated, origin persisted with each install), `market_sync.py` (bulk import of the official MCP Registry and ClawHub into `data/market/imported.json`, as one background job the page polls; live remote search + import-one; each entry keeps the publisher's `homepage` and a 1200-char description cut on a word boundary — the detail dialog reads it whole), `market_taxonomy.py` (the curated macro-area vocabulary in `config/market_taxonomy.yaml`: a deterministic keyword classifier applied at sync time, no model, no network), `commands.py` (the operator's own `/` commands), `slash.py` (the ONE `/` catalogue: built-ins, user commands, installed plugins and the documents folders, served by `GET /api/slash`), `connectors.py` (an MCP preset plus the key NAMES it needs) |
+| `core/` | `server.py`, `api_v02.py`, `httpapi.py`, `sse.py`, `events.py`, `forge.py`, `settings.py`, `diagnostics.py`, `configfiles.py`, `sidebar_order.py`, `matrix.py`, `homemove.py`, `market.py` (catalogue: skills · MCP · plugins · connectors, digest-gated, origin persisted with each install), `market_sync.py` (bulk import of the official MCP Registry and ClawHub into `data/market/imported.json`, as one background job the page polls; live remote search + import-one; each entry keeps the publisher's `homepage` and a 1200-char description cut on a word boundary — the detail dialog reads it whole), `market_taxonomy.py` (the curated macro-area vocabulary in `config/market_taxonomy.yaml`: a deterministic keyword classifier applied at sync time, no model, no network), `commands.py` (the operator's own `/` commands), `slash.py` (the ONE `/` catalogue: built-ins, user commands, installed plugins and the documents folders, served by `GET /api/slash`), `connectors.py` (an MCP preset plus the key NAMES it needs), `telegram/` (the Telegram channel: `client.py` a stdlib Bot API client, `binding.py` the persisted state `data/telegram.json`, `slash.py` the SERVER-SIDE `/` interpreter, `channel.py` the long-poll listener that turns a DM into a turn on the dedicated session `telegram`) |
 | `agent/` | `agent.py`, `agents.py`, `subagent.py`, `bridge.py`, `agency.py`, `swarm.py`, `session_jobs.py`, `architect.py`, `acceptance.py`, `trace_policy.py` |
 | `orchestrate/` | `jobs.py`, `orchestration.py`, `teams.py`, `routines.py`, `roles.py` |
 | `plan/` | `taskgraph.py`, `keepgoing.py`, `goal.py`, `difficulty.py`, `bestofn.py`, `prm.py`, `heldout.py`, `verify.py`, `commitment.py` (repair/replan/abandon by damage depth, arXiv:2611.19663), `docs.py` (the `/plan` and `/spec` markdown documents under `<workspace>/.longrun/documents/`, with the plan-mode gate) |
@@ -1079,6 +1079,25 @@ operator-selected `none`). This is not whole-agent confinement. Hard-denied patt
 - **Orbit** `src/longrun/orbit/` — optional command deck at `/orbit`: org chart,
   constellation, job create/dispatch, team selector, model policy.
 - **CLI** `forge.py` — chat, agent runs, tasks, models, MCP.
+- **Telegram channel** (`core/telegram/`) — an optional inbox that talks to ONE
+  Longrun session. A daemon thread long-polls `getUpdates`; an authorised DM calls
+  `httpapi.start_session_turn` (the SAME starter the WebUI route uses) on the bound
+  session `telegram` — a SYSTEM session that is a TWIN of the Architect: it carries
+  `allow_architect` and the same exclusive tools (so every change to the Architect
+  applies to it), but keeps its OWN transcript, is NOT stateless, and — unlike the
+  Architect — CAN be deleted (deleting clears the binding ⇒ re-onboarding; the code
+  is the reserved `AX`, never a sequence number). The listener forwards this
+  session's `chat.delta`/`chat.done` back to Telegram and turns `approval.request`
+  into an inline ✅/❌ keyboard. `/models` opens a provider ▸ model keyboard that
+  writes through the ONE session-model writer (`stores._set_session_model`) — the
+  same choice the WebUI picker makes. Telegram-only display toggles (`/think`,
+  `/reason`, `/verbose`, `/stop`) live on the binding (`prefs`, never on the
+  session), a typing heartbeat pulses `sendChatAction` while a reply is live, and
+  the reply is HTML-formatted with a bot header and a model footer. Control:
+  `GET /api/telegram/status` +
+  `POST /api/telegram/{setup,pair,unpair,reconnect,logout}`, Settings ▸ Channels,
+  `forge.py telegram …`; token in `.env` (`TELEGRAM_BOT_TOKEN`, a Settings ▸ Keys
+  entry); knobs in `config/tools.yaml` → `telegram:`.
 - **HTTP API** — see [CLI.md](CLI.md); optional bearer auth (`--token`). The server also
   listens over **HTTPS** on `--port + 1` (self-signed cert auto-generated in
   `<data home>/data/tls/`, `LONGRUN_TLS=0` to disable) so the page is a *secure context*

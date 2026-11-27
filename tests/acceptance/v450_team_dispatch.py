@@ -126,7 +126,7 @@ res_c = S._apply_chat_dispatch({"id": "sess_nobody", "messages": []},
                                {"action": "dispatch", "agent": C["id"], "goal": "x"}, on_event)
 check("B2 a non-agent session cannot dispatch", "not an org agent" in res_c, res_c)
 res_d = S._apply_chat_dispatch(master_sess, {"action": "dispatch", "agent": C["id"]}, on_event)
-check("B3 a goal is required", "goal required" in res_d, res_d)
+check("B3 an aim is required", "aim required" in res_d, res_d)
 res_e = S._apply_chat_dispatch(master_sess,
                                {"action": "dispatch", "agent": C["id"], "goal": "..."},
                                on_event)

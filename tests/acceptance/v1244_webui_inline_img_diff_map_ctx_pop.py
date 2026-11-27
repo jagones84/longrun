@@ -77,10 +77,13 @@ check("3e it closes on an outside click", '_closeCtxPop();\n});' in HTML)
 
 # ---- rules the operator asked to record ------------------------------------
 check("R1 the impeccable/frontendui rule is recorded",
-      "impeccab" in RULES and "frontendui" in RULES and "altre parti grafiche webui" in RULES)
+      # 2026-11-28: the doc now reads "USE `impeccable` + `frontendui`, AND READ THE
+      # NEIGHBOURS FIRST" (the old Italian phrase is gone after the reword).
+      "impeccab" in RULES and "frontendui" in RULES
+      and "READ THE NEIGHBOURS FIRST" in RULES)
 check("R2 the close-your-todos rule is recorded",
       "A TASK IS NOT FINISHED UNTIL ITS TODO LIST IS CLOSED" in RULES
-      and "todotool" in RULES)
+      and "re-read the todo list" in RULES)
 
 print("\n---")
 print("v1244: %d/%d PASS" % (sum(results), len(results)))

@@ -9,7 +9,7 @@
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776ab.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![deps](https://img.shields.io/badge/deps-stdlib%20%2B%20PyYAML-brightgreen.svg)](#quick-start-windows)
-[![tests](https://img.shields.io/badge/battery-1006%2F1006%20tests-blue.svg)](#tests)
+[![tests](https://img.shields.io/badge/battery-1008%2F1008%20tests-blue.svg)](#tests)
 
 **Longrun is the self-hosted AI agent harness that drives the LLM — teams of
 agents, real tools, and verification, on your own machine.** One Python process
@@ -365,6 +365,43 @@ generic examples only.
 
 Open **Settings → Skills → Install from zip**, choose a trusted skill `.zip`, and
 click **install**. User-installed skills go under `skills/local/`.
+
+### Optional: Telegram
+
+Talk to Longrun from Telegram. The bot drives a dedicated session `telegram` — a
+twin of the Architect (same tools and authorisations, its own transcript) — so
+every reply, tool card and approval is the same as in the WebUI.
+
+1. Create a bot: in Telegram chat with [@BotFather](https://t.me/BotFather), send
+   `/newbot`, follow the prompts and copy the **token**.
+2. Give Longrun the token — either add `TELEGRAM_BOT_TOKEN=123456:ABC…` to `.env`
+   (next to the other keys), or paste it in **Settings → Keys**, or open
+   **Settings → Channels**, paste it and click **connect** (validates it with
+   `getMe`, saves it and creates the session).
+3. If you edited `.env` by hand, reload it: `systemctl --user restart longrun`
+   (or **Settings → Channels → reconnect**). A token on a fresh install arms the
+   channel by itself — no separate onboarding step.
+4. Pair your chat: send any DM to the bot; it replies with a short **pairing
+   code**. Approve it in **Settings → Channels** (paste the code → **approve**), or
+   from the CLI: `python3 forge.py telegram pair <CODE>`.
+5. Done. Message the bot as if you were inside the session; type `/` for the
+   commands (`/goal`, `/plan`, `/spec`, `/status`, `/compact`, `/context`,
+   `/reset`, `/unlock`, `/restart`, `/models`). The agent's approval prompts
+   arrive as a message with ✅/❌ buttons.
+
+`/models` opens a **provider ▸ model** keyboard (with ‹ › pages and a « providers
+button) and sets the same per-session model as the WebUI picker — one backend,
+two surfaces. Four toggles exist **only in Telegram** and never change the Longrun
+session: `/think on|off` shows the model's live thinking, `/reason on|off` appends
+the chain-of-thought to the final answer, `/verbose on|off` relays tool calls,
+results and harness messages in real time, and `/stop` aborts the running turn.
+Replies are HTML-formatted with the bot name as a header and the model as a
+footer, and the "typing…" indicator stays alive for the whole turn.
+
+The transport is **long polling** — no public URL, no TLS, no open port. The
+channel is standard-library only (no extra dependency). Status and control live in
+**Settings → Channels**, `GET /api/telegram/status`, and
+`python3 forge.py telegram status`.
 
 ### Remote access
 

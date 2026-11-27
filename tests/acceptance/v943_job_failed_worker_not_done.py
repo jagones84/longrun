@@ -56,7 +56,7 @@ def wait_done(jid, timeout=20.0):
 
 
 def make_job(goal):
-    r = JM.JOBS.create(goal=goal, coordinator=AID, agents=[AID], mode="run")
+    r = JM.JOBS.create(aim=goal, coordinator=AID, agents=[AID], mode="run")
     return (r.get("job") or {}).get("id")
 
 

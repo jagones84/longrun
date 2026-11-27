@@ -80,8 +80,8 @@ check("agents are creatable with +",
       # 2026-11-08: the label is short now ("＋ agent") so the Agents bar fits ONE row
       # in a narrow panel; the accessible name and the form handler are unchanged.
       'id="agNew"' in ui and '＋ agent' in ui and 'aria-label="new agent"' in ui)
-check("the job form is goal + assignee",
-      'id="jobGoal"' in ui and 'id="jobTo"' in ui and "{goal, assignee}" in ui)
+check("the job form is aim + assignee",
+      'id="jobGoal"' in ui and 'id="jobTo"' in ui and "{aim, assignee}" in ui)
 check("routines + feed are kept", 'id="rtCreate"' in ui and 'id="feed"' in ui)
 check("the old panels are gone",
       "Tactical Task Graph" not in ui and "Model Bay" not in ui
