@@ -1103,10 +1103,14 @@ operator-selected `none`). This is not whole-agent confinement. Hard-denied patt
   live preview and the final answer carry the SAME collapsible block
   (`channel._quote_html`), and switching `/reason` ON shows the last stored
   reasoning at once, read from the same `reasoning` field the WebUI shows
-  (`channel._last_reasoning`). With `/verbose` every `tool.call`/`tool.result` is a
-  card of its own (those events carry `session`, not `run`, so the relay matches the
-  bound session) and the tool-batch `observation` inject is NOT relayed — it repeats
-  the same calls and stdout. The channel is
+  (`channel._last_reasoning`). With `/verbose` each `tool.call` opens ONE compact card
+  — a header row (`✅ shell.exec · echo uno · exit 0 · 12ms`, the hint built from the
+  command/path/query) plus a `<blockquote expandable><pre>` detail — and its
+  `tool.result` EDITS that same message (`_Live._open_cards`, FIFO per tool), so the
+  chat reads as an ordered list of expandable rows instead of two `<pre>` walls per
+  tool. The events carry `session`, not `run`, so the relay matches the bound session;
+  the tool-batch `observation` inject is NOT relayed — it repeats the same calls and
+  stdout. The channel is
   armed BEFORE the restart-resume sweep at boot, and it renders ANY turn on the
   bound session — including one it did not start (a restart continuation, a job, a
   teammate dispatch) — by creating the live reply for the last authorised chat

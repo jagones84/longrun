@@ -1492,6 +1492,8 @@ class _Live:
         self.message_id = None
         self.buf = ""
         self.think_buf = ""
+        #: tool name -> FIFO of (message_id, hint, args) for cards awaiting a result.
+        self._open_cards: dict = {}
         self.last = 0.0
         self.turn_id = None
         self.run_id = None
@@ -1534,17 +1536,35 @@ class _Live:
         think = self.think_buf.strip() if self.think_on else ""
         if not body and not think:
             return
-        parts = [_header_html()]
-        if think:
-            # The live block keeps the LATEST lines (it streams); the final block in
-            # `finish()` keeps the beginning — both are collapsible blockquotes.
-            parts.append(_quote_html("💭 thinking", think[-_think_preview():]))
-        if body:
-            parts.append(_md_html(body))
-        text = "\n\n".join(parts)
-        if cursor:
-            text += " ▍"
-        text = text[: _max_chars()]
+        head = _header_html()
+        # The live block keeps the LATEST lines (it streams); the final block in
+        # `finish()` keeps the beginning — both are collapsible blockquotes.
+        block = _quote_html("💭 thinking", think[-_think_preview():]) if think else ""
+        # 2026-11-28: the live view shows the TAIL of a long answer and is cut on the
+        # RAW text before the Markdown pass, so a message can never be truncated in
+        # the middle of an HTML tag (the old `text[:max]` slice could, and Telegram
+        # then rejected the edit). An odd fence count is closed for the same reason.
+        room = max(200, _max_chars() - len(head) - len(block) - 200)
+
+        def compose(view):
+            body_html = _md_html(view) if view else ""
+            parts = [head] + ([block] if block else []) + ([body_html] if body_html else [])
+            return "\n\n".join(parts) + (" ▍" if cursor else "")
+
+        view = body[-room:] if len(body) > room else body
+        if view.count("```") % 2:
+            view += "\n```"
+        text = compose(view)
+        # Markdown tags inflate the text: shrink the RAW view by the overflow (twice
+        # at most) instead of cutting the HTML, which would break an entity.
+        for _ in range(2):
+            over = len(text) - _max_chars()
+            if over <= 0 or len(view) <= 200:
+                break
+            view = view[:max(200, len(view) - over - 32)]
+            if view.count("```") % 2:
+                view += "\n```"
+            text = compose(view)
         if self.message_id is None:
             sent = _client.send_message(self.chat_id, text, parse_mode="HTML")
             self.message_id = (sent or {}).get("message_id")
@@ -1555,36 +1575,68 @@ class _Live:
         except Exception:  # noqa: BLE001 — a throttled edit is retried on the final
             pass
 
-    # -- verbose relays (a SEPARATE message per event, real time) ------------
+    # -- verbose relays (ONE card per tool call, edited when its result lands) --
     def relay_tool(self, event):
+        """One COMPACT card per tool call, edited in place on its result.
+
+        2026-11-28 (operator: "no riesco a vedere bene le calls ordinate … input
+        output è un macello … un po' come nella sessione Longrun espandibili"):
+        before this, a call and its result were TWO messages, each a `<pre>` wall.
+        Now the call opens a one-line card whose detail sits in a collapsed
+        `<blockquote expandable>`, and the result EDITS that same card — so the chat
+        reads as an ordered list of rows, each expandable.
+        """
         if not self.verbose:
             return
         kind = event.get("kind")
         tool = str(event.get("tool") or "tool")
-        log.debug("telegram relay: %s %s", kind, tool)
+        args = event.get("args") if isinstance(event.get("args"), dict) else {}
         cap = _verbose_preview()
         if kind == "tool.call":
-            args = event.get("args")
-            try:
-                # 2026-11-28: INDENTED args (a monospace block, one field per line)
-                # instead of one 300-char line the reader has to decode.
-                detail = json.dumps(args, ensure_ascii=False, indent=2)
-            except Exception:  # noqa: BLE001
-                detail = str(args or "")
-            text = "⚙ <b>%s</b>\n<pre>%s</pre>" % (_esc(tool), _esc(detail[:cap]))
-        else:
-            ok = event.get("ok") is not False
-            head = "✅" if ok else "❌"
-            extra = []
-            if event.get("exit_code") not in (None, ""):
-                extra.append("exit %s" % event.get("exit_code"))
-            if event.get("duration_ms") not in (None, ""):
-                extra.append("%sms" % event.get("duration_ms"))
-            detail = str(event.get("stdout") or event.get("error") or "").strip()
-            meta = ("  <i>%s</i>" % _esc(" · ".join(extra))) if extra else ""
-            text = ("%s <b>%s</b>%s\n<pre>%s</pre>"
-                    % (head, _esc(tool), meta, _esc(detail[:cap])))
-        self._send_extra(text)
+            hint = _tool_hint(args)
+            body = _cap_body(_tool_body(args), cap)
+            text = _tool_card(tool, hint, "call", "running…", body)
+            mid = self._send_card(text)
+            if mid is not None:
+                self._open_cards.setdefault(tool, []).append((mid, hint, args))
+            return
+        ok = event.get("ok") is not False
+        extra = []
+        if event.get("exit_code") not in (None, ""):
+            extra.append("exit %s" % event.get("exit_code"))
+        if event.get("duration_ms") not in (None, ""):
+            extra.append("%sms" % event.get("duration_ms"))
+        output = str(event.get("stdout") or event.get("output")
+                     or event.get("error") or "")
+        pending = self._open_cards.get(tool) or []
+        mid = hint = call_args = None
+        if pending:
+            mid, hint, call_args = pending.pop(0)
+        hint = hint or _tool_hint(args)
+        merged = call_args if isinstance(call_args, dict) and call_args else args
+        body = _cap_body(_tool_body(merged, _clean_output(tool, output)), cap)
+        text = _tool_card(tool, hint, "ok" if ok else "fail", " · ".join(extra), body)
+        if mid is not None and self._edit_card(mid, text):
+            return
+        self._send_card(text)
+
+    def _send_card(self, text):
+        try:
+            res = _client.send_message(self.chat_id, text[: _max_chars()],
+                                       parse_mode="HTML")
+            return (res or {}).get("message_id")
+        except Exception as exc:  # noqa: BLE001 — a relayed card is best-effort
+            log.warning("telegram: card send failed (%s)", exc)
+            return None
+
+    def _edit_card(self, mid, text):
+        try:
+            _client.edit_message_text(self.chat_id, mid, text[: _max_chars()],
+                                      parse_mode="HTML")
+            return True
+        except Exception as exc:  # noqa: BLE001 — an unedited card is re-sent
+            log.warning("telegram: card edit failed (%s)", exc)
+            return False
 
     def relay_harness(self, event):
         if not self.verbose:
@@ -1652,8 +1704,8 @@ class _Live:
         # Reserve room for the header/block so the FIRST message is never cut mid
         # tag; the answer body is split on the remaining room and every following
         # message carries plain escaped text only.
-        first_room = max(200, _max_chars() - len(head) - len(block) - 8)
-        parts = _split_body(body, first_room, _max_chars())
+        first_room = max(200, _max_chars() - len(head) - len(block) - 200)
+        parts = _split_body(body, first_room, max(200, _max_chars() - 200))
         last = len(parts) - 1
         for i, part in enumerate(parts):
             pieces = [head] if i == 0 else []
@@ -1667,6 +1719,7 @@ class _Live:
                 self._send_html(foot)
             self._send_or_edit_html(i, text, part)
         _live["obj"] = None
+        self._open_cards = {}
         _pump()
 
     def _send_or_edit_html(self, index, html_text, plain):
@@ -1815,17 +1868,109 @@ def _last_reasoning():
     return ""
 
 
+#: The argument keys worth showing on a tool card's header line, in order.
+_TOOL_HINT_KEYS = ("command", "cmd", "path", "file", "query", "q", "pattern",
+                   "url", "goal", "title", "name", "id")
+
+
+def _tool_hint(args):
+    """A one-line human hint for a tool card: the command, path, query…"""
+    a = args if isinstance(args, dict) else {}
+    for key in _TOOL_HINT_KEYS:
+        value = a.get(key)
+        if isinstance(value, str) and value.strip():
+            return " ".join(value.split())[:70]
+    steps = a.get("steps")
+    if isinstance(steps, list) and steps:
+        bits = ["%s %s" % (s.get("id"), s.get("status")) for s in steps[:3]
+                if isinstance(s, dict) and s.get("id")]
+        if bits:
+            return ", ".join(bits)[:70]
+    return ""
+
+
+def _tool_body(args, output=""):
+    """The COLLAPSED detail of a tool card: the command/args, then the output."""
+    a = args if isinstance(args, dict) else {}
+    lines = []
+    cmd = a.get("command") or a.get("cmd")
+    if isinstance(cmd, str) and cmd.strip():
+        lines.append("$ " + cmd.strip())
+    elif a:
+        try:
+            # indented: the expanded card reads as a list, not one long line
+            blob = json.dumps(a, ensure_ascii=False, indent=1)
+        except Exception:  # noqa: BLE001 — an unserialisable arg is shown raw
+            blob = str(a)
+        if blob and blob != "{}":
+            lines.append(blob)
+    if output:
+        if lines:
+            lines.append("")
+        lines.append(str(output).rstrip())
+    return "\n".join(lines)
+
+
+def _cap_body(text, cap):
+    """Cap a card's collapsed detail and SAY how much was cut (never a silent loss)."""
+    text = str(text or "")
+    if len(text) <= cap:
+        return text
+    return text[:cap].rstrip() + "\n… (%d chars)" % len(text)
+
+
+def _clean_output(tool, text):
+    """Drop the tool backend's own banner: the card header already states it."""
+    lines = str(text or "").splitlines()
+    if lines and lines[0].startswith("[%s]" % tool):
+        lines = lines[1:]
+    if lines and lines[0].startswith("stdout: "):
+        lines[0] = lines[0][len("stdout: "):]
+    return "\n".join(lines).strip()
+
+
+def _tool_card(tool, hint, state, detail, body):
+    """A tool card: ONE header row plus a collapsed, monospace detail block.
+
+    2026-11-28 (operator: "le calls ordinate … input output è un macello … un po'
+    come nella sessione Longrun, espandibili"): the row is the whole card when it is
+    collapsed (Telegram shows the first lines of a `<blockquote expandable>` and a
+    "show more" control); the detail never spills into the chat.
+    """
+    head = {"call": "⚙", "ok": "✅", "fail": "❌"}.get(state, "⚙")
+    meta = " · ".join(x for x in (hint, detail) if x)
+    text = "%s <b>%s</b>" % (head, _esc(tool))
+    if meta:
+        text += " · <i>%s</i>" % _esc(meta)
+    if body:
+        text += "\n<blockquote expandable><pre>%s</pre></blockquote>" % _esc(body)
+    return text
+
+
 def _split_body(text, first_size, rest_size):
-    """Split the answer: the first piece leaves room for header/block, the rest
-    use the full width. Never returns an empty list."""
+    """Split the answer on PARAGRAPH boundaries when one is close enough.
+
+    The first piece leaves room for header/block, the rest use the full width. A long
+    reply now breaks between blocks instead of mid-sentence; a hard cut stays the
+    fallback for a single huge paragraph. Never returns an empty list.
+    """
     text = str(text or "")
     if not text:
         return [""]
-    out = [text[:first_size]]
-    i = first_size
-    while i < len(text):
-        out.append(text[i:i + rest_size])
-        i += rest_size
+    out, rest, size = [], text, first_size
+    while len(rest) > size:
+        cut = rest.rfind("\n\n", 0, size)
+        if cut < size // 2:
+            cut = rest.rfind("\n", 0, size)
+        if cut < size // 2:
+            cut = size
+        out.append(rest[:cut])
+        rest = rest[cut:].lstrip("\n")
+        size = rest_size
+        if not rest:
+            break
+    if rest:
+        out.append(rest)
     return out
 
 

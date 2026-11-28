@@ -1073,6 +1073,89 @@ check("U10 finish() sends RENDERED markdown (no ** or ## or ``` left in the chat
       _u10[-1:] or None)
 channel._client = None
 
+# ---- V: tool cards — ONE row per call, the result EDITS that row -------------
+# 2026-11-28 (operator: "le calls ordinate … input output è un macello … come nella
+# sessione Longrun, espandibili"): a call opens a one-line card whose detail is a
+# collapsed <blockquote expandable><pre>; the result edits the SAME message.
+channel._client = FakeClient()
+_lc = channel._Live(9)
+_lc.verbose = True
+channel._live["obj"] = _lc
+_base = len(channel._client.calls)
+_lc.relay_tool({"kind": "tool.call", "tool": "shell.exec",
+                "args": {"command": "echo   ok"}})
+_v1 = channel._client.calls[_base:]
+check("V1 a tool.call sends ONE card: header row + collapsed <pre> detail",
+      len(_v1) == 1 and _v1[0][0] == "sendMessage"
+      and "⚙" in str(_v1[0][1].get("text"))
+      and "<blockquote expandable><pre>" in str(_v1[0][1].get("text"))
+      and "echo ok" in str(_v1[0][1].get("text"))
+      and "running…" in str(_v1[0][1].get("text")), _v1)
+_mid = (_lc._open_cards.get("shell.exec") or [(None,)])[0][0]
+check("V2 the open card is remembered for its result", isinstance(_mid, int), _mid)
+_base = len(channel._client.calls)
+_lc.relay_tool({"kind": "tool.result", "tool": "shell.exec", "ok": True,
+                "exit_code": 0, "duration_ms": 12,
+                "output": "[shell.exec] exit=0 ok=True backend=terminal sandboxed=False\n"
+                          "stdout: ok"})
+_v2 = channel._client.calls[_base:]
+check("V3 the result EDITS the same card (no second message), banner cleaned",
+      len(_v2) == 1 and _v2[0][0] == "editMessageText"
+      and str(_v2[0][1].get("message_id")) == str(_mid)
+      and "✅" in str(_v2[0][1].get("text"))
+      and "exit 0" in str(_v2[0][1].get("text"))
+      and "12ms" in str(_v2[0][1].get("text"))
+      and "[shell.exec]" not in str(_v2[0][1].get("text"))
+      and "stdout:" not in str(_v2[0][1].get("text")), _v2)
+check("V4 a failed result shows ❌",
+      "❌" in channel._tool_card("x", "path", "fail", "exit 1", "boom"))
+check("V5 _clean_output drops the backend banner and the stdout: prefix",
+      channel._clean_output("shell.exec",
+                            "[shell.exec] exit=0 ok=True\nstdout: ok\nmore") == "ok\nmore",
+      channel._clean_output("shell.exec", "[shell.exec] exit=0\nstdout: ok\nmore"))
+_base = len(channel._client.calls)
+_lc.relay_tool({"kind": "tool.result", "tool": "orphan", "ok": True, "output": "x"})
+_v6 = channel._client.calls[_base:]
+check("V6 a result with no open call still lands as a new card",
+      len(_v6) == 1 and _v6[0][0] == "sendMessage", _v6)
+_base = len(channel._client.calls)
+_lc.relay_tool({"kind": "tool.call", "tool": "big.tool", "args": {"command": "y" * 3000}})
+_v7 = str(channel._client.calls[_base][1].get("text"))
+_pre7 = _v7.split("<pre>", 1)[-1].split("</pre>", 1)[0]
+check("V7 a huge argument detail is capped and SAYS how much was cut",
+      len(_pre7) < channel._verbose_preview() + 40 and "chars)" in _pre7, len(_pre7))
+_lc.finish()
+check("V8 finish() clears the open cards", _lc._open_cards == {}, _lc._open_cards)
+check("V9 a todo.update hint names the steps it changed",
+      channel._tool_hint({"steps": [{"id": "n1", "status": "done"},
+                                    {"id": "n2", "status": "todo"}]}) == "n1 done, n2 todo",
+      channel._tool_hint({"steps": [{"id": "n1", "status": "done"}]}))
+_v10 = channel._tool_body({"steps": [{"id": "n1", "status": "done"}]})
+check("V10 a non-command card detail is INDENTED JSON (a list, not one long line)",
+      "\n" in _v10 and '"n1"' in _v10, _v10)
+_v11 = channel._split_body("a" * 10 + "\n\n" + "b" * 10, 14, 14)
+check("V11 a long answer splits on PARAGRAPH boundaries, never mid-block",
+      _v11 == ["a" * 10, "b" * 10], _v11)
+channel._client = FakeClient()
+_lv12 = channel._Live(9)
+_lv12.buf = "```sh\nls"
+_lv12._render()
+_v12 = [str(p.get("text")) for m, p in channel._client.calls
+        if m in ("sendMessage", "editMessageText")]
+check("V12 a half-streamed fence is CLOSED (no unbalanced <pre> is ever sent)",
+      _v12 and all(t.count("<pre>") == t.count("</pre>") for t in _v12), _v12[-1:])
+channel._client = FakeClient()
+_lv13 = channel._Live(9)
+_lv13.buf = "**x** " * 2000
+_lv13._render()
+_v13 = [str(p.get("text")) for m, p in channel._client.calls
+        if m in ("sendMessage", "editMessageText")]
+check("V13 a huge live answer respects max_message_chars",
+      _v13 and max(len(t) for t in _v13) <= 4000
+      and all(t.count("<b>") == t.count("</b>") for t in _v13), len(_v13[-1]) if _v13 else 0)
+channel._live["obj"] = None
+channel._client = None
+
 shutil.rmtree(_tmp, ignore_errors=True)
 print("---")
 ok = sum(results)
