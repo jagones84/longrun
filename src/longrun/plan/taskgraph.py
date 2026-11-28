@@ -545,7 +545,7 @@ def plan_nodes(graph):
     return [n for n in graph.get("nodes", []) if n.get("plan", 1) == cur]
 
 
-def render_todos(graph, limit=12, compact=False, instructions=True, why_fn=None):
+def render_todos(graph, limit=12, compact=False):
     """Compact text block of the persistent task list, for prompt injection.
 
     JAG-194: only the CURRENT plan's nodes are shown — old, finished plans stay in
@@ -558,12 +558,9 @@ def render_todos(graph, limit=12, compact=False, instructions=True, why_fn=None)
     section, so repeating it on every turn was pure duplicated tokens. The default
     (full) rendering is kept for the `todo` tool and the legacy ownership contract.
 
-    2026-11-28: two OPTIONAL flags for a human-facing reader (the Telegram `/todo`
-    menu), both defaulted so every existing caller is byte-identical:
-    * `instructions=False` drops the "This list is YOURS…" paragraph (prompt-only);
-    * `why_fn(node)` appends that node's justification (the caller passes
-      `threads._why`, so the justification rule stays owned by `threads`);
-    * `limit=None` already means "every node of the current plan".
+    2026-11-28: this stays the MODEL-facing formatter. The Telegram `/todo` card is a
+    PRESENTATION over the SAME data (`plan_nodes` + `threads.why_text`), never a
+    change to this dense form.
     """
     if not graph or not graph.get("nodes"):
         return ""
@@ -587,9 +584,7 @@ def render_todos(graph, limit=12, compact=False, instructions=True, why_fn=None)
         extra = ""
         if n.get("status") == "superseded" and n.get("reason"):
             extra = "  (superseded: %s)" % n.get("reason")
-        why = why_fn(n) if why_fn else ""
-        lines.append("%s%s %s (%s)%s%s" % (indent, mark, n.get("label", ""),
-                                           n.get("id"), extra, why))
+        lines.append("%s%s %s (%s)%s" % (indent, mark, n.get("label", ""), n.get("id"), extra))
     carry = carry_line(graph) if open_n else ""
     if compact:
         if carry:
@@ -602,7 +597,7 @@ def render_todos(graph, limit=12, compact=False, instructions=True, why_fn=None)
         return "\n".join(lines)
     if carry:
         lines.append(carry)
-    if open_n and instructions:
+    if open_n:
         lines.append("This list is YOURS: keep it current — set a step [>] 'doing' "
                      "before you start it, and [x] 'done' with evidence when it is "
                      "REALLY finished. NEVER redo a step already marked [x]. If a step "

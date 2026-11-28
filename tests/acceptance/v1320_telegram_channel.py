@@ -31,7 +31,10 @@ deterministic, offline, no model, no network:
      and never leaks into the shared catalogue;
   R  the menus are usable end to end: 🔎 Search re-renders the SAME menu FILTERED from a
      ForceReply answer, ▶️ Use runs a REAL turn with the skill activated, and a fresh
-     (non-reply) message is never swallowed by a pending prompt.
+     (non-reply) message is never swallowed by a pending prompt;
+  S  the reply renderer emits Telegram HTML (<b>/<code>/<pre>/<blockquote expandable>)
+     when we produce markup, keeps plain text plain, falls back to plain on an
+     unparsable entity, and splits on BLOCK boundaries (never inside a tag).
 
 Run: python3 tests/acceptance/v1320_telegram_channel.py
 """
@@ -610,10 +613,11 @@ _api_v02.gated_call = lambda tool, args, run_id=None, **kw: {
         "service": {"default_model": "p:m"}}}
 try:
     _st = channel._run_ui("status")
-    check("N9 /status shows the rich fields the WebUI shows",
-          "context: 22000 / 131000" in _st and "16.8%" in _st
-          and "plan: 3 open / 9 steps" in _st and "agent: AX" in _st,
-          _st.replace("\n", " | ")[:200])
+    check("N9 /status shows the rich fields the WebUI shows (as HTML)",
+          "22000 / 131000" in _st and "16.8%" in _st
+          and "<b>plan</b>" in _st and "3 open / 9 steps" in _st
+          and "<code>AX · Telegram</code>" in _st and "`" not in _st,
+          _st.replace("\n", " | ")[:240])
 finally:
     _api_v02.gated_call = _orig_gated
 
@@ -621,8 +625,9 @@ finally:
 _ctx_txt = channel._fmt_context({"display": {"available": True,
                                              "meter": "ctx: 22k/131k",
                                              "detail": "used 22k / 131k tokens · 17%"}})
-check("N10 /context uses the shared display block",
-      "22k/131k" in _ctx_txt and "17%" in _ctx_txt, _ctx_txt)
+check("N10 /context uses the shared display block, as HTML",
+      "22k/131k" in _ctx_txt and "17%" in _ctx_txt
+      and "<code>ctx: 22k/131k</code>" in _ctx_txt and "`" not in _ctx_txt, _ctx_txt)
 channel._client = None
 
 # ---- O: /skills — a SEARCHABLE inline menu (the WebUI picker twin) ----------
@@ -743,17 +748,25 @@ _FAKE_GRAPH = {"plan": 1, "nodes": [
      "evidence": [{"text": "did the first thing"}]},
     {"id": "n2", "label": "second", "status": "doing", "plan": 1},
     {"id": "n3", "label": "old-plan", "status": "done", "plan": 0},
+    {"id": "n4", "label": "long evidence", "status": "done", "plan": 1,
+     "evidence": [{"text": "x" * 250}]},
 ]}
 _orig_load = _tg2.load
 _tg2.load = lambda sid: dict(_FAKE_GRAPH)
 channel._client = FakeClient()
 try:
     channel._handle_tg_only(9, "todo", "")
-    _todo = [str(q.get("text")) for m, q in channel._client.calls if m == "sendMessage"]
-    _t = _todo[-1] if _todo else ""
-    check("Q3 /todo lists every CURRENT node with status + justification, no prompt paragraph",
-          all(x in _t for x in ("first", "did the first thing", "[x]", "[>]", "second"))
-          and "old-plan" not in _t and "This list is YOURS" not in _t, _t[:200])
+    _sent = [q for m, q in channel._client.calls if m == "sendMessage"]
+    _t = str(_sent[-1].get("text")) if _sent else ""
+    check("Q3 /todo is a readable HTML card: icons, bold ids, justification, no prompt paragraph",
+          all(x in _t for x in ("first", "did the first thing", "✅", "🔵", "second"))
+          and "<b>n1</b>" in _t
+          and "old-plan" not in _t and "This list is YOURS" not in _t
+          and "TASK LIST" not in _t, _t[:300])
+    check("Q5 /todo is sent with parse_mode=HTML (real formatting, not raw text)",
+          _sent and _sent[-1].get("parse_mode") == "HTML")
+    check("Q6 a long justification collapses into an expandable blockquote",
+          "<blockquote expandable>" in _t and ("x" * 120) in _t, _t[-220:])
 finally:
     _tg2.load = _orig_load
 channel._client = FakeClient()
@@ -848,6 +861,47 @@ finally:
     _httpapi.start_session_turn = _orig_start_r
     channel._all_skills = _orig_all_skills
     channel._prompts.clear()
+    channel._client = None
+
+# ---- S: the reply renderer — HTML when we emit markup, never lose a message ---
+# 2026-11-28 (operator: "perché in generale telegram ha questo formato orrendo del
+# testo? … soprattutto quando si usano comandi o tools"). Best practice (Telegram Bot
+# API): parse_mode=HTML — <b>/<code>/<pre>/<blockquote expandable>, no nesting of
+# blockquotes, code/pre cannot contain entities.
+class _StrictFake(FakeClient):
+    """Refuses an unparsable entity, like the real API does (400 can't parse)."""
+
+    def send_message(self, chat_id, text, reply_to=None, keyboard=None,
+                     disable_preview=True, parse_mode=None, reply_markup=None):
+        if parse_mode == "HTML" and "BADENTITY" in str(text):
+            raise RuntimeError("Bad Request: can't parse entities")
+        return super().send_message(chat_id, text, reply_to=reply_to,
+                                    keyboard=keyboard, disable_preview=disable_preview,
+                                    parse_mode=parse_mode, reply_markup=reply_markup)
+
+
+channel._client = FakeClient()
+try:
+    channel._reply(9, "🗒 <b>Todos</b>\n\n✅ <b>n1</b>  ok")
+    _s1 = [q for m, q in channel._client.calls if m == "sendMessage"]
+    check("S1 a body carrying OUR markup is sent as HTML automatically",
+          _s1 and _s1[-1].get("parse_mode") == "HTML", _s1[-1:] or None)
+    channel._client = FakeClient()
+    channel._reply(9, "plain words only")
+    _s2 = [q for m, q in channel._client.calls if m == "sendMessage"]
+    check("S2 plain text stays plain (no accidental parse_mode)",
+          _s2 and _s2[-1].get("parse_mode") is None, _s2[-1:] or None)
+    channel._client = _StrictFake()
+    channel._reply(9, "<b>BADENTITY</b> kept")
+    _s3 = [q for m, q in channel._client.calls if m == "sendMessage"]
+    check("S3 an unparsable entity falls back to plain text (message never lost)",
+          bool(_s3) and _s3[-1].get("parse_mode") is None
+          and "BADENTITY kept" in str(_s3[-1].get("text")), _s3[-1:] or None)
+    check("S4 long HTML splits on BLOCK boundaries, never inside a tag",
+          all(c.count("<b>") == c.count("</b>")
+              and c.count("<blockquote") == c.count("</blockquote>")
+              for c in channel._html_chunks(("item <b>x</b>\n\n" * 400), 1000)))
+finally:
     channel._client = None
 
 shutil.rmtree(_tmp, ignore_errors=True)

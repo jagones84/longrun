@@ -579,15 +579,29 @@ def _nodes_map(sid):
         return {}
 
 
-def _why(node):
-    """A todo's justification: its latest evidence text, else its superseded reason."""
+def why_text(node):
+    """A todo's justification, BARE: its latest evidence text, else its reason.
+
+    ONE rule for every reader (the prompt line via `_why`, the Telegram card, the
+    WebUI). `""` when the node carries neither — never an invented sentence.
+    """
     ev = [e for e in ((node or {}).get("evidence") or []) if (e.get("text") or "").strip()]
     if ev:
-        return " \u00b7 why: \u201c%s\u201d" % str(ev[-1]["text"]).replace("\n", " ")[:140]
+        return str(ev[-1]["text"]).replace("\n", " ").strip()[:400]
     reason = (node or {}).get("reason")
     if reason:
-        return " \u00b7 reason: \u201c%s\u201d" % str(reason).replace("\n", " ")[:140]
+        return str(reason).replace("\n", " ").strip()[:400]
     return ""
+
+
+def _why(node):
+    """A todo's justification: its latest evidence text, else its superseded reason."""
+    text = why_text(node)
+    if not text:
+        return ""
+    has_evidence = any((e.get("text") or "").strip()
+                       for e in ((node or {}).get("evidence") or []))
+    return " \u00b7 %s: \u201c%s\u201d" % ("why" if has_evidence else "reason", text[:140])
 
 
 def render(sid, limit=200):

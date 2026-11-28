@@ -579,18 +579,6 @@ def _spawn_worker(fn):
     threading.Thread(target=fn, name="tg-work", daemon=True).start()
 
 
-def _reply(chat_id, text):
-    """Send `text` to `chat_id`; an EMPTY text sends nothing (the relay covers it)."""
-    text = str(text or "")
-    if not text.strip():
-        return
-    try:
-        for chunk in _chunks(text):
-            _notify(chat_id, chunk)
-    except Exception:  # noqa: BLE001
-        pass
-
-
 # ---------------------------------------------------- Telegram-only commands --
 def _onoff(value):
     return "ON" if value else "OFF"
@@ -622,22 +610,13 @@ def _handle_tg_only(chat_id, token, arg):
             _notify(chat_id, "⚠️ /stop failed: %s" % exc)
         return
     if token == "help":
-        _notify(chat_id, _help_text())
+        _reply(chat_id, _help_text(), parse_mode="HTML")
         return
     if token == "todo":
         # 2026-11-28: EVERY current todo (open + closed) with its status and
-        # justification, straight from the task graph the model owns. `limit=None`
-        # = all current-plan nodes; the ownership paragraph is dropped (it is a
-        # prompt rule, not a status line).
-        from longrun.plan import taskgraph
-        from longrun.memory import threads
-        try:
-            g = taskgraph.load(binding.SESSION_ID)
-        except Exception:  # noqa: BLE001 — an absent graph is "no todos"
-            g = None
-        text = taskgraph.render_todos(g, limit=None, compact=False,
-                                      instructions=False, why_fn=threads._why)
-        _reply(chat_id, text or "No todos yet for this chat.")
+        # justification, rendered as a readable Telegram card (icons, bold ids and
+        # collapsible evidence) instead of the prompt's dense block.
+        _reply(chat_id, _fmt_todos(binding.SESSION_ID), parse_mode="HTML")
         return
     doc = binding.load()
     current = binding.prefs(doc)
@@ -650,17 +629,21 @@ def _handle_tg_only(chat_id, token, arg):
 
 
 def _help_text():
-    shared = ", ".join("/" + str(e.get("id")) for e in slash.catalogue())
+    """`/help` — the command list as a readable card (grouped, one block per kind)."""
+    ids = [str(e.get("id")) for e in slash.catalogue()]
+    shared = " · ".join("/" + i for i in ids)
     p = binding.prefs(binding.load())
-    return ("Commands (same as the Longrun chat):\n%s\n\n"
-            "Telegram-only toggles:\n"
+    return ("📖 <b>Commands</b> <i>(same as the Longrun chat)</i>\n"
+            "%s\n\n"
+            "<b>Telegram-only</b>\n"
             "/think %s — show the model's live thinking\n"
-            "/reason %s — append the chain-of-thought to the final answer\n"
-            "/verbose %s — relay tool calls, results and harness messages in real time\n"
+            "/reason %s — append the chain-of-thought\n"
+            "/verbose %s — relay tool calls and harness messages\n"
             "/stop — abort the running turn\n"
-            "/todo — list this chat's todos (status + justification)\n"
-            "/help — this list\n\n"
-            "/skills [keyword] — browse/search the skills\n"
+            "/todo — this chat's todos (status + justification)\n"
+            "/help — this card\n\n"
+            "<b>Menus</b>\n"
+            "/skills [keyword] — browse/search the skills, then ▶️ use one\n"
             "/plugins — browse the installed plugins\n"
             "/models — choose a provider ▸ model"
             % (shared, _onoff(p["think"]), _onoff(p["reason"]), _onoff(p["verbose"])))
@@ -1137,9 +1120,9 @@ def _run_ui(action, message=""):
             stores.clear_session(sid)
             return "♻️ this chat has been reset (the same session and workspace stay)."
         if action == "new":
-            return ("This bot is bound to the single Longrun session `%s`, so there "
-                    "is no second chat to open here. Use /reset to clear THIS one."
-                    % sid)
+            return ("This bot is bound to the single Longrun session "
+                    "<code>%s</code>, so there is no second chat to open here. "
+                    "Use /reset to clear THIS one." % _esc(sid))
         if action == "context":
             from longrun.core import httpapi
             return _fmt_context(httpapi.context_status(sid, None) or {})
@@ -1173,8 +1156,54 @@ def _run_doc(kind, message):
         return "⚠️ /%s failed: %s" % (kind, exc)
     if res.get("error"):
         return "⚠️ /%s: %s" % (kind, res["error"])
-    return ("📄 %s written for `%s` — review it in Longrun (the composer bar shows "
-            "the document)." % (kind, binding.SESSION_ID))
+    return ("📄 <b>%s</b> written for <code>%s</code>\n"
+            "<i>review it in Longrun — the composer bar shows the document</i>"
+            % (_esc(kind), _esc(binding.SESSION_ID)))
+
+
+#: The status vocabulary as ONE set of icons (the same marks the plan UI draws).
+_TODO_ICON = {"todo": "⚪", "doing": "🔵", "blocked": "⛔", "done": "✅",
+              "cancelled": "✖️", "superseded": "↪️"}
+
+
+def _fmt_todos(sid):
+    """`/todo` as a READABLE Telegram card — not the prompt's wall of text.
+
+    2026-11-28 (operator: "perché in generale telegram ha questo formato orrendo del
+    testo? … soprattutto quando si usano comandi o tools"): the prompt formatter
+    (`taskgraph.render_todos`) is optimised for the MODEL (dense, one line per step).
+    Here every current node gets its own line — icon + `<b>id</b>` + label — and its
+    justification goes in a `<blockquote expandable>` (Telegram shows the first lines
+    and a "show more"), so a long evidence dump no longer floods the chat. The DATA
+    and the justification RULE are the same owners: `taskgraph.plan_nodes` +
+    `threads.why_text` (via `render_todos`'s own `_why` rule).
+    """
+    from longrun.plan import taskgraph as _tg
+    from longrun.memory import threads as _th
+    try:
+        graph = _tg.load(sid) or {}
+    except Exception:  # noqa: BLE001 — an absent graph is "no todos"
+        graph = {}
+    nodes = _tg.plan_nodes(graph)
+    if not nodes:
+        return "🗒 <b>Todos</b>\n<i>no todos in this chat yet</i>"
+    open_n = sum(1 for n in nodes if n.get("status") in _tg.OPEN_STATUSES)
+    parts = ["🗒 <b>Todos</b> · %d open / %d total" % (open_n, len(nodes))]
+    for n in nodes:
+        icon = _TODO_ICON.get(str(n.get("status") or ""), "⚪")
+        label = _esc(str(n.get("label") or "").strip())
+        nid = _esc(str(n.get("id") or ""))
+        indent = "└ " if n.get("parent") else ""
+        item = "%s%s <b>%s</b>  %s" % (indent, icon, nid, label)
+        why = _th.why_text(n)
+        if why:
+            if len(why) > 100:
+                item += "\n<blockquote expandable>%s</blockquote>" % _esc(why)
+            else:
+                item += "\n<i>↳ %s</i>" % _esc(why)
+        parts.append(item)
+    # `_reply` splits on the blank line between items and never inside a tag.
+    return "\n\n".join(parts)
 
 
 def _fmt_context(st):
@@ -1186,9 +1215,11 @@ def _fmt_context(st):
     """
     disp = st.get("display") or {}
     if not disp.get("available"):
-        return "🧠 context: no reading available for this session."
-    detail = (" — " + disp["detail"]) if disp.get("detail") else ""
-    return "🧠 context: %s%s" % (disp.get("meter") or "ctx n/d", detail)
+        return "🧠 <b>context</b>\n<i>no reading available for this session</i>"
+    detail = str(disp.get("detail") or "")
+    return ("🧠 <b>context</b>\n<code>%s</code>%s"
+            % (_esc(disp.get("meter") or "ctx n/d"),
+               ("\n<i>%s</i>" % _esc(detail)) if detail else ""))
 
 
 def _fmt_status(sid):
@@ -1225,21 +1256,24 @@ def _fmt_status(sid):
     ctx_line = "%s / %s" % (_n(ctx.get("tokens_used")), _n(ctx.get("max_tokens")))
     if pct is not None:
         ctx_line += "  (%.1f%%)" % float(pct)
-    agent = ag.get("id") or "—"
+    agent = str(ag.get("id") or "—")
     if ag.get("name"):
         agent += " · " + str(ag["name"])
     lines = [
-        "📊 `%s` — %s" % (sid, "running" if out.get("running") else "idle"),
-        "title: %s" % (idn.get("title") or "(untitled)"),
-        "agent: %s" % agent,
-        "model: %s" % (idn.get("model") or svc.get("default_model") or "(default)"),
-        "messages: %s" % _n(idn.get("messages")),
-        "context: %s" % ctx_line,
-        "headroom: %s tokens" % _n(ctx.get("remaining_tokens")),
-        "auto-compact: %s%%" % _n(ctx.get("auto_compact_pct")),
-        "plan: %d open / %d steps" % (plan.get("open") or 0, plan.get("nodes") or 0),
-        "approvals here: %s" % _n(ap.get("pending_here")),
-        "workspace: %s" % (idn.get("workspace") or "(none)"),
+        "%s <b>%s</b>  %s" % ("🟢" if out.get("running") else "⚪", _esc(sid),
+                              "<i>running</i>" if out.get("running") else "<i>idle</i>"),
+        "<b>title</b>  %s" % _esc(idn.get("title") or "(untitled)"),
+        "<b>agent</b>  <code>%s</code>" % _esc(agent),
+        "<b>model</b>  <code>%s</code>" % _esc(idn.get("model")
+                                               or svc.get("default_model") or "(default)"),
+        "<b>messages</b>  <code>%s</code>" % _n(idn.get("messages")),
+        "<b>context</b>  <code>%s</code>" % _esc(ctx_line),
+        "<b>headroom</b>  <code>%s tokens</code>" % _n(ctx.get("remaining_tokens")),
+        "<b>auto-compact</b>  <code>%s%%</code>" % _n(ctx.get("auto_compact_pct")),
+        "<b>plan</b>  <code>%d open / %d steps</code>"
+        % (plan.get("open") or 0, plan.get("nodes") or 0),
+        "<b>approvals</b>  <code>%s</code>" % _n(ap.get("pending_here")),
+        "<b>workspace</b>  %s" % _esc(idn.get("workspace") or "(none)"),
     ]
     return "\n".join(lines)
 
@@ -1500,7 +1534,9 @@ class _Live:
         if kind == "tool.call":
             args = event.get("args")
             try:
-                detail = json.dumps(args, ensure_ascii=False)
+                # 2026-11-28: INDENTED args (a monospace block, one field per line)
+                # instead of one 300-char line the reader has to decode.
+                detail = json.dumps(args, ensure_ascii=False, indent=2)
             except Exception:  # noqa: BLE001
                 detail = str(args or "")
             text = "⚙ <b>%s</b>\n<pre>%s</pre>" % (_esc(tool), _esc(detail[:cap]))
@@ -1512,9 +1548,10 @@ class _Live:
                 extra.append("exit %s" % event.get("exit_code"))
             if event.get("duration_ms") not in (None, ""):
                 extra.append("%sms" % event.get("duration_ms"))
-            detail = str(event.get("stdout") or event.get("error") or "")
-            text = "%s <b>%s</b> %s\n<pre>%s</pre>" % (
-                head, _esc(tool), _esc(" · ".join(extra)), _esc(detail[:cap]))
+            detail = str(event.get("stdout") or event.get("error") or "").strip()
+            meta = ("  <i>%s</i>" % _esc(" · ".join(extra))) if extra else ""
+            text = ("%s <b>%s</b>%s\n<pre>%s</pre>"
+                    % (head, _esc(tool), meta, _esc(detail[:cap])))
         self._send_extra(text)
 
     def relay_harness(self, event):
@@ -1523,8 +1560,17 @@ class _Live:
         kind = str(event.get("inject_kind") or "harness")
         if kind == "system":
             return   # the system prompt is re-injected every turn: not a chat message
-        body = str(event.get("text") or "")
-        self._send_extra("⟡ <i>%s</i>\n%s" % (_esc(kind), _esc(body[:_verbose_preview()])))
+        body = str(event.get("text") or "").strip()
+        if body.startswith("[harness] "):
+            body = body[len("[harness] "):]
+        # A short note stays an italic line; a long harness dump collapses behind
+        # Telegram's "show more" instead of filling the chat.
+        if len(body) > 160:
+            text = ("⟡ <b>%s</b>\n<blockquote expandable>%s</blockquote>"
+                    % (_esc(kind), _esc(body[:_verbose_preview()])))
+        else:
+            text = "⟡ <b>%s</b>\n<i>%s</i>" % (_esc(kind), _esc(body))
+        self._send_extra(text)
 
     def _send_extra(self, text):
         try:
@@ -1665,10 +1711,67 @@ def _chunks(text):
     return [text[i:i + size] for i in range(0, len(text), size)]
 
 
-def _notify(chat_id, text):
+def _notify(chat_id, text, parse_mode=None):
     if _client is None:
         raise RuntimeError("channel not running")
-    return _client.send_message(chat_id, str(text)[:4096])
+    return _client.send_message(chat_id, str(text)[:4096], parse_mode=parse_mode)
+
+
+#: Tags our OWN formatters emit (Telegram HTML, 2026-11-28). When one is present the
+#: message is sent with `parse_mode="HTML"`; model/user text never takes this path
+#: (it goes through `_Live`, which escapes it).
+_HTML_HINT = ("<b>", "<i>", "<code>", "<pre>", "<blockquote")
+
+
+def _strip_tags(text):
+    import re
+    return re.sub(r"<[^>]+>", "", str(text or ""))
+
+
+def _html_chunks(text, limit):
+    """Split an HTML body on BLOCK boundaries (never inside a tag)."""
+    text = str(text or "")
+    if len(text) <= limit:
+        return [text]
+    out, cur = [], ""
+    for part in text.split("\n\n"):
+        piece = part if not cur else "\n\n" + part
+        if cur and len(cur) + len(piece) > limit:
+            out.append(cur)
+            cur = part
+        else:
+            cur += piece
+    if cur.strip():
+        out.append(cur)
+    return out or [text]
+
+
+def _reply(chat_id, text, parse_mode=None):
+    """Send `text` to `chat_id`; an EMPTY text sends nothing (the relay covers it).
+
+    2026-11-28 (operator: "perché in generale telegram ha questo formato orrendo del
+    testo? … soprattutto quando si usano comandi o tools"): a body carrying OUR markup
+    is sent as Telegram HTML — bold headers, `<code>` for ids/values and a
+    `<blockquote expandable>` for a long justification. A malformed entity can never
+    lose the message: the send is retried as plain text.
+    """
+    text = str(text or "")
+    if not text.strip():
+        return
+    mode = parse_mode or ("HTML" if any(t in text for t in _HTML_HINT) else None)
+    try:
+        if mode == "HTML":
+            for chunk in _html_chunks(text, _max_chars()):
+                _notify(chat_id, chunk, parse_mode=mode)
+        else:
+            for chunk in _chunks(text):
+                _notify(chat_id, chunk)
+    except Exception:  # noqa: BLE001 — a bad entity must never drop the message
+        try:
+            for chunk in _chunks(_strip_tags(text) if mode else text):
+                _notify(chat_id, chunk)
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def _answer_callback(cq_id, text):

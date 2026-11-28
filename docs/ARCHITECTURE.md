@@ -1114,8 +1114,12 @@ operator-selected `none`). This is not whole-agent confinement. Hard-denied patt
   reply answers only the prompt it replies to; any fresh message still reaches the agent.
   `/todo`
   (Telegram-only) lists every CURRENT task-graph node with its status and justification
-  (`taskgraph.render_todos(limit=None, instructions=False, why_fn=threads._why)`), so it
-  never leaks into the shared catalogue. A
+  (`taskgraph.plan_nodes` + `threads.why_text` — the prompt formatter `render_todos`
+  stays model-facing), so it never leaks into the shared catalogue. Every command that
+  produces structure is sent as Telegram HTML (`<b>` headers, `<code>` ids/values,
+  `<pre>` for tool I/O and `<blockquote expandable>` for a long justification, which the
+  client collapses behind "show more"); a body with no markup stays plain text and an
+  unparsable entity falls back to plain, so a message is never lost. A
   compaction is relayed to Telegram from the event itself: `compact_session` produces
   ONE numbered marker (`~140k → ~20k tokens …`) carried on `context.compact` and
   `context.auto_compact`, so a manual compaction from any surface AND an auto
