@@ -90,11 +90,13 @@ All notable changes to Longrun are documented here. The format follows
   read by agents and humans, and a dead link fails silently — the README's own table of contents is 30
   same-file anchors, `docs/` cross-link each other, and `ARCHITECTURE.md` cites three `file:///…` paths
   into `src/`; `v1271` pinned the doc SET and `v1278` the numbers inside one doc, but nothing resolved a
-  link. `harness/checks/docs_guard.py` walks the declared scope (six root docs, `docs/**`, `.github/**`),
-  skips fenced blocks and inline code, and reports `broken-link`, `missing-anchor` and `stale-absolute`
-  (the class a moved checkout breaks). `python3 forge.py docsguard` is the CLI door; the same check runs
-  in CI and as `tests/acceptance/v1321_docs_guard.py` (10/10), which also proves each detector against a
-  synthetic tree. First run: 23 docs / 39 links / 33 anchors, 0 findings.
+  link. `harness/docs_guard.py` walks the declared scope (six root docs, `docs/**`, `.github/**`), skips
+  fenced blocks and inline code, and reports `broken-link`, `missing-anchor` and `stale-absolute` (the
+  class a moved checkout breaks). Two doors reach the same `check()`: the CLI `python3 forge.py docsguard`
+  and the model-facing **`harness` tool's `docsguard` action** (read-only, no approval gate, findings capped
+  at 50), so a turn can verify the docs it just edited. The check also runs in CI and as
+  `tests/acceptance/v1321_docs_guard.py` (18/18), which proves each detector against a synthetic tree and
+  both doors identical. First run: 23 docs / 39 links / 33 anchors, 0 findings.
 - **The model economy is wired, not just measured (round 173 follow-up).** Two wires close the gap between
   the research and the running loop. **(1)** `harness/model_cascade.plan()` now resolves its `small`/`large`
   tiers from the operator's own ROLE routing (`roles.subagent` / `roles.agent`) when `config/cascade.yaml`

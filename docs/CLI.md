@@ -364,7 +364,9 @@ python3 forge.py docsguard      # {"verdict":"clean","stats":{"docs":23,"links":
 
 Exit `0` clean, `1` any finding (`broken-link`, `missing-anchor`, `stale-absolute`,
 each with file and line). The same check is pinned by
-`tests/acceptance/v1321_docs_guard.py` and runs in CI.
+`tests/acceptance/v1321_docs_guard.py` and runs in CI; an **agent** reaches the same
+function through the `harness` tool's `docsguard` action (`harness.docsguard`,
+read-only, no approval gate), so a turn can verify the docs it just edited.
 
 ### Per-paper harness groups (`forge harness`)
 

@@ -380,17 +380,19 @@ Harness² upstream (arXiv:2610.14224): that is only a comparison arm in
 
 Layout (2026-11-20), by runtime role:
 
-* `harness/checks/` — the 139 report-only checkers (one per paper, plus the mechanical
-  docs guard). Pure data in, verdict out; only `core/forge.py` imports them.
+* `harness/checks/` — the 138 report-only per-paper checkers. Pure data in,
+  verdict out; only `core/forge.py` imports them.
 * `harness/execution/` — the 9 gated executors (`probe`, `runner`, `editors`,
   `compose`, `contrast`, `whole`, `snapshot`, `gateway`, `unixshim`). Only
   `cycle` (with `dry_run=False`) reaches them, and only after
   `whole.readiness()` passes; tests inject a fake runner.
-* `harness/` root — the 32 modules the running app imports (live turn seams,
+* `harness/` root — the 33 modules the running app imports (live turn seams,
   read-only HTTP surfaces and their support, including `hazard_notice`,
   `work_report`, `effect_state`, `compaction_brief`, `model_cascade`,
   `completion_signal`, `env_card`, `edit_loop`, `time_budget`,
-  `harness_coverage` (round 171 — the ETCSLV self-rating) and
+  `harness_coverage` (round 171 — the ETCSLV self-rating),
+  `docs_guard` (the tracked docs' links/anchors, read by the `harness` tool's
+  `docsguard` action and by `forge.py docsguard`) and
   `graph_topology` — the ONE topology census read by `orbit/api` and
   `forge.py graph` (round 169), whose audit lives in `checks/` — below).
 * `harness/domain_adapter.py` — the GEPA genotype of arXiv:2611.25380: a

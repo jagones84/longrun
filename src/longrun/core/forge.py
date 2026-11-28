@@ -901,7 +901,7 @@ def cmd_docsguard(args):
     finding. Link extraction skips fenced blocks and inline code, so an example is not
     a claim. Shared with `tests/acceptance/v1321_docs_guard.py` and the CI step.
     """
-    from longrun.harness.checks import docs_guard
+    from longrun.harness import docs_guard
     from longrun.util.paths import REPO_ROOT
     _emit(docs_guard, docs_guard.check(REPO_ROOT), lambda o: o["verdict"] == "clean")
 

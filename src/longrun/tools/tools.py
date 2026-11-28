@@ -4512,16 +4512,35 @@ def _harness_graph():
                        for n in sorted(graphs)]}
 
 
+def _harness_docsguard():
+    """Resolve the tracked docs' links and anchors (`harness.docsguard`).
+
+    2026-11-28: the mechanical docs guard, made agent-facing — the same `check()` the
+    CLI (`forge.py docsguard`) and the battery (`v1321`) call. Read-only and local. A
+    finding is a VERDICT, not a tool failure, so `ok` stays True and `verdict` carries
+    the answer; the list is capped so a broken tree never floods the context.
+    """
+    from longrun.harness import docs_guard
+    from longrun.util.paths import REPO_ROOT
+    out = docs_guard.check(REPO_ROOT)
+    findings = out.get("findings") or []
+    return {"ok": True, "verdict": out.get("verdict"), "stats": out.get("stats") or {},
+            "findings_total": len(findings), "findings": findings[:50]}
+
+
 def _harness(args, run_id):
-    """Harness lifecycle actions (`harness.restart`, `harness.status`, `harness.graph`).
+    """Harness lifecycle actions (`harness.restart`, `.status`, `.graph`, `.docsguard`).
 
     2026-11-15: `restart` moved here from the Matrix suite. It kills the whole
     process, so it is a harness action, not a Matrix artifact operation.
     2026-11-21: `status` joins it — the ONE read-only report about a session.
     2026-11-24: `graph` joins it — the ONE topology census (round 170).
+    2026-11-28: `docsguard` joins it — the tracked docs' links/anchors, read-only.
     """
     from longrun.core import restart
     action = str((args or {}).get("action") or "restart").strip().lower()
+    if action == "docsguard":
+        return _harness_docsguard()
     if action == "graph":
         return _harness_graph()
     if action in ("status", "info"):

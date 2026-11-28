@@ -7,11 +7,13 @@ cross-link each other and `ARCHITECTURE.md` cites three `file:///…` paths into
 `v1271` pins the doc SET (README links every tracked doc) and `v1278` the countable
 claims INSIDE `ARCHITECTURE.md`; before this pin nothing resolved a link.
 
-`harness/checks/docs_guard.py` walks the declared scope (six root docs, `docs/**`,
+`harness/docs_guard.py` walks the declared scope (six root docs, `docs/**`,
 `.github/**`), skips fenced blocks and inline code, and reports three kinds:
-`broken-link`, `missing-anchor`, `stale-absolute`.
+`broken-link`, `missing-anchor`, `stale-absolute`. It is reachable from BOTH doors —
+the CLI (`forge.py docsguard`) and the model-facing `harness` tool's `docsguard`
+action — so this pin proves them identical (D).
 
-Deterministic: no server, no model, no network (paths in, a verdict out).
+Deterministic: temp stores, no model, no network, no server.
 Run: python3 tests/acceptance/v1321_docs_guard.py
 """
 import os
@@ -21,7 +23,7 @@ import tempfile
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(REPO, "src"))
 
-from longrun.harness.checks import docs_guard  # noqa: E402
+from longrun.harness import docs_guard  # noqa: E402
 
 results = []
 
@@ -97,6 +99,44 @@ check("B4 the synthetic verdict is `problems` and each finding names file+line",
 check("C1 `clean` means zero findings and `problems` means at least one",
       (out["verdict"] == "clean") == (not out["findings"])
       and (probe["verdict"] == "problems") == bool(probe["findings"]))
+
+# ---- D: the model-facing door (the `harness` tool) -------------------------
+# The agent reaches the SAME check through `harness.docsguard`; the stores are
+# throwaway so importing the tool package never touches the operator's data.
+TMP_STORES = tempfile.mkdtemp(prefix="sf-v1321-stores-")
+for _key, _name in (("LONGRUN_CONFIG_DIR", "cfg"), ("LONGRUN_SESSIONS_DIR", "sessions"),
+                    ("LONGRUN_DATA_DIR", "data"), ("LONGRUN_DB", "events.db"),
+                    ("LONGRUN_GRAPH_DIR", "graphs"), ("LONGRUN_JOBS", "jobs.json")):
+    os.environ[_key] = os.path.join(TMP_STORES, _name)
+    if not _name.endswith(".json"):
+        os.makedirs(os.environ[_key], exist_ok=True)
+
+from longrun.tools import registry          # noqa: E402
+from longrun.tools import tools as T        # noqa: E402
+
+schema = registry._LEGACY_SCHEMAS["harness"]
+actions = schema["properties"]["action"].get("enum") or []
+check("D1 docsguard is a declared `harness` action", "docsguard" in actions, actions)
+check("D2 restart/status/graph survive (no regression)",
+      {"restart", "status", "graph"} <= set(actions), actions)
+check("D3 docsguard reads no field",
+      registry._SUBTOOL_FIELDS["harness"].get("docsguard") == [],
+      registry._SUBTOOL_FIELDS["harness"])
+guide = registry._SUBTOOL_GUIDANCE.get("harness.docsguard") or ""
+check("D4 it has its own one actionable guidance line",
+      80 < len(guide) < 400 and "link" in guide.lower(), len(guide))
+check("D5 reading the docs opens no approval gate",
+      registry.subtool_gate("harness.docsguard", {}) is None)
+tool_out = T._harness({"action": "docsguard"}, None)
+check("D6 the tool answers the SAME verdict and stats as check(REPO)",
+      tool_out.get("ok") is True and tool_out.get("verdict") == out["verdict"]
+      and tool_out.get("stats") == out["stats"], str(tool_out)[:200])
+check("D7 the finding list is capped so a broken tree never floods the context",
+      len(tool_out.get("findings") or []) <= 50
+      and tool_out.get("findings_total") == len(out["findings"]), str(tool_out)[:140])
+check("D8 tools.py reaches the harness ROOT, never checks/",
+      "from longrun.harness import docs_guard" in open(
+          os.path.join(REPO, "src", "longrun", "tools", "tools.py"), encoding="utf-8").read())
 
 print("---")
 ok = sum(results)

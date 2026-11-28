@@ -1046,10 +1046,12 @@ _LEGACY_SCHEMAS = {
                         "use restart only for a change that hotload cannot apply (promoted "
                         "Nucleous code). `graph` reads the system's graph TOPOLOGY — the ONE "
                         "census of the execution graphs the architect's tools leave (agents, "
-                        "teams, jobs + subjobs) — as a bounded card with a capped frontier."),
+                        "teams, jobs + subjobs) — as a bounded card with a capped frontier. "
+                        "`docsguard` re-resolves every link and heading anchor of the tracked "
+                        "docs (README, AGENTS.md, docs/, .github/) and returns the findings."),
         "type": "object",
         "properties": {
-            "action": {"type": "string", "enum": ["restart", "status", "graph"],
+            "action": {"type": "string", "enum": ["restart", "status", "graph", "docsguard"],
                        "default": "restart"},
             "session": {"type": "string",
                         "description": "the session to report (status) or to continue after the restart (restart; default: the calling turn's session)"},
@@ -1223,6 +1225,7 @@ _SUBTOOL_FIELDS = {
         "restart": ["session", "reason", "dry_run"],
         "status": ["session"],
         "graph": [],
+        "docsguard": [],
     },
 }
 
@@ -1589,6 +1592,13 @@ _SUBTOOL_GUIDANCE = {
         "subjobs (`contain`/`dep`) — with a capped frontier. Bounded and read-only: it "
         "returns per-graph COUNTS and a card, never every node, and writes nothing. Use "
         "it to see what the org looks like and what is blocked, before spawning more."
+    ),
+    "harness.docsguard": (
+        "Re-resolve the TRACKED docs' links and anchors — the six root docs, `docs/**` "
+        "and `.github/**` — returning the findings (`broken-link`, `missing-anchor`, "
+        "`stale-absolute`, with file and line) or `clean` + counts. Fenced code and "
+        "inline examples are skipped. Read-only: run it after editing a doc; on a "
+        "finding, fix the link, never delete the sentence."
     ),
     # R2 (2026-11-15): one actionable line per canonical action. Before this
     # block 43 of the 90 multi-action tools had no row and fell back to the

@@ -27,7 +27,9 @@ The slug/anchor/fence logic is adapted from `kit/docs-lint.py` of the MIT-licens
 frontmatter/`related:` parts of that tool are deliberately not adopted (Longrun's doc
 identity is owned by `.agent/docs/tech-spec/SPEC-INDEX.md`, not by YAML).
 
-Pure: paths in, verdict out. No app import, no network, no write.
+Pure: paths in, verdict out. No network, no write. It lives at the `harness/` ROOT
+because the running app reaches it: the `harness` tool's `docsguard` action
+(`tools/tools.py`) and the CLI adapter (`core/forge.py`) call the same `check()`.
 """
 from __future__ import annotations
 
