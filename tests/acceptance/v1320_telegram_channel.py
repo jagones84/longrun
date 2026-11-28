@@ -18,7 +18,11 @@ deterministic, offline, no model, no network:
   E  deletion — `on_session_deleted("telegram")` clears the binding (re-onboarding);
   F  no hardcode — the token is a Key (`KNOWN_ENV_KEYS`) and the knobs live in
      `config/tools.yaml` `telegram:` (parity with the defaults) + `forge.ROUTES`;
-  G  the bot token NEVER appears in a client error.
+  G  the bot token NEVER appears in a client error;
+  L  a turn the channel did NOT start is still relayed (restart/job/dispatch);
+  M  the delegation gate — the twin reaches the whole org, like the Architect;
+  N  a compaction is visible on Telegram (manual AND auto, one numbered marker) and
+     `/status` reads the ONE shared `harness.status` tool, not a second session read.
 
 Run: python3 tests/acceptance/v1320_telegram_channel.py
 """
@@ -519,6 +523,95 @@ _ok_up, _ = arch.can_delegate("t-probe-sub", "A1")
 check("M4 a plain agent may NOT delegate outside its reports", _ok_up is False)
 _ok_self, _ = arch.can_delegate("telegram", "AX")
 check("M5 an agent may not delegate to itself", _ok_self is False)
+
+# ---- N: compaction is visible on Telegram; /status reads the ONE tool --------
+# 2026-11-28 (operator: "anche in telegram messaggio compattazione deve esserci …
+# anche status command magari qualche info in più … telegram e sessione devono
+# essere sync … no duplicazione di qualsiasi comando rispetto ai tool").
+_ch_src = open(os.path.join(REPO, "src", "longrun", "core", "telegram",
+                            "channel.py"), encoding="utf-8").read()
+
+# the marker is produced ONCE by the backend (tokens before -> after) and exposed
+check("N1 the compaction marker names tokens before -> after (one formatter)",
+      'stats["marker"] = sys_marker' in _api_src
+      and "%s \\u2192 %s tokens (%d \\u2192 %d messages" in _api_src
+      and "def _short_tokens(" in _api_src)
+check("N2 the auto-compaction event carries the same marker",
+      'marker=stats.get("marker")' in _api_src)
+check("N3 the channel relays the compaction event's marker (no re-format)",
+      'if kind in ("context.compact", "context.auto_compact")' in _ch_src
+      and 'event.get("marker")' in _ch_src)
+check("N4 /status uses the shared harness tool (gated_call), no second read",
+      'gated_call("harness", {"action": "status"' in _ch_src)
+
+channel._client = FakeClient()
+channel._attach_listener()
+try:
+    _doc = binding.load()
+    binding.upsert_paired(_doc, 9, title="owner")
+    binding.set_active_chat(_doc, 9)
+    binding.save(_doc)
+    channel._live["obj"] = None
+    channel._client = FakeClient()
+    _events.publish("context.compact", session="telegram",
+                    marker="[harness] manual: 140k -> 20k tokens")
+    _events.publish("context.auto_compact", session="telegram",
+                    marker="[harness] auto: 140k -> 20k tokens")
+    _ctexts = [str(p.get("text")) for m, p in channel._client.calls if m == "sendMessage"]
+    check("N5 a manual compaction reaches Telegram with its numbers",
+          any("140k -> 20k" in t and "manual" in t for t in _ctexts), _ctexts[-3:])
+    check("N6 an auto compaction reaches Telegram too",
+          any("140k -> 20k" in t and "auto" in t for t in _ctexts), _ctexts[-3:])
+finally:
+    channel._detach_listener()
+
+# an empty reply sends nothing, so the relayed event is the ONE Telegram message
+channel._client = FakeClient()
+channel._reply(9, "")
+check("N7 an empty reply sends nothing", channel._client.calls == [],
+      channel._client.calls)
+
+# /compact prints no second message when the marker already rode the event
+_orig_compact = _httpapi.compact_session
+_httpapi.compact_session = lambda sid, origin="manual", **kw: {
+    "session": sid, "origin": origin, "compacted": 4, "marker": "OK-marker"}
+try:
+    _res_compact = channel._run_ui("compact")
+    check("N8 /compact does not double the message when a marker exists",
+          _res_compact == "", repr(_res_compact))
+finally:
+    _httpapi.compact_session = _orig_compact
+
+# /status renders the SAME rich object the WebUI's /status shows
+from longrun.core import api_v02 as _api_v02  # noqa: E402
+_orig_gated = _api_v02.gated_call
+_api_v02.gated_call = lambda tool, args, run_id=None, **kw: {
+    "status": "executed", "result": {
+        "ok": True, "running": False,
+        "identity": {"id": "telegram", "title": "Twin", "model": "p:m",
+                     "workspace": "/w", "messages": 42},
+        "context": {"tokens_used": 22000, "max_tokens": 131000, "pct": 16.8,
+                    "remaining_tokens": 109000, "auto_compact_pct": 70},
+        "plan": {"open": 3, "nodes": 9},
+        "approvals": {"pending_here": 1},
+        "agent": {"id": "AX", "name": "Telegram"},
+        "service": {"default_model": "p:m"}}}
+try:
+    _st = channel._run_ui("status")
+    check("N9 /status shows the rich fields the WebUI shows",
+          "context: 22000 / 131000" in _st and "16.8%" in _st
+          and "plan: 3 open / 9 steps" in _st and "agent: AX" in _st,
+          _st.replace("\n", " | ")[:200])
+finally:
+    _api_v02.gated_call = _orig_gated
+
+# /context prints the ONE display block (no client-side re-format)
+_ctx_txt = channel._fmt_context({"display": {"available": True,
+                                             "meter": "ctx: 22k/131k",
+                                             "detail": "used 22k / 131k tokens · 17%"}})
+check("N10 /context uses the shared display block",
+      "22k/131k" in _ctx_txt and "17%" in _ctx_txt, _ctx_txt)
+channel._client = None
 
 shutil.rmtree(_tmp, ignore_errors=True)
 print("---")

@@ -550,8 +550,12 @@ def _spawn_worker(fn):
 
 
 def _reply(chat_id, text):
+    """Send `text` to `chat_id`; an EMPTY text sends nothing (the relay covers it)."""
+    text = str(text or "")
+    if not text.strip():
+        return
     try:
-        for chunk in _chunks(str(text)):
+        for chunk in _chunks(text):
             _notify(chat_id, chunk)
     except Exception:  # noqa: BLE001
         pass
@@ -778,7 +782,12 @@ def _run_ui(action, message=""):
             res = httpapi.compact_session(sid, origin="manual") or {}
             if res.get("error"):
                 return "⚠️ compact: %s" % res["error"]
-            return "🗜 context compacted for `%s`." % sid
+            if res.get("aborted"):
+                return "⏹ compaction aborted — context unchanged."
+            # 2026-11-28: the numbered marker is published on `context.compact` and
+            # relayed by `_on_event`, so returning "" here gives ONE message, not two.
+            # No marker (nothing was compacted) still gets an honest one-liner.
+            return "" if res.get("marker") else "🗜 nothing to compact in this chat."
         if action == "reset":
             from longrun.memory import stores
             stores.clear_session(sid)
@@ -833,38 +842,70 @@ def _run_doc(kind, message):
 
 
 def _fmt_context(st):
-    pct = st.get("pct")
-    used = st.get("tokens_used")
-    budget = st.get("budget_tokens")
-    if used is None and not pct:
+    """`/context` — the SAME ready-made strings the WebUI meter renders (JAG-107).
+
+    `httpapi.context_usage` already returns a `display` block built by
+    `context_display`, the ONE owner of the token wording. We print THAT, so the
+    Telegram line can never drift from the WebUI meter.
+    """
+    disp = st.get("display") or {}
+    if not disp.get("available"):
         return "🧠 context: no reading available for this session."
-    bits = []
-    if pct is not None:
-        bits.append("%s%%" % round(float(pct), 1))
-    if used is not None and budget:
-        bits.append("%s / %s tokens" % (used, budget))
-    return "🧠 context: %s" % (" · ".join(bits) or "no reading")
+    detail = (" — " + disp["detail"]) if disp.get("detail") else ""
+    return "🧠 context: %s%s" % (disp.get("meter") or "ctx n/d", detail)
 
 
 def _fmt_status(sid):
-    try:
-        from longrun.memory import stores
-        sess = stores.load_session(sid) or {}
-    except Exception:  # noqa: BLE001
-        sess = {}
-    msgs = len(sess.get("messages") or [])
-    model = sess.get("model") or "(default)"
-    running = "running" if _turn_running(sid) else "idle"
-    return ("📊 `%s` — %s\nmodel: %s\nmessages: %d\nworkspace: %s"
-            % (sid, running, model, msgs, sess.get("workspace") or "(none)"))
+    """`/status` — the SAME `harness.status` the WebUI's `/status` reads (one door).
 
-
-def _turn_running(sid):
+    2026-11-28 (operator: "telegram e sessione devono essere sync … anche status
+    command magari qualche info in più"): the read is the shared `harness` tool
+    (`gated_call`, the same function behind `POST /api/tools/call`), never a second
+    session read; this function only FORMATS the tool's rich object for chat.
+    """
     try:
-        from longrun.core import events as _events
-        return bool(_events.turn_active(sid))
-    except Exception:  # noqa: BLE001
-        return False
+        from longrun.core import api_v02
+        res = api_v02.gated_call("harness", {"action": "status", "session": sid},
+                                 run_id=sid) or {}
+    except Exception as exc:  # noqa: BLE001 — a status failure is a chat message
+        return "⚠️ status failed: %s" % exc
+    out = res.get("result") or {}
+    if not out:
+        return "⚠️ status: %s" % (res.get("error") or res.get("reason")
+                                  or ("refused (%s)" % res.get("status")))
+    if out.get("error"):
+        return "⚠️ status: %s" % out["error"]
+    idn = out.get("identity") or {}
+    ctx = out.get("context") or {}
+    plan = out.get("plan") or {}
+    ap = out.get("approvals") or {}
+    ag = out.get("agent") or {}
+    svc = out.get("service") or {}
+
+    def _n(v):
+        return "—" if v is None else v
+
+    pct = ctx.get("pct")
+    ctx_line = "%s / %s" % (_n(ctx.get("tokens_used")), _n(ctx.get("max_tokens")))
+    if pct is not None:
+        ctx_line += "  (%.1f%%)" % float(pct)
+    agent = ag.get("id") or "—"
+    if ag.get("name"):
+        agent += " · " + str(ag["name"])
+    lines = [
+        "📊 `%s` — %s" % (sid, "running" if out.get("running") else "idle"),
+        "title: %s" % (idn.get("title") or "(untitled)"),
+        "agent: %s" % agent,
+        "model: %s" % (idn.get("model") or svc.get("default_model") or "(default)"),
+        "messages: %s" % _n(idn.get("messages")),
+        "context: %s" % ctx_line,
+        "headroom: %s tokens" % _n(ctx.get("remaining_tokens")),
+        "auto-compact: %s%%" % _n(ctx.get("auto_compact_pct")),
+        "plan: %d open / %d steps" % (plan.get("open") or 0, plan.get("nodes") or 0),
+        "approvals here: %s" % _n(ap.get("pending_here")),
+        "workspace: %s" % (idn.get("workspace") or "(none)"),
+    ]
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------- turns (FIFO) ------
@@ -983,6 +1024,9 @@ def _on_event(event):
             if live is not None:
                 live.relay_harness(event)
             return
+        if kind in ("context.compact", "context.auto_compact"):
+            _notify_compaction(event)
+            return
         if kind == "approval.request":
             _forward_approval(event)
         return
@@ -995,6 +1039,28 @@ def _on_event(event):
     # approval events carry `run` (the bound session id), not `session`.
     if kind == "approval.request" and str(event.get("run") or "") == binding.SESSION_ID:
         _forward_approval(event)
+
+
+def _notify_compaction(event):
+    """Relay a compaction to the active chat — ONE text, straight from the event.
+
+    2026-11-28 (operator: "anche in telegram messaggio compattazione deve esserci
+    … telegram e sessione devono essere sync"): the numbered marker is produced
+    ONCE by `compact_session` and carried on BOTH `context.compact` and
+    `context.auto_compact`, so a manual `/compact` from any surface (WebUI, CLI,
+    Telegram) and an AUTO compaction mid-turn all show the SAME line here. Nothing
+    is re-formatted, so there is no second producer and no drift.
+    """
+    text = str(event.get("marker") or "").strip()
+    if not text:
+        return
+    chat_id = binding.active_chat(binding.load())
+    if chat_id is None:
+        return
+    try:
+        _notify(chat_id, text)
+    except Exception:  # noqa: BLE001 — a relay must never break the feed
+        pass
 
 
 def _forward_approval(event):

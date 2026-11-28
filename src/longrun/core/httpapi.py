@@ -1165,6 +1165,16 @@ def _system_prompt(sess, tool_ctx=None, sections=None, model=None):
         return system_prompt()
 
 
+def _short_tokens(n):
+    """A token count as the meter writes it (`>= 10k` -> `Nk`). ONE rule (JAG-107).
+
+    Extracted so the context indicator AND the compaction marker format tokens the
+    same way — the operator asked the compaction message to read `140k -> 20k`.
+    """
+    n = int(n or 0)
+    return ("%.0fk" % (n / 1000.0)) if n >= 10000 else str(n)
+
+
 def context_display(tokens_used=0, budget_tokens=0, messages=0,
                     available=True, reason="no session"):
     """JAG-107: single source of truth for the context indicator presentation.
@@ -1176,8 +1186,7 @@ def context_display(tokens_used=0, budget_tokens=0, messages=0,
     JAG-242: these strings are USER-FACING and must be English (project rule).
     """
     def _short(n):
-        n = int(n)
-        return ("%.0fk" % (n / 1000.0)) if n >= 10000 else str(n)
+        return _short_tokens(n)
 
     if not available or not budget_tokens:
         return {"available": False, "reason": reason or "no session",
@@ -1618,8 +1627,11 @@ def prepare_session_for_turn(sess, model=None):
         publish("context.auto_compact", session=sess["id"],
                 pct=usage.get("pct"), threshold=rllm.AUTOCOMPACT_PCT,
                 target_pct=rllm.AUTOCOMPACT_TARGET_PCT,
-                before=stats.get("input_tokens"), after=stats.get("output_tokens"),
-                compacted=stats.get("compacted"), dropped=stats.get("dropped"))
+                before=stats.get("input_tokens"), after=stats.get("tokens_after"),
+                compacted=stats.get("compacted"), dropped=stats.get("dropped"),
+                # 2026-11-28: the SAME human marker the manual path carries, so the
+                # Telegram relay shows an auto compaction too (sync, no re-format).
+                marker=stats.get("marker"))
         sess = load_session(sess["id"]) or sess
         # P1 (N9): the compaction may FAIL to reach the target (a keep_recent
         # window full of huge turns cannot shrink further). Say so in the
@@ -2336,7 +2348,6 @@ def compact_session(session, budget_tokens=None, keep_recent=None, origin=None):
         from longrun.plan import taskgraph as _tg
         before_n = len(messages)
         after_n = len(msgs)
-        freed = max(0, int(stats.get("input_tokens", 0)) - int(stats.get("output_tokens", 0)))
         # JAG-431r: list the compacted-away free groups and open todos so the
         # "long memory" stays visible in the chat after compaction. The ledger
         # and plan files still hold the full data; this marker is the user-facing
@@ -2366,10 +2377,12 @@ def compact_session(session, budget_tokens=None, keep_recent=None, origin=None):
                         if origin == "auto"
                         else "kept the newest %d messages verbatim" % keep_recent)
         lines = ["[harness] \U0001f5dc " + _verb
-                 + "%d \u2192 %d messages, freed ~%d tokens (%s). "
+                 + "%s \u2192 %s tokens (%d \u2192 %d messages, %s). "
                    "The oldest turns were merged into the leading summary block so the "
                    "next reply has room to land under the %d%% trigger."
-                 % (before_n, after_n, freed, _policy_note,
+                 % (_short_tokens(stats.get("input_tokens")),
+                    _short_tokens(stats.get("tokens_after")),
+                    before_n, after_n, _policy_note,
                     int(round(rllm.AUTOCOMPACT_PCT)))]
         if free_groups:
             titled = [(g.get("id"), g.get("title") or "(untitled)") for g in free_groups]
@@ -2384,6 +2397,12 @@ def compact_session(session, budget_tokens=None, keep_recent=None, origin=None):
                             + (" …" if len(open_tasks) > 12 else "")))
         lines.append("Use the `chapters` tool to recall any compacted thread.")
         sys_marker = "\n".join(lines)
+        # 2026-11-28 (operator: "anche in telegram messaggio compattazione deve
+        # esserci … telegram e sessione devono essere sync"): expose the human text
+        # ONCE. It rides the tail inject (WebUI) AND the `context.compact` event, so
+        # the Telegram channel relays the SAME numbered line instead of re-formatting
+        # it — one producer, no per-surface duplicate.
+        stats["marker"] = sys_marker
         # JAG-431r4: for an AUTO compaction the marker goes at the very head of the
         # kept window (it must precede the summary for the LLM). A MANUAL compaction
         # keeps the transcript clean — the tail card below is the visible sign.

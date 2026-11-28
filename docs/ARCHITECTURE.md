@@ -1100,7 +1100,14 @@ operator-selected `none`). This is not whole-agent confinement. Hard-denied patt
   (`binding.active_chat`), so Telegram never desyncs from the session. Like the
   Architect, the twin reaches the WHOLE org for delegation: the chat `dispatch`/
   `goal` actions and the `docs` tool share ONE rule (`architect.can_delegate`),
-  instead of each asking for a direct report (which the twin has none of). Control:
+  instead of each asking for a direct report (which the twin has none of). The twin
+  also reads the SAME backends the WebUI reads, never a second copy: `/status` calls
+  the `harness.status` tool (`api_v02.gated_call`, the function behind
+  `POST /api/tools/call`), and `/context` prints the `context_display` block. A
+  compaction is relayed to Telegram from the event itself: `compact_session` produces
+  ONE numbered marker (`~140k → ~20k tokens …`) carried on `context.compact` and
+  `context.auto_compact`, so a manual compaction from any surface AND an auto
+  compaction mid-turn each appear in the chat once. Control:
   `GET /api/telegram/status` +
   `POST /api/telegram/{setup,pair,unpair,reconnect,logout}`, Settings ▸ Channels,
   `forge.py telegram …`; token in `.env` (`TELEGRAM_BOT_TOKEN`, a Settings ▸ Keys

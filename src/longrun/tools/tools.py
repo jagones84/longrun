@@ -3467,8 +3467,8 @@ def _compact_now(sid, force=False):
     out = ("compact[%s]: %d -> %d msgs | %d -> %d tokens | "
            "compacted=%d kept=%d summary=%s"
            % (sid, stats.get("input_messages", 0),
-              stats.get("input_messages", 0) - stats.get("compacted", 0) + stats.get("kept", 0),
-              stats.get("input_tokens", 0), stats.get("output_tokens", 0),
+              stats.get("messages_after", 0),
+              stats.get("input_tokens", 0), stats.get("tokens_after", 0),
               stats.get("compacted", 0), stats.get("kept", 0), stats.get("summary")))
     return {"ok": True, "exit_code": 0, "session": sid, "stats": stats,
             "stdout": out, "backend": "host", "sandboxed": False}
