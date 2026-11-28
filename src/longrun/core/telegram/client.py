@@ -123,12 +123,16 @@ class BotClient:
                          timeout=float(timeout) + LONGPOLL_SLACK)
 
     def send_message(self, chat_id, text, reply_to=None, keyboard=None,
-                     disable_preview=True, parse_mode=None):
+                     disable_preview=True, parse_mode=None, reply_markup=None):
         params = {"chat_id": chat_id, "text": str(text)[:4096],
                   "disable_web_page_preview": bool(disable_preview)}
         if reply_to is not None:
             params["reply_to_message_id"] = int(reply_to)
-        if keyboard is not None:
+        if reply_markup is not None:
+            # A raw markup (e.g. `{"force_reply": true}`) is passed VERBATIM; `keyboard`
+            # is the inline-keyboard shortcut. Exactly one of the two is used.
+            params["reply_markup"] = reply_markup
+        elif keyboard is not None:
             params["reply_markup"] = {"inline_keyboard": keyboard}
         if parse_mode:
             params["parse_mode"] = str(parse_mode)

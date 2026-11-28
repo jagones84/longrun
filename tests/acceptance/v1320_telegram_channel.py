@@ -28,7 +28,10 @@ deterministic, offline, no model, no network:
   P  `/plugins` opens its inline menu (or says "none installed"), a tap showing the
      bundle's member manifest;
   Q  `/todo` (Telegram-only) lists every CURRENT-plan todo with status + justification,
-     and never leaks into the shared catalogue.
+     and never leaks into the shared catalogue;
+  R  the menus are usable end to end: 🔎 Search re-renders the SAME menu FILTERED from a
+     ForceReply answer, ▶️ Use runs a REAL turn with the skill activated, and a fresh
+     (non-reply) message is never swallowed by a pending prompt.
 
 Run: python3 tests/acceptance/v1320_telegram_channel.py
 """
@@ -107,9 +110,12 @@ class FakeClient:
     def set_my_commands(self, commands, scope=None):
         return self._rec("setMyCommands", commands=commands)
 
-    def send_message(self, chat_id, text, reply_to=None, keyboard=None, parse_mode=None):
+    def send_message(self, chat_id, text, reply_to=None, keyboard=None,
+                     disable_preview=True, parse_mode=None, reply_markup=None):
         return self._rec("sendMessage", chat_id=chat_id, text=text,
-                         reply_markup=keyboard or None, parse_mode=parse_mode)
+                         reply_markup=(reply_markup if reply_markup is not None
+                                       else (keyboard or None)),
+                         parse_mode=parse_mode)
 
     def edit_message_text(self, chat_id, message_id, text, keyboard=None, parse_mode=None):
         return self._rec("editMessageText", chat_id=chat_id,
@@ -653,9 +659,9 @@ try:
     channel._show_skills(9)
     _msg = [p for m, p in channel._client.calls if m == "sendMessage"]
     _flat = [b for row in (_msg[-1].get("reply_markup") or []) for b in row]
-    check("O4 /skills renders one button per skill (skl:s callbacks)",
-          len(_flat) == 3 and all("skl:s:" in b["callback_data"] for b in _flat),
-          _flat)
+    check("O4 /skills renders one button per skill + a 🔎 search door",
+          sum(1 for b in _flat if "skl:s:" in b["callback_data"]) == 3
+          and any(b["callback_data"] == "skl:q:" for b in _flat), _flat)
     check("O5 the header names the skill search gesture and stays HTML",
           _msg and "Skills" in str(_msg[-1].get("text"))
           and "/skills" in str(_msg[-1].get("text"))
@@ -665,7 +671,7 @@ try:
     _m2 = [p for m, p in channel._client.calls if m == "sendMessage"]
     _k2 = [b for row in (_m2[-1].get("reply_markup") or []) for b in row]
     check("O6 the keyword filters the SAME list (case-insensitive)",
-          len(_k2) == 1 and _k2[0]["text"] == "pdf-monster"
+          len(_k2) == 2 and any(b["text"] == "pdf-monster" for b in _k2)
           and "filter" in str(_m2[-1].get("text")), _k2)
     channel._client = FakeClient()
     channel._show_skills(9, "nomatchxyz")
@@ -713,11 +719,11 @@ try:
     channel._show_plugins(9)
     _pm = [q for m, q in channel._client.calls if m == "sendMessage"]
     _prow = [b for row in (_pm[-1].get("reply_markup") or []) for b in row]
-    check("P3 a plugin renders a named button with its plg:v callback",
+    check("P3 a plugin renders a named button with its plg:s callback",
           _prow and "demo" in _prow[0]["text"]
-          and _prow[0]["callback_data"] == "plg:v:0:", _prow)
+          and _prow[0]["callback_data"] == "plg:s:0:", _prow)
     channel._client = FakeClient()
-    channel._handle_plugin_callback(9, 778, "plg:v:0:")
+    channel._handle_plugin_callback(9, 778, "plg:s:0:")
     _ped = [q for m, q in channel._client.calls if m == "editMessageText"]
     check("P4 tapping a plugin shows its member manifest",
           _ped and "demo-skill" in str(_ped[-1].get("text")), _ped[-1:] or None)
@@ -757,6 +763,92 @@ check("Q4 /help lists /todo and the /skills search hint",
       any("/todo" in t for t in _help) and any("/skills [keyword]" in t for t in _help),
       _help[-1:] or None)
 channel._client = None
+
+# ---- R: search-by-reply + ACTIVATION of a skill/plugin in a real turn --------
+# 2026-11-28 (operator: "non posso da telegram cercarle scrivendo qualcosa e il menu
+# filtrandosi in automatico … e come la attivo nel contesto la skill?"). A Telegram
+# keyboard has no text box, so 🔎 Search replies ForceReply: the next message that
+# REPLIES to it is the keyword (never an agent turn). A skill's ▶️ Use asks for the
+# request the same way and runs `/<skill> <request>` — a real turn with the skill
+# ACTIVATED by `agent._apply_skill_slash`.
+channel._all_skills = lambda: list(_FAKE_SKILLS)
+channel._client = FakeClient()
+_doc = binding.load()
+binding.upsert_paired(_doc, 9, title="owner")
+binding.set_active_chat(_doc, 9)
+binding.save(_doc)
+channel._prompts.clear()
+_started_r = []
+_orig_start_r = _httpapi.start_session_turn
+_httpapi.start_session_turn = lambda sid, message, mode="", **kw: (
+    _started_r.append((sid, message)) or {"ok": True, "turn_id": "tR"})
+try:
+    channel._show_skills(9)
+    _m = [q for m, q in channel._client.calls if m == "sendMessage"]
+    _row = [b for row in (_m[-1].get("reply_markup") or []) for b in row]
+    check("R1 the skills menu carries a 🔎 Search button",
+          any(b.get("callback_data") == "skl:q:" for b in _row), _row)
+
+    channel._client = FakeClient()
+    channel._handle_skill_callback(9, 1, "skl:q:")
+    _fr = [q for m, q in channel._client.calls if m == "sendMessage"]
+    check("R2 🔎 Search replies ForceReply (a real prompt)",
+          bool(_fr) and isinstance(_fr[-1].get("reply_markup"), dict)
+          and _fr[-1]["reply_markup"].get("force_reply") is True, _fr[-1:] or None)
+    _mid = channel._prompts.get(9, {}).get("mid")
+    check("R3 the pending prompt is remembered for this chat",
+          isinstance(_mid, int)
+          and channel._prompts.get(9, {}).get("kind") == "skills-search",
+          channel._prompts.get(9))
+
+    channel._client = FakeClient()
+    channel._handle_update({"update_id": 9001, "message": {
+        "chat": {"id": 9}, "from": {"id": 1}, "text": "pdf", "message_id": 42,
+        "reply_to_message": {"message_id": _mid}}})
+    _time.sleep(0.3)                       # the filter renders on a worker thread
+    _fm = [q for m, q in channel._client.calls if m == "sendMessage"]
+    _fr2 = [b for row in (_fm[-1].get("reply_markup") or []) for b in row] if _fm else []
+    check("R4 the reply FILTERS the menu (no agent turn started)",
+          _fm and "filter" in str(_fm[-1].get("text"))
+          and any(b["text"] == "pdf-monster" for b in _fr2) and _started_r == [],
+          (_started_r, _fm[-1:] or None))
+    check("R5 the pending prompt is consumed after the answer",
+          9 not in channel._prompts, channel._prompts)
+
+    channel._client = FakeClient()
+    channel._handle_skill_callback(9, 2, "skl:u:1:")
+    _pu = [q for m, q in channel._client.calls if m == "sendMessage"]
+    _pumid = channel._prompts.get(9, {}).get("mid")
+    check("R6 ▶️ Use replies ForceReply and remembers the skill",
+          bool(_pu) and _pu[-1]["reply_markup"].get("force_reply") is True
+          and channel._prompts.get(9, {}).get("skill") == "archify",
+          channel._prompts.get(9))
+
+    channel._live["obj"] = None
+    channel._handle_update({"update_id": 9002, "message": {
+        "chat": {"id": 9}, "from": {"id": 1}, "text": "draw my services",
+        "message_id": 43, "reply_to_message": {"message_id": _pumid}}})
+    _time.sleep(0.05)
+    check("R7 the reply runs a REAL turn with the skill ACTIVATED",
+          bool(_started_r) and _started_r[-1][1].startswith("/archify ")
+          and "draw my services" in _started_r[-1][1], _started_r)
+
+    # a fresh (non-reply) message is NEVER swallowed by a pending prompt
+    channel._ask(9, "still waiting", "keyword", "skills-search")
+    channel._client = FakeClient()
+    channel._live["obj"] = None
+    channel._handle_update({"update_id": 9003, "message": {
+        "chat": {"id": 9}, "from": {"id": 1}, "text": "hello agent",
+        "message_id": 44}})
+    _time.sleep(0.05)
+    check("R8 a fresh message is NOT swallowed (still reaches the agent)",
+          _started_r and _started_r[-1][1] == "hello agent"
+          and 9 in channel._prompts, _started_r)
+finally:
+    _httpapi.start_session_turn = _orig_start_r
+    channel._all_skills = _orig_all_skills
+    channel._prompts.clear()
+    channel._client = None
 
 shutil.rmtree(_tmp, ignore_errors=True)
 print("---")

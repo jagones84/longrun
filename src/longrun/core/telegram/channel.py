@@ -431,6 +431,16 @@ def _handle_update(update):
     binding.set_active_chat(doc, chat_id)
     binding.save(doc)
     text = msg.get("text") or msg.get("caption") or ""
+    # 2026-11-28: a reply to OUR ForceReply prompt answers THAT question — a search
+    # keyword, or the request for a skill/plugin to activate — never a fresh turn.
+    reply = msg.get("reply_to_message") or {}
+    rid = reply.get("message_id") if isinstance(reply, dict) else None
+    with _prompts_lock:
+        pend = _prompts.get(chat_id)
+    if pend and rid is not None and str(rid) == str(pend.get("mid")) and text.strip():
+        with _prompts_lock:
+            _prompts.pop(chat_id, None)
+        return _answer_prompt(chat_id, pend, text.strip(), msg.get("message_id"))
     if not text.strip():
         return
     _dispatch(chat_id, text, msg.get("message_id"))
@@ -814,8 +824,52 @@ def _send_or_edit(chat_id, message_id, text, keyboard):
 # per la sessione Longrun WebUI"). These are the SERVER-SIDE twins of the WebUI's
 # `openSkillMenu`/`openPluginMenu`: the same data (`memory.skills.list_skills`,
 # `slash.plugins`) rendered as an inline keyboard. Telegram keyboards carry no text
-# box, so the keyword search is re-issued as `/skills <keyword>` — the same list,
-# filtered, no second source.
+# box, so the keyword search is a ForceReply: tap 🔎 Search (or send `/skills <kw>`),
+# type the keyword, and the SAME list is re-rendered filtered. A tap on a skill (or a
+# plugin member) sends a second ForceReply asking for the request, and the reply runs
+# `/<skill> <request>` (or `/plugin:<name> <request>`) as a REAL turn — the skill is
+# ACTIVATED in the chat context by `agent._apply_skill_slash`, never just described.
+_prompts: dict = {}                       # chat_id -> {"mid", "kind", "skill", "plugin"}
+_prompts_lock = threading.RLock()
+
+
+def _ask(chat_id, text, placeholder, kind, skill="", plugin=""):
+    """Send a ForceReply prompt and REMEMBER it, so the very next reply from this chat
+    answers THIS question instead of starting an agent turn (a reply carries
+    `reply_to_message`, which is how the poller tells an answer from a fresh message)."""
+    if _client is None:
+        return None
+    mid = None
+    try:
+        sent = _client.send_message(
+            chat_id, text, parse_mode="HTML",
+            reply_markup={"force_reply": True, "selective": True,
+                          "input_field_placeholder": str(placeholder)[:64]})
+        mid = (sent or {}).get("message_id")
+    except Exception:  # noqa: BLE001 — a prompt must never kill the channel
+        return None
+    if mid is not None:
+        with _prompts_lock:
+            _prompts[chat_id] = {"mid": mid, "kind": kind, "skill": skill,
+                                 "plugin": plugin}
+    return mid
+
+
+def _answer_prompt(chat_id, pend, text, msg_id):
+    """Execute the answer to a ForceReply prompt (search, or skill/plugin activation)."""
+    kind = str(pend.get("kind") or "")
+    if kind == "skills-search":
+        return _spawn_worker(lambda: _show_skills(chat_id, text))
+    if kind == "plugins-search":
+        return _spawn_worker(lambda: _show_plugins(chat_id, kw=text))
+    if kind == "skill-use":
+        return _enqueue(chat_id, "/%s %s" % (pend.get("skill") or "", text), "", msg_id)
+    if kind == "plugin-use":
+        return _enqueue(chat_id, "/plugin:%s %s" % (pend.get("plugin") or "", text),
+                        "", msg_id)
+    return None
+
+
 def _skills_page_size():
     return max(1, _ctx().telegram("skills_page_size"))
 
@@ -830,15 +884,19 @@ def _all_skills():
 
 
 def _filter_skills(items, kw):
-    """Case-insensitive keyword match over name/title/category/description."""
-    kw = str(kw or "").strip().lower()
-    if not kw:
+    """Case-insensitive keyword match over name/title/category/description.
+
+    Several words are an AND (`pdf monster` matches a skill whose haystack holds both),
+    so a multi-word search narrows instead of failing.
+    """
+    words = [w for w in str(kw or "").lower().split() if w]
+    if not words:
         return list(items)
     out = []
     for s in items:
         hay = " ".join(str(s.get(k) or "") for k in
                        ("name", "title", "category", "description")).lower()
-        if kw in hay:
+        if all(w in hay for w in words):
             out.append(s)
     return out
 
@@ -874,31 +932,38 @@ def _show_skills(chat_id, kw="", page=0, message_id=None):
         rows.append([{"text": (name if len(name) <= 48 else name[:47] + "…"),
                       "callback_data": "skl:s:%d:%s" % (i, kw_s)}])
     rows += _nav_row(page, total, "skl:p", kw_s)
+    # The 🔎 button is the SEARCH door: it replies ForceReply, so the operator types a
+    # keyword and the SAME menu re-renders filtered (Telegram keyboards have no box).
+    rows.append([{"text": "🔎 Search", "callback_data": "skl:q:"}])
     head = "🧩 <b>Skills</b> — %d shown of %d" % (len(items), len(every))
     if kw_s.strip():
         head += " · filter <code>%s</code>" % html.escape(kw_s.strip())
     else:
-        head += " (<code>/skills &lt;keyword&gt;</code> to search)"
+        head += (" — tap 🔎 Search or send <code>/skills &lt;keyword&gt;</code>")
+    head += "\nTap a skill to see it and USE it."
     if not items:
         head += "\n\nNo skill matches — try another keyword."
     _send_or_edit(chat_id, message_id, head, _kb(rows))
 
 
 def _show_one_skill(chat_id, message_id, idx, kw):
-    """One skill's card: title, description, category and how to run it."""
+    """One skill's card + the ▶️ Use button that ACTIVATES it in a real turn."""
     items = _filter_skills(_all_skills(), kw)
     if idx < 0 or idx >= len(items):
         return _show_skills(chat_id, kw, 0, message_id)
     s = items[idx]
     name = str(s.get("name") or "")
-    text = ("🧩 <b>%s</b>\n<code>%s</code>\n%s\n\ncategory: <code>%s</code>\n"
-            "run it here: <code>/%s &lt;your request&gt;</code>"
+    text = ("🧩 <b>%s</b>\n<code>%s</code>\n%s\n\ncategory: <code>%s</code>\n\n"
+            "▶️ Use it: I will ask for your request, then run it in this chat with "
+            "the skill activated."
             % (html.escape(str(s.get("title") or name)), html.escape(name),
                html.escape(str(s.get("description") or "(no description)")),
-               html.escape(str(s.get("category") or "-")), html.escape(name)))
-    back = [[{"text": "‹ back to list",
-              "callback_data": "skl:p:0:%s" % str(kw or "")[:40]}]]
-    _send_or_edit(chat_id, message_id, text, back)
+               html.escape(str(s.get("category") or "-"))))
+    kw_s = str(kw or "")[:40]
+    keyboard = [[{"text": "▶️ Use in this chat",
+                  "callback_data": "skl:u:%d:%s" % (idx, kw_s)}],
+                [{"text": "‹ back to list", "callback_data": "skl:p:0:%s" % kw_s}]]
+    _send_or_edit(chat_id, message_id, text, keyboard)
 
 
 def _handle_skill_callback(chat_id, message_id, data):
@@ -906,51 +971,93 @@ def _handle_skill_callback(chat_id, message_id, data):
     parts = str(data or "").split(":", 3)
     sub = parts[1] if len(parts) > 1 else ""
     arg, kw = (parts[2] if len(parts) > 2 else "0"), (parts[3] if len(parts) > 3 else "")
+    if sub == "q":
+        return _ask(chat_id, "🔎 Send a keyword to filter the skills — e.g. "
+                             "<code>pdf</code>, <code>diagram</code>, <code>android</code>.",
+                    "keyword", "skills-search")
     try:
         n = int(arg)
     except ValueError:
         n = -1
     if sub == "s":
         return _show_one_skill(chat_id, message_id, n, kw)
+    if sub == "u":
+        items = _filter_skills(_all_skills(), kw)
+        if 0 <= n < len(items):
+            name = str(items[n].get("name") or "")
+            return _ask(chat_id, "▶️ Send your request for <b>%s</b> — I will run it in "
+                                 "this chat with that skill activated." % html.escape(name),
+                        "your request", "skill-use", skill=name)
+        return _show_skills(chat_id, kw, 0, message_id)
     return _show_skills(chat_id, kw, max(0, n), message_id)
 
 
-def _show_plugins(chat_id, page=0, message_id=None):
-    """`/plugins` — the installed plugin bundles as a keyboard (`slash.plugins`)."""
+def _plugins_safe():
+    """The installed plugin bundles, or [] — the SAME reader the WebUI's menu uses."""
     from longrun.core import slash as _slash
     try:
-        plugins = _slash.plugins() or []
+        return _slash.plugins() or []
     except Exception:  # noqa: BLE001 — a menu must render
-        plugins = []
-    if not plugins:
+        return []
+
+
+def _filter_plugins(plugins, kw):
+    """AND of keywords over name/title/description (the skill filter's twin)."""
+    words = [w for w in str(kw or "").lower().split() if w]
+    if not words:
+        return list(plugins)
+    out = []
+    for p in plugins:
+        hay = " ".join(str(p.get(k) or "") for k in
+                       ("name", "title", "description")).lower()
+        if all(w in hay for w in words):
+            out.append(p)
+    return out
+
+
+def _cb(data):
+    """`(ns, sub, a, b, kw, _)` from a callback token, padded so `:` never breaks it."""
+    p = str(data or "").split(":", 5)
+    return (p + [""] * 6)[:6]
+
+
+def _show_plugins(chat_id, page=0, message_id=None, kw=""):
+    """`/plugins` — the installed plugin bundles as a searchable keyboard."""
+    every = _plugins_safe()
+    if not every:
         return _send_or_edit(chat_id, message_id,
                              "🧩 <b>Plugins</b> — none installed. Install one from "
                              "Longrun ▸ Marketplace ▸ Plugins.", None)
+    items = _filter_plugins(every, kw)
+    kw_s = str(kw or "")[:40]
     size = _page_size()
-    total = max(1, (len(plugins) + size - 1) // size)
+    total = max(1, (len(items) + size - 1) // size)
     page = max(0, min(int(page or 0), total - 1))
     rows = []
     start = page * size
-    for i in range(start, min(start + size, len(plugins))):
-        p = plugins[i]
+    for i in range(start, min(start + size, len(items))):
+        p = items[i]
         label = str(p.get("name") or "?")
         rows.append([{"text": "%s (%d)" % (label[:44], len(p.get("members") or [])),
-                      "callback_data": "plg:v:%d:" % i}])
-    rows += _nav_row(page, total, "plg:p")
-    _send_or_edit(chat_id, message_id,
-                  "🧩 <b>Plugins</b> — %d installed" % len(plugins), _kb(rows))
+                      "callback_data": "plg:s:%d:%s" % (i, kw_s)}])
+    rows += _nav_row(page, total, "plg:p", kw_s)
+    rows.append([{"text": "🔎 Search", "callback_data": "plg:q:"}])
+    head = "🧩 <b>Plugins</b> — %d shown of %d" % (len(items), len(every))
+    if kw_s.strip():
+        head += " · filter <code>%s</code>" % html.escape(kw_s.strip())
+    head += "\nTap one to see its members and USE it."
+    if not items:
+        head += "\n\nNo plugin matches — try another keyword."
+    _send_or_edit(chat_id, message_id, head, _kb(rows))
 
 
-def _show_one_plugin(chat_id, message_id, idx):
-    """One plugin's manifest — the SAME bounded block `slash.plugin_block` builds."""
+def _show_one_plugin(chat_id, message_id, idx, kw):
+    """One plugin's manifest + ▶️ Use + a ▶️ button per member skill."""
+    items = _filter_plugins(_plugins_safe(), kw)
+    if idx < 0 or idx >= len(items):
+        return _show_plugins(chat_id, 0, message_id, kw)
+    p = items[idx]
     from longrun.core import slash as _slash
-    try:
-        plugins = _slash.plugins() or []
-    except Exception:  # noqa: BLE001
-        plugins = []
-    if idx < 0 or idx >= len(plugins):
-        return _show_plugins(chat_id, 0, message_id)
-    p = plugins[idx]
     try:
         block = _slash.plugin_block(str(p.get("name") or "")) or ""
     except Exception:  # noqa: BLE001
@@ -960,22 +1067,51 @@ def _show_one_plugin(chat_id, message_id, idx):
     text = ("🧩 <b>%s</b>\n%s"
             % (html.escape(str(p.get("title") or p.get("name") or "")),
                html.escape(block[:3000])))
-    _send_or_edit(chat_id, message_id, text,
-                  [[{"text": "‹ back", "callback_data": "plg:p:0:"}]])
+    kw_s = str(kw or "")[:40]
+    keyboard = [[{"text": "▶️ Use this plugin",
+                  "callback_data": "plg:u:%d:%s" % (idx, kw_s)}]]
+    for j, m in enumerate(p.get("members") or []):
+        if str(m.get("kind") or "") == "skill":
+            keyboard.append([{"text": "▶️ skill: %s" % str(m.get("name") or "")[:36],
+                              "callback_data": "plg:m:%d:%d:%s" % (idx, j, kw_s)}])
+    keyboard.append([{"text": "‹ back", "callback_data": "plg:p:0:%s" % kw_s}])
+    _send_or_edit(chat_id, message_id, text, keyboard)
 
 
 def _handle_plugin_callback(chat_id, message_id, data):
     """Route one `plg:` callback — parse only, delegate to the renderers."""
-    parts = str(data or "").split(":", 3)
-    sub = parts[1] if len(parts) > 1 else ""
-    arg = parts[2] if len(parts) > 2 else "0"
+    _ns, sub, a, b, kw, _ = _cb(data)
+    items = _filter_plugins(_plugins_safe(), kw)
     try:
-        n = int(arg)
+        n = int(a)
     except ValueError:
         n = -1
-    if sub == "v":
-        return _show_one_plugin(chat_id, message_id, n)
-    return _show_plugins(chat_id, max(0, n), message_id)
+    if sub == "q":
+        return _ask(chat_id, "🔎 Send a keyword to filter the plugins.",
+                    "keyword", "plugins-search")
+    if sub == "m":                       # a member SKILL of this plugin -> activate it
+        try:
+            mi = int(b)
+        except ValueError:
+            mi = -1
+        members = items[n].get("members") if 0 <= n < len(items) else None
+        if members and 0 <= mi < len(members) \
+                and str(members[mi].get("kind") or "") == "skill":
+            name = str(members[mi].get("name") or "")
+            return _ask(chat_id, "▶️ Send your request for <b>%s</b> — I will run it "
+                                 "with that skill activated." % html.escape(name),
+                        "your request", "skill-use", skill=name)
+        return _show_plugins(chat_id, 0, message_id, kw)
+    if sub == "u":                       # activate the WHOLE plugin
+        if 0 <= n < len(items):
+            name = str(items[n].get("name") or "")
+            return _ask(chat_id, "▶️ Send your request for plugin <b>%s</b> — I will "
+                                 "run it with the whole plugin activated."
+                        % html.escape(name), "your request", "plugin-use", plugin=name)
+        return _show_plugins(chat_id, 0, message_id, kw)
+    if sub == "s":
+        return _show_one_plugin(chat_id, message_id, n, kw)
+    return _show_plugins(chat_id, max(0, n), message_id, kw)
 
 
 # ------------------------------------------------------- UI / doc commands ----

@@ -1106,7 +1106,13 @@ operator-selected `none`). This is not whole-agent confinement. Hard-denied patt
   `POST /api/tools/call`), `/context` prints the `context_display` block, and
   `/skills [keyword]` / `/plugins` open the SAME searchable inline menus the WebUI's
   pickers drive (`memory.skills.list_skills` / `slash.plugins`) — a keyword filters the
-  list, a tap opens the skill's card or the plugin's member manifest. `/todo`
+  list, a tap opens the skill's card or the plugin's member manifest. Each menu's 🔎
+  Search replies ForceReply, so the operator types a keyword and the SAME menu re-renders
+  filtered; a skill's (or a plugin member's) ▶️ Use asks for the request the same way and
+  runs `/<skill> <request>` (or `/plugin:<name> <request>`) as a REAL turn, so the skill is
+  ACTIVATED in the chat context by `agent._apply_skill_slash` — never merely described. A
+  reply answers only the prompt it replies to; any fresh message still reaches the agent.
+  `/todo`
   (Telegram-only) lists every CURRENT task-graph node with its status and justification
   (`taskgraph.render_todos(limit=None, instructions=False, why_fn=threads._why)`), so it
   never leaks into the shared catalogue. A
