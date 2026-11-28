@@ -1023,6 +1023,56 @@ check("T14 a non-observation harness note is still relayed",
 channel._live["obj"] = None
 channel._client = None
 
+# ---- U: the model's Markdown is RENDERED, not shown as junk ------------------
+# 2026-11-28 (operator, screenshot: "vede scrive schifezze in mezzo al discorso su
+# telegram"): the body was only escaped, so `**bold**`, `## title`, fences and links
+# appeared literally. `_md_html` escapes first, parks code, then emits real tags.
+_u1 = channel._md_html("this is **bold** and *italic* and ~~gone~~")
+check("U1 bold/italic/strike become tags",
+      "<b>bold</b>" in _u1 and "<i>italic</i>" in _u1 and "<s>gone</s>" in _u1, _u1)
+check("U2 inline code becomes <code>, underscore names untouched",
+      channel._md_html("run `make -j4` on my_var_name")
+      == "run <code>make -j4</code> on my_var_name",
+      channel._md_html("run `make -j4` on my_var_name"))
+_u3 = channel._md_html("```python\nx = **raw**\n```")
+check("U3 a fenced block becomes <pre> and its ** stays literal",
+      _u3 == "<pre>x = **raw**</pre>", _u3)
+check("U4 a heading becomes a bold line",
+      channel._md_html("## What does NOT trigger one") == "<b>What does NOT trigger one</b>",
+      channel._md_html("## What does NOT trigger one"))
+_u5 = channel._md_html("a\n\n---\n\nb")
+check("U5 a horizontal rule becomes a separator, never raw dashes",
+      "────────" in _u5 and "---" not in _u5, _u5)
+check("U6 a markdown link becomes a real <a href>",
+      channel._md_html("see [docs](http://x.test/a?b=1)")
+      == 'see <a href="http://x.test/a?b=1">docs</a>',
+      channel._md_html("see [docs](http://x.test/a?b=1)"))
+_u7 = channel._md_html("model wrote <b>raw</b> & <script>")
+check("U7 model-authored tags stay ESCAPED (never become markup)",
+      "&lt;b&gt;raw&lt;/b&gt;" in _u7 and "<script>" not in _u7, _u7)
+check("U8 a blockquote line becomes a plain bar (Telegram cannot nest quotes)",
+      channel._md_html("> the report is wrong").strip() == "▎ the report is wrong",
+      channel._md_html("> the report is wrong"))
+_u9 = channel._md_html("**bold** inside `**code**` stays code")
+check("U9 code is parked BEFORE emphasis (no bold inside a span)",
+      "<code>**code**</code>" in _u9 and "<b>bold</b>" in _u9, _u9)
+
+channel._client = FakeClient()
+_doc = binding.load()
+binding.set_pref(_doc, "reason", False)
+binding.set_pref(_doc, "think", False)
+binding.save(_doc)
+_lm = channel._Live(9)
+_lm.buf = "## Steps\n\n1. **Read** the file\n\n```sh\nls -la\n```\n\n---\n\nDone"
+_lm.finish()
+_u10 = [str(p.get("text")) for m, p in channel._client.calls
+        if m in ("sendMessage", "editMessageText")]
+check("U10 finish() sends RENDERED markdown (no ** or ## or ``` left in the chat)",
+      any("<b>Steps</b>" in t and "<pre>ls -la</pre>" in t for t in _u10)
+      and not any("**Read**" in t or "```" in t or "## Steps" in t for t in _u10),
+      _u10[-1:] or None)
+channel._client = None
+
 shutil.rmtree(_tmp, ignore_errors=True)
 print("---")
 ok = sum(results)

@@ -1095,7 +1095,10 @@ operator-selected `none`). This is not whole-agent confinement. Hard-denied patt
   same choice the WebUI picker makes. Telegram-only display toggles (`/think`,
   `/reason`, `/verbose`, `/stop`) live on the binding (`prefs`, never on the
   session), a typing heartbeat pulses `sendChatAction` while a reply is live, and
-  the reply is HTML-formatted with a bot header and a model footer. `/reason`
+  the reply is HTML-formatted with a bot header and a model footer; the model's own
+  Markdown is CONVERTED to those tags (`channel._md_html`: bold/italic/strike, inline
+  code, fences, headings, rules, links, `>` lines as a `▎` bar) after an escape pass,
+  so no `**`/`##` junk reaches the chat and model-authored tags stay literal. `/reason`
   (and `/think`) print the chain-of-thought in a `<blockquote expandable>` — the
   live preview and the final answer carry the SAME collapsible block
   (`channel._quote_html`), and switching `/reason` ON shows the last stored

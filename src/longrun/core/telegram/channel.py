@@ -29,6 +29,7 @@ import html
 import json
 import logging
 import os
+import re
 import threading
 import time
 
@@ -1539,7 +1540,7 @@ class _Live:
             # `finish()` keeps the beginning — both are collapsible blockquotes.
             parts.append(_quote_html("💭 thinking", think[-_think_preview():]))
         if body:
-            parts.append(_esc(body))
+            parts.append(_md_html(body))
         text = "\n\n".join(parts)
         if cursor:
             text += " ▍"
@@ -1658,7 +1659,7 @@ class _Live:
             pieces = [head] if i == 0 else []
             if i == 0 and block:
                 pieces.append(block)
-            pieces.append(_esc(part))
+            pieces.append(_md_html(part))
             text = "\n\n".join(p for p in pieces if p)
             if i == last and len(text) + len(foot) + 2 <= _max_chars():
                 text = text + "\n\n" + foot
@@ -1709,6 +1710,60 @@ def _esc(text):
     return html.escape(str(text or ""), quote=False)
 
 
+#: The model writes Markdown; Telegram HTML has no Markdown parser. These turn the
+#: common inline/block forms into real tags so the operator reads prose, not `**`
+#: and `##` junk in the middle of a sentence (reported 2026-11-28).
+_MD_FENCE = re.compile(r"```[ \t]*[^\n]*\n(.*?)```", re.S)
+_MD_INLINE = re.compile(r"`([^`\n]+)`")
+_MD_IMAGE = re.compile(r"!\[([^\]\n]*)\]\((https?://[^)\s]+)\)")
+_MD_LINK = re.compile(r"\[([^\]\n]+)\]\((https?://[^)\s]+)\)")
+_MD_HEAD = re.compile(r"^[ \t]{0,3}#{1,6}[ \t]+(.+?)[ \t]*#*[ \t]*$", re.M)
+_MD_RULE = re.compile(r"^[ \t]{0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$", re.M)
+_MD_QUOTE = re.compile(r"^[ \t]{0,3}(?:&gt;|>)[ \t]?", re.M)
+_MD_BOLD = re.compile(r"\*\*([^*\n]+)\*\*")
+_MD_BOLD2 = re.compile(r"(?<![\w_])__([^_\n]+)__(?![\w_])")
+_MD_STRIKE = re.compile(r"~~([^~\n]+)~~")
+_MD_ITALIC = re.compile(r"(?<![\w*])\*([^*\n]+)\*(?![\w*])")
+_MD_ITALIC2 = re.compile(r"(?<![\w_])_([^_\n]+)_(?![\w_])")
+
+
+def _md_html(text):
+    """Render the model's Markdown as Telegram HTML.
+
+    The text is ESCAPED FIRST, so anything the model wrote as `<b>` stays visible
+    instead of becoming markup; every tag emitted below is ours. Code spans/fences
+    are parked in placeholders before the emphasis rules run, so a `**` inside code
+    is never bolded. A blockquote `>` line becomes a plain `▎` bar: Telegram cannot
+    nest blockquotes and the reasoning already lives inside one.
+    """
+    src = _esc(text)
+    saved = []
+
+    def keep(frag):
+        saved.append(frag)
+        return "\x00%d\x00" % (len(saved) - 1)
+
+    src = _MD_FENCE.sub(lambda m: keep("<pre>%s</pre>" % m.group(1).rstrip("\n")), src)
+    src = _MD_INLINE.sub(lambda m: keep("<code>%s</code>" % m.group(1)), src)
+    src = _MD_IMAGE.sub(
+        lambda m: keep('<a href="%s">%s</a>'
+                       % (m.group(2).replace('"', "%22"), m.group(1) or m.group(2))), src)
+    src = _MD_LINK.sub(
+        lambda m: keep('<a href="%s">%s</a>'
+                       % (m.group(2).replace('"', "%22"), m.group(1))), src)
+    src = _MD_HEAD.sub(lambda m: "<b>%s</b>" % m.group(1).strip(), src)
+    src = _MD_RULE.sub("────────", src)
+    src = _MD_QUOTE.sub("▎ ", src)
+    src = _MD_BOLD.sub(r"<b>\1</b>", src)
+    src = _MD_BOLD2.sub(r"<b>\1</b>", src)
+    src = _MD_STRIKE.sub(r"<s>\1</s>", src)
+    src = _MD_ITALIC.sub(r"<i>\1</i>", src)
+    src = _MD_ITALIC2.sub(r"<i>\1</i>", src)
+    for i, frag in enumerate(saved):
+        src = src.replace("\x00%d\x00" % i, frag)
+    return src
+
+
 def _bot_name():
     with _LOCK:
         bot = dict(_state.get("bot") or {})
@@ -1740,7 +1795,7 @@ def _quote_html(label, text, cap=None):
     limit = int(cap or _reasoning_cap())
     if len(body) > limit:
         body = body[:limit].rstrip() + "…"
-    return "<b>%s</b>\n<blockquote expandable>%s</blockquote>" % (_esc(label), _esc(body))
+    return "<b>%s</b>\n<blockquote expandable>%s</blockquote>" % (_esc(label), _md_html(body))
 
 
 def _last_reasoning():
@@ -1806,7 +1861,6 @@ _HTML_HINT = ("<b>", "<i>", "<code>", "<pre>", "<blockquote")
 
 
 def _strip_tags(text):
-    import re
     return re.sub(r"<[^>]+>", "", str(text or ""))
 
 
