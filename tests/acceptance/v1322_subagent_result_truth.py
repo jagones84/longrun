@@ -179,6 +179,15 @@ check("G2 the chat prompt points the child budget at config/subagents.yaml",
       "config/subagents.yaml" in AG.CHAT_TOOL_PROMPT
       and "leave `max_steps` out" in AG.CHAT_TOOL_PROMPT)
 
+# --------------------- H: the surfaces name WHAT was delegated, not just "Delegated"
+# A subagent carries its brief as `aim`, so the card must show it — otherwise the
+# delegated step is an anonymous "Delegated" row. (The Telegram side of the same
+# contract is pinned by v1320 V9a.)
+_HTML = _read("webui", "index.html")
+_cardline = next((l for l in _HTML.splitlines() if '"Delegated"' in l), "")
+check("H1 the WebUI delegation card names the brief (a.aim)",
+      "a.aim" in _cardline, _cardline.strip()[:140])
+
 _bad = results.count(False)
 print("\n%d/%d checks passed%s" % (len(results) - _bad, len(results),
                                   "" if not _bad else " — FAILED"))

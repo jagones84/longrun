@@ -6851,7 +6851,10 @@ function _toolUI(tool, args) {
   if (t === "glob" || t === "glob.list") return { icon: TOOL_SVG.folder, label: "Listed " + (_baseName(a.path || a.pattern) || ".") };
   if (/^(grep|search)/.test(t)) return { icon: TOOL_SVG.search, label: "Searched files" + (a.query || a.pattern ? ' "' + (a.query || a.pattern) + '"' : "") };
   if (t === "shell" || t === "shell.exec") return { icon: TOOL_SVG.term, label: "Command executed" };
-  if (t === "dispatch" || t === "subagent") return { icon: TOOL_SVG.branch, label: "Delegated" + (a.agent ? " to " + a.agent : "") };
+  // v1322: a subagent carries its brief as `aim` (a dispatch carries the target
+  // `agent`), so the delegated step names WHO or WHAT it handed off.
+  if (t === "dispatch" || t === "subagent") return { icon: TOOL_SVG.branch,
+    label: "Delegated" + (a.agent ? " to " + a.agent : "") + (a.aim ? ' "' + a.aim + '"' : "") };
   if (t === "model.attempt") return { icon: TOOL_SVG.alert,
     label: "Model attempt · " + (a.mode || "no answer")
       + (a.model ? " · " + String(a.model).split("/").pop() : "") };
