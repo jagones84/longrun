@@ -7,10 +7,10 @@ Stdlib-only, deterministic, no browser, no model. Covers the three points:
      The ledger now carries an optional `run` id, tagged by `chat_once`.
   B) the Bridge AGENTS table fills its panel with explicit proportional column
      widths, with its new-agent inputs no longer full-width.
-  C) the Bridge ORG CHART keeps single-click = preview (which now ALSO highlights +
-     scrolls to the agent in the AGENTS table, JAG-451), double-click = open the
-     agent's session, and the right-click quick-action menu reuses the
-     EXISTING stores/endpoints (no third synced data entry).
+  C) the Bridge ORG CHART: single-click = SELECT (highlight the agent in the AGENTS
+     table, no panel opens — 2026-11-28), double-click = open the agent's sheet,
+     right-click = the quick-action menu (sheet / AGENTS / constellation / prompt),
+     which reuses the EXISTING stores/endpoints (no third synced data entry).
 """
 import os
 import re
@@ -101,13 +101,13 @@ check("B3 the new-agent inputs are no longer full-width",
                      r'[^>]*\bstyle="width:240px;flex:none"', ORBIT)))
 
 # ------------------------------------------------------------------ C) org chart
-check("C1 single-click still previews the constellation (+ JAG-451 focuses the agent)",
-      # 9a2b583 (2026-11-16, operator) formatted the pick callback over several lines
-      # and added the embed-panel preview; the single-click contract is unchanged.
-      "if (this.onPick) this.onPick(this.bySid[n.dataset.sid]);" in ORBIT
-      and re.search(r'this\.org = new OrgChartView\(\s*\(a\) => \{\s*'
-                    r'this\.tac\.open\(a, "agent"\);[\s\S]{0,200}?'
-                    r'this\.agents\.focusAgent\(a\.session\)', ORBIT) is not None)
+check("C1 a single click SELECTS + focuses the agent; the constellation opens from the menu",
+      # 2026-11-28 (operator): a single click must not open the constellation view.
+      # It only syncs the selection (onSelect); the right-click menu's Constellation
+      # item is what runs onPick (tac.open + applyView in a hosted frame).
+      "if (this.onSelect) this.onSelect(this.bySid[n.dataset.sid]);" in ORBIT
+      and "if (this.onPick) this.onPick(this.bySid[n.dataset.sid]);" not in ORBIT
+      and re.search(r'\(a\) => \{\s*this\.tac\.open\(a, "agent"\);', ORBIT) is not None)
 check("C2 double-click still opens the agent's session in the main app",
       "n.ondblclick = () => { if (this.onGoTo) this.onGoTo(this.bySid[n.dataset.sid]); };" in ORBIT
       and "gotoAgent(agent){ if (!agent) return;" in ORBIT)
@@ -119,7 +119,7 @@ check("C4 the menu REUSES existing stores/endpoints (no new data entry)",
       "this.togglePrompt(a.session);" in ORBIT and "openPrompt(a){" in ORBIT
       and "clearOrbitSession(a.session);" in ORBIT)
 check("C5 the org-chart header documents the three gestures",
-      "click = preview" in ORBIT and "dbl-click = open" in ORBIT and "right-click = actions" in ORBIT)
+      "click = select" in ORBIT and "dbl-click = open" in ORBIT and "right-click = actions" in ORBIT)
 
 print("---")
 ok = sum(results)

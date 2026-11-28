@@ -35,8 +35,9 @@ check("1a org-chart single click also highlights the agent in the AGENTS table (
       "this.agents.focusAgent(a.session)" in ORBIT and "focusAgent(sid, scroll)" in ORBIT
       and "_applyFocus()" in ORBIT and 'classList.add("rowsel")' in ORBIT
       and "scrollIntoView" in ORBIT and "_scrollNext" in ORBIT)
-check("1b it still opens the constellation (onPick)",
-      "if (this.onPick) this.onPick(this.bySid[n.dataset.sid]);" in ORBIT)
+check("1b the constellation opens from the right-click menu, not a single click (2026-11-28)",
+      "this.onPick(a)" in ORBIT
+      and "if (this.onSelect) this.onSelect(this.bySid[n.dataset.sid]);" in ORBIT)
 
 # ------------------------------------------------------------------ 3) text source
 _i = HTML.find("function _kbSourceRow")

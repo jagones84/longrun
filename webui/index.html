@@ -16604,23 +16604,10 @@ function renderTools(el, d) {
          </label>
        </div>
      </div>`;
-  // 2026-11-17 (operator: "i dont want to duplicate things … the approval for
-  // agents and users commands refer to the same backend functions"). The document
-  // commands are ONE backend (`plan/docs.py`): the agent's `docs` tool, the
-  // composer's `/plan`·`/spec` and the CLI are thin callers. This card is READ-ONLY
-  // and derives the tool verbs from the catalogue, so it cannot drift into a second
-  // policy table.
-  const docRows = tools.filter(t => String(t.name || "").startsWith("docs."));
-  const docsCard =
-    `<div class="card" style="margin-bottom:10px">
-       <div class="set-t" title="One backend (plan/docs.py). The composer's /plan and /spec, the agent's docs tool and forge.py docs call the SAME verbs — there is no second policy.">📄 Documents</div>
-       ${docRows.length ? docRows.map(t => `<div style="display:flex;align-items:center;gap:10px;margin:4px 0">
-         <code style="flex:0 0 108px">${esc(t.name)}</code>
-         <span class="remaining">${esc(t.description || "")}</span>
-         <span class="remaining" style="margin-left:auto">${t.enabled === false ? "OFF" : esc(t.approval || "auto")}</span>
-       </div>`).join("") : '<div class="remaining">no document tools in the catalogue</div>'}
-       <div class="remaining u-mt8">approve · implement · reject · unlock stay operator-only (the bar, the Approvals panel, <code>forge.py docs</code>). <code>/plan</code> → <code>docs.plan</code>, <code>/spec</code> → <code>docs.spec</code> — same backend, no separate policy.</div>
-     </div>`;
+  // 2026-11-28 (operator: "delete this box entirely, it is useless"): the read-only
+  // "Documents" card duplicated the docs.* rows already listed in the tools tree and
+  // repeated a policy sentence; it is gone. The document policy is the ONE checkbox
+  // above ("Auto-approve plans and specs"); the docs.* tools keep their per-tool row.
   // JAG-451: approval policy BY CATEGORY — everything the harness emits on its own.
   const KINDS = [
     ["skills", "Self-generated skills", "mined skill drafts → promoted into skills/created/"],
@@ -16857,7 +16844,7 @@ function renderTools(el, d) {
       esc(String(_fp.never_used_index_chars)) + ' characters of the model-facing index on every turn">' +
       _fpN + " unused</button>"
     : "";
-  el.innerHTML = policyCard + kindsCard + docsCard + (tools.length
+  el.innerHTML = policyCard + kindsCard + (tools.length
     ? '<div class="tools-head">' +
         '<input id="toolsFilter" class="inp" type="search" autocomplete="off" spellcheck="false" ' +
           'aria-label="filter tools" placeholder="filter tools by name or description…" value="' +

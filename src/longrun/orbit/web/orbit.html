@@ -1150,7 +1150,7 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   <div class="grid2 oc">
     <!-- Org chart: boxes + connectors from reports_to -->
     <section class="panel" data-panel="org">
-      <h2 title="click = preview + highlight the agent in the Agents panel · dbl-click = open · right-click = actions · wheel = zoom · drag = pan">Org chart
+      <h2 title="click = select + highlight the agent in the Agents panel · dbl-click = open its sheet · right-click = actions · wheel = zoom · drag = pan">Org chart
         <span class="ctools">
           <button class="btn ghost mini" id="orgOut" title="zoom out">−</button>
           <button class="btn ghost mini" id="orgIn" title="zoom in">＋</button>
@@ -1307,7 +1307,19 @@ function openPopover(ev, html, opts){
   m.style.left = Math.max(4, Math.min(ev.clientX, window.innerWidth - (o.w || 224))) + "px";
   m.style.top = Math.max(4, Math.min(ev.clientY, window.innerHeight - (o.h || 150))) + "px";
   _POP = m;
-  const h = (e) => { if (!m.contains(e.target)) closePopover(); };
+  const h = (e) => {
+    const t = e.target;
+    if (m.contains(t)) return;
+    /* A native <select> popup is a browser-owned widget OUTSIDE the DOM: the mousedown
+       that PICKS an option reaches the page as a bare body/html target, so it would
+       dismiss this popover before the select's change handler can commit. While a
+       <select> inside the popover holds focus, ignore a bare-root mousedown and let the
+       change event decide; a click on a REAL outside control still closes as usual. */
+    const ae = document.activeElement;
+    const bare = !t || t === document.body || t === document.documentElement;
+    if (bare && ae && ae.tagName === "SELECT" && m.contains(ae)) return;
+    closePopover();
+  };
   const k = (e) => { if (e.key === "Escape") closePopover(); };
   m.__h = h; m.__k = k;
   setTimeout(() => { document.addEventListener("mousedown", h); document.addEventListener("keydown", k); }, 0);
@@ -1678,18 +1690,20 @@ class AgentsView {
     if (kind === "model"){
       const mopts = '<option value=""' + (a.model ? "" : " selected") + '>router default</option>' +
         this.models.map(m => '<option value="' + esc(m.ref) + '"' + (a.model === m.ref ? " selected" : "") + '>' + esc(m.label) + '</option>').join("");
+      /* 2026-11-28 (operator): a one-choice picker auto-commits — the save button was
+         unreachable (picking an option closed the popover). */
       form = '<form onsubmit="return false" style="display:flex;flex-direction:column;gap:6px;padding:4px 2px;min-width:250px;white-space:normal">' +
         '<span class="lbl" style="padding:0">model</span>' +
-        '<select class="inp" data-aedit-f="model">' + mopts + '</select>' +
-        '<div style="display:flex;justify-content:flex-end"><button class="btn primary" data-aedit-save type="button">save</button></div></form>';
+        '<select class="inp" data-aedit-f="model">' + mopts + '</select></form>';
     } else if (kind === "reports_to"){
       const roster = (this.roster && this.roster.length) ? this.roster : this.agents;
       const ropts = '<option value="">\u2014 none \u2014</option>' +
         roster.filter(x => x.id && x.id !== a.id).map(x => '<option value="' + esc(x.id) + '"' + (a.reports_to === x.id ? " selected" : "") + '>' + esc(x.name || x.id) + ' \u00b7 ' + esc(x.id) + '</option>').join("");
+      /* 2026-11-28 (operator): picking the manager auto-saves — no save button, which
+         was unreachable because selecting an agent closed the popover. */
       form = '<form onsubmit="return false" style="display:flex;flex-direction:column;gap:6px;padding:4px 2px;min-width:250px;white-space:normal">' +
         '<span class="lbl" style="padding:0">reports to</span>' +
-        '<select class="inp" data-aedit-f="reports_to">' + ropts + '</select>' +
-        '<div style="display:flex;justify-content:flex-end"><button class="btn primary" data-aedit-save type="button">save</button></div></form>';
+        '<select class="inp" data-aedit-f="reports_to">' + ropts + '</select></form>';
     } else {
       form = '<form onsubmit="return false" style="display:flex;flex-direction:column;gap:5px;padding:4px 2px;min-width:270px;white-space:normal">' +
         '<span class="lbl" style="padding:0">name</span>' +
@@ -1699,12 +1713,17 @@ class AgentsView {
         '<div style="display:flex;justify-content:flex-end;margin-top:4px"><button class="btn primary" data-aedit-save type="button">save</button></div></form>';
     }
     const m = openPopover(ev, form, {w: 300, h: kind === "name" ? 200 : 150});
-    m.querySelector('[data-aedit-save]').onclick = () => {
+    const commit = () => {
       const patch = {};
       m.querySelectorAll('[data-aedit-f]').forEach(el => { patch[el.dataset.aeditF] = (el.value || "").trim(); });
       closePopover();
       this.save(sid, patch);
     };
+    // Single-choice pickers commit on selection; the text editor keeps an explicit save.
+    const sel = m.querySelector('select[data-aedit-f]');
+    if (sel) sel.onchange = commit;
+    const saveBtn = m.querySelector('[data-aedit-save]');
+    if (saveBtn) saveBtn.onclick = commit;
   }
   /* v895 (operator: "the edit button shall be placed in the three dot menu inside
      edit prompt"): the ROLE.md editor lives here, and the org chart's own menu calls
@@ -2442,8 +2461,9 @@ class AgentsView {
 
 /* ------------------------------------------------------ Org chart -------- */
 class OrgChartView {
-  constructor(onPick, onGoTo, onPrompt){ this.onPick = onPick; this.onGoTo = onGoTo;
-    this.onPrompt = onPrompt; this.bySid = {};
+  constructor(onPick, onGoTo, onPrompt, onSelect, onAgents){ this.onPick = onPick; this.onGoTo = onGoTo;
+    this.onPrompt = onPrompt; this.onSelect = onSelect; this.onAgents = onAgents;
+    this.bySid = {};
     this.box = $("orgtree"); this.canvas = null; this.k = 1; this.tx = 0; this.ty = 0;
     this.teams = [];   // v890: the live team list (each team carries its colour)
     this.selSid = null;   // JAG-2.9: the selected node SURVIVES the 5s re-render
@@ -2662,12 +2682,13 @@ class OrgChartView {
     let nodes = "", links = "";
     agents.forEach(a => { const p = pos[a.id]; if (!p) return;
       const cut = cutOf[a.id];
-      // A hosted single-panel frame has no constellation beside the chart, so "click
-      // previews" would be a promise the window cannot keep; say what it really does.
+      // 2026-11-28 (operator): a single click only SELECTS — it never opens a panel.
+      // Opening is an explicit action: double-click the agent's sheet, or right-click
+      // for the actions menu (sheet / AGENTS row / constellation / prompt / reset).
       const _one = document.documentElement.classList.contains("embed-panel");
       const tip = (_one
-          ? "click = select this agent \u00b7 double-click = open its session \u00b7 right-click = actions (constellation, prompt, reset)"
-          : "click = preview this agent\u2019s constellation \u00b7 double-click = open its session in the Sessions tab \u00b7 right-click = more actions") +
+          ? "click = select this agent \u00b7 double-click = open its sheet \u00b7 right-click = actions"
+          : "click = select this agent \u00b7 double-click = open its sheet in the Sessions tab \u00b7 right-click = more actions") +
         (cut ? "\nreports to " + cut + " — outside this scope, so the chain is cut here" : "");
       const tc = colorOf(a);
       nodes += '<div class="node' + (cut ? " cut" : "") + '" data-sid="' + esc(a.session) + '"' +
@@ -2685,10 +2706,10 @@ class OrgChartView {
       x.classList.toggle("sel", x.dataset.sid === this.selSid));
     box.querySelectorAll(".node").forEach(n => { n.onclick = () => {
       this.selectNode(n.dataset.sid);
-      // JAG-403h: single click ONLY previews the constellation — no jumping the
-      // AGENTS table around (that scroll was pointless and disorienting).
-      // v615: and no moving the organigram camera either — select, don't travel.
-      if (this.onPick) this.onPick(this.bySid[n.dataset.sid]);
+      // 2026-11-28 (operator): a single click SELECTS only — it no longer opens or
+      // re-focuses the constellation view. Opening a surface is explicit (double-click
+      // or the right-click menu), so a select can never yank the operator elsewhere.
+      if (this.onSelect) this.onSelect(this.bySid[n.dataset.sid]);
     };
     n.ondblclick = () => { if (this.onGoTo) this.onGoTo(this.bySid[n.dataset.sid]); };
     // JAG-403f: right-click = quick actions. All of them reuse EXISTING stores
@@ -2705,14 +2726,18 @@ class OrgChartView {
     else this.apply();
   }
   menu(ev, a){ if (!a) return;
+    // 2026-11-28 (operator): right-click is the explicit action menu. It names the
+    // surface each item opens, so "view the agent" is never an accidental side effect.
     const m = openPopover(ev,
+      '<div data-a="open">\u2197 View agent sheet</div>' +
+      '<div data-a="agents">\u25a4 Show in AGENTS</div>' +
       '<div data-a="const">\uD83D\uDD2D Constellation</div>' +
-      '<div data-a="open">\u2197 Open session in Sessions tab</div>' +
       '<div data-a="prompt">\u270E Edit prompt (ROLE.md)</div>' +
       '<div class="sep"></div>' +
-      '<div data-a="reset">\u21BA Reset session\u2026</div>', {w: 208, h: 150});
-    m.querySelector('[data-a="const"]').onclick = () => { closePopover(); if (this.onPick) this.onPick(a); };
+      '<div data-a="reset">\u21BA Reset session\u2026</div>', {w: 216, h: 180});
     m.querySelector('[data-a="open"]').onclick = () => { closePopover(); if (this.onGoTo) this.onGoTo(a); };
+    m.querySelector('[data-a="agents"]').onclick = () => { closePopover(); if (this.onAgents) this.onAgents(a); };
+    m.querySelector('[data-a="const"]').onclick = () => { closePopover(); if (this.onPick) this.onPick(a); };
     m.querySelector('[data-a="prompt"]').onclick = () => { closePopover(); if (this.onPrompt) this.onPrompt(a); };
     m.querySelector('[data-a="reset"]').onclick = async () => { closePopover();
       if (await uiConfirm("Reset " + a.id + " " + (a.name || "") + "?",
@@ -3865,15 +3890,22 @@ class OrbitApp {
     // it reuses the one selection the Agents table and the org chart share.
     this.tac.onFocus = (a) => { if (a) this.focusAgentSession(a.session); };
     this.org = new OrgChartView(
+      // onPick: the menu's explicit "Constellation" — open it; a hosted single-panel
+      // frame must bring that panel into view (the host owns the tab strip).
       (a) => {
         this.tac.open(a, "agent");
-        if (this.agents && a) this.agents.focusAgent(a.session);
-        // A single-panel guest has no constellation beside the org chart: "preview"
-        // must actually SHOW it, or the menu promises a panel the operator cannot see.
         if (this.embedPanel) this.applyView("const");
       },
+      // onGoTo: double-click / "View agent sheet" — open the agent's session.
       (a) => this.tac.gotoAgent(a),
-      (a) => this.agents.openPrompt(a));
+      // onPrompt: edit its ROLE.md.
+      (a) => this.agents.openPrompt(a),
+      // onSelect: single click — sync the selection everywhere, open nothing.
+      (a) => { if (this.agents && a) this.agents.focusAgent(a.session); },
+      // onAgents: "Show in AGENTS" — a hosted single-panel frame switches the panel;
+      // either way the row is revealed and scrolled into view.
+      (a) => { if (this.embedPanel) this.applyView("agents");
+               if (this.agents && a) this.agents.focusAgent(a.session, true); });
     // JAG-2.9: picking a row's A-id selects the matching node in the organigram, and
     // the selection is REMEMBERED (org.selSid) so the 5s poll cannot drop it.
     // 2026-11-01: the SAME selection also focuses the constellation — the operator
@@ -4193,6 +4225,11 @@ class OrbitApp {
           : "already compliant — every agent in scope follows the policy")
         + "  ||  " + msg.join(" · ");
       genState(st, changed.length ? "ok" : "same", why);
+      /* 2026-11-28 (operator: "nothing happens when I click the gear"): the result was
+         only a tiny ✓/= glyph. An explicit toast makes every click acknowledge itself. */
+      toast(changed.length
+        ? ("model policy: " + changed.length + " agent(s) updated")
+        : "model policy: already compliant — nothing to change");
       this.refresh();
     } finally {
       if (btn){ btn.disabled = false; btn.classList.remove("gen-busy"); btn.removeAttribute("aria-busy"); }
@@ -4910,6 +4947,9 @@ function initPanels(){
 
   const rst = $("rzReset");
   if (rst) rst.onclick = () => {
+    /* 2026-11-28 (operator: "nothing happens when I click reset"): on a default layout
+       this was a silent no-op. Say whether anything was actually restored. */
+    const had = Object.keys(saved).length > 0;
     saved = {}; persist();
     document.querySelectorAll(".grid2").forEach(g => { g.style.removeProperty("--cA"); g.style.removeProperty("--cB"); g.style.height = ""; });
     // v624: view-column widths live on the panels + vcol:* keys — clear them too.
@@ -4923,6 +4963,7 @@ function initPanels(){
     } catch (_) {}
     document.querySelectorAll("section.panel[data-panel]").forEach(p => { p.style.flex = ""; p.style.flexBasis = ""; });
     refit();
+    toast(had ? "panel sizes reset to default" : "panel sizes are already at default");
   };
 }
 /* JAG-424: the Sessions view asks the deck to CIRCLE a task in the constellation

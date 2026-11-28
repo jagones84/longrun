@@ -62,9 +62,12 @@ check("C1 the Sessions-rail menu travels (both sides scroll=true)",
       and "this.org.selectNode(sid, true)" in ORBIT)
 check("C2 A-id click selects AND travels (explicit take-me-there)",
       "if (tr) this.focusAgent(tr.dataset.sid, true)" in ORBIT)
-check("C3 node single/right click select without travelling",
+check("C3 node single click SELECTS only — opening a surface is explicit",
       "this.selectNode(n.dataset.sid);" in ORBIT
-      and "if (this.onPick) this.onPick(this.bySid[n.dataset.sid]);" in ORBIT)
+      # 2026-11-28 (operator): a single click no longer previews the constellation;
+      # it only syncs the selection (onSelect). The menu opens the constellation.
+      and "if (this.onSelect) this.onSelect(this.bySid[n.dataset.sid]);" in ORBIT
+      and "if (this.onPick) this.onPick(this.bySid[n.dataset.sid]);" not in ORBIT)
 
 # ---------------- D: the flag crosses the bridge ----------------------
 check("D1 onHighlight forwards the scroll intent",

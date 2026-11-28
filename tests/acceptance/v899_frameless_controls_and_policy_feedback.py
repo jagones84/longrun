@@ -45,12 +45,14 @@ i_st = ORBIT.index('id="agPolicySt"')
 i_reset = ORBIT.index('id="rzReset"')
 check("B1 the result glyph sits in the SAME cluster, right after the gear",
       -1 < i_btn < i_st < i_reset)
+# the whole applyModelPolicy() body, up to the next method — not a char-count window
+# (2026-11-28: a toast was added and a fixed 2500-char slice pushed `} finally {` out)
+policy = ORBIT[ORBIT.index("async applyModelPolicy(){"):]
+policy = policy[:policy.index("\n  /* v622:")]
 check("B2 the run is ANIMATED in place (disabled + gen-busy + aria-busy, cleared in finally)",
       'btn.disabled = true; btn.classList.add("gen-busy"); btn.setAttribute("aria-busy", "true");' in ORBIT
       and 'btn.disabled = false; btn.classList.remove("gen-busy"); btn.removeAttribute("aria-busy");' in ORBIT
-      and "} finally {" in ORBIT.split("async applyModelPolicy(){")[1][:2500])
-policy = ORBIT[ORBIT.index("async applyModelPolicy(){"):]
-policy = policy[:policy.index("\n  /* v622:")]
+      and "} finally {" in policy)
 check("B3 the result is a GLYPH, not a modal sentence (the guard may still alert)",
       'alert("model policy\\n' not in policy
       and 'genState(st, changed.length ? "ok" : "same", why);' in policy)
@@ -62,6 +64,11 @@ check("B5 the policy is still the SERVER's (no client-side model decision)",
       and "cloud[0]" not in policy and "this.api.post(\"/api/agents\"" not in policy)
 check("B6 the reported count is the CHANGED agents, not the server's writes",
       "if (was !== now) changed.push(" in policy and "changed.length" in policy)
+# 2026-11-28 (operator: "nothing happens when I click"): the tiny ✓/= glyph was not
+# enough feedback — every click now also raises a transient toast.
+check("B7 every policy click ACKNOWLEDGES itself (transient toast, not a silent no-op)",
+      "toast(changed.length" in policy
+      and "already compliant \u2014 nothing to change" in policy)
 
 print("---")
 passed = sum(results)

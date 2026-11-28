@@ -152,16 +152,21 @@ check("F1 the Reports-to / assign options lead with the NAME, then the A-id",
 check("F2 every popover is keyboard navigable (arrows + Enter + Escape)",
       "function _popoverKeys" in orbit and "_popoverKeys(m)" in orbit
       and "ArrowDown" in orbit and "if (m.__nav) m.removeEventListener" in orbit)
-# 2026-11-08: v890 replaced the `__browse`/`onblur` guard with a POPOVER EDITOR
-# whose selects are read only by its Save handler — the write cannot fire on a
-# keystroke because the editor binds no change handler at all. The pin asserts
-# that property on the editor itself (the behaviour, not the retired mechanism):
-# typing or arrowing in any of its fields writes nothing until Save.
+# 2026-11-08: v890 replaced the `__browse`/`onblur` guard with a POPOVER EDITOR.
+# 2026-11-28 (operator): the ONE-CHOICE pickers (model, reports_to) now auto-commit
+# on `change` — picking an option used to dismiss the popover before Save could be
+# pressed. The FREE-TEXT editor (name/role) still binds no change handler and writes
+# only when Save is pressed, so a keystroke never writes.
 _ed_i = orbit.find("openAgentEditor(ev, a, kind){")
 _ed_j = orbit.find("/* v895", _ed_i) if _ed_i >= 0 else -1
 _editor = orbit[_ed_i:_ed_j] if (_ed_i >= 0 and _ed_j > _ed_i) else ""
-check("F3 an agent editor never writes while browsing — only its Save commits",
-      bool(_editor) and "data-aedit-save" in _editor and "onchange" not in _editor,
+check("F3 free-text editing writes only on Save; one-choice pickers commit on selection",
+      bool(_editor)
+      and "data-aedit-save" in _editor
+      and "if (sel) sel.onchange = commit;" in _editor
+      and "if (saveBtn) saveBtn.onclick = commit;" in _editor
+      and '<input class="inp" data-aedit-f="name"' in _editor
+      and "data-aedit-f=\"name\"]').onchange" not in _editor,
       str(len(_editor)))
 
 # --- G: a VOID prompt is visible, and the lead leads (JAG-2.8) ---------------

@@ -116,9 +116,13 @@ check("E1 the row shows VALUE buttons, not full-width form controls",
       'data-aedit="model"' in ORBIT and 'data-aedit="reports_to"' in ORBIT
       and '<select class="inp mini" name="agent-model"' not in ORBIT
       and '<input class="inp mini" name="agent-name"' not in ORBIT)
-check("E2 the editor is one popover that commits on save",
+check("E2 the editor commits — one-choice pickers on selection, the text editor on save",
       "openAgentEditor(ev, a, kind){" in ORBIT
-      and 'data-aedit-f="model"' in ORBIT and "m.querySelector('[data-aedit-save]').onclick" in ORBIT
+      and 'data-aedit-f="model"' in ORBIT
+      # 2026-11-28 (operator): picking a model / manager auto-saves; only name+role
+      # keep an explicit Save button. Both paths funnel through ONE commit().
+      and "if (sel) sel.onchange = commit;" in ORBIT
+      and "if (saveBtn) saveBtn.onclick = commit;" in ORBIT
       and "this.save(sid, patch);" in ORBIT)
 check("E3 the cells truncate instead of stretching the table",
       "table.at td .cbtn{" in ORBIT and "text-overflow:ellipsis" in ORBIT)

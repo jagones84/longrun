@@ -53,6 +53,10 @@ check("B2 its actions are 24px icons with a name",
       and 'aria-label="reset panel sizes"' in HTML)
 check("B3 no text button is left in the head",
       'id="rzReset" title="reset panel sizes">reset layout<' not in HTML)
+# 2026-11-28 (operator: "nothing happens when I click reset"): a default layout made
+# this a silent no-op — it now says whether it restored anything.
+check("B4 reset panel sizes reports what it did (no silent no-op)",
+      'toast(had ? "panel sizes reset to default" : "panel sizes are already at default");' in HTML)
 
 # ---- C: widths follow the content -----------------------------------------
 check("C1 the old equal-width rule is gone",

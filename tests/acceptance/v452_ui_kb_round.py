@@ -148,6 +148,13 @@ check("E8 the loop honours memory + skills policy; the tool honours proposals",
 check("E9 skills=AUTO runs the verify+promote pipeline; DENIED skips",
       "evolve=(k_skills == \"auto\")" in agent_src
       and "def mine_once(note=\"\", evolve=False)" in improve_src)
+# 2026-11-28 (operator: "delete this box entirely, it is useless"): the read-only
+# "Documents" card duplicated the docs.* rows already in the tools tree; only the
+# ONE "Auto-approve plans and specs" checkbox remains.
+check("E11 the duplicate read-only Documents card is gone",
+      "docsCard" not in idx and "📄 Documents" not in idx
+      and "approve · implement · reject · unlock" not in idx
+      and 'id="apAutoDocs"' in idx)
 
 # Behavioral: approval_kind reads approvals.kinds from the registry config.
 try:
