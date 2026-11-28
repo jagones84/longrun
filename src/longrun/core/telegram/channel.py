@@ -27,11 +27,14 @@ from __future__ import annotations
 import collections
 import html
 import json
+import logging
 import os
 import threading
 import time
 
 from longrun.core.telegram import binding, client, slash
+
+log = logging.getLogger(__name__)
 
 _LOCK = threading.RLock()
 _thread: "threading.Thread | None" = None
@@ -1380,11 +1383,24 @@ def _on_event(event):
         return
     kind = event.get("kind")
     sid = event.get("session")
+    if kind in ("tool.call", "tool.result"):
+        # 2026-11-28 (operator: "continuo a non vedere … i comandi tools lanciati solo
+        # observations"): these events carry `session` (= the bound session) and NO
+        # `run`; matching on `run` dropped every tool card, so the chat showed only
+        # the injected observations. Measured: `chat.run.turn_id` (the API turn) and
+        # `tool.call.turn_id` (the agent loop) are DIFFERENT strings, so a turn match
+        # is not usable either — the bound session has ONE live reply at a time.
+        live = _live.get("obj")
+        if live is not None and sid == binding.SESSION_ID:
+            live.relay_tool(event)
+        return
     if sid == binding.SESSION_ID:
         if kind == "chat.run":
             live = _ensure_live()
             if live is not None and event.get("run_id"):
                 live.run_id = str(event.get("run_id"))
+            if live is not None and event.get("turn_id"):
+                live.turn_id = str(event.get("turn_id"))
             return
         if kind == "chat.delta":
             live = _ensure_live()
@@ -1399,7 +1415,10 @@ def _on_event(event):
         if kind == "chat.done":
             live = _live.get("obj")
             if live is not None:
-                live.finish()
+                try:
+                    live.finish()
+                except Exception:  # noqa: BLE001 — a listener is swallowed upstream
+                    log.exception("telegram: finish() failed for %s", sid)
             return
         if kind == "harness.inject":
             live = _live.get("obj")
@@ -1411,12 +1430,6 @@ def _on_event(event):
             return
         if kind == "approval.request":
             _forward_approval(event)
-        return
-    # tool.* events carry `run` (the turn's run id), never `session`.
-    live = _live.get("obj")
-    if kind in ("tool.call", "tool.result"):
-        if live is not None and live.run_id and str(event.get("run") or "") == live.run_id:
-            live.relay_tool(event)
         return
     # approval events carry `run` (the bound session id), not `session`.
     if kind == "approval.request" and str(event.get("run") or "") == binding.SESSION_ID:
@@ -1547,6 +1560,7 @@ class _Live:
             return
         kind = event.get("kind")
         tool = str(event.get("tool") or "tool")
+        log.debug("telegram relay: %s %s", kind, tool)
         cap = _verbose_preview()
         if kind == "tool.call":
             args = event.get("args")
@@ -1575,8 +1589,12 @@ class _Live:
         if not self.verbose:
             return
         kind = str(event.get("inject_kind") or "harness")
-        if kind == "system":
-            return   # the system prompt is re-injected every turn: not a chat message
+        if kind in ("system", "observation"):
+            # `system` is re-injected every turn (not a chat message); `observation`
+            # is the tool batch the model reads — the ⚙/✅ cards already carry the
+            # same calls, stdout and exit code, so relaying it too was the "solo
+            # observations" duplication the operator reported.
+            return
         body = str(event.get("text") or "").strip()
         if body.startswith("[harness] "):
             body = body[len("[harness] "):]
@@ -1592,8 +1610,8 @@ class _Live:
     def _send_extra(self, text):
         try:
             _client.send_message(self.chat_id, text[: _max_chars()], parse_mode="HTML")
-        except Exception:  # noqa: BLE001 — a relayed card is best-effort
-            pass
+        except Exception as exc:  # noqa: BLE001 — a relayed card is best-effort
+            log.warning("telegram: relay card send failed (%s)", exc)
 
     # -- final ---------------------------------------------------------------
     def finish(self, override=None):
@@ -1621,6 +1639,14 @@ class _Live:
             block = _quote_html("🧠 reasoning", reasoning, cap=_reasoning_cap())
         elif thinking:
             block = _quote_html("💭 thinking", thinking, cap=_reasoning_cap())
+        # Audit + a LOUD anomaly: the channel's failures used to be invisible
+        # (`events.publish` swallows a listener exception), which is why a missing
+        # reasoning block could not be diagnosed from the journal.
+        log.info("telegram finish: reason_on=%s think_on=%s reasoning=%d block=%d",
+                 self.reason_on, self.think_on, len(reasoning), len(block))
+        if (self.reason_on or self.think_on) and not block and not is_error:
+            log.warning("telegram: reasoning toggle ON but NO block "
+                        "(reasoning=%d thinking=%d)", len(reasoning), len(thinking))
         foot = _footer_html()
         # Reserve room for the header/block so the FIRST message is never cut mid
         # tag; the answer body is split on the remaining room and every following
@@ -1650,17 +1676,19 @@ class _Live:
                                           parse_mode="HTML")
             else:
                 _client.send_message(self.chat_id, html_text, parse_mode="HTML")
-        except Exception:  # noqa: BLE001 — a formatting failure must not drop the text
+        except Exception as exc:  # noqa: BLE001 — a formatting failure must not drop the text
+            # A silent fallback is how a missing reasoning block stayed invisible.
+            log.warning("telegram: HTML send failed (%s), plain fallback", exc)
             try:
                 _client.send_message(self.chat_id, plain[: _max_chars()])
             except Exception:  # noqa: BLE001
-                pass
+                log.warning("telegram: plain fallback ALSO failed", exc_info=True)
 
     def _send_html(self, html_text):
         try:
             _client.send_message(self.chat_id, html_text[: _max_chars()], parse_mode="HTML")
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as exc:  # noqa: BLE001
+            log.warning("telegram: footer send failed (%s)", exc)
 
     def _reasoning(self):
         """THIS turn's chain-of-thought.

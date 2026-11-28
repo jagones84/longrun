@@ -970,6 +970,57 @@ channel._handle_tg_only(9, "reason", "off")
 _t8 = [str(p.get("text")) for m, p in channel._client.calls if m == "sendMessage"]
 check("T8 /reason OFF says so and shows no thought",
       bool(_t8) and "<blockquote" not in _t8[-1], _t8[-1:] or None)
+
+# tool cards reach the chat: the event carries `session` + `turn_id`, NEVER `run`
+channel._client = FakeClient()
+_lv = channel._Live(9)
+_lv.verbose = True
+_lv.turn_id = "tX"
+channel._live["obj"] = _lv
+channel._on_event({"kind": "tool.call", "session": "telegram", "tool": "shell.exec",
+                   "turn_id": "tX", "args": {"command": "echo hi"}})
+_t9 = [str(p.get("text")) for m, p in channel._client.calls if m == "sendMessage"]
+check("T9 a tool.call carrying session+turn_id (no `run`) is relayed",
+      any("shell.exec" in t for t in _t9), _t9[-2:])
+
+channel._client = FakeClient()
+_lv.verbose = False
+channel._on_event({"kind": "tool.call", "session": "telegram", "tool": "fs.read",
+                   "turn_id": "tX", "args": {"path": "x"}})
+check("T10 verbose OFF relays no tool card",
+      not any("fs.read" in str(p.get("text")) for m, p in channel._client.calls
+              if m == "sendMessage"), channel._client.calls[-2:])
+
+channel._client = FakeClient()
+_lv.verbose = True
+channel._on_event({"kind": "tool.call", "session": "other", "tool": "rg",
+                   "turn_id": "tX", "args": {}})
+check("T11 a tool event of ANOTHER session is ignored",
+      not any("rg" in str(p.get("text")) for m, p in channel._client.calls
+              if m == "sendMessage"), channel._client.calls[-2:])
+
+channel._client = FakeClient()
+channel._on_event({"kind": "tool.call", "session": "telegram", "tool": "other.tool",
+                   "turn_id": "OTHER", "args": {}})
+check("T12 a tool event with a DIFFERENT turn_id is still relayed "
+      "(chat.run and tool.call carry different ids in production)",
+      any("other.tool" in str(p.get("text")) for m, p in channel._client.calls
+          if m == "sendMessage"), channel._client.calls[-2:])
+
+# the tool batch observation is DUPLICATE of the ⚙/✅ cards: not relayed twice
+channel._client = FakeClient()
+channel._live["obj"] = _lv
+_lv.relay_harness({"inject_kind": "observation",
+                   "text": "[harness] Batch of 2 call(s) ran (tools: 2)"})
+check("T13 an `observation` inject is NOT relayed (the tool cards carry it)",
+      not any("Batch of 2" in str(p.get("text")) for m, p in channel._client.calls
+              if m == "sendMessage"), channel._client.calls[-2:])
+channel._client = FakeClient()
+_lv.relay_harness({"inject_kind": "closure-check", "text": "[harness] still open: n1"})
+check("T14 a non-observation harness note is still relayed",
+      any("still open" in str(p.get("text")) for m, p in channel._client.calls
+          if m == "sendMessage"), channel._client.calls[-2:])
+channel._live["obj"] = None
 channel._client = None
 
 shutil.rmtree(_tmp, ignore_errors=True)
