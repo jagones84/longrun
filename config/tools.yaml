@@ -265,6 +265,7 @@ telegram:
   think_preview_chars: 1200    # `/think`: how much of the live thinking the reply previews
   verbose_preview_chars: 600   # `/verbose`: cap on one relayed tool/harness detail
   models_page_size: 8          # `/models`: providers (and models per provider) on one keyboard
+  skills_page_size: 8          # `/skills`: skills on one keyboard page
   allowed_updates: ["message", "callback_query"]   # which Telegram update kinds we ask for
 
 # ---- thinking / reasoning budget (RH-15) ------------------------------------

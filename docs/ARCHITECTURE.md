@@ -1103,7 +1103,13 @@ operator-selected `none`). This is not whole-agent confinement. Hard-denied patt
   instead of each asking for a direct report (which the twin has none of). The twin
   also reads the SAME backends the WebUI reads, never a second copy: `/status` calls
   the `harness.status` tool (`api_v02.gated_call`, the function behind
-  `POST /api/tools/call`), and `/context` prints the `context_display` block. A
+  `POST /api/tools/call`), `/context` prints the `context_display` block, and
+  `/skills [keyword]` / `/plugins` open the SAME searchable inline menus the WebUI's
+  pickers drive (`memory.skills.list_skills` / `slash.plugins`) — a keyword filters the
+  list, a tap opens the skill's card or the plugin's member manifest. `/todo`
+  (Telegram-only) lists every CURRENT task-graph node with its status and justification
+  (`taskgraph.render_todos(limit=None, instructions=False, why_fn=threads._why)`), so it
+  never leaks into the shared catalogue. A
   compaction is relayed to Telegram from the event itself: `compact_session` produces
   ONE numbered marker (`~140k → ~20k tokens …`) carried on `context.compact` and
   `context.auto_compact`, so a manual compaction from any surface AND an auto

@@ -124,6 +124,7 @@ TELEGRAM_DEFAULTS = {
     "think_preview_chars": 1200,
     "verbose_preview_chars": 600,
     "models_page_size": 8,
+    "skills_page_size": 8,
     "allowed_updates": ["message", "callback_query"],
 }
 TELEGRAM_ENV = {

@@ -22,7 +22,13 @@ deterministic, offline, no model, no network:
   L  a turn the channel did NOT start is still relayed (restart/job/dispatch);
   M  the delegation gate — the twin reaches the whole org, like the Architect;
   N  a compaction is visible on Telegram (manual AND auto, one numbered marker) and
-     `/status` reads the ONE shared `harness.status` tool, not a second session read.
+     `/status` reads the ONE shared `harness.status` tool, not a second session read;
+  O  `/skills [keyword]` opens a SEARCHABLE inline menu (the WebUI picker twin): one
+     button per skill, keyword filtering, a tap opening the skill's card;
+  P  `/plugins` opens its inline menu (or says "none installed"), a tap showing the
+     bundle's member manifest;
+  Q  `/todo` (Telegram-only) lists every CURRENT-plan todo with status + justification,
+     and never leaks into the shared catalogue.
 
 Run: python3 tests/acceptance/v1320_telegram_channel.py
 """
@@ -611,6 +617,145 @@ _ctx_txt = channel._fmt_context({"display": {"available": True,
                                              "detail": "used 22k / 131k tokens · 17%"}})
 check("N10 /context uses the shared display block",
       "22k/131k" in _ctx_txt and "17%" in _ctx_txt, _ctx_txt)
+channel._client = None
+
+# ---- O: /skills — a SEARCHABLE inline menu (the WebUI picker twin) ----------
+# 2026-11-28 (operator: "su telegram slash skills non fa nulla … dovrebbe aprire un
+# menu con skills con ricerca by keyword … proprio come per la sessione WebUI").
+from longrun.plan import taskgraph as _tg2  # noqa: E402
+from longrun.core import slash as _cslash  # noqa: E402
+
+check("O1 /skills is a ui verb of the shared catalogue",
+      slash.interpret("/skills").get("kind") == "ui"
+      and slash.interpret("/skills").get("action") == "skills")
+check("O2 /skills <keyword> carries the keyword as its message",
+      slash.interpret("/skills pdf").get("message") == "pdf")
+check("O3 the dispatcher opens the menu, and _run_ui no longer carries it",
+      'if action == "skills":' in _ch_src and "_show_skills(chat_id" in _ch_src
+      and 'if action in ("plugins", "skills")' not in _ch_src)
+
+_FAKE_SKILLS = [
+    {"name": "pdf-monster", "category": "tools", "title": "PDF Monster",
+     "description": "read and OCR pdfs"},
+    {"name": "archify", "category": "tools", "title": "Archify",
+     "description": "architecture diagrams"},
+    {"name": "data-analysis", "category": "tools", "title": "Data analysis",
+     "description": "excel and csv"},
+]
+_orig_all_skills = channel._all_skills
+channel._all_skills = lambda: list(_FAKE_SKILLS)
+_doc = binding.load()
+binding.upsert_paired(_doc, 9, title="owner")
+binding.set_active_chat(_doc, 9)
+binding.save(_doc)
+channel._client = FakeClient()
+try:
+    channel._show_skills(9)
+    _msg = [p for m, p in channel._client.calls if m == "sendMessage"]
+    _flat = [b for row in (_msg[-1].get("reply_markup") or []) for b in row]
+    check("O4 /skills renders one button per skill (skl:s callbacks)",
+          len(_flat) == 3 and all("skl:s:" in b["callback_data"] for b in _flat),
+          _flat)
+    check("O5 the header names the skill search gesture and stays HTML",
+          _msg and "Skills" in str(_msg[-1].get("text"))
+          and "/skills" in str(_msg[-1].get("text"))
+          and _msg[-1].get("parse_mode") == "HTML", _msg[-1:] or None)
+    channel._client = FakeClient()
+    channel._show_skills(9, "pdf")
+    _m2 = [p for m, p in channel._client.calls if m == "sendMessage"]
+    _k2 = [b for row in (_m2[-1].get("reply_markup") or []) for b in row]
+    check("O6 the keyword filters the SAME list (case-insensitive)",
+          len(_k2) == 1 and _k2[0]["text"] == "pdf-monster"
+          and "filter" in str(_m2[-1].get("text")), _k2)
+    channel._client = FakeClient()
+    channel._show_skills(9, "nomatchxyz")
+    _m3 = [p for m, p in channel._client.calls if m == "sendMessage"]
+    check("O7 a no-match keyword says so (never a blank menu)",
+          _m3 and "No skill matches" in str(_m3[-1].get("text")), _m3[-1:] or None)
+    channel._client = FakeClient()
+    channel._handle_skill_callback(9, 777, "skl:s:1:")
+    _ed = [p for m, p in channel._client.calls if m == "editMessageText"]
+    check("O8 tapping a skill edits the message with its card + run hint",
+          _ed and "Archify" in str(_ed[-1].get("text"))
+          and "archify" in str(_ed[-1].get("text")), _ed[-1:] or None)
+    _routed = []
+    _orig_hsk = channel._handle_skill_callback
+    channel._handle_skill_callback = lambda c, m, d: _routed.append(d)
+    try:
+        channel._handle_callback({"id": "cq-sk", "data": "skl:s:0:x",
+                                  "message": {"chat": {"id": 9}, "message_id": 5}})
+    finally:
+        channel._handle_skill_callback = _orig_hsk
+    check("O9 _handle_callback routes skl: callbacks", _routed == ["skl:s:0:x"], _routed)
+finally:
+    channel._all_skills = _orig_all_skills
+
+# ---- P: /plugins — the installed bundles as an inline menu ------------------
+_orig_plugins = _cslash.plugins
+check("P1 /plugins is a ui verb of the shared catalogue",
+      slash.interpret("/plugins").get("action") == "plugins")
+channel._client = FakeClient()
+_cslash.plugins = lambda: []
+try:
+    channel._show_plugins(9)
+    _p = [str(q.get("text")) for m, q in channel._client.calls if m == "sendMessage"]
+    check("P2 no plugin installed is said plainly (not a blank menu)",
+          any("none installed" in t for t in _p), _p[-1:] or None)
+finally:
+    _cslash.plugins = _orig_plugins
+_FAKE_PLUGINS = [{"id": "plugin/demo", "name": "demo", "title": "Demo",
+                  "description": "a demo bundle", "state_line": "READY",
+                  "members": [{"kind": "skill", "name": "demo-skill",
+                               "target": "/nonexistent/SKILL.md"}]}]
+channel._client = FakeClient()
+_cslash.plugins = lambda: list(_FAKE_PLUGINS)
+try:
+    channel._show_plugins(9)
+    _pm = [q for m, q in channel._client.calls if m == "sendMessage"]
+    _prow = [b for row in (_pm[-1].get("reply_markup") or []) for b in row]
+    check("P3 a plugin renders a named button with its plg:v callback",
+          _prow and "demo" in _prow[0]["text"]
+          and _prow[0]["callback_data"] == "plg:v:0:", _prow)
+    channel._client = FakeClient()
+    channel._handle_plugin_callback(9, 778, "plg:v:0:")
+    _ped = [q for m, q in channel._client.calls if m == "editMessageText"]
+    check("P4 tapping a plugin shows its member manifest",
+          _ped and "demo-skill" in str(_ped[-1].get("text")), _ped[-1:] or None)
+finally:
+    _cslash.plugins = _orig_plugins
+
+# ---- Q: /todo — every current todo, status + justification (TG-only) --------
+# 2026-11-28 (operator: "/todo … status dei todo ed i todo con justifications";
+# "tutti i soli todo correnti").
+check("Q1 /todo is Telegram-ONLY (never the shared catalogue)",
+      "todo" in channel.TG_ONLY
+      and not any(c.get("id") == "todo" for c in _cslash.BUILTINS))
+check("Q2 the native menu carries /todo",
+      "todo" in {c.get("command") for c in channel.commands()})
+_FAKE_GRAPH = {"plan": 1, "nodes": [
+    {"id": "n1", "label": "first", "status": "done", "plan": 1,
+     "evidence": [{"text": "did the first thing"}]},
+    {"id": "n2", "label": "second", "status": "doing", "plan": 1},
+    {"id": "n3", "label": "old-plan", "status": "done", "plan": 0},
+]}
+_orig_load = _tg2.load
+_tg2.load = lambda sid: dict(_FAKE_GRAPH)
+channel._client = FakeClient()
+try:
+    channel._handle_tg_only(9, "todo", "")
+    _todo = [str(q.get("text")) for m, q in channel._client.calls if m == "sendMessage"]
+    _t = _todo[-1] if _todo else ""
+    check("Q3 /todo lists every CURRENT node with status + justification, no prompt paragraph",
+          all(x in _t for x in ("first", "did the first thing", "[x]", "[>]", "second"))
+          and "old-plan" not in _t and "This list is YOURS" not in _t, _t[:200])
+finally:
+    _tg2.load = _orig_load
+channel._client = FakeClient()
+channel._handle_tg_only(9, "help", "")
+_help = [str(q.get("text")) for m, q in channel._client.calls if m == "sendMessage"]
+check("Q4 /help lists /todo and the /skills search hint",
+      any("/todo" in t for t in _help) and any("/skills [keyword]" in t for t in _help),
+      _help[-1:] or None)
 channel._client = None
 
 shutil.rmtree(_tmp, ignore_errors=True)

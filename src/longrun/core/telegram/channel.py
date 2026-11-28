@@ -139,6 +139,7 @@ _TG_ONLY_DOCS = (
     ("verbose", "toggle: relay tool calls, results and harness messages"),
     ("stop", "abort the running turn"),
     ("help", "list the commands and the current toggles"),
+    ("todo", "list this chat's todos — status and justifications"),
 )
 
 
@@ -482,6 +483,16 @@ def _handle_callback(cq):
         _answer_callback(cq_id, "")
         _handle_model_callback(chat_id, mid, data)
         return
+    if data.startswith("skl:"):
+        mid = (cq.get("message") or {}).get("message_id")
+        _answer_callback(cq_id, "")
+        _handle_skill_callback(chat_id, mid, data)
+        return
+    if data.startswith("plg:"):
+        mid = (cq.get("message") or {}).get("message_id")
+        _answer_callback(cq_id, "")
+        _handle_plugin_callback(chat_id, mid, data)
+        return
     if not (data.startswith("ap:") or data.startswith("dn:")):
         _answer_callback(cq_id, "")
         return
@@ -514,7 +525,7 @@ def _handle_callback(cq):
 #: the Longrun session), so they are handled here and never reach the shared
 #: catalogue or a model turn. `/models`, `/plan`, `/status`, … stay in the ONE
 #: catalogue (`core.slash.BUILTINS`) exactly like the WebUI.
-TG_ONLY = ("think", "reason", "verbose", "help", "stop")
+TG_ONLY = ("think", "reason", "verbose", "help", "stop", "todo")
 
 
 def _rest(text):
@@ -536,6 +547,15 @@ def _dispatch(chat_id, text, msg_id):
         if action == "models":
             # `/models` opens the provider ▸ model keyboard, not a prose reply.
             _spawn_worker(lambda: _show_providers(chat_id))
+            return
+        if action == "skills":
+            # 2026-11-28: `/skills [keyword]` opens the SEARCHABLE skill keyboard
+            # (the WebUI's Skills picker twin), not a prose list.
+            _kw = plan.get("message") or ""
+            _spawn_worker(lambda: _show_skills(chat_id, _kw))
+            return
+        if action == "plugins":
+            _spawn_worker(lambda: _show_plugins(chat_id))
             return
         _spawn_worker(lambda: _reply(chat_id, _run_ui(action, plan.get("message"))))
         return
@@ -594,6 +614,21 @@ def _handle_tg_only(chat_id, token, arg):
     if token == "help":
         _notify(chat_id, _help_text())
         return
+    if token == "todo":
+        # 2026-11-28: EVERY current todo (open + closed) with its status and
+        # justification, straight from the task graph the model owns. `limit=None`
+        # = all current-plan nodes; the ownership paragraph is dropped (it is a
+        # prompt rule, not a status line).
+        from longrun.plan import taskgraph
+        from longrun.memory import threads
+        try:
+            g = taskgraph.load(binding.SESSION_ID)
+        except Exception:  # noqa: BLE001 — an absent graph is "no todos"
+            g = None
+        text = taskgraph.render_todos(g, limit=None, compact=False,
+                                      instructions=False, why_fn=threads._why)
+        _reply(chat_id, text or "No todos yet for this chat.")
+        return
     doc = binding.load()
     current = binding.prefs(doc)
     value = _parse_bool(arg, not current.get(token))
@@ -613,7 +648,10 @@ def _help_text():
             "/reason %s — append the chain-of-thought to the final answer\n"
             "/verbose %s — relay tool calls, results and harness messages in real time\n"
             "/stop — abort the running turn\n"
+            "/todo — list this chat's todos (status + justification)\n"
             "/help — this list\n\n"
+            "/skills [keyword] — browse/search the skills\n"
+            "/plugins — browse the installed plugins\n"
             "/models — choose a provider ▸ model"
             % (shared, _onoff(p["think"]), _onoff(p["reason"]), _onoff(p["verbose"])))
 
@@ -770,6 +808,176 @@ def _send_or_edit(chat_id, message_id, text, keyboard):
         pass
 
 
+# ---------------------------------------------------- /skills + /plugins -----
+# 2026-11-28 (operator: "su telegram slash skills non fa nulla … dovrebbe aprire
+# un menu con skills con ricerca by keyword che le filtra dal menu, proprio come
+# per la sessione Longrun WebUI"). These are the SERVER-SIDE twins of the WebUI's
+# `openSkillMenu`/`openPluginMenu`: the same data (`memory.skills.list_skills`,
+# `slash.plugins`) rendered as an inline keyboard. Telegram keyboards carry no text
+# box, so the keyword search is re-issued as `/skills <keyword>` — the same list,
+# filtered, no second source.
+def _skills_page_size():
+    return max(1, _ctx().telegram("skills_page_size"))
+
+
+def _all_skills():
+    """The SAME skill list the WebUI's Skills panel reads (the `/api/skills` source)."""
+    from longrun.memory import skills as _sk
+    try:
+        return _sk.list_skills() or []
+    except Exception:  # noqa: BLE001 — a menu must render
+        return []
+
+
+def _filter_skills(items, kw):
+    """Case-insensitive keyword match over name/title/category/description."""
+    kw = str(kw or "").strip().lower()
+    if not kw:
+        return list(items)
+    out = []
+    for s in items:
+        hay = " ".join(str(s.get(k) or "") for k in
+                       ("name", "title", "category", "description")).lower()
+        if kw in hay:
+            out.append(s)
+    return out
+
+
+def _nav_row(page, total_pages, prefix, kw=""):
+    """A ‹ / p/total / › row for a paginated keyboard (`prefix` = `skl:p`/`plg:p`)."""
+    nav = []
+    if page > 0:
+        nav.append({"text": "‹", "callback_data": "%s:%d:%s" % (prefix, page - 1, kw)})
+    if total_pages > 1:
+        nav.append({"text": "%d/%d" % (page + 1, total_pages),
+                    "callback_data": "%s:%d:%s" % (prefix, page, kw)})
+    if page < total_pages - 1:
+        nav.append({"text": "›", "callback_data": "%s:%d:%s" % (prefix, page + 1, kw)})
+    return [nav] if nav else []
+
+
+def _show_skills(chat_id, kw="", page=0, message_id=None):
+    """`/skills [keyword]` — the searchable skill menu (see the section comment)."""
+    every = _all_skills()
+    if not every:
+        return _send_or_edit(chat_id, message_id,
+                             "🧩 <b>Skills</b> — none installed.", None)
+    items = _filter_skills(every, kw)
+    kw_s = str(kw or "")[:40]
+    size = _skills_page_size()
+    total = max(1, (len(items) + size - 1) // size)
+    page = max(0, min(int(page or 0), total - 1))
+    rows = []
+    start = page * size
+    for i in range(start, min(start + size, len(items))):
+        name = str(items[i].get("name") or "?")
+        rows.append([{"text": (name if len(name) <= 48 else name[:47] + "…"),
+                      "callback_data": "skl:s:%d:%s" % (i, kw_s)}])
+    rows += _nav_row(page, total, "skl:p", kw_s)
+    head = "🧩 <b>Skills</b> — %d shown of %d" % (len(items), len(every))
+    if kw_s.strip():
+        head += " · filter <code>%s</code>" % html.escape(kw_s.strip())
+    else:
+        head += " (<code>/skills &lt;keyword&gt;</code> to search)"
+    if not items:
+        head += "\n\nNo skill matches — try another keyword."
+    _send_or_edit(chat_id, message_id, head, _kb(rows))
+
+
+def _show_one_skill(chat_id, message_id, idx, kw):
+    """One skill's card: title, description, category and how to run it."""
+    items = _filter_skills(_all_skills(), kw)
+    if idx < 0 or idx >= len(items):
+        return _show_skills(chat_id, kw, 0, message_id)
+    s = items[idx]
+    name = str(s.get("name") or "")
+    text = ("🧩 <b>%s</b>\n<code>%s</code>\n%s\n\ncategory: <code>%s</code>\n"
+            "run it here: <code>/%s &lt;your request&gt;</code>"
+            % (html.escape(str(s.get("title") or name)), html.escape(name),
+               html.escape(str(s.get("description") or "(no description)")),
+               html.escape(str(s.get("category") or "-")), html.escape(name)))
+    back = [[{"text": "‹ back to list",
+              "callback_data": "skl:p:0:%s" % str(kw or "")[:40]}]]
+    _send_or_edit(chat_id, message_id, text, back)
+
+
+def _handle_skill_callback(chat_id, message_id, data):
+    """Route one `skl:` callback — parse only, delegate to the renderers."""
+    parts = str(data or "").split(":", 3)
+    sub = parts[1] if len(parts) > 1 else ""
+    arg, kw = (parts[2] if len(parts) > 2 else "0"), (parts[3] if len(parts) > 3 else "")
+    try:
+        n = int(arg)
+    except ValueError:
+        n = -1
+    if sub == "s":
+        return _show_one_skill(chat_id, message_id, n, kw)
+    return _show_skills(chat_id, kw, max(0, n), message_id)
+
+
+def _show_plugins(chat_id, page=0, message_id=None):
+    """`/plugins` — the installed plugin bundles as a keyboard (`slash.plugins`)."""
+    from longrun.core import slash as _slash
+    try:
+        plugins = _slash.plugins() or []
+    except Exception:  # noqa: BLE001 — a menu must render
+        plugins = []
+    if not plugins:
+        return _send_or_edit(chat_id, message_id,
+                             "🧩 <b>Plugins</b> — none installed. Install one from "
+                             "Longrun ▸ Marketplace ▸ Plugins.", None)
+    size = _page_size()
+    total = max(1, (len(plugins) + size - 1) // size)
+    page = max(0, min(int(page or 0), total - 1))
+    rows = []
+    start = page * size
+    for i in range(start, min(start + size, len(plugins))):
+        p = plugins[i]
+        label = str(p.get("name") or "?")
+        rows.append([{"text": "%s (%d)" % (label[:44], len(p.get("members") or [])),
+                      "callback_data": "plg:v:%d:" % i}])
+    rows += _nav_row(page, total, "plg:p")
+    _send_or_edit(chat_id, message_id,
+                  "🧩 <b>Plugins</b> — %d installed" % len(plugins), _kb(rows))
+
+
+def _show_one_plugin(chat_id, message_id, idx):
+    """One plugin's manifest — the SAME bounded block `slash.plugin_block` builds."""
+    from longrun.core import slash as _slash
+    try:
+        plugins = _slash.plugins() or []
+    except Exception:  # noqa: BLE001
+        plugins = []
+    if idx < 0 or idx >= len(plugins):
+        return _show_plugins(chat_id, 0, message_id)
+    p = plugins[idx]
+    try:
+        block = _slash.plugin_block(str(p.get("name") or "")) or ""
+    except Exception:  # noqa: BLE001
+        block = ""
+    if not block:
+        block = str(p.get("state_line") or p.get("description") or "")
+    text = ("🧩 <b>%s</b>\n%s"
+            % (html.escape(str(p.get("title") or p.get("name") or "")),
+               html.escape(block[:3000])))
+    _send_or_edit(chat_id, message_id, text,
+                  [[{"text": "‹ back", "callback_data": "plg:p:0:"}]])
+
+
+def _handle_plugin_callback(chat_id, message_id, data):
+    """Route one `plg:` callback — parse only, delegate to the renderers."""
+    parts = str(data or "").split(":", 3)
+    sub = parts[1] if len(parts) > 1 else ""
+    arg = parts[2] if len(parts) > 2 else "0"
+    try:
+        n = int(arg)
+    except ValueError:
+        n = -1
+    if sub == "v":
+        return _show_one_plugin(chat_id, message_id, n)
+    return _show_plugins(chat_id, max(0, n), message_id)
+
+
 # ------------------------------------------------------- UI / doc commands ----
 def _run_ui(action, message=""):
     """/compact /status /reset /new /unlock /context /restart — the SAME backends
@@ -809,14 +1017,6 @@ def _run_ui(action, message=""):
             from longrun.plan import docs
             res = docs.unlock(sid) or {}
             return "🔓 %s" % (res.get("error") or "unlocked — the write gate is open.")
-        if action in ("plugins", "skills"):
-            from longrun.core import slash as _slash
-            cat = _slash.catalog(sid) or {}
-            if action == "plugins":
-                names = [str(p.get("name") or "") for p in cat.get("plugins") or []]
-                return "Plugins: %s" % (", ".join(n for n in names if n) or "none installed")
-            names = [str(c.get("id") or "") for c in cat.get("user_commands") or []]
-            return "Commands: %s" % (", ".join("/" + n for n in names if n) or "none")
         return "Unknown command: /%s" % action
     except Exception as exc:  # noqa: BLE001 — a command failure is a chat message
         return "⚠️ /%s failed: %s" % (action, exc)
