@@ -950,12 +950,14 @@ CHAT_TOOL_PROMPT = (
     "To delegate a self-contained subtask to ONE child agent — it gets a FRESH "
     "ISOLATED context (it sees ONLY the aim you pass, NEVER your conversation) and "
     "its own task list, then reports back its summary — emit ONLY "
-    '{"action":"subagent","aim":"<the subtask>","max_steps":4,"role":"<optional role name>"}. '
+    '{"action":"subagent","aim":"<the subtask>","role":"<optional role name>"}. '
     "Write a COMPLETE, self-contained instruction: the child cannot see your history, "
     "your files or ask you questions. Use it for a distinct subtask that can run on "
     "its own (e.g. reading and summarising a big file); do not delegate the whole "
-    "task. One delegate per subtask. Give max_steps>=3 when the child must call "
-    "tools (2 steps leave no turn for the answer). "
+    "task. One delegate per subtask. The child's step budget is CONFIGURED "
+    "(config/subagents.yaml `max_steps`): leave `max_steps` out so it gets the full "
+    "budget; pass a smaller cap only for a genuinely tiny subtask, and never so low "
+    "that the child has no turn left to answer. "
     'If your role prompt lists a TEAM (the org chart), DISTRIBUTE work to it: emit ONLY '
     '{"action":"dispatch","agent":"<A-id>","aim":"<the subtask>"} to start a real '
     "turn in that teammate's own session (their role and model). It is DETACHED: the "
@@ -8465,8 +8467,9 @@ AGENT_PROMPT = (
     '"todos": [{"label": "...", "deps": []}] (for todo.write), '
     '"title": "<for plan_step/add_task>", "id": "<for '
     'complete_plan_step/complete_task>", "detail": "<optional>", '
-    '"goal": "<the subtask>" and "max_steps": 4 (for subagent — delegate ONE '
-    'self-contained subtask to a child run and get its summary back), '
+    '"goal": "<the subtask>" (for subagent — delegate ONE '
+    'self-contained subtask to a child run and get its summary back; its step '
+    'budget comes from config, so omit `max_steps`), '
     '"summary": "<required for finish>"}.'
 )
 

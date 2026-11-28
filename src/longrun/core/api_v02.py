@@ -1247,8 +1247,10 @@ def tool_context():
         "a job id at once and the teammate's reply arrives back as a message when the job ends "
         '(read it with job.get); add "wait":true to get the reply inside this turn. Dispatch '
         "items run grouped per teammate (different concurrently, same sequentially) — never a "
-        "spawn, never on the subagent budget. Give a tool-using subagent max_steps>=3 (2 steps "
-        "leave no turn for the answer). `job.*` belongs to a COORDINATOR: it runs dependency-wave "
+        "spawn, never on the subagent budget. A subagent's step budget is CONFIGURED "
+        "(`max_steps` in config/subagents.yaml): omit it to use the full budget; a "
+        "tool-using child needs at least three steps, since two leave no turn for the "
+        "answer. `job.*` belongs to a COORDINATOR: it runs dependency-wave "
         "jobs over its own subtree; a session with nobody below it, or a name outside that "
         "subtree, gets permission_denied (exit 126, even on FULL). Never batch an "
         "approval-gated mutation with a read that depends on it.",

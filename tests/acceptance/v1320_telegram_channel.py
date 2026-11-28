@@ -1130,6 +1130,11 @@ check("V9 a todo.update hint names the steps it changed",
       channel._tool_hint({"steps": [{"id": "n1", "status": "done"},
                                     {"id": "n2", "status": "todo"}]}) == "n1 done, n2 todo",
       channel._tool_hint({"steps": [{"id": "n1", "status": "done"}]}))
+# v1322: a subagent card carried no header hint — the delegation brief is `aim`,
+# which was not in _TOOL_HINT_KEYS, so the row read only "subagent".
+check("V9a a subagent card hint names the delegation aim",
+      channel._tool_hint({"aim": "research X", "max_steps": 8}) == "research X",
+      channel._tool_hint({"aim": "research X", "max_steps": 8}))
 _v10 = channel._tool_body({"steps": [{"id": "n1", "status": "done"}]})
 check("V10 a non-command card detail is INDENTED JSON (a list, not one long line)",
       "\n" in _v10 and '"n1"' in _v10, _v10)

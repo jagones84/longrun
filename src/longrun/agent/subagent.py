@@ -14,8 +14,10 @@ but get their own plan/tasks context and a fresh transcript. The parent receives
 a summary / trace when the child finishes.
 
 Usage (from agent loop):
-    {"action": "subagent", "goal": "...", "max_steps": 4, "model": "..."}
+    {"action": "subagent", "aim": "...", "role": "...", "model": "..."}
     {"action": "subagent_result", "id": "..."}
+
+`max_steps` is optional and resolved from `config/subagents.yaml` when omitted.
 """
 
 import json
@@ -361,17 +363,38 @@ def purge_parent(parent_run_id):
     return removed
 
 
+def _verdict(result):
+    """The ONE success verdict for a child run, plus why it failed (v1322).
+
+    `status == "done"` is NOT enough: a run stopped by the step budget, aborted,
+    or cut by the anti-spin guard also ends "done" while delivering only a
+    sentinel. `ok` means the child produced a USABLE result, so every termination
+    other than ""/"completed" is a failure — the same rule session_jobs applies to
+    a dependency input. One reader, so the in-memory result, the persisted record
+    and the from-disk replay can never disagree. Returns (ok, error_text).
+    """
+    result = result or {}
+    status = result.get("status")
+    term = str(result.get("termination") or "")
+    ok = status == "done" and term in ("", "completed")
+    err = ""
+    if status == "done" and term not in ("", "completed"):
+        err = "subagent truncated: termination=%s" % term
+    return ok, err
+
+
 def _shrink(result):
     """The persisted slice of a run result: status/summary kept, trace counted."""
     result = result or {}
+    _ok, _err = _verdict(result)
     return {
-        "ok": result.get("status") == "done",
+        "ok": _ok,
         "status": result.get("status"),
         # The termination is what tells a consumer WHY the run ended: "no_progress"
         # (the anti-spin guard) means there is no usable output, so a Session Job
         # must not treat the disk record as a satisfied dependency (SJ, 2026-10-22).
         "termination": result.get("termination"),
-        "error": str(result.get("error") or "")[:500],
+        "error": str(result.get("error") or _err)[:500],
         "summary": str(result.get("summary") or "")[:_MAX_SUMMARY],
         "steps": len(result.get("trace") or []),
     }
@@ -593,14 +616,24 @@ def spawn(goal, parent_run_id=None, max_steps=None, model=None, on_event=None, d
                         _SPAWN_COUNT.pop(parent_run_id, None)
                     else:
                         _SPAWN_COUNT[parent_run_id] = _left
+            # v1322: the durable record must be HONEST the instant a collector
+            # wakes. `_persist` is a full-document OVERWRITE, so the spawn-time
+            # output contract must be carried here too — otherwise `output_schema`
+            # and `acceptance_criteria` vanish the moment the child finishes and
+            # the from-disk replay can no longer validate the result (verified live
+            # on sub_5a7b03906a.json: both fields absent from the completed record).
+            # Writing it BEFORE `done.set()` closes the race a woken collector would
+            # otherwise read the spawn-time record (no ok/termination) instead.
+            _persist({
+                "id": sid, "run_id": st.id, "goal": goal, "max_steps": max_steps,
+                "model": model, "role": role, "parent": parent_run_id,
+                "output_schema": schema,
+                "acceptance_criteria": criteria,
+                "status": status_txt or "error", "created": round(entry["created"], 3),
+                "ended": round(time.time(), 3), **_shrink(entry.get("result")),
+                "authority": authority["decision"], "chain": st.delegation["chain"],
+            })
             entry["done"].set()
-        _persist({
-            "id": sid, "run_id": st.id, "goal": goal, "max_steps": max_steps,
-            "model": model, "role": role, "parent": parent_run_id,
-            "status": status_txt or "error", "created": round(entry["created"], 3),
-            "ended": round(time.time(), 3), **_shrink(entry.get("result")),
-            "authority": authority["decision"], "chain": st.delegation["chain"],
-        })
         try:
             from longrun.core.server import publish as _publish
             _publish("subagent.done", subagent_id=sid, parent=parent_run_id,
@@ -667,7 +700,12 @@ def collect(subagent_id, timeout=None):
             # evaluate as violated — file predicates still work. Same shape.
             _facc = _acceptance.check_predicates(
                 rec.get("acceptance_criteria") or [], [])
-            return {"ok": rec.get("status") == "done", "status": rec.get("status"),
+            # v1322: replay the SAME honest verdict as the live path, so a child
+            # recovered from disk after a restart is never called ok when it was
+            # truncated (its `status` is "done" but its `termination` is not).
+            _fok, _ferr = _verdict(rec)
+            return {"ok": _fok, "status": rec.get("status"),
+                    "error": str(rec.get("error") or _ferr)[:500],
                     "result": dict(rec), "trace": [],
                     "summary": str(rec.get("summary") or ""),
                     "steps": rec.get("steps") or 0,
@@ -729,9 +767,14 @@ def collect(subagent_id, timeout=None):
                         break
         except Exception:
             pass
+    # v1322: the LIVE verdict too — `status == "done"` alone called a child cut by
+    # its step budget (or aborted) a success, and the caller then closed the
+    # delegated step on a truncation (verified live on sub_5a7b03906a.json).
+    _ok, _err = _verdict(result)
     return {
-        "ok": result.get("status") == "done",
+        "ok": _ok,
         "status": result.get("status"),
+        "error": str(result.get("error") or _err)[:500],
         "result": result,
         "trace": result.get("trace", []),
         "summary": summary,

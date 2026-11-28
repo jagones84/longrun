@@ -1869,8 +1869,11 @@ def _last_reasoning():
 
 
 #: The argument keys worth showing on a tool card's header line, in order.
+#: `aim` is last: a subagent delegation carries its brief as `aim` (the chat loop
+#: emits `{"aim": …, "max_steps": …, "role": …}`), so without it the row read only
+#: "subagent" with no hint.
 _TOOL_HINT_KEYS = ("command", "cmd", "path", "file", "query", "q", "pattern",
-                   "url", "goal", "title", "name", "id")
+                   "url", "goal", "title", "name", "id", "aim")
 
 
 def _tool_hint(args):
