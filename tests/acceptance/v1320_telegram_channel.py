@@ -904,6 +904,74 @@ try:
 finally:
     channel._client = None
 
+# ---- T: the chain-of-thought is VISIBLE and COLLAPSIBLE ----------------------
+# 2026-11-28 (operator: "il reason slash non mostra in telegram il thought!!! con
+# menu di chiusura espansione"). `<blockquote expandable>` = Telegram's "show more";
+# `/reason` ON shows the last reasoning at once; `finish()` never drops it.
+channel._live["obj"] = None
+channel._pending.clear()
+_sq = channel._quote_html("🧠 reasoning", "step one <b>not a tag</b>")
+check("T1 _quote_html builds a labelled expandable blockquote and escapes the body",
+      "<blockquote expandable>" in _sq and "</blockquote>" in _sq
+      and "🧠 reasoning" in _sq and "&lt;b&gt;not a tag&lt;/b&gt;" in _sq, _sq)
+_long = channel._quote_html("🧠 reasoning", "x" * 5000, cap=600)
+check("T2 _quote_html caps a huge chain-of-thought", len(_long) < 800 and "…" in _long,
+      len(_long))
+
+# a persisted turn carries `reasoning` — the SAME field the WebUI shows
+_sess = stores.load_session("telegram")
+_sess.setdefault("messages", []).append(
+    {"role": "assistant", "content": "done", "reasoning": "STEP-A persisted reasoning"})
+stores.save_session(_sess)
+_doc = binding.load()
+binding.set_pref(_doc, "think", False)
+binding.set_pref(_doc, "reason", True)
+binding.save(_doc)
+
+channel._client = FakeClient()
+_lr = channel._Live(9)
+_lr.append_think("STEP-LIVE live buffer")
+_lr.finish()
+_t3 = [str(p.get("text")) for m, p in channel._client.calls
+       if m in ("sendMessage", "editMessageText")]
+check("T3 finish() shows THIS turn's chain-of-thought in a collapsible block",
+      any("<blockquote expandable>" in t and "STEP-LIVE" in t for t in _t3), _t3[-2:])
+
+channel._client = FakeClient()
+_lr2 = channel._Live(9)
+_lr2.finish()
+_t4 = [str(p.get("text")) for m, p in channel._client.calls
+       if m in ("sendMessage", "editMessageText")]
+check("T4 with no live buffer finish() falls back to the PERSISTED reasoning",
+      any("<blockquote expandable>" in t and "STEP-A" in t for t in _t4), _t4[-2:])
+check("T5 _reasoning prefers the live buffer over the persisted field",
+      _lr._reasoning() == "STEP-LIVE live buffer", _lr._reasoning()[:60])
+
+# the live preview (mid-turn) is a collapsible block too — twin of the final one
+channel._client = FakeClient()
+_lr3 = channel._Live(9)
+_lr3.think_on = True
+_lr3.think_buf = "streaming thought"
+_lr3._render()
+_t6 = [str(p.get("text")) for m, p in channel._client.calls
+       if m in ("sendMessage", "editMessageText")]
+check("T6 the live thinking preview is a collapsible blockquote",
+      any("<blockquote expandable>" in t and "streaming thought" in t for t in _t6), _t6[-1:])
+
+# `/reason` ON shows the LAST reasoning immediately (no waiting for a turn)
+channel._handle_tg_only(9, "reason", "off")
+channel._client = FakeClient()
+channel._handle_tg_only(9, "reason", "on")
+_t7 = [str(p.get("text")) for m, p in channel._client.calls if m == "sendMessage"]
+check("T7 /reason ON shows the last reasoning at once, collapsed",
+      any("<blockquote expandable>" in t and "STEP-A" in t for t in _t7), _t7[-1:])
+channel._client = FakeClient()
+channel._handle_tg_only(9, "reason", "off")
+_t8 = [str(p.get("text")) for m, p in channel._client.calls if m == "sendMessage"]
+check("T8 /reason OFF says so and shows no thought",
+      bool(_t8) and "<blockquote" not in _t8[-1], _t8[-1:] or None)
+channel._client = None
+
 shutil.rmtree(_tmp, ignore_errors=True)
 print("---")
 ok = sum(results)

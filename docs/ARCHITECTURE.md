@@ -1093,7 +1093,12 @@ operator-selected `none`). This is not whole-agent confinement. Hard-denied patt
   same choice the WebUI picker makes. Telegram-only display toggles (`/think`,
   `/reason`, `/verbose`, `/stop`) live on the binding (`prefs`, never on the
   session), a typing heartbeat pulses `sendChatAction` while a reply is live, and
-  the reply is HTML-formatted with a bot header and a model footer. The channel is
+  the reply is HTML-formatted with a bot header and a model footer. `/reason`
+  (and `/think`) print the chain-of-thought in a `<blockquote expandable>` — the
+  live preview and the final answer carry the SAME collapsible block
+  (`channel._quote_html`), and switching `/reason` ON shows the last stored
+  reasoning at once, read from the same `reasoning` field the WebUI shows
+  (`channel._last_reasoning`). The channel is
   armed BEFORE the restart-resume sweep at boot, and it renders ANY turn on the
   bound session — including one it did not start (a restart continuation, a job, a
   teammate dispatch) — by creating the live reply for the last authorised chat

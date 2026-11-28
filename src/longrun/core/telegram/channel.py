@@ -625,7 +625,19 @@ def _handle_tg_only(chat_id, token, arg):
     binding.save(doc)
     label = {"think": "💭 thinking", "reason": "🧠 reasoning",
              "verbose": "🔎 verbose"}.get(token, token)
-    _notify(chat_id, "%s is now %s." % (label, _onoff(value)))
+    text = "%s is now %s." % (label, _onoff(value))
+    # 2026-11-28 (operator: "il reason slash non mostra in telegram il thought!!!
+    # con menu di chiusura espansione"): switching `/reason` ON shows the LAST
+    # chain-of-thought at once, in a collapsible block — the operator sees the
+    # feature work instead of a bare "on" and having to wait a turn.
+    if token == "reason" and value:
+        last = _last_reasoning()
+        if last:
+            text += "\n\n" + _quote_html("🧠 last reasoning", last,
+                                         cap=_reasoning_cap())
+        else:
+            text += "\n<i>no reasoning stored yet — it will appear with the next answer</i>"
+    _reply(chat_id, text, parse_mode="HTML")
 
 
 def _help_text():
@@ -1488,10 +1500,13 @@ class _Live:
         self._maybe_render()
 
     def append_think(self, text):
-        if self.done or not text or not self.think_on:
+        # 2026-11-28: `/reason` needs the chain-of-thought too — accumulate when
+        # EITHER toggle is on, but stream it into the live reply only with `/think`.
+        if self.done or not text or not (self.think_on or self.reason_on):
             return
         self.think_buf += text
-        self._maybe_render()
+        if self.think_on:
+            self._maybe_render()
 
     def _maybe_render(self):
         now = time.time()
@@ -1507,7 +1522,9 @@ class _Live:
             return
         parts = [_header_html()]
         if think:
-            parts.append(_block_html("💭 thinking", think[-_think_preview():]))
+            # The live block keeps the LATEST lines (it streams); the final block in
+            # `finish()` keeps the beginning — both are collapsible blockquotes.
+            parts.append(_quote_html("💭 thinking", think[-_think_preview():]))
         if body:
             parts.append(_esc(body))
         text = "\n\n".join(parts)
@@ -1596,10 +1613,14 @@ class _Live:
             reasoning = self._reasoning()
         head = _header_html()
         block = ""
+        # 2026-11-28 (operator: "il reason slash non mostra in telegram il thought!!!
+        # con menu di chiusura espansione"): the chain-of-thought goes in a COLLAPSIBLE
+        # blockquote — the first lines stay visible, the rest sits behind "show more" —
+        # instead of an italic wall that filled the chat.
         if reasoning:
-            block = _block_html("🧠 reasoning", reasoning[-_think_preview():])
+            block = _quote_html("🧠 reasoning", reasoning, cap=_reasoning_cap())
         elif thinking:
-            block = _block_html("💭 thinking", thinking[-_think_preview():])
+            block = _quote_html("💭 thinking", thinking, cap=_reasoning_cap())
         foot = _footer_html()
         # Reserve room for the header/block so the FIRST message is never cut mid
         # tag; the answer body is split on the remaining room and every following
@@ -1642,16 +1663,16 @@ class _Live:
             pass
 
     def _reasoning(self):
-        """The chain-of-thought persisted on the turn's last assistant message."""
-        try:
-            from longrun.memory import stores
-            sess = stores.load_session(binding.SESSION_ID) or {}
-            for m in reversed(sess.get("messages") or []):
-                if m.get("role") == "assistant":
-                    return str(m.get("reasoning") or "")
-        except Exception:  # noqa: BLE001
-            return ""
-        return ""
+        """THIS turn's chain-of-thought.
+
+        The live buffer first (it belongs to this turn), else the `reasoning` the
+        agent persisted on the turn's last assistant message — the same field the
+        WebUI reads, so both surfaces show the same text.
+        """
+        live = self.think_buf.strip()
+        if live:
+            return live
+        return _last_reasoning()
 
 
 # ------------------------------------------------------------- send helpers ---
@@ -1672,10 +1693,43 @@ def _header_html():
     return "🤖 <b>%s</b>" % _esc(_bot_name())
 
 
-def _block_html(label, text):
-    """A labelled italic block whose body is plain escaped text (no wrapping tag,
-    so a size cut can never leave an open entity behind)."""
-    return "<i>%s</i>\n%s" % (_esc(label), _esc(text))
+def _reasoning_cap():
+    """Largest reasoning block we put in ONE message (half the message budget)."""
+    return max(400, _max_chars() // 2)
+
+
+def _quote_html(label, text, cap=None):
+    """A labelled COLLAPSIBLE block — Telegram's "show more", not a text wall.
+
+    2026-11-28 (operator: "il reason slash non mostra in telegram il thought!!!
+    con menu di chiusura espansione"): `<blockquote expandable>` keeps the first
+    lines visible and folds the rest behind the expand control. The body is plain
+    escaped text (no nested tags, so a size cut can never leave an open entity).
+    """
+    body = str(text or "").strip()
+    if not body:
+        return ""
+    limit = int(cap or _reasoning_cap())
+    if len(body) > limit:
+        body = body[:limit].rstrip() + "…"
+    return "<b>%s</b>\n<blockquote expandable>%s</blockquote>" % (_esc(label), _esc(body))
+
+
+def _last_reasoning():
+    """The `reasoning` the agent persisted on the session's last assistant message.
+
+    ONE reader for every surface: the WebUI shows this field, `/reason` shows it
+    the moment it is switched on, and `_Live._reasoning` falls back to it.
+    """
+    try:
+        from longrun.memory import stores
+        sess = stores.load_session(binding.SESSION_ID) or {}
+        for m in reversed(sess.get("messages") or []):
+            if m.get("role") == "assistant":
+                return str(m.get("reasoning") or "")
+    except Exception:  # noqa: BLE001
+        return ""
+    return ""
 
 
 def _split_body(text, first_size, rest_size):
