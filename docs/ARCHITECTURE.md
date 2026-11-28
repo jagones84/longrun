@@ -380,8 +380,8 @@ Harness² upstream (arXiv:2610.14224): that is only a comparison arm in
 
 Layout (2026-11-20), by runtime role:
 
-* `harness/checks/` — the 138 report-only per-paper checkers. Pure data in,
-  verdict out; only `core/forge.py` imports them.
+* `harness/checks/` — the 139 report-only checkers (one per paper, plus the mechanical
+  docs guard). Pure data in, verdict out; only `core/forge.py` imports them.
 * `harness/execution/` — the 9 gated executors (`probe`, `runner`, `editors`,
   `compose`, `contrast`, `whole`, `snapshot`, `gateway`, `unixshim`). Only
   `cycle` (with `dry_run=False`) reaches them, and only after

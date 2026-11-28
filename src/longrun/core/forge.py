@@ -30,6 +30,7 @@ Usage:
   python3 forge.py setup run PLAN.json [--workspace DIR] [--reuse] [--state DIR]
   python3 forge.py invariants | manifest
   python3 forge.py harness [GROUP]      # every per-paper group: actions + where its JSON goes
+  python3 forge.py docsguard            # the tracked docs' links + anchors (local, no server)
   python3 forge.py skills stale | skills value FILE.json | skills repair FILE.json --map old=new
   python3 forge.py approvals audit [FILE.json]   # no FILE: the live approval store
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
@@ -890,6 +891,19 @@ def cmd_modelbudget(args):
     out = _mb.advise(payload)
     print(json.dumps(out, indent=2, ensure_ascii=False))
     sys.exit(0)
+
+
+def cmd_docsguard(args):
+    """The tracked docs' links and anchors resolve — a local, report-only check.
+
+    Walks the declared scope (six root docs, `docs/**`, `.github/**`), resolves every
+    relative link, every `#anchor` and every `file://` target, and exits 1 naming each
+    finding. Link extraction skips fenced blocks and inline code, so an example is not
+    a claim. Shared with `tests/acceptance/v1321_docs_guard.py` and the CI step.
+    """
+    from longrun.harness.checks import docs_guard
+    from longrun.util.paths import REPO_ROOT
+    _emit(docs_guard, docs_guard.check(REPO_ROOT), lambda o: o["verdict"] == "clean")
 
 
 def cmd_episodes(args):
@@ -6235,6 +6249,9 @@ def _build_parser():
         p.add_argument("action", nargs="?", default="report", choices=["report", "audit", "claim"]); \
         p.add_argument("file", nargs="?", help="JSON: a claim record (audit), arms (claim) or a profile (report)"); \
         p.set_defaults(fn=cmd_modelbudget)
+    p = sub.add_parser("docsguard",
+                       help="resolve the tracked docs' links and anchors (local, no server)")
+    p.set_defaults(fn=cmd_docsguard)
     p = sub.add_parser("harness",
                        help="list the per-paper groups, their actions and their input")
     p.add_argument("group", nargs="?", help="one group: print its own -h")

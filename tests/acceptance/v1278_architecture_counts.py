@@ -157,7 +157,7 @@ check("the app imports some (but not all) of the root", 0 < app_n <= root_n,
       "app=%d root=%d" % (app_n, root_n))
 
 # ---- 2. the doc's claims ----------------------------------------------------
-c_checks = stated(doc, r"the (\d+) report-only per-paper checkers")
+c_checks = stated(doc, r"the (\d+) report-only .*?checkers")
 c_exec = stated(doc, r"the (\d+) gated executors")
 c_app = stated(doc, r"the (\d+) modules the running app imports")
 check("the doc states all three countable claims",

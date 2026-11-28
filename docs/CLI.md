@@ -349,6 +349,23 @@ python3 forge.py hooks            # configured git/event hooks
 python3 forge.py sandbox          # sandbox backend + isolation state (force probe)
 ```
 
+### Docs guard (`forge docsguard`)
+
+One local, report-only check over the **tracked** docs (no server, no token): the six
+root docs, `docs/**/*.md` and `.github/**/*.md`. It resolves every relative link,
+every `#anchor` (GitHub slug of a heading) and every `file://` target — the class of
+breakage a moved checkout or a renamed heading produces silently. Fenced blocks and
+inline code are skipped, so an example is not a claim; `CHANGELOG.md` and the
+`benchmarks/`/`market/` fixtures are out of scope.
+
+```bash
+python3 forge.py docsguard      # {"verdict":"clean","stats":{"docs":23,"links":39,"anchors":33}}
+```
+
+Exit `0` clean, `1` any finding (`broken-link`, `missing-anchor`, `stale-absolute`,
+each with file and line). The same check is pinned by
+`tests/acceptance/v1321_docs_guard.py` and runs in CI.
+
 ### Per-paper harness groups (`forge harness`)
 
 The ~140 groups added from rounds 110–159 are all one shape: a JSON record in,
