@@ -134,7 +134,7 @@ check("D2 skills are optional, installed from ZIP, and stored in skills/local",
       and os.path.normcase(skill_store._local_dir())
       == os.path.normcase(os.path.join(REPO, "skills", "local")))
 check("E1 systemd and interactive setup use the same repo .env token source",
-      "EnvironmentFile=-%h/Repositories/longrun/.env" in SERVICE
+      "EnvironmentFile=-%h/Repositories/MyRepos/longrun/.env" in SERVICE
       and "EnvironmentFile=-%h/.config/longrun/env" not in SERVICE)
 
 print("---")

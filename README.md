@@ -429,7 +429,7 @@ systemctl --user enable --now longrun.service
 systemctl --user status longrun.service
 ```
 
-The unit expects the checkout at `~/Repositories/longrun`. Edit its paths if your
+The unit expects the checkout at `~/Repositories/MyRepos/longrun`. Edit its paths if your
 checkout is elsewhere. It binds `0.0.0.0:8790`.
 
 Once the service is installed, these are the three commands you need day to day.
